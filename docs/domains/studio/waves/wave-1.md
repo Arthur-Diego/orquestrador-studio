@@ -167,3 +167,25 @@ mockados por fixture); **integração em série** na ordem topológica.
 | export | deriva 9:16 e 1:1 do `master.mp4` de `edit` |
 | publish | lista os arquivos de `export/` |
 | prospect | bloqueia com `< 4` entradas em `publish/log.json`; teaser usa um take de `animate` + `audio/music.*` |
+
+## Decisões do lote (gate 1, W3) — 2026-08-25
+
+Aprovação em lote pela melhor recomendação (instrução do dono do produto). Valem para todas as
+frentes e prevalecem sobre o texto dos FDDs quando houver conflito:
+
+| # | Pendência levantada | Decisão |
+|---|---|---|
+| 1 | publish/prospect: "4 vídeos" = 4 posts ou 4 vídeos distintos? | **4 vídeos distintos** (aula 015: "publicar esses 4 vídeos"). `publish` expõe `distinct_videos`; o gate de `prospect` usa `distinct_videos >= 4`. |
+| 2 | export: manter 1:1? | Sim: a aula 007 cita o formato quadrado do feed. |
+| 3 | export: `reframe` via CLI (listado como inferência na ADR-004) | Fica como alternativa **opcional** paga: mesma saída (vertical), ferramenta diferente (regra 3 do CLAUDE.md). |
+| 4 | edit ↔ animate: transição colada | `edit` exporta `edit/last_frames/`; na etapa 6 o usuário escolhe manualmente o PNG como start frame (sem automação cruzada). |
+| 5 | edit ↔ export: resolução do master | Master fixo 1920×1080 / 30 fps / H.264+AAC; `export` deriva 9:16 e 1:1 dele. |
+| 6 | music → edit: `beats.json` ausente | `edit` monta sem marcações de impacto (proposta de cortes desabilitada). |
+| 7 | storyboard: `storyboard/ideas/` | Contém só as ideias **selecionadas** (cópia); candidatas ficam em `storyboard/candidates/`. |
+| 8 | shots: `ingest` com `step="shots/cenaNN"` | Suportado (o `step` é um caminho relativo). |
+| 9 | shots: parâmetros de câmera (lente, abertura, ângulo) | Aprovados: são os presets que a aula 011 escolhe no Cinema Studio; ferramenta trocada, processo igual. |
+| 10 | base: `brand` como texto (`[extensão]`) | Aprovado; logo em arquivo fica como sugestão. |
+| 11 | animate: troca de modelo sugerida (nunca automática) após 3 falhas; `fallback_black` no take | Aprovado. |
+| 12 | prospect: auto-aceites 2 a 7 (role, call_note, teaser só de take+trilha, 10/dia como aviso, substituições do script, defaults) | Aprovados. |
+| 13 | IDs de modelo do CLI não confirmados (sem login) | Frentes usam defaults do plano, sempre sobrescritíveis; validação com catálogo vivo é tarefa da integração/retro. |
+| 14 | Projeto de teste com etapas 1–2 reais para os `[cross-feature]` | Orquestrador cria `projects/2026-08-wave-teste` com fixtures na W5. |
