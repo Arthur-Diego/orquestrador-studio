@@ -2,7 +2,15 @@
 Studio.register("base", (ctx) => {
   const { $, api, toast } = ctx;
   const KINDS = { situation: "situação", label: "rótulo", upscale: "upscale" };
-  let cands = [], sel = null, chain = { situation: null, label: null, upscale: null }, refs = [];
+  let cands = [], sel = null, chain = { situation: null, label: null, upscale: null }, refs = [], labelText = "";
+
+  // O que for importado herda o prompt que o originou — é o que a aula pede no base.md.
+  function importPrompt() {
+    const k = $("#impKind").value;
+    if (k === "label") return labelText;
+    if (k === "situation") { const r = refs.find(x => x.ref_id === $("#impRef").value); return r ? r.prompt : (refs[0] ? refs[0].prompt : ""); }
+    return "";
+  }
 
   const url = (p) => `/api/projects/${ctx.pid()}/base/${p}`;
 
@@ -21,10 +29,10 @@ Studio.register("base", (ctx) => {
   }
 
   async function loadPrompts() {
-    refs = [];
+    refs = []; labelText = "";
     try {
       const r = await api(url(`prompts?model=${$("#baseModel").value}`));
-      refs = r.refs;
+      refs = r.refs; labelText = r.label_prompt || "";
       $("#baseHint").textContent = `${r.ui_hint} Proporção ${r.aspect_ratio}. Produto: ${r.product}.`;
       $("#basePalette").innerHTML = (r.palette.colors || []).map(c => `<span style="background:${c}" title="${c}"></span>`).join("");
       $("#baseMood").textContent = r.mood_files.length ? `mood anexado: ${r.mood_files.join(", ")}` : "sem imagens em mood/selected/ — anexe o mood na UI manualmente";
@@ -79,6 +87,7 @@ Studio.register("base", (ctx) => {
     [...files].forEach(f => fd.append("files", f));
     fd.append("kind", $("#impKind").value);
     if ($("#impRef").value) fd.append("ref_id", $("#impRef").value);
+    fd.append("prompt", importPrompt());
     const r = await fetch(url("import/upload"), { method: "POST", body: fd });
     if (!r.ok) return toast((await r.json().catch(() => ({}))).detail || r.statusText);
     toast(`${(await r.json()).added} imagens importadas`); load();
@@ -118,7 +127,7 @@ Studio.register("base", (ctx) => {
       $("#baseUpload").addEventListener("change", e => uploadFiles(e.target.files));
       $("#btnBaseDownloads").onclick = async () => {
         try {
-          const r = await api(url("import/downloads"), { method: "POST", body: JSON.stringify({ since_minutes: +$("#baseDlMinutes").value, kind: $("#impKind").value, ref_id: $("#impRef").value || null }) });
+          const r = await api(url("import/downloads"), { method: "POST", body: JSON.stringify({ since_minutes: +$("#baseDlMinutes").value, kind: $("#impKind").value, ref_id: $("#impRef").value || null, prompt: importPrompt() }) });
           toast(`${r.added} novas de ${r.scanned} imagens recentes`); load();
         } catch (err) { toast(err.message); }
       };
