@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ... import higgsfield as hf
 from ...base import service as base
+from ...common import prompter
 from ...refs import service as refs
 
 router = APIRouter(tags=["base"])
@@ -40,14 +41,27 @@ class GenReq(BaseModel):
     kind: Kind = "situation"
     model: str | None = None
     ref_ids: list[str] | None = None
-    count: int = 1
-    aspect_ratio: str = "16:9"
+    # `count` ausente = default do passo (rótulo 3, aula 009); `aspect_ratio` ausente = o do
+    # projeto (`PATCH /api/projects/{pid}`, aula 007: o formato vem do destino).
+    count: int | None = None
+    aspect_ratio: str | None = None
     resolution: str = "2k"
+    prompt: str = ""          # texto editado na tela (B4); vazio = o do histórico/template
 
 
 class SelectReq(BaseModel):
     id: str
     note: str = ""
+
+
+class PromptGenReq(BaseModel):
+    """Aula 009: o bot escreve o prompt olhando a referência e o mood (B1/B2)."""
+    ref_id: str | None = None
+    mode: Literal["images", "brief", "template"] = "images"
+    instruction: str = ""
+    no_bias: bool = False     # sessão nova, sem o brief da campanha (a "aba nova" da aula)
+    no_people: bool = False   # frase "No people…" é opcional na base (B11)
+    model: str | None = None
 
 
 @router.get("/api/projects/{pid}/base/prompts")
@@ -56,6 +70,33 @@ def base_prompts(pid: str, model: str | None = None):
         return base.prompts(pid, model)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+
+
+@router.post("/api/projects/{pid}/base/prompts/generate")
+def base_prompt_generate(pid: str, req: PromptGenReq):
+    """Roda o bot da aula. Sem Claude no PATH: 409 (a tela oferece o modo template)."""
+    try:
+        return base.generate_prompt(pid, req.ref_id, req.mode, req.instruction, req.no_bias,
+                                    req.no_people, req.model)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except FileNotFoundError as e:
+        raise HTTPException(422, f"imagem indisponível: {e}") from e
+    except RuntimeError as e:
+        raise HTTPException(409 if "indisponível" in str(e) else 502, str(e)) from e
+
+
+@router.get("/api/projects/{pid}/base/prompts/history")
+def base_prompt_history(pid: str):
+    return base.prompt_history(pid)
+
+
+@router.get("/api/projects/{pid}/base/prompter")
+def base_prompter_status(pid: str):
+    """A tela usa isto para habilitar os modos que dependem do Claude CLI."""
+    refs.project_dir(pid)
+    return {"available_claude": prompter.available(), "modes": list(base.PROMPT_MODES),
+            "max_images": base.PROMPT_IMAGES_MAX}
 
 
 @router.get("/api/projects/{pid}/base/brand")
@@ -119,7 +160,7 @@ def base_cost(pid: str, req: GenReq):
         raise HTTPException(409, "CLI da Higgsfield não instalado")
     try:
         return base.estimate_cost(pid, req.kind, req.model, req.ref_ids, req.count,
-                                  req.aspect_ratio, req.resolution)
+                                  req.aspect_ratio, req.resolution, req.prompt)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 
@@ -132,7 +173,7 @@ def base_generate(pid: str, req: GenReq):
         raise HTTPException(409, "CLI da Higgsfield sem login (higgsfield auth login)")
     try:
         return base.start_generate(pid, req.kind, req.model, req.ref_ids, req.count,
-                                   req.aspect_ratio, req.resolution)
+                                   req.aspect_ratio, req.resolution, req.prompt)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except RuntimeError as e:
