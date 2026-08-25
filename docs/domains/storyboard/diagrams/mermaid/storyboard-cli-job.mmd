@@ -1,0 +1,36 @@
+%% storyboard (OS-004) - Etapa 4 - aula 010
+%% Estados do job de geracao paga pelo CLI da Higgsfield (padrao ADR-006, um job por projeto)
+%% Fonte: studio/storyboard/service.py (start_generate, job_status) + studio/common/jobs.py (JobRegistry)
+stateDiagram-v2
+    direction LR
+
+    state "idle" as idle
+    state "running" as running
+    state "done" as done
+    state "error" as error
+
+    [*] --> idle: projeto sem job registrado (GET /storyboard/job devolve state idle)
+
+    idle --> idle: POST /storyboard/cost apenas calcula o custo, não cria job
+    idle --> running: POST /storyboard/generate aceito, registry.start(pid, count, run) dispara a thread
+
+    running --> running: polling de 3 s em GET /storyboard/job (state, done, total, added, error, log)
+    running --> done: as count gerações terminaram e os resultados viraram candidatos source cli
+    running --> error: exceção em hf.generate, hf.download ou ingest_bytes; log preserva o parcial
+
+    done --> running: nova chamada de POST /storyboard/generate
+    error --> running: nova chamada de POST /storyboard/generate
+
+    done --> [*]: a UI recarrega a galeria de ideias
+    error --> [*]: a UI orienta a gerar na interface da Higgsfield e importar
+
+    note right of running
+        Um job por projeto (ADR-006): outro POST /storyboard/generate
+        durante running devolve 409 "Já existe uma geração em andamento
+        para este projeto." e o estado não muda.
+
+        Pré-requisitos verificados antes de sair de idle:
+        base/base_final.png presente, senão 409;
+        CLI instalado e logado, senão 409;
+        kind em edit ou multishot e count em 1 ou 4, senão 422.
+    end note
