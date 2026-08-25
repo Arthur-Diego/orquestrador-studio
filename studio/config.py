@@ -1,6 +1,6 @@
 """Caminhos e constantes do Orquestrador Studio."""
-from pathlib import Path
 import os
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROJECTS_DIR = Path(os.environ.get("STUDIO_PROJECTS", ROOT / "projects"))

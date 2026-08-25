@@ -1,0 +1,40 @@
+name: task-id-check
+
+# Rede de segurança da rastreabilidade: todo commit de PR precisa do trailer Task-Id
+# (SDD: OS-*; ad-hoc: ADH-OS-*). O hook local .githooks/commit-msg dá feedback imediato;
+# este job garante no remoto.
+on:
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  task-id-check:
+    name: task-id-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validar trailer Task-Id nos commits do PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          base=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          missing=0
+          for c in $(git rev-list --no-merges "$base..$HEAD_SHA"); do
+            if ! git log -1 --format=%B "$c" | grep -qE "^Task-Id: (OS|ADH)-[A-Za-z0-9.-]+"; then
+              echo "::error::Commit ${c:0:8} sem trailer Task-Id valido: $(git log -1 --format=%s "$c")"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "SDD: Task-Id: OS-NNN. Ad-hoc: Task-Id: ADH-OS-<YYYYMMDD>-<seq>."
+            exit 1
+          fi
+          echo "Todos os commits possuem Task-Id valido."
