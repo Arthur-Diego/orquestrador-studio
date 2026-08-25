@@ -117,7 +117,7 @@ def import_upload(root: Path, step: str, files: list[tuple[str, bytes]], prompt:
 
 
 def import_downloads(root: Path, step: str, folder: str | None = None, since_minutes: int = 120,
-                     limit: int = 40, kind: str = "image") -> dict:
+                     limit: int = 40, kind: str = "image", prompt: str = "", meta: dict | None = None) -> dict:
     """Importa mídias recentes da pasta Downloads (onde a UI da Higgsfield salva)."""
     folder_p = Path(folder) if folder else DOWNLOADS_DEFAULT
     if not folder_p.exists():
@@ -128,7 +128,7 @@ def import_downloads(root: Path, step: str, folder: str | None = None, since_min
                    key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
     added = 0
     for p in files:
-        if ingest_bytes(root, step, p.read_bytes(), "downloads", p.name, meta={"origin_path": str(p)}, kind=kind):
+        if ingest_bytes(root, step, p.read_bytes(), "downloads", p.name, prompt, {"origin_path": str(p), **(meta or {})}, kind=kind):
             added += 1
     return {"added": added, "scanned": len(files), "folder": str(folder_p)}
 

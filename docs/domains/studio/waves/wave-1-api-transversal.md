@@ -13,7 +13,7 @@ ingest_bytes(root, step, data, source, name, prompt="", meta=None, kind="image")
     # devolve None se duplicado (mesmo conteúdo) ou inválido
 load_candidates(root, step) -> list[dict]; save_candidates(root, step, cands) -> None
 import_upload(root, step, files: list[tuple[str, bytes]], prompt="", kind="image") -> {"added": n}
-import_downloads(root, step, folder=None, since_minutes=120, limit=40, kind="image") -> {"added", "scanned", "folder"}
+import_downloads(root, step, folder=None, since_minutes=120, limit=40, kind="image", prompt="", meta=None) -> {"added", "scanned", "folder"}
 import_history(root, step, kind="image", size=50, prompt_filter=None) -> {"added", "jobs"}   # via hf.history_media
 ```
 `root` é sempre `refs.service.project_dir(pid)`. `step` é o id da etapa (pasta).
