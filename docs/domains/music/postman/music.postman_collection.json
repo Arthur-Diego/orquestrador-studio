@@ -1,0 +1,1657 @@
+{
+  "info": {
+    "_postman_id": "a7c1f3d2-0e5b-4c8a-9f31-mus1c0007fdd",
+    "name": "Studio — Etapa 7 · Trilha (music)",
+    "description": "Coleção executável derivada da seção 5 (tabela de endpoints) do FDD\n`docs/domains/music/features/music-fdd.md` (versão 1.0, 2026-08-25).\n\nCobre as 11 linhas da tabela de endpoints, a matriz de erros da seção 6 e os invariantes\nda seção 6 (linhas 265-268). Rotas do núcleo (`POST /api/projects`) entram apenas como\npré-requisito do `pid`, marcadas como fora da seção 5.\n\nSem autenticação por ADR-001 (Studio local, usuário único). A variável `accessToken` existe\nno environment só por convenção e não é enviada.\n\nPré-requisito: `bash fixtures/make-fixtures.sh` (gera as fixtures de áudio, incluindo a de 26 MB\nusada no caso 413, que não é versionada).\n\nOrdem importa: os requests encadeiam `pid`, `candidateId`, `candidateId2` e `beatsSnapshot`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 setup (núcleo, fora da seção 5)",
+      "description": "Cria os projetos usados pelo resto da coleção. `POST /api/projects` é rota do núcleo\n(`studio/app.py`), não da seção 5 do FDD; entra aqui só porque a seção 5 (linha 159) exige\num `pid` existente — \"`pid` inválido ou inexistente → 404 (núcleo)\".\nO nome recebe sufixo aleatório para nunca colidir (colisão devolve 409).",
+      "item": [
+        {
+          "name": "Criar projeto principal",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const n = 'Postman Trilha ' + Math.random().toString(36).slice(2, 8);",
+                  "pm.collectionVariables.set('projectName', n);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 — projeto criado (núcleo)', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('id no formato 2026-08-<slug>', () => pm.expect(j.id).to.match(/^\\d{4}-\\d{2}-[a-z0-9-]+$/));",
+                  "pm.collectionVariables.set('pid', j.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{projectName}}\",\n  \"product\": \"energy drink\",\n  \"vibe\": \"icy neon\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
+            "description": "Grava `pid` na coleção. A `vibe` \"icy neon\" e o `product` \"energy drink\" alimentam o prompt de `GET .../music/prompt` (FDD seção 4, linha 85)."
+          }
+        },
+        {
+          "name": "Criar projeto vazio (para os 404 de beats)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('projectNameVazio', 'Postman Trilha Vazia ' + Math.random().toString(36).slice(2, 8));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 — projeto vazio criado', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('pidVazio', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{projectNameVazio}}\",\n  \"product\": \"energy drink\",\n  \"vibe\": \"icy neon\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
+            "description": "Projeto que nunca recebe candidata: sustenta `GET .../music/beats` → 404 e `POST .../music/beats` → 404 (FDD seção 5, linhas 191-192)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 prompt e candidatas",
+      "description": "FDD seção 5, linhas 182-183.",
+      "item": [
+        {
+          "name": "GET prompt — sugestão para sonilo_music",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('contrato {prompt, duration, model, instructions}', () => {",
+                  "  pm.expect(j).to.have.all.keys('prompt', 'duration', 'model', 'instructions');",
+                  "});",
+                  "pm.test('duration 35 e model sonilo_music (FDD seção 4, linha 86)', () => {",
+                  "  pm.expect(j.duration).to.eql(35);",
+                  "  pm.expect(j.model).to.eql('sonilo_music');",
+                  "});",
+                  "pm.test('prompt termina em \"cinematic, strong beats, no vocals\"', () => {",
+                  "  pm.expect(j.prompt).to.include('cinematic, strong beats, no vocals');",
+                  "});",
+                  "pm.collectionVariables.set('generatePrompt', j.prompt);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "prompt"
+              ]
+            },
+            "description": "FDD seção 5, linha 182: `.../music/prompt` GET → `{prompt, duration, model, instructions}`, 200.\nPrompt derivado de `project.json.vibe` + vibe do `mood/mood.md` (seção 4, linha 85)."
+          }
+        },
+        {
+          "name": "GET candidates — lista vazia antes de importar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('array vazio', () => pm.expect(pm.response.json()).to.be.an('array').that.is.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "candidates"
+              ]
+            },
+            "description": "FDD seção 5, linha 183: lista de candidatas, 200. Projeto recém-criado começa vazio."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 importação de candidatas",
+      "description": "FDD seção 5, linhas 184-186; dedupe e extensão não suportada da seção 6, linha 242.",
+      "item": [
+        {
+          "name": "POST import/upload — 2 wav (added 2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('added = 2', () => pm.expect(pm.response.json().added).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD seção 5, linha 184: multipart `files[]` → `{added}`, 200.\nFixtures `click-120bpm.wav` (12 s) e `click-154bpm.wav` (10 s), geradas por `fixtures/make-fixtures.sh`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "/home/arthu/code/senhortecnologia/orquestrador-studio-worktrees/os-007-music/docs/domains/music/postman/fixtures/click-120bpm.wav"
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "/home/arthu/code/senhortecnologia/orquestrador-studio-worktrees/os-007-music/docs/domains/music/postman/fixtures/click-154bpm.wav"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST import/upload — duplicata ignorada (added 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (dedupe não é erro)', () => pm.response.to.have.status(200));",
+                  "pm.test('added = 0 — dedupe por sha12', () => pm.expect(pm.response.json().added).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD seção 6, linha 242: duplicata (mesmo sha12) é ignorada silenciosamente, sem erro HTTP; `added` menor que o enviado.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "/home/arthu/code/senhortecnologia/orquestrador-studio-worktrees/os-007-music/docs/domains/music/postman/fixtures/click-120bpm.wav"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST import/upload — extensão não suportada (added 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (extensão inválida não vira erro HTTP)', () => pm.response.to.have.status(200));",
+                  "pm.test('added = 0', () => pm.expect(pm.response.json().added).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD seção 4, linha 120 e seção 6, linha 242: extensão fora de `MEDIA_EXT[\"audio\"]` não conta em `added` e não gera erro HTTP.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "/home/arthu/code/senhortecnologia/orquestrador-studio-worktrees/os-007-music/docs/domains/music/postman/fixtures/nao-audio.txt"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET candidates — 2 candidatas, nenhuma selecionada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('2 candidatas', () => pm.expect(j).to.have.lengthOf(2));",
+                  "pm.test('campos do contrato do ingest', () => {",
+                  "  ['id', 'kind', 'source', 'name', 'file', 'duration', 'selected', 'imported'].forEach(k => pm.expect(j[0]).to.have.property(k));",
+                  "  pm.expect(j[0].kind).to.eql('audio');",
+                  "  pm.expect(j[0].source).to.eql('upload');",
+                  "});",
+                  "pm.test('nenhuma selecionada ainda', () => pm.expect(j.filter(c => c.selected)).to.have.lengthOf(0));",
+                  "const c120 = j.find(c => (c.name || '').indexOf('120') >= 0) || j[0];",
+                  "const c154 = j.find(c => c.id !== c120.id) || j[1];",
+                  "pm.collectionVariables.set('candidateId', c120.id);",
+                  "pm.collectionVariables.set('candidateId2', c154.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "candidates"
+              ]
+            },
+            "description": "FDD seção 5, linha 183: `[{id, kind:\"audio\", source, name, prompt, file, duration, selected, imported, job_id?, model?}]`.\nGrava `candidateId` e `candidateId2` para o encadeamento com `select` (FDD seção 4, linha 92)."
+          }
+        },
+        {
+          "name": "POST import/downloads — pasta explícita",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('contrato {added, scanned, folder}', () => pm.expect(j).to.have.all.keys('added', 'scanned', 'folder'));",
+                  "pm.test('scanned = 1 (o único wav da pasta)', () => pm.expect(j.scanned).to.eql(1));",
+                  "pm.test('added = 1 (FDD seção 9, linha 317)', () => pm.expect(j.added).to.eql(1));",
+                  "pm.test('folder ecoa a pasta pedida', () => pm.expect(j.folder).to.eql(pm.variables.replaceIn('{{downloadsFolder}}')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/downloads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "downloads"
+              ]
+            },
+            "description": "FDD seção 5, linha 185: `{folder?, since_minutes?}` → `{added, scanned, folder}`, 200.\nAponta para `fixtures/downloads-scan/` de propósito: o default varre a pasta Downloads real da\nmáquina e importaria áudio de verdade do usuário para dentro do projeto de teste.\n`since_minutes` alto torna o resultado independente da data em que as fixtures foram geradas.\nA pasta tem 1 wav que não entrou pelo upload, então `added: 1` — critério da seção 9, linha 317.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder\": \"{{downloadsFolder}}\",\n  \"since_minutes\": 525600\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET /api/music/downloads-folder — [FORA DA SEÇÃO 5]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('contrato {folder, exists}', () => pm.expect(pm.response.json()).to.have.all.keys('folder', 'exists'));",
+                  "pm.test('[divergência] rota não declarada na seção 5 do FDD', () => pm.expect(true).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/music/downloads-folder",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "music",
+                "downloads-folder"
+              ]
+            },
+            "description": "ATENÇÃO: esta rota existe em `studio/etapas/music/router.py` (linha 70) mas NÃO consta na\ntabela de endpoints da seção 5 do FDD. Ver `divergencias.md` (MEDIA).\nDevolve `{folder, exists}` — o caminho default de Downloads que a UI mostra."
+          }
+        },
+        {
+          "name": "POST import/history — depende do CLI da Higgsfield",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ok = [200, 409, 502];",
+                  "pm.test('status ∈ {200, 409, 502} (FDD seção 5, linha 186)', () => pm.expect(ok).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('contrato {added, jobs}', () => pm.expect(pm.response.json()).to.have.all.keys('added', 'jobs'));",
+                  "} else {",
+                  "  pm.test('detail com a causa do CLI', () => pm.expect(pm.response.json()).to.have.property('detail'));",
+                  "  console.log('CLI indisponível/não logado — status ' + pm.response.code + ': ' + JSON.stringify(pm.response.json().detail).slice(0, 200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "history"
+              ]
+            },
+            "description": "FDD seção 5, linha 186: `{size?}` → `{added, jobs}`; 200, 409 (CLI ausente), 502 (falha do CLI).\nNesta máquina o CLI está INSTALADO mas SEM workspace/login, e o router só checa `hf.available()`\n(= binário presente). Resultado real: 502 com o stderr do CLI — não 409.\nVer `divergencias.md` (ALTA): o 409 de \"não logado\" prometido pela seção 6, linha 244, não existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"size\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 geração por CLI (sonilo_music)",
+      "description": "FDD seção 5, linhas 187-189. Caminho alternativo pago; o principal é importar (seção 6, linha 261).\nSem login no CLI da Higgsfield estes requests não produzem faixa — é o estado esperado da máquina.",
+      "item": [
+        {
+          "name": "POST generate/cost — custo antes de gastar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status ∈ {200, 409} (FDD seção 5, linha 187)', () => pm.expect([200, 409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const j = pm.response.json();",
+                  "  pm.test('contrato {per_track, total, raw}', () => pm.expect(j).to.have.all.keys('per_track', 'total', 'raw'));",
+                  "  if (j.per_track !== null && j.total !== null) {",
+                  "    pm.test('total = per_track * count (FDD seção 9, linha 319)', () => pm.expect(j.total).to.be.closeTo(j.per_track * 3, 0.001));",
+                  "  } else {",
+                  "    console.log('CLI sem login: per_track/total nulos, raw = ' + String(j.raw).slice(0, 200));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/generate/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "generate",
+                "cost"
+              ]
+            },
+            "description": "FDD seção 5, linha 187: `{prompt, duration?, count?}` → `{per_track, total, raw}`; 200, 409 (CLI ausente).\nFDD seção 9, linha 319: `total = per_track * count`.\nCom o CLI instalado mas sem workspace, a implementação responde 200 com `per_track: null` e\n`total: null` (o erro do CLI vai em `raw`), em vez do 409 da seção 6, linha 244. Ver `divergencias.md`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"{{generatePrompt}}\",\n  \"duration\": 35,\n  \"count\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST generate — inicia o job (202)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status ∈ {202, 409} (FDD seção 5, linha 188)', () => pm.expect([202, 409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 202) {",
+                  "  const j = pm.response.json();",
+                  "  pm.test('job {state, done, total, added, log}', () => {",
+                  "    ['state', 'done', 'total', 'added', 'log'].forEach(k => pm.expect(j).to.have.property(k));",
+                  "  });",
+                  "  pm.test('total = count solicitado', () => pm.expect(j.total).to.eql(3));",
+                  "} else {",
+                  "  console.log('409 em generate: ' + JSON.stringify(pm.response.json().detail).slice(0, 200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "generate"
+              ]
+            },
+            "description": "FDD seção 5, linha 188: `{prompt, duration?, count?}` → job `{state, done, total, added, log}`;\n202 (job iniciado), 409 (job ativo / CLI ausente), 422 (prompt vazio, count 1..6, duration 10..120).\nSem login, o job inicia mesmo assim e cada faixa falha — `state: error`, `added: 0` (seção 6, linha 248).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"{{generatePrompt}}\",\n  \"duration\": 35,\n  \"count\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET generate/job — polling do estado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('state ∈ {idle, running, done, error}', () => pm.expect(['idle', 'running', 'done', 'error']).to.include(j.state));",
+                  "if (j.state === 'error') { console.log('job error (esperado sem login no CLI): ' + String(j.error).slice(0, 200)); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/generate/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "generate",
+                "job"
+              ]
+            },
+            "description": "FDD seção 5, linha 189: job, 200. Estados `idle → running → done | error` (seção 4, linha 153).\nSem login o job termina em `error` com `log` explicando a falha de cada faixa."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 escolha da trilha e batidas",
+      "description": "FDD seção 5, linhas 190-192; invariantes da seção 6, linhas 265-268.",
+      "item": [
+        {
+          "name": "POST select — escolhe a candidata de 120 bpm",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('contrato {selected, music, beats, warning}', () => pm.expect(j).to.have.all.keys('selected', 'music', 'beats', 'warning'));",
+                  "pm.test('selected.selected = true e id confere', () => {",
+                  "  pm.expect(j.selected.selected).to.be.true;",
+                  "  pm.expect(j.selected.id).to.eql(pm.collectionVariables.get('candidateId'));",
+                  "});",
+                  "pm.test('music = audio/music.<ext> (seção 1, Provides)', () => pm.expect(j.music).to.match(/^audio\\/music\\.(wav|mp3|m4a|ogg)$/));",
+                  "pm.collectionVariables.set('ffmpegOk', j.beats ? 'true' : 'false');",
+                  "if (j.beats) {",
+                  "  pm.test('bpm entre 60 e 200 (seção 2)', () => pm.expect(j.beats.bpm).to.be.within(60, 200));",
+                  "  pm.test('bpm da fixture de 120 bpm com erro ≤ 3 (seção 9, linha 321)', () => pm.expect(Math.abs(j.beats.bpm - 120)).to.be.at.most(3));",
+                  "  pm.test('impacts ⊆ beats com tolerância 60 ms (seção 2, linha 50)', () => {",
+                  "    j.beats.impacts.forEach(i => pm.expect(j.beats.beats.some(b => Math.abs(b - i) <= 0.06), 'impacto ' + i).to.be.true);",
+                  "  });",
+                  "  pm.test('warning nulo quando ffmpeg está presente', () => pm.expect(j.warning).to.be.null);",
+                  "} else {",
+                  "  pm.test('sem ffmpeg: warning preenchido (seção 4, linha 122)', () => pm.expect(j.warning).to.be.a('string').and.to.include('ffmpeg'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "select"
+              ]
+            },
+            "description": "FDD seção 5, linha 190: `{id, license}` → `{selected, music, beats, warning}`; 200, 404 (id), 422 (license vazia).\nSem ffmpeg: 200 com `beats: null` e `warning` preenchido (seção 4, linha 122).\nA fixture é um clique sintético de 120 bpm — a seção 9, linha 321 exige erro ≤ 3 bpm.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{candidateId}}\",\n  \"license\": \"YouTube Audio Library, 'Frost Rider', uso livre com atribuicao\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET beats — beats.json da trilha escolhida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ffmpegOk = pm.collectionVariables.get('ffmpegOk') !== 'false';",
+                  "if (!ffmpegOk) {",
+                  "  pm.test('404 — select sem ffmpeg não escreve beats.json (seção 4, linha 123)', () => pm.response.to.have.status(404));",
+                  "} else {",
+                  "  pm.test('200', () => pm.response.to.have.status(200));",
+                  "  const j = pm.response.json();",
+                  "  pm.test('campos do contrato da wave: bpm, beats, impacts, duration', () => {",
+                  "    ['bpm', 'beats', 'impacts', 'duration'].forEach(k => pm.expect(j).to.have.property(k));",
+                  "  });",
+                  "  pm.test('beats e impacts ordenados e dentro de [0, duration] (seção 6, linha 268)', () => {",
+                  "    ['beats', 'impacts'].forEach(k => {",
+                  "      const a = j[k];",
+                  "      for (let i = 1; i < a.length; i++) pm.expect(a[i]).to.be.above(a[i - 1]);",
+                  "      a.forEach(v => pm.expect(v).to.be.within(0, j.duration));",
+                  "    });",
+                  "  });",
+                  "  pm.collectionVariables.set('beatsSnapshot', JSON.stringify({ bpm: j.bpm, beats: j.beats, impacts: j.impacts, duration: j.duration }));",
+                  "  if (Object.prototype.hasOwnProperty.call(j, 'analysis_ms')) {",
+                  "    console.log('[divergência BAIXA] beats.json traz analysis_ms, campo ausente do contrato da seção 1/5');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/beats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "beats"
+              ]
+            },
+            "description": "FDD seção 5, linha 191: `beats.json`, 200; 404 se ainda não houver trilha.\nContrato consumido pela etapa 8 (`edit`), seção 5, linha 229.\nGuarda o corpo em `beatsSnapshot` para o teste de determinismo do request seguinte."
+          }
+        },
+        {
+          "name": "POST beats — recalcula e confere determinismo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ffmpegOk = pm.collectionVariables.get('ffmpegOk') !== 'false';",
+                  "if (!ffmpegOk) {",
+                  "  pm.test('409 — ffmpeg ausente no recompute (seção 6, linha 250)', () => pm.response.to.have.status(409));",
+                  "} else {",
+                  "  pm.test('200', () => pm.response.to.have.status(200));",
+                  "  const j = pm.response.json();",
+                  "  const prev = pm.collectionVariables.get('beatsSnapshot');",
+                  "  pm.test('determinismo: mesmo bpm/beats/impacts/duration (seção 9, linha 326)', () => {",
+                  "    pm.expect(JSON.stringify({ bpm: j.bpm, beats: j.beats, impacts: j.impacts, duration: j.duration })).to.eql(prev);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/beats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "beats"
+              ]
+            },
+            "description": "FDD seção 5, linha 192: `{k?}` → `beats.json`; 200, 404 (sem trilha), 409 (ffmpeg ausente).\nFDD seção 9, linha 326: `analyze` é determinístico — duas execuções produzem o mesmo resultado.\nA comparação ignora `analysis_ms`, que varia por ser tempo de parede (ver `divergencias.md`).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"k\": 1.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST select — troca para a segunda candidata",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('a selecionada agora é a segunda candidata', () => pm.expect(j.selected.id).to.eql(pm.collectionVariables.get('candidateId2')));",
+                  "pm.test('music.* regravado', () => pm.expect(j.music).to.match(/^audio\\/music\\.(wav|mp3|m4a|ogg)$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "select"
+              ]
+            },
+            "description": "FDD seção 4, linha 128 e seção 9, linha 322: trocar de trilha regrava `music.*` e `beats.json`;\nsó uma candidata fica com `selected: true`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{candidateId2}}\",\n  \"license\": \"Artlist, 'Neon Drift', licenca comercial declarada pelo produtor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET candidates — invariante: exatamente uma selecionada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const sel = pm.response.json().filter(c => c.selected);",
+                  "pm.test('exatamente 1 selected = true', () => pm.expect(sel).to.have.lengthOf(1));",
+                  "pm.test('é a segunda candidata', () => pm.expect(sel[0].id).to.eql(pm.collectionVariables.get('candidateId2')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "candidates"
+              ]
+            },
+            "description": "FDD seção 6, linha 265: no máximo uma candidata com `selected: true`; `audio/music.*` existe se e só se alguma está selecionada."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 erros (matriz da seção 6)",
+      "description": "Um request por linha da matriz de erros da seção 6 que se materializa como status HTTP em rota concreta.",
+      "item": [
+        {
+          "name": "404 — pid inexistente em GET prompt",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('detail nomeia o projeto', () => pm.expect(pm.response.json().detail).to.include('pid-que-nao-existe-999'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/pid-que-nao-existe-999/music/prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "pid-que-nao-existe-999",
+                "music",
+                "prompt"
+              ]
+            },
+            "description": "FDD seção 5, linha 159 e seção 6, linha 240: `pid` inválido/inexistente → `KeyError` → 404 (núcleo, `project_dir`)."
+          }
+        },
+        {
+          "name": "404 — pid inexistente em GET candidates",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/pid-que-nao-existe-999/music/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "pid-que-nao-existe-999",
+                "music",
+                "candidates"
+              ]
+            },
+            "description": "FDD seção 6, linha 240."
+          }
+        },
+        {
+          "name": "422 — upload sem arquivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));",
+                  "pm.test('detail aponta o campo files', () => pm.expect(JSON.stringify(pm.response.json())).to.include('files'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD seção 5, linha 184: 422 (sem arquivo). Validação do FastAPI sobre `files: list[UploadFile] = File(...)`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": []
+            }
+          }
+        },
+        {
+          "name": "413 — upload acima de 25 MB [requer fixtures/make-fixtures.sh]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('413', () => pm.response.to.have.status(413));",
+                  "pm.test('detail cita o limite de 25 MB', () => pm.expect(pm.response.json().detail).to.include('25 MB'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD seção 5, linha 184 e seção 6, linha 241: upload > 25 MB → 413 (`MAX_UPLOAD_BYTES`).\nDepende de `fixtures/oversize-26mb.wav`, que NÃO é versionado (26 MB).\nGere antes com `bash fixtures/make-fixtures.sh`, senão o newman falha com \"file not found\".",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": "/home/arthu/code/senhortecnologia/orquestrador-studio-worktrees/os-007-music/docs/domains/music/postman/fixtures/oversize-26mb.wav"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "404 — import/downloads com pasta inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('mensagem traz o caminho (seção 6, linha 243)', () => pm.expect(pm.response.json().detail).to.include('/tmp/pasta-de-downloads-que-nao-existe-xyz'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/import/downloads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "import",
+                "downloads"
+              ]
+            },
+            "description": "FDD seção 5, linha 185 e seção 6, linha 243: `FileNotFoundError` → 404 com o caminho na mensagem.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder\": \"/tmp/pasta-de-downloads-que-nao-existe-xyz\",\n  \"since_minutes\": 120\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "422 — select com license vazia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "select"
+              ]
+            },
+            "description": "FDD seção 5, linha 190 e seção 6, linha 252: `license` vazia → 422 (\"a aula exige saber a origem\"). Barrado pelo Pydantic (`min_length=1`).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{candidateId}}\",\n  \"license\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "422 — select com license só de espaços",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));",
+                  "pm.test('detail é a mensagem do serviço', () => pm.expect(String(pm.response.json().detail)).to.include('licen'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "select"
+              ]
+            },
+            "description": "Mesma linha da seção 6 (252), mas caindo na regra de negócio do serviço (`ValueError` → 422), não no Pydantic.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{candidateId}}\",\n  \"license\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "404 — select de id inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('detail nomeia a candidata', () => pm.expect(pm.response.json().detail).to.include('candidata-inexistente-000'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "select"
+              ]
+            },
+            "description": "FDD seção 5, linha 190 e seção 6, linha 253: `FileNotFoundError` → 404.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"candidata-inexistente-000\",\n  \"license\": \"qualquer origem declarada\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "422 — generate com prompt vazio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "generate"
+              ]
+            },
+            "description": "FDD seção 5, linha 188: 422 (prompt vazio).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"\",\n  \"duration\": 35,\n  \"count\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "422 — generate com count fora de 1..6",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));",
+                  "pm.test('detail aponta count', () => pm.expect(JSON.stringify(pm.response.json())).to.include('count'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "generate"
+              ]
+            },
+            "description": "FDD seção 5, linha 188: 422 (count 1..6).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"icy neon, cinematic, strong beats, no vocals\",\n  \"count\": 9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "422 — generate com duration fora de 10..120",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));",
+                  "pm.test('detail aponta duration', () => pm.expect(JSON.stringify(pm.response.json())).to.include('duration'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "generate"
+              ]
+            },
+            "description": "FDD seção 5, linha 188: 422 (duration 10..120).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"icy neon, cinematic, strong beats, no vocals\",\n  \"duration\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "404 — GET beats sem trilha escolhida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('detail explica que falta escolher a trilha', () => pm.expect(String(pm.response.json().detail)).to.include('beats.json'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidVazio}}/music/beats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidVazio}}",
+                "music",
+                "beats"
+              ]
+            },
+            "description": "FDD seção 5, linha 191: 404 (ainda sem trilha). Usa o projeto vazio criado no setup."
+          }
+        },
+        {
+          "name": "404 — POST beats sem trilha escolhida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('detail cita a ausência de trilha', () => pm.expect(String(pm.response.json().detail)).to.include('trilha'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidVazio}}/music/beats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidVazio}}",
+                "music",
+                "beats"
+              ]
+            },
+            "description": "FDD seção 5, linha 192: 404 (sem trilha).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"k\": 1.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "422 — POST beats com k fora de 0..6 [não declarado na seção 5]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 (comportamento da implementação, não declarado no FDD)', () => pm.response.to.have.status(422));",
+                  "pm.test('detail aponta k', () => pm.expect(JSON.stringify(pm.response.json())).to.include('\"k\"'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/beats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "beats"
+              ]
+            },
+            "description": "A seção 5, linha 192 declara apenas `{k?}` e os status 200/404/409 para esta rota.\nA implementação valida `k` com `Field(1.5, ge=0.0, le=6.0)` e devolve 422 fora da faixa.\nComportamento real verificado, mas sem respaldo no FDD — ver `divergencias.md` (MEDIA).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"k\": 99\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "409 — criar projeto com nome já existente (núcleo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('detail diz que o projeto já existe', () => pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('já existe'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
+            "description": "Rota do núcleo, não da seção 5. Entra aqui porque o setup depende dela: repetir o `name` do\nprojeto principal devolve 409 \"Projeto já existe\" — por isso o setup sorteia um sufixo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{projectName}}\",\n  \"product\": \"energy drink\",\n  \"vibe\": \"icy neon\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8771",
+      "type": "string"
+    },
+    {
+      "key": "pid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pidVazio",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "projectName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "projectNameVazio",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "candidateId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "candidateId2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "generatePrompt",
+      "value": "icy neon energy drink, cinematic, strong beats, no vocals",
+      "type": "string"
+    },
+    {
+      "key": "beatsSnapshot",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ffmpegOk",
+      "value": "true",
+      "type": "string"
+    },
+    {
+      "key": "downloadsFolder",
+      "value": "/home/arthu/code/senhortecnologia/orquestrador-studio-worktrees/os-007-music/docs/domains/music/postman/fixtures/downloads-scan",
+      "type": "string"
+    }
+  ]
+}

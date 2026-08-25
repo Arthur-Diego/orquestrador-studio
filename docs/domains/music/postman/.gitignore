@@ -1,0 +1,11 @@
+# As fixtures de audio NAO sao versionadas: o .gitignore da raiz do repo ja exclui
+# *.wav/*.mp3/*.m4a (politica de "nenhuma midia no git"), e nao cabe a esta pasta furar isso.
+# Todas sao geradas por fixtures/make-fixtures.sh, que e pre-requisito do `newman run`.
+fixtures/oversize-26mb.wav
+fixtures/downloads-scan/
+
+# environment com caminho absoluto da máquina; gerado por fixtures/make-fixtures.sh
+music.postman_environment.local.json
+
+# fixtures de áudio geradas pelo script (o .gitignore da raiz já exclui *.wav)
+fixtures/downloads-scan/
