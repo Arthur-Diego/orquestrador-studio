@@ -40,7 +40,7 @@ com Instagram ou rede social; nenhuma automação de envio.
 
 ### 2. Objetivos técnicos
 
-- Gate determinístico: `gate(root)` devolve `ok = len(publish/log.json) >= 4`; arquivo ausente ou inválido conta como 0. Invariante: nenhuma escrita em `prospect/` acontece com `ok == False`.
+- Gate determinístico: `gate(root)` devolve `ok = <vídeos DISTINTOS em publish/log.json> >= 4` — conta os valores distintos do campo `video`, não o número de entradas (**decisão 1 da wave 1**: "4 vídeos", não "4 posts"; o mesmo vídeo publicado em 4 redes não abre o gate). Arquivo ausente, ilegível ou inválido conta como 0. Invariante: nenhuma escrita em `prospect/` acontece com `ok == False`.
 - DM literal: `dm_text(lead)` produz exatamente o script do instrutor com quatro substituições (`[nome]`, `[fã/consumidor]`, `[X]`, `[empresas/marcas]`) e nenhuma URL (`http`, `www.` e `.com` ausentes no resultado; teste de regressão).
 - Teaser: `prospect/teasers/<lead>.mp4` com duração entre 5 e 10 s (tolerância ±0,25 s no `probe`), `has_audio == True`, H.264 + AAC, gerado por um único job por projeto (`JobRegistry`, chave `pid`).
 - Contador: `today_sent(leads)` conta leads com `sent_at` na data local de hoje; limite fixo 10; nunca bloqueia (aviso apenas).
@@ -150,10 +150,12 @@ Todas as rotas vivem em `studio/etapas/prospect/router.py`, prefixo `/api/projec
 
 **Exemplo de resposta**
 ```json
-{"published": 2, "required": 4, "ok": false,
+{"published": 2, "posts": 3, "required": 4, "ok": false,
  "message": "A aula manda publicar 4 vídeos criativos antes de prospectar. Você tem 2/4.",
  "today_sent": 0, "daily_limit": 10}
 ```
+`published` = vídeos distintos (o que abre o gate); `posts` = entradas do log (o mesmo vídeo em várias redes).
+Com o gate aberto, `message` vira `"Portfólio pronto: N vídeos publicados. Pode prospectar."`.
 
 **Leads (listar e criar)**
 - Tipo: endpoint
@@ -467,3 +469,37 @@ Limites: payload JSON ≤ 64 KB (campos de texto do lead ≤ 2.000 caracteres ca
 - Nenhuma divergência com contrato publicado: o domínio `prospect` não tem `contratos.md` nem `openapi.yaml` prévios.
 - Confirmar no lote os auto-aceites desta feature: campos aditivos `role` e `call_note`; `[empresas/marcas]` fixado em "marcas"; `why` fora da DM; limite 10/dia como aviso e não trava; teaser só a partir de take + trilha existentes (sem CLI); `duration` default 8 s; colunas da tabela do pitch.
 - Reparo automático de `leads.json` corrompido ficou fora (só log); decidir se entra depois.
+
+---
+
+### 10. Divergências e adições da implementação (OS-011)
+
+Registradas no fechamento da frente; todas aditivas e cobertas por teste.
+
+| # | Ponto | O que foi implementado | Por quê |
+| --- | --- | --- | --- |
+| 1 | Gate | conta vídeos **distintos** do campo `video`, não `len(log)` | **decisão 1 da wave 1** prevalece sobre a seção 2 original |
+| 2 | `GET .../prospect/gate` | ganha o campo `posts` (entradas do log) ao lado de `published` | deixa visível a diferença entre 4 posts e 4 vídeos |
+| 3 | `GET .../prospect/leads` | devolve também `by_status` (seção 7) e `gate` | a UI decide em uma chamada só se mostra os painéis |
+| 4 | `POST .../leads/{lid}/replied` | 422 quando o lead ainda não tem `sent_at` | invariante da seção 6 ("`replied` só é `true` a partir de `dm_sent`") explicitada como erro |
+| 5 | `POST .../leads/{lid}/teaser` | a checagem de job em andamento (409) vem **antes** da busca do take e da trilha (404) | clicar duas vezes devolve "já existe um trabalho em andamento", não "Etapa 6 sem takes" |
+| 6 | teaser (trilha) | o corte da música usa `-stream_loop -1` | garante o teaser com música mesmo se a trilha for mais curta que a duração pedida; sem isso o `-shortest` do mux encurtaria o vídeo abaixo de 5 s |
+| 7 | `find_music` | aceita `music.{wav,mp3,m4a,ogg}` | mesma lista de `common/ingest.MEDIA_EXT["audio"]`; a wave fixa `wav`/`mp3`, os outros são aditivos |
+| 8 | `GET .../prospect/pitch` | com o gate fechado devolve o markdown mas **não** grava `pitch.md`; grava a partir da primeira leitura com o gate aberto | a seção 5 diz "GET gera o arquivo se não existir" e a seção 6 proíbe escrita em `prospect/` com o gate fechado; a leitura continua livre |
+| 9 | `PUT .../leads/{lid}` | aceita também `handle` (com checagem de duplicado); o `id` do lead nunca muda | corrigir um `@` digitado errado sem perder o histórico do lead |
+
+### 11. Pendências para a integração (W5)
+
+- `[cross-feature]` O gate lê `publish/log.json` **direto do arquivo**. Quando `publish` (OS-010) estiver
+  integrado e expuser `distinct_videos`, avaliar se `prospect` deve consumir o serviço em vez do arquivo.
+  Enquanto isso, as duas pontas precisam concordar no schema `[{id, video, ...}]`.
+- `[cross-feature]` Teaser com take real de `animate/takes.json` (OS-006) e `audio/music.*` real (OS-007):
+  aqui foi validado com fixtures geradas por ffmpeg (`make_video`/`make_audio`) e com um smoke no navegador.
+- O HLD do domínio `studio` (`docs/domains/studio/hld.md`) ainda não cita a etapa 11: é artefato único
+  compartilhado entre as frentes da wave e só pode ser editado na integração (W5) — bump de versão +
+  parágrafo da fatia `prospect`.
+- `.claude/skills/ft-pr` é um symlink para `.agents/skills/ft-pr`, que não existe no repositório (falha
+  pré-existente, fora do escopo desta frente). O gate `.agents/gates/ft-pr.md` foi cumprido diretamente.
+- Sugestão não implementada (fora da aula 001): o `plano-higgsfield` §2 propõe gerar o teaser por CLI
+  (`kling3_0 5s` + `sonilo_music 8s`). A wave fixou "take de animate + trilha da etapa 7", que não gasta
+  crédito nem exige login. Fica como sugestão, nunca como implementação silenciosa.
