@@ -19,6 +19,6 @@ test: ## Roda a suíte de testes
 	. .venv/bin/activate && pytest
 
 lint: ## Lint com ruff
-	. .venv/bin/activate && ruff check studio tests
+	. .venv/bin/activate && ruff check studio tests scripts
 
 verify: lint test ## Lint + testes (o que o CI roda)

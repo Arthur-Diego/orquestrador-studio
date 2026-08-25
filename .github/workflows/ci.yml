@@ -31,7 +31,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
-        run: ruff check studio tests
+        run: ruff check studio tests scripts
 
       - name: Testes (pytest)
         # Sem rede e sem navegador: os testes cobrem serviços, API e ponte do CLI com fakes.
