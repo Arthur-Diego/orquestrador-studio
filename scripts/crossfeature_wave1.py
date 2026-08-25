@@ -10,7 +10,9 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import sys
+import time
 from pathlib import Path
 
 os.environ.setdefault("STUDIO_PROJECTS", str(Path.cwd() / "projects"))
@@ -91,7 +93,8 @@ r = api("get", f"/api/projects/{PID}/animate/shots")
 plan = r.json()
 shots_plan = plan.get("shots", plan) if isinstance(plan, dict) else plan
 check("animate: plano lido do storyboard.json real", r.status_code == 200 and len(shots_plan) >= 2, str(plan)[:160])
-tmp = Path("/tmp/claude-1000/wave-cf"); tmp.mkdir(parents=True, exist_ok=True)
+tmp = Path("/tmp/claude-1000/wave-cf")
+tmp.mkdir(parents=True, exist_ok=True)
 if ff.available():
     vid = tmp / "take.mp4"
     ff.run(["-f", "lavfi", "-i", "testsrc=size=320x240:rate=30", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "6", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(vid)])
@@ -124,7 +127,6 @@ if ff.available():
     check("edit: timeline inicial a partir de takes.json real", r.status_code == 200 and len(r.json().get("timeline", r.json()).get("clips", [])) >= 1, str(r.json())[:160])
     api("post", f"/api/projects/{PID}/edit/propose-cuts", json={"apply": True}, expect=(200, 201, 422))
     r = api("post", f"/api/projects/{PID}/edit/render", json={"target": "master"}, expect=(200, 201, 202))
-    import time
     for _ in range(90):
         j = api("get", f"/api/projects/{PID}/edit/render/job").json()
         if j.get("state") in ("done", "error", "idle"):
@@ -159,7 +161,7 @@ if ff.available():
     g = api("get", f"/api/projects/{PID}/prospect/gate").json()
     check("prospect: gate fechado com 3 vídeos distintos", g.get("ok") is False, str(g))
     # publica um 4º vídeo distinto para abrir o gate
-    import shutil; shutil.copy2(ROOT / "export" / "9x16.mp4", ROOT / "export" / "teaser.mp4")
+    shutil.copy2(ROOT / "export" / "9x16.mp4", ROOT / "export" / "teaser.mp4")
     api("post", f"/api/projects/{PID}/publish/log", json={"video": "teaser.mp4", "network": "instagram", "url": "https://example.com/p9", "note": "teaser"}, expect=(200, 201))
     g = api("get", f"/api/projects/{PID}/prospect/gate").json()
     check("prospect: gate aberto com 4 vídeos distintos", g.get("ok") is True, str(g))
