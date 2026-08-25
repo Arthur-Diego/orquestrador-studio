@@ -19,3 +19,14 @@ def test_project_layout_mirrors_course_folders(studio_env):
     from studio.config import PROJECT_LAYOUT
     for folder in ("refs/brainstorming", "images", "videos", "audio", "mood"):
         assert folder in PROJECT_LAYOUT
+
+
+def test_plugins_are_discovered_and_serve_assets(client):
+    from studio.etapas import discover
+    plugins = discover()
+    assert set(plugins) == {"refs", "mood"}
+    for sid in plugins:
+        assert client.get(f"/steps/{sid}/view.html").status_code == 200
+        assert client.get(f"/steps/{sid}/view.js").status_code == 200
+    assert client.get("/steps/base/view.html").status_code == 404
+    assert client.get("/steps/refs/secret.txt").status_code == 404
