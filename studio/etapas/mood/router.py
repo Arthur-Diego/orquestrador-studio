@@ -14,12 +14,25 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 class MoodGenReq(BaseModel):
+    """Pedido de geração via CLI.
+
+    `use_style_refs` (aula 009, M2): manda as **imagens de vibe** escolhidas — e a candidata marcada
+    como "melhor do grid" (`best_id`) — como referência de estilo. As referências do Pinterest da
+    etapa 1 não são mais enviadas. `use_refs` continua aceito como alias depreciado.
+    """
     model: str = "nano_banana_2"
     prompts: list[str]
     aspect_ratio: str = "16:9"
     resolution: str = "2k"
     count: int = 2
-    use_refs: bool = True
+    use_style_refs: bool | None = None
+    use_refs: bool = True                    # alias depreciado de use_style_refs
+    vibe_ids: list[str] = []
+    best_id: str | None = None
+
+    @property
+    def style_refs(self) -> bool:
+        return self.use_refs if self.use_style_refs is None else self.use_style_refs
 
 
 class MoodSelectReq(BaseModel):
@@ -33,8 +46,9 @@ class DownloadsReq(BaseModel):
 
 
 @router.get("/api/projects/{pid}/mood/prompts")
-def mood_prompts(pid: str, model: str = "nano_banana_2", variation: int = 0):
-    return mood.suggest_prompts(pid, model, variation)
+def mood_prompts(pid: str, model: str = "nano_banana_2", variation: int = 0,
+                 no_people: bool = True, explore_prompt: str = ""):
+    return mood.suggest_prompts(pid, model, variation, no_people, explore_prompt)
 
 
 class PromptGenReq(BaseModel):
@@ -46,6 +60,11 @@ class PromptGenReq(BaseModel):
     reference: str = ""
     model: str = "nano_banana_2"
     variation: int = 0
+    #: Única restrição que a aula 009 enuncia ("não tenho nenhum interesse em pessoas"): sugerida,
+    #: nunca silenciosa. Produto/texto/logo NÃO são proibidos (o mood da aula tem a lata).
+    no_people: bool = True
+    #: "Copiar o prompt dessa pessoa" (Explore do Midjourney): base do prompt de vibe.
+    explore_prompt: str = ""
 
 
 @router.get("/api/projects/{pid}/mood/vibe")
@@ -77,7 +96,7 @@ def mood_vibe_downloads(pid: str, req: DownloadsReq):
 def mood_prompt_generate(pid: str, req: PromptGenReq):
     try:
         return mood.generate_prompt(pid, req.mode, req.instruction, req.image_ids, req.purpose, req.tone,
-                                    req.reference, req.model, req.variation)
+                                    req.reference, req.model, req.variation, req.no_people, req.explore_prompt)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except RuntimeError as e:
@@ -143,10 +162,14 @@ def mood_cost(pid: str, req: MoodGenReq):
 def mood_generate(pid: str, req: MoodGenReq):
     if not hf.available():
         raise HTTPException(409, "CLI da Higgsfield não instalado")
-    root = refs.project_dir(pid)
-    ref_files = [str(p) for p in sorted((root / "refs" / "brainstorming").glob("*.jpg"))[:6]] if req.use_refs else None
+    refs.project_dir(pid)
     try:
-        return mood.start_generate(pid, req.model, req.prompts, req.aspect_ratio, req.resolution, req.count, ref_files)
+        ref_files = mood.style_reference_files(pid, req.vibe_ids, req.best_id) if req.style_refs else None
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    try:
+        return mood.start_generate(pid, req.model, req.prompts, req.aspect_ratio, req.resolution, req.count,
+                                   ref_files or None)
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
 

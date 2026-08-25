@@ -60,8 +60,41 @@ def test_errors_are_runtime_errors(monkeypatch):
 
 
 def test_fallback_template_and_mood_rules():
+    """Aula 009: o mood board TEM o produto. Só "sem pessoas" é regra — e é escolha do usuário."""
     t = prompter.fallback_template("mood", {"product": "energy drink", "vibe": "snow neon"}, 1)
-    assert t["source"] == "template" and "No product" in t["prompt"] and "stronger stylization" in t["prompt"]
+    assert t["source"] == "template" and "stronger stylization" in t["prompt"]
+    low = t["prompt"].lower()
+    assert "no product" not in low and "no logos" not in low and "no text" not in low
+    assert "No people." in t["prompt"], "sugestão da aula, marcada por padrão"
+
+    sem_regra = prompter.fallback_template("mood", {"product": "energy drink"}, 1, no_people=False)
+    assert "no people" not in sem_regra["prompt"].lower()
+
     fixed = prompter.enforce_mood_rules({"prompt": "Blue snow at dusk"})
-    assert "No product" in fixed["prompt"] and "No people" in fixed["prompt"] and "No text" in fixed["prompt"]
-    assert prompter.enforce_mood_rules({"prompt": "x. No product, no people, no text."})["prompt"].count("No product") == 1
+    assert "No people" in fixed["prompt"] and "No product" not in fixed["prompt"]
+    assert prompter.enforce_mood_rules({"prompt": "x. No people."})["prompt"].count("No people") == 1
+    intacto = prompter.enforce_mood_rules({"prompt": "Blue snow at dusk"}, no_people=False)
+    assert intacto["prompt"] == "Blue snow at dusk", "nada entra no prompt sem o usuário pedir"
+
+
+def test_mood_role_does_not_forbid_the_product():
+    """M1: o papel do bot não pode mandar 'NO product/NO text/NO logos' (a aula não manda)."""
+    role = prompter.ROLES["mood"].lower()
+    assert "no product" not in role and "no logos" not in role and "no text" not in role
+    assert "one single vibe" in role
+
+
+def test_style_variants_have_a_single_source():
+    """M8: a lista de variações de estilização vive só aqui (os módulos são reimportados
+    por `studio_env`, então compare instâncias vindas do mesmo estado de importação)."""
+    from studio.common import prompter as pr
+    from studio.mood import service as mood
+    assert mood._STYLE_VARIANTS is pr.STYLE_VARIANTS
+    assert pr._STYLE_VARIANTS is pr.STYLE_VARIANTS
+
+
+def test_explore_prompt_becomes_the_base_of_the_vibe_prompt():
+    """M3: 'copiar o prompt dessa pessoa' (Explore) — o prompt colado é a base."""
+    t = prompter.fallback_template("mood", {"product": "soda", "explore_prompt": "Neon snowfield at dusk"}, 1)
+    assert t["prompt"].startswith("Neon snowfield at dusk.")
+    assert "stronger stylization" in t["prompt"]

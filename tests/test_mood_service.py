@@ -1,4 +1,8 @@
-"""Etapa 2 — o mood board segue a aula 009: UMA vibe, sem produto/pessoas; import e paleta."""
+"""Etapa 2 — o mood board segue a aula 009: UMA vibe encontrada, grid de 4, teto de 8.
+
+Fidelidade (auditoria da wave 2, §2): o mood da aula **tem** o produto; "sem pessoas" é sugestão
+do usuário, não injeção silenciosa; a referência de estilo do CLI são as imagens de vibe.
+"""
 import json
 
 import pytest
@@ -13,14 +17,35 @@ def project(studio_env):
     return meta["id"]
 
 
-def test_mood_prompt_is_single_vibe_without_product(studio_env, project):
+def test_mood_prompt_is_single_vibe_and_does_not_forbid_the_product(studio_env, project):
+    """M1 (teste invertido): a aula não proíbe produto/texto/logo no mood — só sugere "sem pessoas"."""
     mood = studio_env["mood"]
     r = mood.suggest_prompts(project)
     assert len(r["prompts"]) == 1, "aula 009: um prompt de vibe, gerado em grid de 4"
     text = r["prompts"][0]["text"].lower()
-    assert "no product" in text and "no people" in text and "no text" in text
+    assert "no product" not in text and "no logos" not in text and "no text" not in text
+    assert "no people" in text, "sugestão da aula, marcada por padrão"
     assert "snow neon" in text and "energy drink" in text
-    assert r["aspect_ratio"] == "16:9"
+    assert r["aspect_ratio"] == "16:9" and r["no_people"] is True
+
+    sem_regra = mood.suggest_prompts(project, no_people=False)["prompts"][0]["text"].lower()
+    assert "no people" not in sem_regra, "desmarcado, nada é injetado"
+
+
+def test_mood_prompt_hint_is_honest_about_studio_choices(studio_env, project):
+    """M10/G10/G8: 2K/16:9 é sugestão do Studio; o plano chama-se Ultimate; estilização no meio-termo."""
+    hint = studio_env["mood"].suggest_prompts(project)["ui_hint"]
+    assert "sugestão" in hint and "Ultimate" in hint and "Ultra ·" not in hint
+    assert "meio-termo" in hint
+
+
+def test_mood_prompt_can_start_from_the_explore_prompt(studio_env, project):
+    """M3: o prompt copiado do Explore é a base; só a estilização é acrescentada."""
+    mood = studio_env["mood"]
+    r = mood.suggest_prompts(project, variation=1, explore_prompt="Neon snowfield at dusk")
+    text = r["prompts"][0]["text"]
+    assert text.startswith("Neon snowfield at dusk.") and "stronger stylization" in text
+    assert r["explore_prompt"] == "Neon snowfield at dusk"
 
 
 def test_mood_prompt_variations_change_only_style(studio_env, project):
@@ -31,7 +56,8 @@ def test_mood_prompt_variations_change_only_style(studio_env, project):
     assert a.split("Wide establishing")[0] == b.split("Wide establishing")[0], "a vibe (parte inicial) não muda"
 
 
-def test_mood_prompt_ignores_pinterest_ui_alt_text(studio_env, project):
+def test_mood_prompt_does_not_carry_the_pinterest_terms(studio_env, project):
+    """M4: a vibe é escolhida pelo sentimento — os termos da etapa 1 ficam para a etapa 3."""
     from studio.refs import pinterest
     from studio.refs import service as refs
     mood = studio_env["mood"]
@@ -41,7 +67,8 @@ def test_mood_prompt_ignores_pinterest_ui_alt_text(studio_env, project):
                                                          url="u", pin_url=None, alt="Salvar Pins", file="a.jpg",
                                                          thumb="thumbs/a.jpg", selected=True)])
     text = mood.suggest_prompts(project)["prompts"][0]["text"]
-    assert "Salvar Pins" not in text and "energy drink snow ads" in text
+    assert "Salvar Pins" not in text and "energy drink snow ads" not in text
+    assert mood.refs_terms(project) == ["energy drink snow ads"], "os termos seguem disponíveis"
 
 
 def test_import_downloads_only_recent_images(studio_env, project):
@@ -74,10 +101,55 @@ def test_select_writes_palette_and_md_and_caps_at_eight(studio_env, project):
     assert r["selected"] == 3 and len(r["palette"]) >= 1 and all(c.startswith("#") for c in r["palette"])
     root = studio_env["refs"].project_dir(project)
     assert len(list((root / "mood" / "selected").iterdir())) == 3
-    assert json.loads((root / "mood" / "palette.json").read_text())["note"] == "neve, neon, silêncio"
-    assert "Mood board" in (root / "mood" / "mood.md").read_text()
+    pal = json.loads((root / "mood" / "palette.json").read_text())
+    assert pal["note"] == "neve, neon, silêncio"
+    assert len(pal["by_file"]) == 3, "paleta por imagem alimenta a validação 'mesmo mood' do guia"
+    md = (root / "mood" / "mood.md").read_text()
+    assert "Mood board" in md
+    assert "[extensão]" in md, "M5: a paleta é derivado técnico do Studio, não da aula"
     with pytest.raises(ValueError):
         mood.select(project, ids[:9])
+
+
+def test_select_records_the_vibe_in_the_project(studio_env, project):
+    """G2: a aula encontra a vibe na etapa 2 — é aqui que ela é gravada no projeto."""
+    mood = studio_env["mood"]
+    refs = studio_env["refs"]
+    mood.import_upload(project, [("a.png", image_bytes())])
+    ids = [c["id"] for c in mood.load(project)]
+    r = mood.select(project, ids, note="neve, neon, silêncio")
+    assert r["vibe"] == "neve, neon, silêncio"
+    meta = json.loads((refs.project_dir(project) / "project.json").read_text())
+    assert meta["vibe"] == "neve, neon, silêncio"
+    assert meta["product"] == "energy drink", "os outros campos ficam intactos"
+    mood.select(project, ids)   # sem note: não apaga a vibe já encontrada
+    assert json.loads((refs.project_dir(project) / "project.json").read_text())["vibe"] == "neve, neon, silêncio"
+
+
+def test_style_references_are_the_vibe_images_not_the_pinterest_refs(studio_env, project):
+    """M2: 1ª rodada = imagem de vibe; 2ª rodada = a melhor do grid como referência de estilo."""
+    mood = studio_env["mood"]
+    root = studio_env["refs"].project_dir(project)
+    make_image(root / "refs" / "brainstorming" / "pin.jpg")
+    mood.vibe_import_upload(project, [("v1.png", image_bytes(color=(0, 90, 200))),
+                                      ("v2.png", image_bytes(color=(9, 9, 9)))])
+    vids = [c["id"] for c in mood.vibe_images(project)]
+    mood.import_upload(project, [("grid.png", image_bytes(color=(200, 10, 10)))])
+    best = mood.load(project)[0]["id"]
+
+    todas = mood.style_reference_files(project)
+    assert len(todas) == 2 and all("mood/vibe/candidates" in f for f in todas)
+    assert not any("brainstorming" in f for f in todas), "as referências do Pinterest não vão ao CLI"
+
+    uma = mood.style_reference_files(project, [vids[0]])
+    assert len(uma) == 1
+
+    segunda_rodada = mood.style_reference_files(project, [vids[0]], best)
+    assert len(segunda_rodada) == 2 and segunda_rodada[-1].endswith(".png")
+    assert "mood/candidates" in segunda_rodada[-1]
+
+    with pytest.raises(ValueError):
+        mood.style_reference_files(project, [vids[0]], "nao-existe")
 
 
 def test_select_over_cap_keeps_previous_selection(studio_env, project):
@@ -113,7 +185,7 @@ def test_generate_prompt_modes_and_history(studio_env, project, monkeypatch):
     from studio.common import prompter
     # template não precisa de Claude
     t = mood.generate_prompt(project, "template", variation=2)
-    assert t["source"] == "template" and t["mode"] == "template" and "No product" in t["prompt"]
+    assert t["source"] == "template" and t["mode"] == "template" and "No product" not in t["prompt"]
     # sem Claude, brief/images → RuntimeError (409 na API)
     monkeypatch.setattr(prompter, "BIN", None)
     with pytest.raises(RuntimeError):
@@ -129,7 +201,9 @@ def test_generate_prompt_modes_and_history(studio_env, project, monkeypatch):
     monkeypatch.setattr(prompter, "from_images", fake_from_images)
     r = mood.generate_prompt(project, "images", "bastante neon", [vid])
     assert seen["kind"] == "mood" and seen["images"][0].endswith(".png") and seen["instruction"] == "bastante neon"
-    assert seen["brief"]["product"] == "energy drink" and "No product" in r["prompt"] and r["images"] == [vid]
+    assert seen["brief"]["product"] == "energy drink" and r["images"] == [vid]
+    assert "No people" in r["prompt"] and "No product" not in r["prompt"], "M1"
+    assert "hints" not in seen["brief"], "M4: o brief do mood não carrega os termos do Pinterest"
     with pytest.raises(ValueError):
         mood.generate_prompt(project, "images", "x", [])
     with pytest.raises(ValueError):

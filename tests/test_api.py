@@ -67,7 +67,9 @@ def test_mood_prompter_endpoints(client, monkeypatch):
     monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
     monkeypatch.setattr(prompter, "from_brief", lambda kind, brief: {"prompt": "Icy", "negative": "", "camera": "", "notes_pt": "", "source": "claude", "seconds": 2})
     r = client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "brief", "tone": "épico"})
-    assert r.status_code == 200 and r.json()["source"] == "claude" and "No product" in r.json()["prompt"]
+    # Aula 009: o mood pode ter o produto — só "sem pessoas" é acrescentado, e por escolha do usuário.
+    assert r.status_code == 200 and r.json()["source"] == "claude" and "No people" in r.json()["prompt"]
+    assert "No product" not in r.json()["prompt"]
     t = client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "template"}).json()
     assert t["source"] == "template"
     assert len(client.get(f"/api/projects/{pid}/mood/prompts/history").json()) == 2
