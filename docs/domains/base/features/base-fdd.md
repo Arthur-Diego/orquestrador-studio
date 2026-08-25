@@ -474,3 +474,77 @@ título "Imagem base", produto, `Marca [extensão]: <name>: <description>`, tabe
 | 5 | Custo e geração via CLI (job) para os 3 `kind` | 4 | `studio/base/service.py`, `studio/etapas/base/router.py`, `tests/test_base_service.py`, `tests/test_base_api.py` | cost; generate situation/label/upscale; 409 concorrente; falha parcial |
 | 6 | UI completa (prompts, brand, import, galeria por kind, select, CLI com cost/confirm) | 5 | `studio/etapas/base/view.html`, `studio/etapas/base/view.js` | view com seções da aula; botão CLI desabilitado sem login |
 | 7 | Lint/testes finais e final report com auto-aceites | 6 | `tests/test_base_service.py`, `tests/test_base_api.py` | ruff + pytest verdes; `[cross-feature]` registrados como limite |
+
+---
+
+### 12. Notas de implementação (frente OS-003, 2026-08-25)
+
+Implementação **direta** (decisão 15 do lote da wave 1 — sem pipeline SDD), na ordem do Build Order
+da seção 11. Entregues: `studio/etapas/base/{__init__,router,view.html,view.js}.py|html|js`,
+`studio/base/{__init__,service}.py`, `tests/test_base_service.py` (16 testes),
+`tests/test_base_api.py` (10 testes), `docs/domains/base/hld.md` e
+`docs/domains/base/diagrams/mermaid/fluxo-imagem-base.md`. Nenhum arquivo único foi tocado.
+
+Decisões tomadas na implementação (nenhuma contraria a spec; registradas para a revisão):
+
+1. **Paleta vazia conta como "sem mood".** A seção 6 manda 422 quando falta `mood/palette.json`.
+   Um `palette.json` com `colors: []` e `note` vazia (estado do projeto de exemplo
+   `2026-08-gelo-zero`) não carrega mood nenhum, então também responde 422 orientando a etapa 2.
+2. **A cadeia cai inteira para a frente.** A seção 5 fixa que reselecionar a situação limpa
+   `label` e `upscale`. Pela mesma regra, reselecionar o rótulo limpa o `upscale` (a ampliação
+   veio do rótulo anterior).
+3. **O import herda o prompt de origem.** `base.md` precisa registrar o "prompt de origem"
+   (provides da wave 1); a UI manda o prompt de situação da referência escolhida (ou o de rótulo)
+   junto do upload e do import de Downloads.
+4. **`file`/`thumb` gravados relativos ao projeto** (`base/candidates/<id>.png`), como a seção 5
+   descreve, em vez do nome puro que o `ingest` grava. A normalização acontece no serviço, depois
+   do import — `studio/common/ingest.py` não foi alterado.
+5. **`brand.json` fora do `candidates.json`**, como previa o auto-aceite do contrato 2, e espelhado
+   em `base.md` a cada `select`/`brand`.
+6. **Modelos default por passo**: situação `nano_banana_2` (mesmo default do mood), rótulo
+   `nano_banana_2`, upscale `bytedance_image_upscale`. Todos sobrescritíveis por `model` no corpo.
+   IDs ainda **não confirmados** no catálogo (CLI sem login) — decisão 13 do lote.
+
+Divergências pequenas entre o texto do FDD e o código, resolvidas pelo código (registradas aqui em
+vez de alterar as seções normativas):
+
+7. **Textos dos exemplos do contrato 1.** O prompt de rótulo fala em `product label` /
+   `product colors` (não `can`), porque nem todo produto é uma lata; `prompt_no_bias` também leva o
+   "No people…"; o `ui_hint` termina orientando a importar como "situação".
+8. **Campos extras no `candidates.json`.** Além dos listados no auto-aceite da seção 1, o `ingest`
+   também grava `duration` (sempre 0.0 em imagem) e `origin_path` (import da pasta Downloads).
+   Continuam sendo superconjunto do schema mínimo da wave 1.
+9. **O job devolve `kind` e `model`** além de `{state, done, total, added, error, log}` — extras do
+   `JobRegistry`, usados pela tela.
+10. **Falha parcial.** A matriz da seção 6 e o auto-aceite da seção 9 se contradizem; vale a seção 9:
+    erro por item vai para o `log` e o job termina `done`; só falha em **todos** os itens vira
+    `state=error`.
+11. **Import do histórico** passa por `ingest.import_history` → `urlopen` (não por `hf.download`,
+    que é usado só na geração). O teste fakeia `ingest.urlopen`, como diz a seção 9 no espírito.
+
+12. **Precisões do contrato levantadas ao gerar a coleção Postman**
+    (`docs/domains/base/postman/divergencias.md`, executada com newman: 23 requests, 32 asserts, 0 falhas):
+    - o campo do multipart é `files` (não `files[]`), igual ao do plugin `mood`;
+    - `cost` e `generate` checam o CLI **antes** do pré-requisito: sem CLI instalado (ou sem login,
+      em `generate`) a resposta é 409 e o 422 documentado só aparece com o CLI logado;
+    - `model` continua sobrescritível em qualquer `kind`, mas a **tela** só o envia em
+      `kind: "situation"` — em `label`/`upscale` mandar o modelo do seletor de prompts gastaria
+      créditos no modelo errado;
+    - `count` vale como número de variações em `situation` e como número de chamadas em `label`;
+      em `upscale` é sempre 1 item;
+    - o `openapi.json` gerado pelo FastAPI só declara 200 e 422 (comportamento do framework, igual
+      ao das etapas 1 e 2): a matriz da seção 6 continua sendo a fonte dos demais status.
+
+Pendências para a integração (W5):
+
+- `[cross-feature]` a etapa lê `mood/selected/` e `palette.json` reais e usa ≥1 referência de
+  `refs/brainstorming/` no prompt: coberto por fixture nos testes e verificado à mão num projeto
+  semeado; falta o projeto de integração com etapas 1 e 2 reais (decisão 14 do lote).
+- `[cross-feature]` `storyboard` abrindo o `base/base_final.png` real: só verificável no estado
+  integrado.
+- Validar os IDs de modelo com `model list` depois do login do CLI.
+- Sobrescrever o `kind` do `ingest` (mídia) pela semântica da etapa (passo da aula) e normalizar
+  `file`/`thumb` para caminho relativo ao projeto são decisões que as etapas 4 a 11 vão repetir:
+  candidatas a ADR transversal ou a ajuste em `studio/common/ingest.py` pelo orquestrador.
+- A política "falha parcial mantém `state=done`" muda a leitura do `JobRegistry` compartilhado;
+  vale alinhar entre as frentes na integração.

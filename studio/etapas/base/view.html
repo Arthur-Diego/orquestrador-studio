@@ -1,0 +1,100 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 3 · aula 009</span>
+  <h2>Imagem base</h2>
+  <p class="lede">Para cada referência escolhida na etapa 1, peça o seu produto na <b>exata mesma situação</b> da referência, com o mood da campanha (aula 009). Escolha a melhor, troque o rótulo pela sua marca (uma instrução por vez) e faça o upscale 2x. O resultado é <code>base/base_final.png</code> — a imagem que a etapa 4 usa.</p>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>1. Prompts da aula</h3>
+    <div class="row wrap">
+      <select id="baseModel">
+        <option value="nano_banana_2">Nano Banana Pro (UI: ilimitado no Ultra)</option>
+        <option value="gpt_image_2">GPT Image 2 (mais fiel ao prompt)</option>
+      </select>
+      <button id="btnBasePrompts" class="ghost">Atualizar</button>
+    </div>
+  </div>
+  <p id="baseHint" class="fine"></p>
+  <div id="basePalette" class="palette"></div>
+  <p id="baseMood" class="fine mono"></p>
+  <div id="basePrompts" class="prompts"></div>
+  <p id="upscaleHint" class="fine"></p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>2. Marca do rótulo <span class="chip mode">extensão</span></h3>
+    <div class="row wrap">
+      <input id="brandName" placeholder="nome da marca (ex.: Gelo Zero)">
+      <input id="brandDesc" placeholder="como é a logo (ex.: raio com efeito neon)">
+      <button id="btnBrand" class="primary">Salvar marca</button>
+    </div>
+  </div>
+  <p class="fine">A aula troca o rótulo com uma instrução só: “troque o rótulo da lata, mantenha as cores e adicione a logomarca”. Sem a marca não dá para escrever esse prompt.</p>
+  <div id="labelPrompt" class="prompts"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>3. Importar o que você gerou na UI</h3>
+    <div class="row wrap">
+      <label class="inline">passo <select id="impKind">
+        <option value="situation">situação (produto na cena da referência)</option>
+        <option value="label">rótulo trocado (Nano Banana)</option>
+        <option value="upscale">upscale 2x</option>
+      </select></label>
+      <label class="inline">referência <select id="impRef"><option value="">—</option></select></label>
+    </div>
+  </div>
+  <div class="row wrap">
+    <label class="drop" id="baseDrop">Arraste imagens aqui ou <input id="baseUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
+    <div class="col">
+      <button id="btnBaseDownloads">Importar da pasta Downloads</button>
+      <span id="baseDlFolder" class="fine mono"></span>
+      <label class="inline">últimos <input id="baseDlMinutes" type="number" value="120" min="5"> min</label>
+    </div>
+    <div class="col">
+      <button id="btnBaseHistory">Importar do histórico Higgsfield</button>
+      <span class="fine">via <code>higgsfield generate list --image</code> (precisa de login no CLI)</span>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>4. Escolher e fechar a imagem base</h3>
+    <div class="row wrap">
+      <label class="inline">mostrar <select id="galKind">
+        <option value="">todas</option>
+        <option value="situation">situação</option>
+        <option value="label">rótulo</option>
+        <option value="upscale">upscale</option>
+      </select></label>
+      <span id="baseCounts" class="chip mode">0 candidatas</span>
+      <button id="btnBaseSelect" class="primary" disabled>Usar como imagem base</button>
+    </div>
+  </div>
+  <p id="baseChain" class="fine"></p>
+  <div id="baseGallery" class="gallery"></div>
+  <p class="fine">Clique para marcar, dois cliques para abrir em tamanho real. Ao escolher: cópia em <code>base/base_final.png</code> e <code>base/base.md</code> com a cadeia situação → rótulo → upscale.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>Alternativa paga: gerar via CLI</h3>
+    <div class="row wrap">
+      <span id="baseHfState" class="chip mode">CLI: ?</span>
+      <label class="inline">passo <select id="genKind">
+        <option value="situation">situação (uma por referência)</option>
+        <option value="label">rótulo</option>
+        <option value="upscale">upscale</option>
+      </select></label>
+      <label class="inline">variações <input id="genCount" type="number" value="1" min="1" max="4"></label>
+      <button id="btnBaseGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
+    </div>
+  </div>
+  <p class="fine">O caminho da aula é gerar na interface da Higgsfield (ilimitado) e importar acima. Isto aqui é atalho pago: mostra a estimativa de créditos e pede confirmação antes.</p>
+  <div id="baseProgress" class="progress hidden"><span class="bar"></span></div>
+  <div id="baseLog" class="log"></div>
+</section>
