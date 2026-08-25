@@ -145,6 +145,12 @@ conflito para consumidores]`
 
 ### 5. Contratos públicos (assinaturas, endpoints, headers, exemplos)
 
+> **Atualizado pela wave 2 — leia junto com a §13.2.** O que mudou: `refs[].prompt_no_bias` virou
+> `refs[].bot_instruction`, o `ui_hint` foi reescrito (a "aba nova" é do bot, não da Higgsfield) e
+> ganhou um `bot_hint`, `aspect_ratio` deixou de ser fixo em `16:9`, os imports devolvem `warnings`,
+> `count`/`aspect_ratio` viraram opcionais em `cost`/`generate` e há três contratos novos
+> (`prompts/generate`, `prompts/history`, `guide.py`).
+
 Prefixo comum: `/api/projects/{pid}/base`. `pid` validado por `refs.service.project_dir` (KeyError → 404
 pelo núcleo). Respostas JSON; upload em multipart. Modelos Pydantic no `router.py`.
 
@@ -297,6 +303,9 @@ título "Imagem base", produto, `Marca [extensão]: <name>: <description>`, tabe
 
 ### 6. Erros, exceções e fallback
 
+> **Delta da wave 2 na §13.4** (`mood/selected/` vazio passa a ser 422; `palette.json` vazio deixa
+> de ser erro; novos 409/502 do bot).
+
 | Condição | Tratamento | Notas |
 | --- | --- | --- |
 | `pid` inválido/inexistente | 404 | `KeyError` de `project_dir`, handler do núcleo |
@@ -370,6 +379,9 @@ título "Imagem base", produto, `Marca [extensão]: <name>: <description>`, tabe
 ---
 
 ### 9. Critérios de aceite técnicos
+
+> **Delta da wave 2 na §13.5.** O critério de determinismo abaixo passa a valer para o **fallback**
+> (modo `template`): o prompt da aula vem do bot e não é determinístico.
 
 - `GET /api/steps` lista `base` com `status: "ready"`, `n: 3`; `GET /steps/base/view.html` e
   `view.js` respondem 200 (`test_steps_and_config.py` dinâmico continua verde).
