@@ -1,0 +1,66 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 7 · aula 013</span>
+  <h2>Trilha</h2>
+  <p class="lede">A trilha vem <strong>antes</strong> da montagem: reúna de 3 a 5 candidatas, ouça até sentir a certa e escolha uma. As batidas fortes viram as marcações de "aqui acontece alguma coisa" que a etapa 8 usa para cortar.</p>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>1. Onde buscar</h3>
+    <div class="row wrap">
+      <button id="btnMusCopyPrompt" class="ghost">Copiar prompt</button>
+    </div>
+  </div>
+  <p id="musInstructions" class="fine"></p>
+  <div class="prompt">
+    <div class="row"><span class="eyebrow">Prompt para gerar trilha via CLI (sonilo_music)</span><span id="musPromptOk" class="ok"></span></div>
+    <textarea id="musPrompt" rows="2"></textarea>
+  </div>
+  <div class="row wrap cli">
+    <span id="musHfState" class="chip mode">CLI: ?</span>
+    <label class="inline">faixas <input id="musCount" type="number" value="3" min="1" max="6"></label>
+    <label class="inline">duração (s) <input id="musDuration" type="number" value="35" min="10" max="120"></label>
+    <button id="btnMusGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
+    <span id="musGenLog" class="mono fine"></span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h3>2. Importar candidatas</h3></div>
+  <div class="row wrap">
+    <label class="drop" id="musDrop">Arraste músicas aqui ou <input id="musUpload" type="file" accept="audio/*" multiple hidden><u>escolha arquivos</u></label>
+    <div class="col">
+      <button id="btnMusDownloads">Importar da pasta Downloads</button>
+      <span id="musDlFolder" class="fine mono"></span>
+      <label class="inline">últimos <input id="musDlMinutes" type="number" value="120" min="5"> min</label>
+    </div>
+    <div class="col">
+      <button id="btnMusHistory">Importar do histórico Higgsfield</button>
+      <span class="fine">via <code>higgsfield generate list --audio</code> (precisa de login no CLI)</span>
+    </div>
+  </div>
+  <p class="fine">Aceita wav, mp3, m4a e ogg (até 25 MB por arquivo). Arquivo repetido não entra duas vezes.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>3. Ouvir e escolher</h3>
+    <span id="musCounts" class="chip mode">0 candidatas</span>
+  </div>
+  <div id="musList" class="prompts"></div>
+  <p class="fine">Ao escolher: cópia em <code>audio/music.&lt;ext&gt;</code>, a origem declarada em <code>audio/license.txt</code> e as batidas em <code>audio/beats.json</code>.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>4. Batidas da trilha escolhida</h3>
+    <div class="row wrap">
+      <span id="musBeatsChip" class="chip mode">nenhuma trilha escolhida</span>
+      <button id="btnMusBeats" class="ghost">Recalcular batidas</button>
+    </div>
+  </div>
+  <audio id="musPlayer" controls preload="metadata" style="width:100%"></audio>
+  <div id="musRuler" class="progress" style="position:relative;height:26px;margin-top:8px"></div>
+  <p id="musWarn" class="fine"></p>
+  <p class="fine">Cada risco é uma batida; os riscos altos são os impactos — é neles que a etapa 8 propõe os cortes. Confira de ouvido: a aula escolhe no sentimento, não no número.</p>
+</section>
