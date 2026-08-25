@@ -1191,7 +1191,7 @@
           ]
         },
         {
-          "name": "422 - preset da propria secao 5 recusado (ponto-e-virgula)",
+          "name": "200 - preset da secao 5 com ponto-e-virgula e aceito (409 sem base)",
           "request": {
             "method": "POST",
             "header": [
@@ -1231,10 +1231,12 @@
                 "type": "text/javascript",
                 "exec": [
                   "const c = pm.response.code;",
-                  "pm.test('422 com base; 409 sem base (etapa 3 pendente)', function () { pm.expect([422, 409]).to.include(c); });",
-                  "if (c === 422) {",
-                  "  pm.test('DIVERGENCIA ALTA confirmada: o preset publicado nao passa na validacao', function () {",
-                  "    pm.expect(pm.response.json().detail.toLowerCase()).to.contain('uma instru');",
+                  "pm.test('preset publicado e aceito: 200 com base; 409 sem base (etapa 3 pendente)', function () {",
+                  "  pm.expect([200, 409]).to.include(c);",
+                  "});",
+                  "if (c === 200) {",
+                  "  pm.test('a instrucao foi montada (ponto-e-virgula nao separa instrucao)', function () {",
+                  "    pm.expect(pm.response.json().instruction).to.be.a('string').and.not.empty;",
                   "  });",
                   "}"
                 ]
