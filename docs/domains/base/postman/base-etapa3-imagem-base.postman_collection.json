@@ -1,1534 +1,2758 @@
 {
-  "info": {
-    "name": "base — Etapa 3, Imagem base (aula 009)",
-    "_postman_id": "os003-base-etapa3-colecao",
-    "description": "Colecao gerada a partir da secao 5 (Contratos publicos) e da secao 6 (matriz de erros) do FDD `docs/domains/base/features/base-fdd.md` (worktree os-003-base, branch feature/os-003-base, commit 1d15450).\n\nPrefixo comum: `/api/projects/{pid}/base` (FDD linha 147). A API local do Studio nao tem autenticacao (ADR-001): nenhum contrato da secao 5 declara header de auth, a colecao usa `noauth` e nao ha variavel de token.\n\nATENCAO A CREDITOS: `POST .../base/generate` gasta creditos da Higgsfield e esta atras da guarda `allowPaidRuns` (script de pre-request). `POST .../base/cost` apenas estima e nao gasta.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ "info": {
+  "name": "base — Etapa 3, Imagem base (aula 009) · wave 2",
+  "_postman_id": "os015-base-etapa3-colecao",
+  "description": "Colecao gerada a partir da secao 5 (contratos 1 a 10) e **atualizada para a wave 2 pela secao 13** (linhas 566-751, contratos novos 8/9/10 e os alterados 1/3/4/5/6/7) do FDD `docs/domains/base/features/base-fdd.md` — worktree os-015-base, branch feature/os-015-base, commit 02034da.\n\nPrefixo comum: `/api/projects/{pid}/base` (FDD linha 153), mais a rota transversal do nucleo `GET /api/projects/{pid}/guide/base` (contrato 10, FDD linhas 651-663).\n\nA API local do Studio nao tem autenticacao (ADR-001): nenhum contrato declara header de auth, a colecao usa `noauth` e nao ha variavel de token.\n\nGUARDAS: `POST .../base/generate` gasta creditos da Higgsfield (`allowPaidRuns`); `POST .../base/prompts/generate` nos modos `images`/`brief` chama o **Claude CLI local** e pode demorar dezenas de segundos (`allowClaudeRuns`). O modo `template` nao chama nada e roda sempre.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "auth": {
+  "type": "noauth"
+ },
+ "variable": [
+  {
+   "key": "baseUrl",
+   "value": "http://127.0.0.1:8765",
+   "description": "Base URL do Studio local. A instancia de verificacao roda em porta variavel — ajuste aqui."
   },
-  "auth": {
-    "type": "noauth"
+  {
+   "key": "pid",
+   "value": "2026-08-gelo-zero",
+   "description": "Projeto com refs escolhidas na etapa 1 e mood salvo na etapa 2."
   },
-  "variable": [
+  {
+   "key": "pidInexistente",
+   "value": "projeto-que-nao-existe",
+   "description": "Usado nos casos de 404 (FDD secao 6, linha 311)."
+  },
+  {
+   "key": "pidVazio",
+   "value": "projeto-vazio",
+   "description": "Projeto recem-criado, sem refs e sem mood: alimenta o 422 (FDD secao 6, linha 312)."
+  },
+  {
+   "key": "pastaInexistente",
+   "value": "/tmp/pasta-downloads-que-nao-existe",
+   "description": "Alimenta o 404 de pasta Downloads (FDD secao 6, linha 318)."
+  },
+  {
+   "key": "model",
+   "value": "nano_banana_2",
+   "description": "Default da etapa para situacao e rotulo (FDD secao 12, decisao 6, linha 516). ID ainda nao confirmado no catalogo da Higgsfield."
+  },
+  {
+   "key": "refId",
+   "value": "",
+   "description": "Preenchido pelo teste de `GET prompts` (encadeamento da secao 4, linhas 105-109)."
+  },
+  {
+   "key": "situationPrompt",
+   "value": "",
+   "description": "Prompt de situacao da referencia, preenchido por `GET prompts` e reenviado nos imports e no campo `prompt` de cost/generate (FDD secao 13.2, linha 647)."
+  },
+  {
+   "key": "candidateId",
+   "value": "",
+   "description": "Preenchido pelo teste de `GET candidates`; consumido por `POST select`."
+  },
+  {
+   "key": "finalFile",
+   "value": "",
+   "description": "Preenchido por `POST select`: caminho de `base/base_final.png` servido por `/files/{pid}/...`."
+  },
+  {
+   "key": "allowPaidRuns",
+   "value": "false",
+   "description": "Guarda de credito: so com `true` os requests que iniciam job pago sao enviados."
+  },
+  {
+   "key": "allowManualUpload",
+   "value": "false",
+   "description": "Guarda do caso 413: so com `true` o request de upload > 25 MB e enviado (exige um arquivo grande escolhido a mao)."
+  },
+  {
+   "key": "pidSemMood",
+   "value": "projeto-sem-mood",
+   "description": "Projeto com referencia escolhida na etapa 1 e `mood/selected/` VAZIO: alimenta o 422 novo com \"etapa 2\" (FDD secao 13.4, linha 689). Sem esse fixture os dois requests se pulam."
+  },
+  {
+   "key": "pidSemPaleta",
+   "value": "projeto-sem-paleta",
+   "description": "Projeto com mood em imagem e `mood/palette.json` vazio: prova que palette vazia NAO e mais 422 (FDD secao 13.1 B3, linha 582, e 13.4 linha 690)."
+  },
+  {
+   "key": "aspectRatio",
+   "value": "",
+   "description": "Preenchido por `GET prompts`: `project.aspect_ratio` (G3, FDD linha 587). Default do servico 16:9."
+  },
+  {
+   "key": "labelCount",
+   "value": "",
+   "description": "Preenchido por `GET prompts`: `label_count`, o default 3 do rotulo (B4, FDD linha 583)."
+  },
+  {
+   "key": "claudeAvailable",
+   "value": "",
+   "description": "Preenchido por `GET base/prompter`: liga/desliga os testes que dependem do Claude CLI (FDD linha 620)."
+  },
+  {
+   "key": "promptMode",
+   "value": "template",
+   "description": "Modo mandado em `POST base/prompts/generate` no request do bot (`images`|`brief`|`template`, FDD linhas 629-630)."
+  },
+  {
+   "key": "generatedPrompt",
+   "value": "",
+   "description": "Prompt devolvido por `POST base/prompts/generate`; reenviado no campo `prompt` de `cost`/`generate` (B4, FDD linha 583 e GenReq.prompt em router.py:49)."
+  },
+  {
+   "key": "allowClaudeRuns",
+   "value": "false",
+   "description": "Guarda: so com `true` os modos `images`/`brief` de `prompts/generate` sao enviados (eles chamam o Claude CLI local). O modo `template` roda sempre."
+  }
+ ],
+ "item": [
+  {
+   "name": "0 - Guia da etapa (contrato 10, wave 2)",
+   "description": "Rota transversal do nucleo alimentada por `studio/etapas/base/guide.py`. FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, contrato 10 (linhas 651-663) e criterio de aceite da secao 13.5 (linha 715). Leitura pura: nao grava nada, nao chama CLI.",
+   "item": [
     {
-      "key": "baseUrl",
-      "value": "http://127.0.0.1:8765",
-      "description": "Base URL do Studio local. A instancia de verificacao roda em porta variavel — ajuste aqui."
+     "name": "GET guide/base — smoke do guia da etapa (contrato 10)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/guide/base",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "guide",
+        "base"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, contrato 10, linhas 651-663; criterio de aceite da linha 715 (\"nunca `unknown`\"). Implementacao: `studio/etapas/base/guide.py` + `studio/app.py:101-107` (`GET /api/projects/{pid}/guide/{step}`).\nO agregado `GET /api/projects/{pid}/guide` devolve as 11 etapas de uma vez; aqui so a etapa 3."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 13.2, contrato 10, linha 651\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const g = pm.response.json();",
+         "    pm.test(\"identidade da etapa: id=base, n=3, aula=009 (studio/etapas/base/__init__.py)\", function () {",
+         "        pm.expect(g.id).to.eql(\"base\");",
+         "        pm.expect(g.n).to.eql(3);",
+         "        pm.expect(g.aula).to.eql(\"009\");",
+         "    });",
+         "    pm.test(\"status calculado, nunca \\\"unknown\\\" (FDD linha 716)\", function () {",
+         "        pm.expect(g.status).to.not.eql(\"unknown\");",
+         "        pm.expect([\"todo\", \"blocked\", \"in_progress\", \"done\"]).to.include(g.status);",
+         "    });",
+         "    pm.test(\"what/checklist/validations presentes (FDD linhas 654-661)\", function () {",
+         "        pm.expect(g.what, \"what\").to.be.a(\"string\").and.to.have.length.above(0);",
+         "        pm.expect(g.checklist, \"checklist\").to.be.an(\"array\").and.to.have.length.above(0);",
+         "        pm.expect(g.validations, \"validations\").to.be.an(\"array\");",
+         "    });",
+         "    pm.test(\"inputs bloqueantes refs/mood/product e saidas base_final+base.md (FDD linhas 656-658)\", function () {",
+         "        const ids = g.inputs.map(i => i.id);",
+         "        pm.expect(ids).to.include.members([\"refs_selected\", \"mood_selected\", \"product\"]);",
+         "        pm.expect(g.outputs.map(o => o.id)).to.include.members([\"base_final\", \"base_md\"]);",
+         "    });",
+         "    pm.test(\"validacoes da §3.5 declaradas (FDD linhas 659-661)\", function () {",
+         "        const v = g.validations.map(x => x.id);",
+         "        pm.expect(v).to.include.members([\"situation_chosen\", \"upscale_2x\", \"prompt_en\", \"md_prompts\"]);",
+         "    });",
+         "    console.log(\"guia base: status=\" + g.status + \" progress=\" + g.progress + \" next=\" + g.next_action);",
+         "}"
+        ]
+       }
+      }
+     ]
     },
     {
-      "key": "pid",
-      "value": "2026-08-gelo-zero",
-      "description": "Projeto com refs escolhidas na etapa 1 e mood salvo na etapa 2."
-    },
-    {
-      "key": "pidInexistente",
-      "value": "projeto-que-nao-existe",
-      "description": "Usado nos casos de 404 (FDD secao 6, linha 302)."
-    },
-    {
-      "key": "pidVazio",
-      "value": "projeto-vazio",
-      "description": "Projeto recem-criado, sem refs e sem mood: alimenta o 422 (FDD secao 6, linha 303)."
-    },
-    {
-      "key": "pastaInexistente",
-      "value": "/tmp/pasta-downloads-que-nao-existe",
-      "description": "Alimenta o 404 de pasta Downloads (FDD secao 6, linha 309)."
-    },
-    {
-      "key": "model",
-      "value": "nano_banana_2",
-      "description": "Default da etapa para situacao e rotulo (FDD secao 12, decisao 6, linha 504). ID ainda nao confirmado no catalogo da Higgsfield."
-    },
-    {
-      "key": "refId",
-      "value": "",
-      "description": "Preenchido pelo teste de `GET prompts` (encadeamento da secao 4, linhas 105-109)."
-    },
-    {
-      "key": "situationPrompt",
-      "value": "",
-      "description": "Prompt de situacao da referencia, preenchido por `GET prompts` e reenviado nos imports (FDD secao 12, decisao 3, linha 496)."
-    },
-    {
-      "key": "candidateId",
-      "value": "",
-      "description": "Preenchido pelo teste de `GET candidates`; consumido por `POST select`."
-    },
-    {
-      "key": "finalFile",
-      "value": "",
-      "description": "Preenchido por `POST select`: caminho de `base/base_final.png` servido por `/files/{pid}/...`."
-    },
-    {
-      "key": "allowPaidRuns",
-      "value": "false",
-      "description": "Guarda de credito: so com `true` os requests que iniciam job pago sao enviados."
-    },
-    {
-      "key": "allowManualUpload",
-      "value": "false",
-      "description": "Guarda do caso 413: so com `true` o request de upload > 25 MB e enviado (exige um arquivo grande escolhido a mao)."
+     "name": "GET guide/base — projeto sem refs/mood → status blocked",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidVazio}}/guide/base",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidVazio}}",
+        "guide",
+        "base"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.5, linha 715: \"devolve `status: \\\"blocked\\\"` sem refs/mood\". Os `inputs` com `fail` sao os unicos que bloqueiam a etapa (`studio/common/guide.py`)."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 404) {",
+         "    pm.test.skip(\"fixture pidVazio ausente — caso nao verificado\");",
+         "} else {",
+         "    pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+         "    const g = pm.response.json();",
+         "    pm.test(\"status blocked sem refs/mood (FDD linha 715)\", function () {",
+         "        pm.expect(g.status).to.eql(\"blocked\");",
+         "    });",
+         "    pm.test(\"missing aponta os insumos das etapas 1 e 2 (FDD linhas 656-657)\", function () {",
+         "        pm.expect(g.missing.join(\" | \")).to.match(/refer|mood/i);",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
     }
-  ],
-  "item": [
+   ]
+  },
+  {
+   "name": "1 - Prompts e marca",
+   "description": "Fluxo 1 do FDD, reescrito pela secao 13.3 (linhas 670-683) de `docs/domains/base/features/base-fdd.md`: o prompt de situacao nasce do BOT olhando a referencia + o mood (contrato 8), com fallback determinístico no modo `template`. Contratos 1 (alterado), 2, 8 e 9 (novos).",
+   "item": [
     {
-      "name": "1 - Prompts e marca",
-      "description": "Fluxo principal (modo UI) do FDD secao 4, linhas 104-117 de `docs/domains/base/features/base-fdd.md`. Contratos 1 e 2 da secao 5.",
-      "item": [
-        {
-          "name": "GET prompts da aula (contrato 1)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts?model={{model}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "prompts"
-              ],
-              "query": [
-                {
-                  "key": "model",
-                  "value": "{{model}}"
-                }
-              ]
-            },
-            "description": "FDD secao 5, contrato 1, linha 158 de `docs/domains/base/features/base-fdd.md`.\nSemantica declarada: 200 prompts montados (linha 161); 404 projeto inexistente (linha 162); 422 sem referencia selecionada com arquivo ou sem `mood/palette.json` (linha 163).\n`model` e opcional; sem ele o servico usa o default da etapa (`nano_banana_2`).\nGuarda o `ref_id` da primeira referencia em `refId` para os imports seguintes."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 1, linha 161\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    const j = pm.response.json();",
-                  "    pm.test(\"corpo tem refs, palette e label_prompt_ready (FDD linhas 167-185)\", function () {",
-                  "        pm.expect(j).to.have.property(\"refs\");",
-                  "        pm.expect(j).to.have.property(\"palette\");",
-                  "        pm.expect(j).to.have.property(\"label_prompt_ready\");",
-                  "    });",
-                  "    if (j.refs && j.refs.length) {",
-                  "        pm.collectionVariables.set(\"refId\", j.refs[0].ref_id);",
-                  "        pm.collectionVariables.set(\"situationPrompt\", j.refs[0].prompt || \"\");",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET brand (contrato 2)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/brand",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "brand"
-              ]
-            },
-            "description": "FDD secao 5, contrato 2, linhas 193-197 de `docs/domains/base/features/base-fdd.md`. 200 devolve `{name, description}` (vazios quando ainda nao informado)."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 2, linha 195\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test(\"corpo tem name e description (FDD linha 195)\", function () {",
-                  "    const j = pm.response.json();",
-                  "    pm.expect(j).to.have.property(\"name\");",
-                  "    pm.expect(j).to.have.property(\"description\");",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST brand (contrato 2)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/brand",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "brand"
-              ]
-            },
-            "description": "FDD secao 5, contrato 2, linhas 193-197; corpo do exemplo da linha 201 de `docs/domains/base/features/base-fdd.md`.\nPOST valida `name` nao vazio (422) e persiste em `base/brand.json`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Gelo Zero\",\n  \"description\": \"lightning bolt logo with neon effect, keep the can colors\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 2, linha 195\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"eco do name gravado (FDD linha 206)\", function () {",
-                  "        pm.expect(pm.response.json().name).to.eql(\"Gelo Zero\");",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ]
-        }
-      ]
+     "name": "GET prompter — status do Claude CLI (wave 2)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompter",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompter"
+       ]
+      },
+      "description": "Rota nova da wave 2 (`router.py:94-99`), sustentada pela FDD `docs/domains/base/features/base-fdd.md` linha 620 (\"`claude` diz se o CLI do Claude esta no PATH; a tela desabilita os modos `images`/`brief` sem ele\") e pela linha 629 (os tres modos). A secao 13.2 nao lhe da numero de contrato — ver `divergencias.md`.\n200 `{available_claude, modes, max_images}`; 404 projeto inexistente (`refs.project_dir`).\nGuarda `claudeAvailable`, que liga ou desliga os testes dependentes do Claude."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"available_claude, modes e max_images (router.py:98-99)\", function () {",
+         "        pm.expect(j.available_claude).to.be.a(\"boolean\");",
+         "        pm.expect(j.modes).to.eql([\"images\", \"brief\", \"template\"]);",
+         "        pm.expect(j.max_images, \"a referencia + ate 3 do mood (FDD linha 629)\").to.eql(4);",
+         "    });",
+         "    pm.collectionVariables.set(\"claudeAvailable\", String(j.available_claude));",
+         "    console.log(\"Claude CLI disponivel: \" + j.available_claude);",
+         "}"
+        ]
+       }
+      }
+     ]
     },
     {
-      "name": "2 - Importar candidatas e selecionar",
-      "description": "Contratos 3, 4, 5, 6 e 10 da secao 5; ordem tirada da secao 4, linhas 110-116 de `docs/domains/base/features/base-fdd.md`.",
-      "item": [
+     "name": "GET prompts da aula (contrato 1)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts?model={{model}}",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts"
+       ],
+       "query": [
         {
-          "name": "POST import/upload — multipart (contrato 4)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "upload"
-              ]
-            },
-            "description": "FDD secao 5, contrato 4, linhas 219-221 de `docs/domains/base/features/base-fdd.md`.\n200 `{added: n}`; 413 acima de 25 MB por arquivo; 422 `kind` invalido.\nATENCAO: o campo de arquivo precisa ser selecionado a mao no Postman (a colecao nao carrega binario). Sem arquivo o request nao roda no newman.",
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "files",
-                  "type": "file",
-                  "src": [
-                    "fixtures/situacao.png"
-                  ],
-                  "description": "Fixture versionada ao lado da colecao (PNG 16x16). Rode o newman com `--working-dir docs/domains/base/postman` para o caminho resolver; no Postman, reaponte o campo para a imagem que voce gerou na UI da Higgsfield.\nNome do campo confirmado na implementacao e no openapi.json: `files` (o FDD escreve `files[]` na linha 220 — ver divergencias.md)."
-                },
-                {
-                  "key": "kind",
-                  "value": "situation",
-                  "type": "text",
-                  "description": "situation | label | upscale (FDD linha 220)"
-                },
-                {
-                  "key": "ref_id",
-                  "value": "{{refId}}",
-                  "type": "text",
-                  "description": "opcional (FDD linha 220)"
-                },
-                {
-                  "key": "prompt",
-                  "value": "{{situationPrompt}}",
-                  "type": "text",
-                  "description": "opcional (FDD linha 220)"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 4, linha 221\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    const j = pm.response.json();",
-                  "    pm.test(\"corpo tem added >= 0 (FDD linha 221)\", function () {",
-                  "        pm.expect(j).to.have.property(\"added\");",
-                  "        pm.expect(j.added, \"added ausente ou negativo\").to.be.at.least(0);",
-                  "    });",
-                  "    if (!j.added) {",
-                  "        console.warn(\"[base] added=0: o arquivo do campo `files` nao foi enviado \" +",
-                  "            \"(rode com --working-dir docs/domains/base/postman) ou a imagem ja tinha sido \" +",
-                  "            \"importada antes (o ingest deduplica por hash). A cadeia segue com as candidatas ja existentes.\");",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST import/downloads (contrato 5)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/downloads",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "downloads"
-              ]
-            },
-            "description": "FDD secao 5, contrato 5, linhas 231-233; corpo do exemplo da linha 239 de `docs/domains/base/features/base-fdd.md`.\n200 `{added, scanned, folder}`; 404 pasta inexistente; 422 `kind` invalido.\n`folder: null` usa a pasta Downloads padrao (exibida por `GET /api/mood/downloads-folder`).\nO campo `prompt` existe na implementacao (secao 12, decisao 3, linha 496) mas nao esta no contrato 5 — ver divergencias.md.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"folder\": null,\n  \"since_minutes\": 120,\n  \"kind\": \"situation\",\n  \"ref_id\": \"{{refId}}\",\n  \"prompt\": \"{{situationPrompt}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 5, linha 233\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"corpo tem added, scanned e folder (FDD linha 233)\", function () {",
-                  "        const j = pm.response.json();",
-                  "        pm.expect(j).to.have.property(\"added\");",
-                  "        pm.expect(j).to.have.property(\"scanned\");",
-                  "        pm.expect(j).to.have.property(\"folder\");",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST import/history — CLI (contrato 6)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/history",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "history"
-              ]
-            },
-            "description": "FDD secao 5, contrato 6, linhas 244-246 de `docs/domains/base/features/base-fdd.md`.\n200 `{added, jobs}`; 409 CLI nao instalado; 502 falha do CLI.\nOs tres status sao corretos, cada um para um estado do ambiente: 200 com CLI logado, 409 sem CLI instalado (FDD linha 310), 502 com CLI instalado mas falhando — por exemplo sem login, quando `higgsfield generate list` quebra (FDD linha 314). O teste aceita os tres e o console diz qual aconteceu.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"size\": 50,\n  \"kind\": \"situation\",\n  \"ref_id\": \"{{refId}}\",\n  \"prompt_filter\": null\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status em [200, 409, 502] — FDD secao 5, contrato 6, linha 246\", function () {",
-                  "    pm.expect([200, 409, 502]).to.include(pm.response.code,",
-                  "        \"status fora do previsto pelo contrato 6 (200/409/502)\");",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"corpo tem added e jobs (FDD linha 246)\", function () {",
-                  "        const j = pm.response.json();",
-                  "        pm.expect(j).to.have.property(\"added\");",
-                  "        pm.expect(j).to.have.property(\"jobs\");",
-                  "    });",
-                  "} else if (pm.response.code === 409) {",
-                  "    console.warn(\"[base] 409: CLI da Higgsfield nao instalado (FDD secao 6, linha 310)\");",
-                  "} else {",
-                  "    console.warn(\"[base] 502: CLI instalado porem falhando, tipicamente sem login (FDD secao 6, linha 314)\");",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET candidates (contrato 3)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/candidates",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "candidates"
-              ]
-            },
-            "description": "FDD secao 5, contrato 3, linhas 211-215 de `docs/domains/base/features/base-fdd.md`.\n200 `{candidates: [...], final: \"base/base_final.png\"|null}`.\nGuarda o id da primeira candidata em `candidateId` para o `select`."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 3, linha 213\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    const j = pm.response.json();",
-                  "    pm.test(\"corpo tem candidates e final (FDD linha 213)\", function () {",
-                  "        pm.expect(j).to.have.property(\"candidates\");",
-                  "        pm.expect(j).to.have.property(\"final\");",
-                  "    });",
-                  "    if (j.candidates && j.candidates.length) {",
-                  "        pm.collectionVariables.set(\"candidateId\", j.candidates[0].id);",
-                  "    } else {",
-                  "        console.warn(\"[base] nenhuma candidata: importe uma imagem antes de rodar o select\");",
-                  "    }",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST select (contrato 10)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/select",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "select"
-              ]
-            },
-            "description": "FDD secao 5, contrato 10, linhas 277-282; corpo do exemplo da linha 289 de `docs/domains/base/features/base-fdd.md`.\n200 `{final, kind, chain}`; 404 id inexistente; 422 corpo invalido.\nUsa `candidateId`, preenchido pelo request `GET candidates`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"id\": \"{{candidateId}}\",\n  \"note\": \"melhor enquadramento da lata\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Sem candidata importada nao ha id para selecionar: pula em vez de acusar 404 falso.",
-                  "if (!pm.variables.get(\"candidateId\")) {",
-                  "    console.warn(\"[base] select pulado: nenhuma candidata em GET candidates — importe uma imagem antes.\");",
-                  "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
-                  "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 10, linha 279\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    const j = pm.response.json();",
-                  "    pm.test(\"corpo tem final, kind e chain (FDD linha 279)\", function () {",
-                  "        pm.expect(j).to.have.property(\"final\");",
-                  "        pm.expect(j).to.have.property(\"kind\");",
-                  "        pm.expect(j).to.have.property(\"chain\");",
-                  "    });",
-                  "    pm.collectionVariables.set(\"finalFile\", j.final || \"\");",
-                  "}"
-                ]
-              }
-            }
-          ]
+         "key": "model",
+         "value": "{{model}}"
         }
-      ]
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 5, contrato 1 (linha 164) **alterado pela secao 13.2** (linhas 592-620).\nCampos novos da wave 2: `bot_hint` (B2, linha 581), `claude` (linha 620), `modes` (linha 629), `label_count` (B4, linha 583) e `aspect_ratio` vindo de `project.aspect_ratio` (G3, linha 587).\nPor referencia: `prompt_source`/`prompt_mode` e `bot_instruction` — o antigo `prompt_no_bias` foi REMOVIDO (renomeado, sem alias: FDD secao 13.6, decisao 1, linhas 724-726).\n422 agora tambem quando `mood/selected/` esta vazio (mensagem da etapa 2, linha 689); `palette.json` vazio **nao** e mais 422 (linha 690).\nGuarda `refId`, `situationPrompt`, `aspectRatio`, `labelCount` para os requests seguintes."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 1, linha 167\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"campos da v1.0 continuam: refs, palette, label_prompt_ready (FDD linhas 173-191)\", function () {",
+         "        pm.expect(j).to.have.property(\"refs\");",
+         "        pm.expect(j).to.have.property(\"palette\");",
+         "        pm.expect(j).to.have.property(\"label_prompt_ready\");",
+         "    });",
+         "    pm.test(\"campos NOVOS da wave 2: bot_hint, claude, modes, label_count (FDD linhas 596-613)\", function () {",
+         "        pm.expect(j.bot_hint, \"bot_hint\").to.be.a(\"string\").and.to.have.length.above(0);",
+         "        pm.expect(j.claude, \"claude\").to.be.a(\"boolean\");",
+         "        pm.expect(j.modes, \"modes\").to.eql([\"images\", \"brief\", \"template\"]);",
+         "        pm.expect(j.label_count, \"label_count (B4, default 3)\").to.eql(3);",
+         "    });",
+         "    pm.test(\"aspect_ratio vem do projeto, nao e mais constante (G3, FDD linha 587)\", function () {",
+         "        pm.expect([\"16:9\", \"9:16\", \"1:1\"]).to.include(j.aspect_ratio);",
+         "    });",
+         "    pm.test(\"bot_hint fala da aba nova e ui_hint NAO (B2, FDD linha 707)\", function () {",
+         "        pm.expect(j.bot_hint.toLowerCase()).to.match(/aba nova|sess\\u00e3o nova/);",
+         "        pm.expect(j.ui_hint.toLowerCase()).to.not.include(\"aba nova\");",
+         "    });",
+         "    if (j.refs && j.refs.length) {",
+         "        pm.test(\"refs[]: bot_instruction substitui prompt_no_bias (FDD linhas 724-726)\", function () {",
+         "            const r = j.refs[0];",
+         "            pm.expect(r, \"bot_instruction\").to.have.property(\"bot_instruction\");",
+         "            pm.expect(r, \"prompt_no_bias removido\").to.not.have.property(\"prompt_no_bias\");",
+         "            pm.expect(r.bot_instruction).to.not.eql(r.prompt);",
+         "        });",
+         "        pm.test(\"refs[].prompt_source e prompt_mode declarados (FDD linhas 608, 616-617)\", function () {",
+         "            const r = j.refs[0];",
+         "            pm.expect([\"claude\", \"template\", \"brief\"]).to.include(r.prompt_source);",
+         "            pm.expect(r, \"prompt_mode\").to.have.property(\"prompt_mode\");",
+         "        });",
+         "        pm.collectionVariables.set(\"refId\", j.refs[0].ref_id);",
+         "        pm.collectionVariables.set(\"situationPrompt\", j.refs[0].prompt || \"\");",
+         "    }",
+         "    pm.collectionVariables.set(\"aspectRatio\", j.aspect_ratio || \"16:9\");",
+         "    pm.collectionVariables.set(\"labelCount\", String(j.label_count || 3));",
+         "    pm.collectionVariables.set(\"claudeAvailable\", String(!!j.claude));",
+         "}"
+        ]
+       }
+      }
+     ]
     },
     {
-      "name": "3 - Caminho pago via CLI",
-      "description": "Fluxo alternativo do FDD secao 4, linhas 119-130 de `docs/domains/base/features/base-fdd.md` (contratos 7, 8 e 9).\n`POST cost` NAO gasta creditos. `POST generate` GASTA — fica atras da guarda `allowPaidRuns` (script de pre-request) e so dispara com `allowPaidRuns=true`.",
-      "item": [
-        {
-          "name": "POST cost — estimativa, nao gasta creditos (contrato 7)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/cost",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "cost"
-              ]
-            },
-            "description": "FDD secao 5, contrato 7, linhas 250-252; corpo do exemplo da linha 257 de `docs/domains/base/features/base-fdd.md`.\n200 `{per_item, count, total, raw}`; 409 CLI nao instalado. `hf.cost` nunca lanca; `null` quando o CLI nao informa o preco.\n`ref_ids` foi OMITIDO de proposito: sem ele o servico considera todas as referencias escolhidas na etapa 1 (`_plan`), e o request nao depende do encadeamento de `refId` (com `ref_ids: [\"\"]` a resposta seria 422, correta mas inutil aqui).\n`model` so faz sentido em `kind: situation`: desde o commit 013bbf5 rotulo e upscale usam os defaults do servico (`nano_banana_2` e `bytedance_image_upscale`).",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"kind\": \"situation\",\n  \"model\": \"{{model}}\",\n  \"count\": 1,\n  \"aspect_ratio\": \"16:9\",\n  \"resolution\": \"2k\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 7, linha 252\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"corpo tem per_item, count e total (FDD linha 252)\", function () {",
-                  "        const j = pm.response.json();",
-                  "        pm.expect(j).to.have.property(\"per_item\");",
-                  "        pm.expect(j).to.have.property(\"count\");",
-                  "        pm.expect(j).to.have.property(\"total\");",
-                  "    });",
-                  "} else if (pm.response.code === 409) {",
-                  "    console.warn(\"[base] 409: CLI da Higgsfield ausente — esperado sem CLI (FDD secao 6, linha 310)\");",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST generate — PAGO (contrato 8)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "generate"
-              ]
-            },
-            "description": "FDD secao 5, contrato 8, linhas 262-267 de `docs/domains/base/features/base-fdd.md`.\n200 job `{state:'running', done:0, total:n, added:0, error:null, log:[]}`; 409 CLI ausente, nao logado ou job em andamento; 422 pre-requisito ausente.\nGASTA CREDITOS: so roda com a variavel `allowPaidRuns` igual a `true`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"kind\": \"situation\",\n  \"model\": \"{{model}}\",\n  \"ref_ids\": [\n    \"{{refId}}\"\n  ],\n  \"count\": 1,\n  \"aspect_ratio\": \"16:9\",\n  \"resolution\": \"2k\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Guarda de credito: este request inicia um job PAGO na Higgsfield.",
-                  "// So roda quando a variavel allowPaidRuns for exatamente \"true\".",
-                  "if (String(pm.variables.get(\"allowPaidRuns\")) !== \"true\") {",
-                  "    console.warn(\"[base] request PAGO pulado (allowPaidRuns != true): \" + pm.info.requestName);",
-                  "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
-                  "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 8, linha 265\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"job em running (FDD linha 264)\", function () {",
-                  "        pm.expect(pm.response.json().state).to.eql(\"running\");",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET job — polling (contrato 9)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/job",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "job"
-              ]
-            },
-            "description": "FDD secao 5, contrato 9, linhas 271-273 de `docs/domains/base/features/base-fdd.md`.\n200 `registry.status(pid)`; `{state: 'idle'}` quando nunca rodou. A UI faz polling a cada 3 s (FDD secao 4, linhas 121-122)."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200 — FDD secao 5, contrato 9, linha 273\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    pm.test(\"corpo tem state (FDD linha 273)\", function () {",
-                  "        pm.expect(pm.response.json()).to.have.property(\"state\");",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ]
+     "name": "POST prompts/generate — modo template (contrato 8, sem Claude)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, contrato 8 (linhas 622-637). Modo `template`: fallback determinístico, **nao** chama o Claude (linha 630 e criterio da linha 703), por isso roda sempre.\n200 grava a entrada no topo de `base/prompts.json` (historico de 50) e devolve `{ref_id, mode, instruction, no_bias, no_people, prompt, negative, camera, notes_pt, source, seconds, images, created}` (linhas 634-635).\n`ref_id` usa `{{refId}}` (preenchido por `GET prompts`); vazio = primeira referencia escolhida (`service.py:266`).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"ref_id\": \"{{refId}}\",\n  \"mode\": \"template\",\n  \"instruction\": \"a lata esta gigante em uma montanha coberta de neve\",\n  \"no_bias\": false,\n  \"no_people\": false,\n  \"model\": \"{{model}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
         }
-      ]
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 13.2, contrato 8, linha 634\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"corpo da entrada gravada (FDD linha 635)\", function () {",
+         "        [\"ref_id\", \"mode\", \"instruction\", \"no_bias\", \"no_people\", \"prompt\", \"negative\",",
+         "         \"camera\", \"notes_pt\", \"source\", \"seconds\", \"images\", \"created\"].forEach(function (k) {",
+         "            pm.expect(j, k).to.have.property(k);",
+         "        });",
+         "    });",
+         "    pm.test(\"modo template devolve source=template (FDD linha 617)\", function () {",
+         "        pm.expect(j.mode).to.eql(\"template\");",
+         "        pm.expect(j.source).to.eql(\"template\");",
+         "    });",
+         "    pm.test(\"sem no_people o prompt NAO leva a frase (B11, FDD linhas 586 e 709)\", function () {",
+         "        pm.expect(j.prompt.toLowerCase()).to.not.include(\"no people\");",
+         "    });",
+         "    pm.collectionVariables.set(\"generatedPrompt\", j.prompt || \"\");",
+         "}"
+        ]
+       }
+      }
+     ]
     },
     {
-      "name": "erros",
-      "description": "Matriz de erros do FDD secao 6, linhas 300-316 de `docs/domains/base/features/base-fdd.md`. Cada request cobra o status daquela linha.",
-      "item": [
-        {
-          "name": "404 — pid inexistente (prompts)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/base/prompts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pidInexistente}}",
-                "base",
-                "prompts"
-              ]
-            },
-            "description": "FDD secao 6, linha 302 e contrato 1, linha 161 de `docs/domains/base/features/base-fdd.md`. `KeyError` de `project_dir`, tratado pelo handler do nucleo."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404 — FDD secao 6, linha 302\", function () {",
-                  "    pm.response.to.have.status(404);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "422 — sem referencia da etapa 1 ou sem mood (prompts)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pidVazio}}/base/prompts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pidVazio}}",
-                "base",
-                "prompts"
-              ]
-            },
-            "description": "FDD secao 6, linha 303 e contrato 1, linha 162 de `docs/domains/base/features/base-fdd.md`. Use em `pidVazio` um projeto recem-criado (sem refs escolhidas e sem `mood/palette.json`). A mensagem em pt-BR orienta voltar as etapas 1 e 2."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 422 — FDD secao 6, linha 303\", function () {",
-                  "    pm.response.to.have.status(422);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 422) {",
-                  "    pm.test(\"mensagem orienta as etapas 1 ou 2 (FDD linha 303)\", function () {",
-                  "        pm.expect(String(pm.response.json().detail || \"\")).to.match(/etapa 1|etapa 2/i);",
-                  "    });",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "422 — brand com name vazio",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/brand",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "brand"
-              ]
-            },
-            "description": "FDD secao 6, linha 304 e contrato 2, linha 195 de `docs/domains/base/features/base-fdd.md`. `name` em branco e recusado.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"   \",\n  \"description\": \"sem nome de marca nao ha prompt de rotulo\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 422 — FDD secao 6, linha 304\", function () {",
-                  "    pm.response.to.have.status(422);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "422 — kind invalido (import/downloads)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/downloads",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "downloads"
-              ]
-            },
-            "description": "FDD secao 6, linha 306 e contrato 5, linha 233 de `docs/domains/base/features/base-fdd.md`. `kind` fora de situation|label|upscale e recusado pelo `Literal` do Pydantic.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"folder\": null,\n  \"since_minutes\": 120,\n  \"kind\": \"situacao\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 422 — FDD secao 6, linha 306\", function () {",
-                  "    pm.response.to.have.status(422);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "422 — kind invalido (import/upload)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "upload"
-              ]
-            },
-            "description": "FDD secao 6, linha 306 e contrato 4, linha 221 de `docs/domains/base/features/base-fdd.md`. Precisa de um arquivo selecionado a mao no campo `files` para chegar ao servidor.",
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "files",
-                  "type": "file",
-                  "src": [
-                    "fixtures/situacao.png"
-                  ],
-                  "description": "fixture versionada; exige --working-dir docs/domains/base/postman"
-                },
-                {
-                  "key": "kind",
-                  "value": "situacao",
-                  "type": "text",
-                  "description": "valor invalido de proposito"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 422 — FDD secao 6, linha 306\", function () {",
-                  "    pm.response.to.have.status(422);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "413 — upload acima de 25 MB",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "upload"
-              ]
-            },
-            "description": "FDD secao 6, linha 307 e contrato 4, linha 221 de `docs/domains/base/features/base-fdd.md`. `MAX_UPLOAD_BYTES` = 25 MB por arquivo.\nMANUAL: nao ha (nem deve haver) arquivo de 25 MB versionado no repositorio. Gere um (`head -c 26214400 /dev/urandom > /tmp/big.png`), aponte o campo `files` para ele e ligue `allowManualUpload=true`. Com a variavel em `false` (padrao) o request e pulado — sem isso ele subiria a fixture de 79 bytes e devolveria 200, o que nao prova nada.",
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "files",
-                  "type": "file",
-                  "src": [],
-                  "description": "arquivo > 25 MB, selecionado a mao"
-                },
-                {
-                  "key": "kind",
-                  "value": "situation",
-                  "type": "text"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Este request precisa de um arquivo grande escolhido a mao (nao versionavel).",
-                  "if (String(pm.variables.get(\"allowManualUpload\")) !== \"true\") {",
-                  "    console.warn(\"[base] request manual pulado (allowManualUpload != true): \" + pm.info.requestName);",
-                  "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
-                  "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 413 — FDD secao 6, linha 307\", function () {",
-                  "    pm.response.to.have.status(413);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "404 — pasta Downloads inexistente",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/downloads",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "downloads"
-              ]
-            },
-            "description": "FDD secao 6, linha 309 e contrato 5, linha 233 de `docs/domains/base/features/base-fdd.md`. `FileNotFoundError` do `ingest`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"folder\": \"{{pastaInexistente}}\",\n  \"since_minutes\": 120,\n  \"kind\": \"situation\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404 — FDD secao 6, linha 309\", function () {",
-                  "    pm.response.to.have.status(404);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "409 — CLI da Higgsfield ausente (import/history)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/history",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "history"
-              ]
-            },
-            "description": "FDD secao 6, linha 310 e contrato 6, linha 246 de `docs/domains/base/features/base-fdd.md`. `hf.available()` falso: 409 \"CLI da Higgsfield nao instalado\".\nSo reproduz em maquina SEM o CLI: com o CLI instalado a resposta e 200 (logado) ou 502 (falhando), e o teste se marca como pulado em vez de falhar.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"size\": 50,\n  \"kind\": \"situation\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 409) {",
-                  "    pm.test(\"status 409 — FDD secao 6, linha 310\", function () { pm.response.to.have.status(409); });",
-                  "} else {",
-                  "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI da Higgsfield esta instalado nesta maquina\";",
-                  "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "502 — falha do CLI no historico",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/history",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "import",
-                "history"
-              ]
-            },
-            "description": "FDD secao 6, linha 314 e contrato 6, linha 246 de `docs/domains/base/features/base-fdd.md`. `hf.history_media` lançando `RuntimeError` vira 502.\nSo reproduz com o CLI INSTALADO e falhando (ex.: sem login ou binario quebrado): sem CLI vem 409 e com CLI logado vem 200. Nos dois casos o teste se marca como pulado.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"size\": 50,\n  \"kind\": \"situation\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 502) {",
-                  "    pm.test(\"status 502 — FDD secao 6, linha 314\", function () { pm.response.to.have.status(502); });",
-                  "} else {",
-                  "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI ou esta ausente (409) ou esta funcionando (200)\";",
-                  "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "409 — CLI ausente (cost)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/cost",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "cost"
-              ]
-            },
-            "description": "FDD secao 6, linha 310 e contrato 7, linha 252 de `docs/domains/base/features/base-fdd.md`. So reproduz em maquina SEM o CLI: com o CLI instalado a resposta e 200 (a estimativa nao gasta creditos) e o teste se marca como pulado.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"kind\": \"situation\",\n  \"count\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 409) {",
-                  "    pm.test(\"status 409 — FDD secao 6, linha 310\", function () { pm.response.to.have.status(409); });",
-                  "} else {",
-                  "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI da Higgsfield esta instalado nesta maquina\";",
-                  "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "409 — CLI ausente ou sem login (generate)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "generate"
-              ]
-            },
-            "description": "FDD secao 6, linhas 310-311 e contrato 8, linha 264 de `docs/domains/base/features/base-fdd.md`. O router checa `hf.available()` e depois `hf.status().logged_in`; nenhum credito e gasto porque o job nem chega a comecar.\nCom CLI instalado E logado esta chamada iniciaria um job PAGO — por isso o teste so cobra o 409 quando ele acontece e, em qualquer outro status, se marca como pulado.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"kind\": \"situation\",\n  \"count\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 409) {",
-                  "    pm.test(\"status 409 — FDD secao 6, linhas 310-311\", function () { pm.response.to.have.status(409); });",
-                  "} else {",
-                  "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI esta instalado e logado: aqui o pedido viraria job pago\";",
-                  "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "409 — job ja em andamento (generate) — PAGO",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "generate"
-              ]
-            },
-            "description": "FDD secao 6, linha 312 e contrato 8, linha 264 de `docs/domains/base/features/base-fdd.md`. `RuntimeError` do `JobRegistry.start`.\nSo reproduz com CLI logado e um job `running` — ou seja, GASTANDO creditos no job anterior. Fica atras da guarda `allowPaidRuns`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"kind\": \"situation\",\n  \"model\": \"{{model}}\",\n  \"ref_ids\": [\n    \"{{refId}}\"\n  ],\n  \"count\": 1,\n  \"aspect_ratio\": \"16:9\",\n  \"resolution\": \"2k\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Guarda de credito: este request inicia um job PAGO na Higgsfield.",
-                  "// So roda quando a variavel allowPaidRuns for exatamente \"true\".",
-                  "if (String(pm.variables.get(\"allowPaidRuns\")) !== \"true\") {",
-                  "    console.warn(\"[base] request PAGO pulado (allowPaidRuns != true): \" + pm.info.requestName);",
-                  "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
-                  "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 409 — FDD secao 6, linha 312\", function () {",
-                  "    pm.response.to.have.status(409);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "422 — pre-requisito ausente em generate (label sem situacao)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "generate"
-              ]
-            },
-            "description": "FDD secao 6, linha 305 e contrato 8, linhas 265-267 de `docs/domains/base/features/base-fdd.md`. `label` exige situacao selecionada e `brand` preenchido.\nO router valida o CLI (409) ANTES do pre-requisito: sem CLI instalado e logado esta rota devolve 409 e o 422 do FDD fica inalcancavel — ver divergencias.md, item 2. O teste aceita os dois e diz no console qual caminho foi exercitado.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"kind\": \"label\",\n  \"count\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status em [422, 409] — FDD secao 6, linha 305 (422) / linhas 310-311 (409)\", function () {",
-                  "    pm.expect([422, 409]).to.include(pm.response.code,",
-                  "        \"esperado 422 (pre-requisito) ou 409 (CLI ausente/sem login)\");",
-                  "});",
-                  "",
-                  "if (pm.response.code === 409) {",
-                  "    console.warn(\"[base] 409 antes do 422: o router checa o CLI primeiro (divergencias.md, item 2)\");",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "404 — id inexistente no select",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/select",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "select"
-              ]
-            },
-            "description": "FDD secao 6, linha 316 e contrato 10, linha 279 de `docs/domains/base/features/base-fdd.md`. `FileNotFoundError` do servico.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"id\": \"id-que-nao-existe-000\",\n  \"note\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404 — FDD secao 6, linha 316\", function () {",
-                  "    pm.response.to.have.status(404);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "422 — corpo invalido no select",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/base/select",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "base",
-                "select"
-              ]
-            },
-            "description": "FDD secao 5, contrato 10, linha 279 de `docs/domains/base/features/base-fdd.md` (\"422 corpo invalido\"). Corpo sem o campo obrigatorio `id`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 422 — FDD secao 5, contrato 10, linha 279\", function () {",
-                  "    pm.response.to.have.status(422);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "404 — pid inexistente (job)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/base/job",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pidInexistente}}",
-                "base",
-                "job"
-              ]
-            },
-            "description": "FDD secao 6, linha 302 de `docs/domains/base/features/base-fdd.md`. O contrato 9 (linhas 271-273) nao declara o 404, mas o router chama `project_dir(pid)` — ver divergencias.md."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404 — FDD secao 6, linha 302\", function () {",
-                  "    pm.response.to.have.status(404);",
-                  "});"
-                ]
-              }
-            }
-          ]
+     "name": "POST prompts/generate — template + no_people (B11)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, linha 633 (\"`no_people: true` acrescenta \\\"No people unless they appear in the reference image.\\\" ao prompt\") e criterio de aceite da linha 709. Em `template` o resultado e deterministico, entao a assercao vale sempre; nos modos do bot o texto vem do Claude.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"ref_id\": \"{{refId}}\",\n  \"mode\": \"template\",\n  \"instruction\": \"\",\n  \"no_bias\": false,\n  \"no_people\": true\n}",
+       "options": {
+        "raw": {
+         "language": "json"
         }
-      ]
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"no_people=true poe a frase no prompt (FDD linhas 633 e 709)\", function () {",
+         "        pm.expect(j.no_people).to.eql(true);",
+         "        pm.expect(j.prompt).to.include(\"No people unless they appear in the reference image.\");",
+         "    });",
+         "    // esta e a entrada mais nova do historico: e ela que `GET prompts` passa a devolver",
+         "    pm.collectionVariables.set(\"generatedPrompt\", j.prompt || \"\");",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST prompts/generate — modo images, o bot da aula (contrato 8)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, contrato 8 (linhas 622-637) e fluxo da secao 13.3 (linhas 672-676): `prompter.from_images(\"base\", [ref] + mood/selected[:3], instrucao, brief)` pelo **Claude CLI local**.\n200 com Claude no PATH; **409** sem ele (linha 637 e 13.4 linha 693); 502 quando o Claude devolve JSON invalido ou estoura o timeout (linha 694).\nGUARDA `allowClaudeRuns`: como este request chama o Claude de verdade (dezenas de segundos), so e enviado com `allowClaudeRuns=true`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"ref_id\": \"{{refId}}\",\n  \"mode\": \"images\",\n  \"instruction\": \"a lata esta gigante em uma montanha coberta de neve\",\n  \"no_bias\": false,\n  \"no_people\": false,\n  \"model\": \"{{model}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.variables.get(\"allowClaudeRuns\") !== \"true\") {",
+         "    console.log(\"pulado: allowClaudeRuns=false (o modo images chama o Claude CLI local)\");",
+         "    pm.execution.skipRequest();",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const claude = pm.variables.get(\"claudeAvailable\") === \"true\";",
+         "if (pm.response.code === 409) {",
+         "    pm.test(\"409 sem Claude no PATH — FDD secao 13.4, linha 693\", function () {",
+         "        pm.expect(claude, \"GET prompter disse que o Claude existe\").to.eql(false);",
+         "        pm.expect(pm.response.json().detail).to.include(\"Claude\");",
+         "    });",
+         "} else if (pm.response.code === 502) {",
+         "    pm.test(\"502 = falha do Claude (JSON invalido/timeout) — FDD linha 637\", function () {",
+         "        pm.expect(pm.response.json()).to.have.property(\"detail\");",
+         "    });",
+         "    console.log(\"Claude falhou: \" + pm.response.text().slice(0, 200));",
+         "} else {",
+         "    pm.test(\"status 200 — FDD secao 13.2, contrato 8, linha 634\", function () {",
+         "        pm.response.to.have.status(200);",
+         "    });",
+         "    const j = pm.response.json();",
+         "    pm.test(\"prompt escrito pelo bot: source=claude e images com a referencia + mood (FDD linhas 700-702)\", function () {",
+         "        pm.expect(j.mode).to.eql(\"images\");",
+         "        pm.expect(j.source).to.eql(\"claude\");",
+         "        pm.expect(j.images, \"images\").to.be.an(\"array\").and.to.have.length.above(0);",
+         "        pm.expect(j.images.length, \"referencia + ate 3 do mood (PROMPT_IMAGES_MAX=4)\").to.be.at.most(4);",
+         "    });",
+         "    pm.collectionVariables.set(\"generatedPrompt\", j.prompt || \"\");",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST prompts/generate — sem vies (no_bias, a aba nova do bot)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, linhas 631-632 e secao 13.6, decisao 3 (linhas 730-731): `no_bias: true` roda `prompter.from_images` **so com a referencia**, sem o brief do projeto e sem o mood — o equivalente local da \"aba nova\" da aula 009.\nCriterio de aceite: FDD linha 701-702. Mesma guarda `allowClaudeRuns` do request anterior.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"ref_id\": \"{{refId}}\",\n  \"mode\": \"images\",\n  \"instruction\": \"a lata esta gigante em uma montanha coberta de neve\",\n  \"no_bias\": true,\n  \"no_people\": false\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.variables.get(\"allowClaudeRuns\") !== \"true\") {",
+         "    console.log(\"pulado: allowClaudeRuns=false (no_bias chama o Claude CLI local)\");",
+         "    pm.execution.skipRequest();",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const claude = pm.variables.get(\"claudeAvailable\") === \"true\";",
+         "if (pm.response.code === 409) {",
+         "    pm.test(\"409 sem Claude no PATH — FDD linha 693\", function () {",
+         "        pm.expect(claude).to.eql(false);",
+         "    });",
+         "} else if (pm.response.code === 502) {",
+         "    pm.test(\"502 = falha do Claude — FDD linha 694\", function () {",
+         "        pm.expect(pm.response.json()).to.have.property(\"detail\");",
+         "    });",
+         "} else {",
+         "    pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+         "    const j = pm.response.json();",
+         "    pm.test(\"no_bias gravado e so a referencia foi mandada ao bot (FDD linhas 631-632)\", function () {",
+         "        pm.expect(j.no_bias).to.eql(true);",
+         "        pm.expect(j.images, \"so a referencia\").to.have.lengthOf(1);",
+         "    });",
+         "    // entrada mais nova do historico: e ela que `GET prompts` passa a devolver",
+         "    pm.collectionVariables.set(\"generatedPrompt\", j.prompt || \"\");",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "GET prompts/history — historico dos prompts (contrato 9)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/history",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "history"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, contrato 9 (linhas 639-640): lista das entradas de `base/prompts.json`, **mais recente primeiro**, 200 sempre (lista vazia quando nao ha historico). Historico limitado a 50 entradas (`service.py:293`).\nRoda depois dos `prompts/generate` desta pasta, entao a lista ja deve trazer as entradas geradas."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 sempre — FDD secao 13.2, contrato 9, linha 640\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const h = pm.response.json();",
+         "    pm.test(\"resposta e uma lista (linha 639)\", function () {",
+         "        pm.expect(h).to.be.an(\"array\");",
+         "    });",
+         "    pm.test(\"no maximo 50 entradas (service.py:293)\", function () {",
+         "        pm.expect(h.length).to.be.at.most(50);",
+         "    });",
+         "    if (h.length > 1) {",
+         "        pm.test(\"mais recente primeiro (FDD linha 639)\", function () {",
+         "            pm.expect(h[0].created >= h[h.length - 1].created).to.eql(true);",
+         "        });",
+         "    }",
+         "    if (h.length) {",
+         "        pm.test(\"entradas com o corpo do contrato 8 (FDD linha 635)\", function () {",
+         "            [\"ref_id\", \"mode\", \"prompt\", \"source\", \"created\", \"no_bias\", \"no_people\"].forEach(function (k) {",
+         "                pm.expect(h[0], k).to.have.property(k);",
+         "            });",
+         "        });",
+         "    } else {",
+         "        console.log(\"historico vazio — nenhum prompts/generate rodou neste projeto\");",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "GET prompts — depois de gerar (prompt_source do historico)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, criterio de aceite da secao 13.5, linhas 705-707: depois de um `prompts/generate` bem sucedido, `refs[].prompt` e o **ultimo prompt gerado** para aquela referencia e `prompt_source` reflete a origem (`claude` ou `template`) — FDD linhas 616-617."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    const gerado = pm.variables.get(\"generatedPrompt\");",
+         "    const r = (j.refs || []).find(function (x) { return x.ref_id === pm.variables.get(\"refId\"); }) || j.refs[0];",
+         "    if (gerado && r) {",
+         "        pm.test(\"prompt da referencia = o ultimo gerado (FDD linhas 616 e 705)\", function () {",
+         "            pm.expect(r.prompt).to.eql(gerado);",
+         "        });",
+         "        pm.test(\"prompt_source acompanha a origem do historico (FDD linha 608)\", function () {",
+         "            pm.expect([\"claude\", \"template\", \"brief\"]).to.include(r.prompt_source);",
+         "            pm.expect(r.prompt_mode, \"prompt_mode do historico\").to.not.eql(null);",
+         "        });",
+         "    } else {",
+         "        pm.test.skip(\"nenhum prompt gerado nesta execucao — nada a comparar\");",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "GET brand (contrato 2)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/brand",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "brand"
+       ]
+      },
+      "description": "FDD secao 5, contrato 2, linhas 199-203 de `docs/domains/base/features/base-fdd.md`. 200 devolve `{name, description}` (vazios quando ainda nao informado)."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 2, linha 201\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "pm.test(\"corpo tem name e description (FDD linha 201)\", function () {",
+         "    const j = pm.response.json();",
+         "    pm.expect(j).to.have.property(\"name\");",
+         "    pm.expect(j).to.have.property(\"description\");",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST brand (contrato 2)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/brand",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "brand"
+       ]
+      },
+      "description": "FDD secao 5, contrato 2, linhas 199-203; corpo do exemplo da linha 207 de `docs/domains/base/features/base-fdd.md`.\nPOST valida `name` nao vazio (422) e persiste em `base/brand.json`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"name\": \"Gelo Zero\",\n  \"description\": \"lightning bolt logo with neon effect, keep the can colors\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 2, linha 201\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    pm.test(\"eco do name gravado (FDD linha 212)\", function () {",
+         "        pm.expect(pm.response.json().name).to.eql(\"Gelo Zero\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
     }
-  ]
+   ]
+  },
+  {
+   "name": "2 - Importar candidatas e selecionar",
+   "description": "Contratos 3, 4, 5, 6 e 10 da secao 5; ordem tirada da secao 4, linhas 110-116 de `docs/domains/base/features/base-fdd.md`.",
+   "item": [
+    {
+     "name": "POST import/upload — multipart (contrato 4)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/upload",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "upload"
+       ]
+      },
+      "description": "FDD secao 5, contrato 4, linhas 225-227 de `docs/domains/base/features/base-fdd.md`.\n200 `{added: n}`; 413 acima de 25 MB por arquivo; 422 `kind` invalido.\nATENCAO: o campo de arquivo precisa ser selecionado a mao no Postman (a colecao nao carrega binario). Sem arquivo o request nao roda no newman.\n\nWAVE 2 (FDD secao 13.2, linhas 642-645): a resposta ganhou `warnings: [str]`. Com `kind=upscale`, a largura de cada candidata nova e comparada a da candidata de origem e um aviso \"a aula pede upscale 2x\" entra fora de 1,8x-2,2x. O aviso **nunca** falha o import (FDD secao 13.6, decisao 5, linhas 734-735).",
+      "body": {
+       "mode": "formdata",
+       "formdata": [
+        {
+         "key": "files",
+         "type": "file",
+         "src": [
+          "fixtures/situacao.png"
+         ],
+         "description": "Fixture versionada ao lado da colecao (PNG 16x16). Rode o newman com `--working-dir docs/domains/base/postman` para o caminho resolver; no Postman, reaponte o campo para a imagem que voce gerou na UI da Higgsfield.\nNome do campo confirmado na implementacao e no openapi.json: `files` (o FDD escreve `files[]` na linha 226 — ver divergencias.md)."
+        },
+        {
+         "key": "kind",
+         "value": "situation",
+         "type": "text",
+         "description": "situation | label | upscale (FDD linha 226)"
+        },
+        {
+         "key": "ref_id",
+         "value": "{{refId}}",
+         "type": "text",
+         "description": "opcional (FDD linha 226)"
+        },
+        {
+         "key": "prompt",
+         "value": "{{situationPrompt}}",
+         "type": "text",
+         "description": "opcional (FDD linha 226)"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 4, linha 227\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"corpo tem added >= 0 (FDD linha 227)\", function () {",
+         "        pm.expect(j).to.have.property(\"added\");",
+         "        pm.expect(j.added, \"added ausente ou negativo\").to.be.at.least(0);",
+         "    });",
+         "    if (!j.added) {",
+         "        console.warn(\"[base] added=0: o arquivo do campo `files` nao foi enviado \" +",
+         "            \"(rode com --working-dir docs/domains/base/postman) ou a imagem ja tinha sido \" +",
+         "            \"importada antes (o ingest deduplica por hash). A cadeia segue com as candidatas ja existentes.\");",
+         "    }",
+         "}",
+         "",
+         "// wave 2 (B6): os tres imports passaram a devolver `warnings: []`; em kind=upscale o aviso",
+         "// aparece quando a largura fica fora de 1,8x-2,2x da candidata de origem (FDD linhas 642-645).",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"resposta traz warnings[] (FDD secao 13.2, linhas 642-645)\", function () {",
+         "        pm.expect(j, \"warnings\").to.have.property(\"warnings\");",
+         "        pm.expect(j.warnings).to.be.an(\"array\");",
+         "    });",
+         "    if (j.warnings && j.warnings.length) {",
+         "        console.log(\"avisos do import: \" + j.warnings.join(\" | \"));",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST import/downloads (contrato 5)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/downloads",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "downloads"
+       ]
+      },
+      "description": "FDD secao 5, contrato 5, linhas 237-239; corpo do exemplo da linha 245 de `docs/domains/base/features/base-fdd.md`.\n200 `{added, scanned, folder}`; 404 pasta inexistente; 422 `kind` invalido.\n`folder: null` usa a pasta Downloads padrao (exibida por `GET /api/mood/downloads-folder`).\nO campo `prompt` existe na implementacao (secao 12, decisao 3, linha 508) mas nao esta no contrato 5 — ver divergencias.md.\n\nWAVE 2 (FDD secao 13.2, linhas 642-645): a resposta ganhou `warnings: [str]`. Com `kind=upscale`, a largura de cada candidata nova e comparada a da candidata de origem e um aviso \"a aula pede upscale 2x\" entra fora de 1,8x-2,2x. O aviso **nunca** falha o import (FDD secao 13.6, decisao 5, linhas 734-735).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"folder\": null,\n  \"since_minutes\": 120,\n  \"kind\": \"situation\",\n  \"ref_id\": \"{{refId}}\",\n  \"prompt\": \"{{situationPrompt}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 5, linha 239\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    pm.test(\"corpo tem added, scanned e folder (FDD linha 239)\", function () {",
+         "        const j = pm.response.json();",
+         "        pm.expect(j).to.have.property(\"added\");",
+         "        pm.expect(j).to.have.property(\"scanned\");",
+         "        pm.expect(j).to.have.property(\"folder\");",
+         "    });",
+         "}",
+         "",
+         "// wave 2 (B6): os tres imports passaram a devolver `warnings: []`; em kind=upscale o aviso",
+         "// aparece quando a largura fica fora de 1,8x-2,2x da candidata de origem (FDD linhas 642-645).",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"resposta traz warnings[] (FDD secao 13.2, linhas 642-645)\", function () {",
+         "        pm.expect(j, \"warnings\").to.have.property(\"warnings\");",
+         "        pm.expect(j.warnings).to.be.an(\"array\");",
+         "    });",
+         "    if (j.warnings && j.warnings.length) {",
+         "        console.log(\"avisos do import: \" + j.warnings.join(\" | \"));",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST import/history — CLI (contrato 6)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/history",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "history"
+       ]
+      },
+      "description": "FDD secao 5, contrato 6, linhas 250-252 de `docs/domains/base/features/base-fdd.md`.\n200 `{added, jobs}`; 409 CLI nao instalado; 502 falha do CLI.\nOs tres status sao corretos, cada um para um estado do ambiente: 200 com CLI logado, 409 sem CLI instalado (FDD linha 319), 502 com CLI instalado mas falhando — por exemplo sem login, quando `higgsfield generate list` quebra (FDD linha 323). O teste aceita os tres e o console diz qual aconteceu.\n\nWAVE 2 (FDD secao 13.2, linhas 642-645): a resposta ganhou `warnings: [str]`. Com `kind=upscale`, a largura de cada candidata nova e comparada a da candidata de origem e um aviso \"a aula pede upscale 2x\" entra fora de 1,8x-2,2x. O aviso **nunca** falha o import (FDD secao 13.6, decisao 5, linhas 734-735).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"size\": 50,\n  \"kind\": \"situation\",\n  \"ref_id\": \"{{refId}}\",\n  \"prompt_filter\": null\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status em [200, 409, 502] — FDD secao 5, contrato 6, linha 252\", function () {",
+         "    pm.expect([200, 409, 502]).to.include(pm.response.code,",
+         "        \"status fora do previsto pelo contrato 6 (200/409/502)\");",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    pm.test(\"corpo tem added e jobs (FDD linha 252)\", function () {",
+         "        const j = pm.response.json();",
+         "        pm.expect(j).to.have.property(\"added\");",
+         "        pm.expect(j).to.have.property(\"jobs\");",
+         "    });",
+         "} else if (pm.response.code === 409) {",
+         "    console.warn(\"[base] 409: CLI da Higgsfield nao instalado (FDD secao 6, linha 319)\");",
+         "} else {",
+         "    console.warn(\"[base] 502: CLI instalado porem falhando, tipicamente sem login (FDD secao 6, linha 323)\");",
+         "}",
+         "",
+         "// wave 2 (B6): os tres imports passaram a devolver `warnings: []`; em kind=upscale o aviso",
+         "// aparece quando a largura fica fora de 1,8x-2,2x da candidata de origem (FDD linhas 642-645).",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"resposta traz warnings[] (FDD secao 13.2, linhas 642-645)\", function () {",
+         "        pm.expect(j, \"warnings\").to.have.property(\"warnings\");",
+         "        pm.expect(j.warnings).to.be.an(\"array\");",
+         "    });",
+         "    if (j.warnings && j.warnings.length) {",
+         "        console.log(\"avisos do import: \" + j.warnings.join(\" | \"));",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST import/upload — kind=upscale fora de 2x → warnings (B6)",
+     "request": {
+      "method": "POST",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/upload",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "upload"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2 (linhas 642-645) e criterio de aceite da linha 710: \"Import `kind=upscale` de imagem 2x a origem → sem aviso; 1,1x → `warnings` com \\\"2x\\\"\".\nO fixture `fixtures/situacao.png` tem 16 px de largura, ou seja **nao** e 2x nada: quando ja existe uma situacao/rotulo selecionado, o aviso aparece; sem candidata de origem selecionada, `upscale_warnings` devolve `[]` (`service.py:398-416`) e a lista vem vazia — os dois desfechos sao corretos, o teste cobra o tipo e o texto quando houver aviso.\nGuardado por `allowManualUpload` para nao poluir o projeto a cada execucao.",
+      "body": {
+       "mode": "formdata",
+       "formdata": [
+        {
+         "key": "files",
+         "type": "file",
+         "src": "fixtures/upscale-fora-de-2x.png",
+         "description": "PNG 24x24 versionado ao lado da colecao: 1,5x a largura de `fixtures/situacao.png` (16px), ou seja fora da faixa 1,8x-2,2x que a aula pede — e o que provoca o aviso."
+        },
+        {
+         "key": "kind",
+         "value": "upscale",
+         "type": "text"
+        },
+        {
+         "key": "ref_id",
+         "value": "{{refId}}",
+         "type": "text"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.variables.get(\"allowManualUpload\") !== \"true\") {",
+         "    console.log(\"pulado: allowManualUpload=false (evita empilhar candidatas de upscale)\");",
+         "    pm.execution.skipRequest();",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — aviso nunca recusa o import (FDD linhas 734-735)\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"warnings[] presente (FDD linha 642)\", function () {",
+         "        pm.expect(j.warnings).to.be.an(\"array\");",
+         "    });",
+         "    if (j.warnings.length) {",
+         "        pm.test(\"o aviso fala do upscale 2x da aula (FDD linhas 644-645)\", function () {",
+         "            pm.expect(j.warnings.join(\" \")).to.include(\"2x\");",
+         "        });",
+         "    } else {",
+         "        console.log(\"sem aviso: nao ha candidata de origem selecionada, ou a imagem ja veio ~2x\");",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "GET candidates (contrato 3)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/candidates",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "candidates"
+       ]
+      },
+      "description": "FDD secao 5, contrato 3, linhas 217-221 de `docs/domains/base/features/base-fdd.md`.\n200 `{candidates: [...], final: \"base/base_final.png\"|null}`.\nGuarda o id da primeira candidata em `candidateId` para o `select`."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 3, linha 219\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"corpo tem candidates e final (FDD linha 219)\", function () {",
+         "        pm.expect(j).to.have.property(\"candidates\");",
+         "        pm.expect(j).to.have.property(\"final\");",
+         "    });",
+         "    if (j.candidates && j.candidates.length) {",
+         "        pm.collectionVariables.set(\"candidateId\", j.candidates[0].id);",
+         "    } else {",
+         "        console.warn(\"[base] nenhuma candidata: importe uma imagem antes de rodar o select\");",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST select (contrato 10)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/select",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "select"
+       ]
+      },
+      "description": "FDD secao 5, contrato 10, linhas 283-288; corpo do exemplo da linha 295 de `docs/domains/base/features/base-fdd.md`.\n200 `{final, kind, chain}`; 404 id inexistente; 422 corpo invalido.\nUsa `candidateId`, preenchido pelo request `GET candidates`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"id\": \"{{candidateId}}\",\n  \"note\": \"melhor enquadramento da lata\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// Sem candidata importada nao ha id para selecionar: pula em vez de acusar 404 falso.",
+         "if (!pm.variables.get(\"candidateId\")) {",
+         "    console.warn(\"[base] select pulado: nenhuma candidata em GET candidates — importe uma imagem antes.\");",
+         "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 10, linha 285\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"corpo tem final, kind e chain (FDD linha 285)\", function () {",
+         "        pm.expect(j).to.have.property(\"final\");",
+         "        pm.expect(j).to.have.property(\"kind\");",
+         "        pm.expect(j).to.have.property(\"chain\");",
+         "    });",
+         "    pm.collectionVariables.set(\"finalFile\", j.final || \"\");",
+         "}"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "3 - Caminho pago via CLI",
+   "description": "Fluxo alternativo do FDD secao 4, linhas 119-130 de `docs/domains/base/features/base-fdd.md` (contratos 7, 8 e 9).\n`POST cost` NAO gasta creditos. `POST generate` GASTA — fica atras da guarda `allowPaidRuns` (script de pre-request) e so dispara com `allowPaidRuns=true`.",
+   "item": [
+    {
+     "name": "POST cost — estimativa, nao gasta creditos (contrato 7)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/cost",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "cost"
+       ]
+      },
+      "description": "FDD secao 5, contrato 7, linhas 256-258; corpo do exemplo da linha 263 de `docs/domains/base/features/base-fdd.md`.\n200 `{per_item, count, total, raw}`; 409 CLI nao instalado. `hf.cost` nunca lanca; `null` quando o CLI nao informa o preco.\n`ref_ids` foi OMITIDO de proposito: sem ele o servico considera todas as referencias escolhidas na etapa 1 (`_plan`), e o request nao depende do encadeamento de `refId` (com `ref_ids: [\"\"]` a resposta seria 422, correta mas inutil aqui).\n`model` so faz sentido em `kind: situation`: desde o commit 013bbf5 rotulo e upscale usam os defaults do servico (`nano_banana_2` e `bytedance_image_upscale`).\n\nWAVE 2 (FDD secao 13.2, linhas 647-649): `count` e `aspect_ratio` viraram **opcionais** — ausentes, valem o default do passo (`situation` 1, `label` 3, `upscale` 1) e o `project.aspect_ratio` (default 16:9). Alem disso `GenReq` ganhou `prompt` (B4, `router.py:49`): o texto editado na tela sobrescreve o prompt do passo. Este request manda o corpo **sem** `count` e **sem** `aspect_ratio`, com o `prompt` que veio de `prompts/generate`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"situation\",\n  \"model\": \"{{model}}\",\n  \"resolution\": \"2k\",\n  \"prompt\": \"{{generatedPrompt}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 7, linha 258\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    pm.test(\"corpo tem per_item, count e total (FDD linha 258)\", function () {",
+         "        const j = pm.response.json();",
+         "        pm.expect(j).to.have.property(\"per_item\");",
+         "        pm.expect(j).to.have.property(\"count\");",
+         "        pm.expect(j).to.have.property(\"total\");",
+         "    });",
+         "} else if (pm.response.code === 409) {",
+         "    console.warn(\"[base] 409: CLI da Higgsfield ausente — esperado sem CLI (FDD secao 6, linha 319)\");",
+         "}",
+         "",
+         "// wave 2: sem `count` no corpo, o servico usa o default do passo (situation = 1).",
+         "if (pm.response.code === 200) {",
+         "    pm.test(\"count default do passo situation = 1 (FDD linha 648)\", function () {",
+         "        pm.expect(pm.response.json().count).to.eql(1);",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST cost — kind=label sem count → 3 (B4)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/cost",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "cost"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, linha 648 e criterio de aceite da linha 711: \"`cost`/`generate` sem `count` em `kind=label` → 3 itens\". `DEFAULT_COUNT = {\"situation\": 1, \"label\": 3, \"upscale\": 1}` (`service.py:59`).\nSo estima, nao gasta credito. 409 quando o CLI da Higgsfield nao esta instalado (`router.py:159-160`); 422 sem situacao escolhida ou sem `brand` (FDD linhas 271-273).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"label\",\n  \"resolution\": \"2k\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 409) {",
+         "    pm.test.skip(\"CLI da Higgsfield ausente — o default de count nao pode ser observado\");",
+         "    console.log(\"409: \" + pm.response.text().slice(0, 160));",
+         "} else if (pm.response.code === 422) {",
+         "    pm.test(\"422 = pre-requisito do rotulo ausente (situacao escolhida + brand), FDD linhas 271-273\", function () {",
+         "        pm.expect(pm.response.json().detail).to.be.a(\"string\");",
+         "    });",
+         "    console.log(\"422: \" + pm.response.json().detail);",
+         "} else {",
+         "    pm.test(\"status 200\", function () { pm.response.to.have.status(200); });",
+         "    pm.test(\"count = 3 sem count no corpo (FDD linhas 648 e 711)\", function () {",
+         "        pm.expect(pm.response.json().count).to.eql(3);",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST generate — PAGO (contrato 8)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "generate"
+       ]
+      },
+      "description": "FDD secao 5, contrato 8, linhas 268-273 de `docs/domains/base/features/base-fdd.md`.\n200 job `{state:'running', done:0, total:n, added:0, error:null, log:[]}`; 409 CLI ausente, nao logado ou job em andamento; 422 pre-requisito ausente.\nGASTA CREDITOS: so roda com a variavel `allowPaidRuns` igual a `true`.\n\nWAVE 2 (FDD secao 13.2, linhas 647-649 e B4, linha 583): `count` e `aspect_ratio` opcionais (default do passo e `project.aspect_ratio`) e campo novo `prompt` — o texto **editado na tela** sobrescreve o prompt do passo. O corpo abaixo exercita as tres coisas.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"situation\",\n  \"model\": \"{{model}}\",\n  \"resolution\": \"2k\",\n  \"prompt\": \"{{generatedPrompt}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// Guarda de credito: este request inicia um job PAGO na Higgsfield.",
+         "// So roda quando a variavel allowPaidRuns for exatamente \"true\".",
+         "if (String(pm.variables.get(\"allowPaidRuns\")) !== \"true\") {",
+         "    console.warn(\"[base] request PAGO pulado (allowPaidRuns != true): \" + pm.info.requestName);",
+         "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 8, linha 271\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    pm.test(\"job em running (FDD linha 270)\", function () {",
+         "        pm.expect(pm.response.json().state).to.eql(\"running\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "GET job — polling (contrato 9)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/job",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "job"
+       ]
+      },
+      "description": "FDD secao 5, contrato 9, linhas 277-279 de `docs/domains/base/features/base-fdd.md`.\n200 `registry.status(pid)`; `{state: 'idle'}` quando nunca rodou. A UI faz polling a cada 3 s (FDD secao 4, linhas 121-122)."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 9, linha 279\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    pm.test(\"corpo tem state (FDD linha 279)\", function () {",
+         "        pm.expect(pm.response.json()).to.have.property(\"state\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "erros",
+   "description": "Matriz de erros da secao 6 (linhas 309-325) mais os **deltas da secao 13.4** (linhas 685-696) de `docs/domains/base/features/base-fdd.md`. Casos que dependem de acao do usuario, de estado do CLI ou de arquivo no disco estao listados no README como nao cobertos por HTTP.",
+   "item": [
+    {
+     "name": "404 — pid inexistente (prompts)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/base/prompts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidInexistente}}",
+        "base",
+        "prompts"
+       ]
+      },
+      "description": "FDD secao 6, linha 311 e contrato 1, linha 167 de `docs/domains/base/features/base-fdd.md`. `KeyError` de `project_dir`, tratado pelo handler do nucleo."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 404 — FDD secao 6, linha 311\", function () {",
+         "    pm.response.to.have.status(404);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — sem referencia da etapa 1 ou sem mood (prompts)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidVazio}}/base/prompts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidVazio}}",
+        "base",
+        "prompts"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 5, linha 169, **reescrito pela secao 13.4** (linhas 689-690): o 422 agora vem de falta de referencia da etapa 1 **ou** de `mood/selected/` vazio; `mood/palette.json` ausente ou vazio deixou de ser erro. `pidVazio` (projeto recem-criado) cai na mensagem da etapa 1."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 422 — FDD secao 5, linha 169 e secao 13.4, linha 689\", function () {",
+         "    pm.response.to.have.status(422);",
+         "});",
+         "",
+         "if (pm.response.code === 422) {",
+         "    pm.test(\"mensagem manda voltar a etapa 1 ou a etapa 2 (service.py:138-142)\", function () {",
+         "        pm.expect(JSON.stringify(pm.response.json())).to.match(/etapa 1|etapa 2/);",
+         "    });",
+         "    pm.test(\"nao fala mais em palette.json (B3, FDD linha 690)\", function () {",
+         "        pm.expect(JSON.stringify(pm.response.json())).to.not.include(\"palette.json\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — brand com name vazio",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/brand",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "brand"
+       ]
+      },
+      "description": "FDD secao 6, linha 313 e contrato 2, linha 201 de `docs/domains/base/features/base-fdd.md`. `name` em branco e recusado.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"name\": \"   \",\n  \"description\": \"sem nome de marca nao ha prompt de rotulo\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 422 — FDD secao 6, linha 313\", function () {",
+         "    pm.response.to.have.status(422);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — kind invalido (import/downloads)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/downloads",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "downloads"
+       ]
+      },
+      "description": "FDD secao 6, linha 315 e contrato 5, linha 239 de `docs/domains/base/features/base-fdd.md`. `kind` fora de situation|label|upscale e recusado pelo `Literal` do Pydantic.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"folder\": null,\n  \"since_minutes\": 120,\n  \"kind\": \"situacao\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 422 — FDD secao 6, linha 315\", function () {",
+         "    pm.response.to.have.status(422);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — kind invalido (import/upload)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/upload",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "upload"
+       ]
+      },
+      "description": "FDD secao 6, linha 315 e contrato 4, linha 227 de `docs/domains/base/features/base-fdd.md`. Precisa de um arquivo selecionado a mao no campo `files` para chegar ao servidor.",
+      "body": {
+       "mode": "formdata",
+       "formdata": [
+        {
+         "key": "files",
+         "type": "file",
+         "src": [
+          "fixtures/situacao.png"
+         ],
+         "description": "fixture versionada; exige --working-dir docs/domains/base/postman"
+        },
+        {
+         "key": "kind",
+         "value": "situacao",
+         "type": "text",
+         "description": "valor invalido de proposito"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 422 — FDD secao 6, linha 315\", function () {",
+         "    pm.response.to.have.status(422);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "413 — upload acima de 25 MB",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/upload",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "upload"
+       ]
+      },
+      "description": "FDD secao 6, linha 316 e contrato 4, linha 227 de `docs/domains/base/features/base-fdd.md`. `MAX_UPLOAD_BYTES` = 25 MB por arquivo.\nMANUAL: nao ha (nem deve haver) arquivo de 25 MB versionado no repositorio. Gere um (`head -c 26214400 /dev/urandom > /tmp/big.png`), aponte o campo `files` para ele e ligue `allowManualUpload=true`. Com a variavel em `false` (padrao) o request e pulado — sem isso ele subiria a fixture de 79 bytes e devolveria 200, o que nao prova nada.",
+      "body": {
+       "mode": "formdata",
+       "formdata": [
+        {
+         "key": "files",
+         "type": "file",
+         "src": [],
+         "description": "arquivo > 25 MB, selecionado a mao"
+        },
+        {
+         "key": "kind",
+         "value": "situation",
+         "type": "text"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// Este request precisa de um arquivo grande escolhido a mao (nao versionavel).",
+         "if (String(pm.variables.get(\"allowManualUpload\")) !== \"true\") {",
+         "    console.warn(\"[base] request manual pulado (allowManualUpload != true): \" + pm.info.requestName);",
+         "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 413 — FDD secao 6, linha 316\", function () {",
+         "    pm.response.to.have.status(413);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "404 — pasta Downloads inexistente",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/downloads",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "downloads"
+       ]
+      },
+      "description": "FDD secao 6, linha 318 e contrato 5, linha 239 de `docs/domains/base/features/base-fdd.md`. `FileNotFoundError` do `ingest`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"folder\": \"{{pastaInexistente}}\",\n  \"since_minutes\": 120,\n  \"kind\": \"situation\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 404 — FDD secao 6, linha 318\", function () {",
+         "    pm.response.to.have.status(404);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "409 — CLI da Higgsfield ausente (import/history)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/history",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "history"
+       ]
+      },
+      "description": "FDD secao 6, linha 319 e contrato 6, linha 252 de `docs/domains/base/features/base-fdd.md`. `hf.available()` falso: 409 \"CLI da Higgsfield nao instalado\".\nSo reproduz em maquina SEM o CLI: com o CLI instalado a resposta e 200 (logado) ou 502 (falhando), e o teste se marca como pulado em vez de falhar.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"size\": 50,\n  \"kind\": \"situation\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 409) {",
+         "    pm.test(\"status 409 — FDD secao 6, linha 319\", function () { pm.response.to.have.status(409); });",
+         "} else {",
+         "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI da Higgsfield esta instalado nesta maquina\";",
+         "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "502 — falha do CLI no historico",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/history",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "history"
+       ]
+      },
+      "description": "FDD secao 6, linha 323 e contrato 6, linha 252 de `docs/domains/base/features/base-fdd.md`. `hf.history_media` lançando `RuntimeError` vira 502.\nSo reproduz com o CLI INSTALADO e falhando (ex.: sem login ou binario quebrado): sem CLI vem 409 e com CLI logado vem 200. Nos dois casos o teste se marca como pulado.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"size\": 50,\n  \"kind\": \"situation\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 502) {",
+         "    pm.test(\"status 502 — FDD secao 6, linha 323\", function () { pm.response.to.have.status(502); });",
+         "} else {",
+         "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI ou esta ausente (409) ou esta funcionando (200)\";",
+         "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "409 — CLI ausente (cost)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/cost",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "cost"
+       ]
+      },
+      "description": "FDD secao 6, linha 319 e contrato 7, linha 258 de `docs/domains/base/features/base-fdd.md`. So reproduz em maquina SEM o CLI: com o CLI instalado a resposta e 200 (a estimativa nao gasta creditos) e o teste se marca como pulado.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"situation\",\n  \"count\": 1\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 409) {",
+         "    pm.test(\"status 409 — FDD secao 6, linha 319\", function () { pm.response.to.have.status(409); });",
+         "} else {",
+         "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI da Higgsfield esta instalado nesta maquina\";",
+         "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "409 — CLI ausente ou sem login (generate)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "generate"
+       ]
+      },
+      "description": "FDD secao 6, linhas 319-320 e contrato 8, linha 270 de `docs/domains/base/features/base-fdd.md`. O router checa `hf.available()` e depois `hf.status().logged_in`; nenhum credito e gasto porque o job nem chega a comecar.\nCom CLI instalado E logado esta chamada iniciaria um job PAGO — por isso o teste so cobra o 409 quando ele acontece e, em qualquer outro status, se marca como pulado.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"situation\",\n  \"count\": 1\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 409) {",
+         "    pm.test(\"status 409 — FDD secao 6, linhas 319-320\", function () { pm.response.to.have.status(409); });",
+         "} else {",
+         "    const nome = \"nao reproduz neste ambiente (HTTP \" + pm.response.code + \") — o CLI esta instalado e logado: aqui o pedido viraria job pago\";",
+         "    if (pm.test.skip) { pm.test.skip(nome, function () {}); } else { console.warn(nome); }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "409 — job ja em andamento (generate) — PAGO",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "generate"
+       ]
+      },
+      "description": "FDD secao 6, linha 321 e contrato 8, linha 270 de `docs/domains/base/features/base-fdd.md`. `RuntimeError` do `JobRegistry.start`.\nSo reproduz com CLI logado e um job `running` — ou seja, GASTANDO creditos no job anterior. Fica atras da guarda `allowPaidRuns`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"situation\",\n  \"model\": \"{{model}}\",\n  \"ref_ids\": [\n    \"{{refId}}\"\n  ],\n  \"count\": 1,\n  \"aspect_ratio\": \"16:9\",\n  \"resolution\": \"2k\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// Guarda de credito: este request inicia um job PAGO na Higgsfield.",
+         "// So roda quando a variavel allowPaidRuns for exatamente \"true\".",
+         "if (String(pm.variables.get(\"allowPaidRuns\")) !== \"true\") {",
+         "    console.warn(\"[base] request PAGO pulado (allowPaidRuns != true): \" + pm.info.requestName);",
+         "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 409 — FDD secao 6, linha 321\", function () {",
+         "    pm.response.to.have.status(409);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — pre-requisito ausente em generate (label sem situacao)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "generate"
+       ]
+      },
+      "description": "FDD secao 6, linha 314 e contrato 8, linhas 271-273 de `docs/domains/base/features/base-fdd.md`. `label` exige situacao selecionada e `brand` preenchido.\nO router valida o CLI (409) ANTES do pre-requisito: sem CLI instalado e logado esta rota devolve 409 e o 422 do FDD fica inalcancavel — ver divergencias.md, item 2. O teste aceita os dois e diz no console qual caminho foi exercitado.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"label\",\n  \"count\": 1\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status em [422, 409] — FDD secao 6, linha 314 (422) / linhas 319-320 (409)\", function () {",
+         "    pm.expect([422, 409]).to.include(pm.response.code,",
+         "        \"esperado 422 (pre-requisito) ou 409 (CLI ausente/sem login)\");",
+         "});",
+         "",
+         "if (pm.response.code === 409) {",
+         "    console.warn(\"[base] 409 antes do 422: o router checa o CLI primeiro (divergencias.md, item 2)\");",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "404 — id inexistente no select",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/select",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "select"
+       ]
+      },
+      "description": "FDD secao 6, linha 325 e contrato 10, linha 285 de `docs/domains/base/features/base-fdd.md`. `FileNotFoundError` do servico.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"id\": \"id-que-nao-existe-000\",\n  \"note\": \"\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 404 — FDD secao 6, linha 325\", function () {",
+         "    pm.response.to.have.status(404);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — corpo invalido no select",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/select",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "select"
+       ]
+      },
+      "description": "FDD secao 5, contrato 10, linha 285 de `docs/domains/base/features/base-fdd.md` (\"422 corpo invalido\"). Corpo sem o campo obrigatorio `id`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 422 — FDD secao 5, contrato 10, linha 285\", function () {",
+         "    pm.response.to.have.status(422);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "404 — pid inexistente (job)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/base/job",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidInexistente}}",
+        "base",
+        "job"
+       ]
+      },
+      "description": "FDD secao 6, linha 311 de `docs/domains/base/features/base-fdd.md`. O contrato 9 (linhas 277-279) nao declara o 404, mas o router chama `project_dir(pid)` — ver divergencias.md."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 404 — FDD secao 6, linha 311\", function () {",
+         "    pm.response.to.have.status(404);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — ref_id inexistente (prompts/generate)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, linha 636 e secao 13.4, linha 691. `service.py:267-268` levanta `ValueError(\"referencia inexistente ou nao escolhida na etapa 1: ...\")`, que o router converte em 422 (`router.py:81-82`).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"ref_id\": \"ref-que-nao-existe\",\n  \"mode\": \"template\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 422 — FDD secao 13.4, linha 691\", function () {",
+         "    pm.response.to.have.status(422);",
+         "});",
+         "if (pm.response.code === 422) {",
+         "    pm.test(\"mensagem aponta a referencia desconhecida (service.py:268)\", function () {",
+         "        pm.expect(JSON.stringify(pm.response.json())).to.match(/refer/i);",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — mode invalido (prompts/generate)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, linha 636 e secao 13.4, linha 692: `mode` fora de `images|brief|template` → 422. Aqui quem recusa e o proprio Pydantic (`PromptGenReq.mode: Literal[...]`, `router.py:60`), antes de `service.generate_prompt` — o mesmo status, por outro caminho (ver `divergencias.md`).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"ref_id\": \"{{refId}}\",\n  \"mode\": \"telepatia\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 422 — FDD secao 13.4, linha 692\", function () {",
+         "    pm.response.to.have.status(422);",
+         "});",
+         "if (pm.response.code === 422) {",
+         "    pm.test(\"corpo tem detail (erro de validacao do FastAPI ou do servico)\", function () {",
+         "        pm.expect(pm.response.json()).to.have.property(\"detail\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "409 — Claude CLI ausente em mode=images",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.2, linha 637 e secao 13.4, linha 693: \"Claude CLI ausente em `mode=images|brief` → 409 'Claude CLI indisponivel — use o modo template...'\" (`service.py:275`, `router.py:85-86`).\nCom o Claude instalado o 409 e inalcancavel; o teste se marca como pulado em vez de cobrar um status que nao pode acontecer. Guardado por `allowClaudeRuns` porque, com Claude presente, o request vira uma chamada real ao CLI.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"ref_id\": \"{{refId}}\",\n  \"mode\": \"brief\",\n  \"instruction\": \"teste de contrato\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.variables.get(\"claudeAvailable\") === \"true\" &&",
+         "    pm.variables.get(\"allowClaudeRuns\") !== \"true\") {",
+         "    console.log(\"pulado: com Claude no PATH este request chamaria o CLI de verdade\");",
+         "    pm.execution.skipRequest();",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const claude = pm.variables.get(\"claudeAvailable\") === \"true\";",
+         "if (claude) {",
+         "    pm.test.skip(\"Claude CLI presente no PATH — o 409 da FDD linha 693 nao se aplica aqui\");",
+         "} else {",
+         "    pm.test(\"status 409 — FDD secao 13.4, linha 693\", function () {",
+         "        pm.response.to.have.status(409);",
+         "    });",
+         "    pm.test(\"mensagem manda usar o modo template (service.py:275)\", function () {",
+         "        pm.expect(pm.response.json().detail).to.include(\"template\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — mood/selected vazio, mensagem da etapa 2 (prompts)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidSemMood}}/base/prompts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidSemMood}}",
+        "base",
+        "prompts"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.1 (B3, linha 582), secao 13.4 (linha 689) e criterio de aceite da linha 708: com referencia escolhida na etapa 1 mas `mood/selected/` vazio, `prompts` devolve 422 com a mensagem \"Volte a etapa 2 e salve o mood...\" (`service.py:141-142`).\nExige o fixture `pidSemMood` (projeto com ref escolhida e sem mood); sem ele o request toma 404 e o teste se pula."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 404) {",
+         "    pm.test.skip(\"fixture pidSemMood ausente — 422 da etapa 2 nao verificado\");",
+         "} else {",
+         "    pm.test(\"status 422 — FDD secao 13.4, linha 689\", function () {",
+         "        pm.response.to.have.status(422);",
+         "    });",
+         "    pm.test(\"mensagem manda voltar a etapa 2 (FDD linhas 618-619 e 708)\", function () {",
+         "        pm.expect(JSON.stringify(pm.response.json())).to.include(\"etapa 2\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "200 — palette.json vazio NAO e mais 422 (B3)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidSemPaleta}}/base/prompts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidSemPaleta}}",
+        "base",
+        "prompts"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.1 (B3, linha 582), secao 13.4 (linha 690) e criterio da linha 708: \"`palette.json` vazio com mood presente → 200\". Na v1.0 este mesmo projeto dava 422 (secao 5, linha 169) — e a inversao de regra da wave 2.\nExige o fixture `pidSemPaleta` (mood em imagem, `mood/palette.json` sem cores e sem nota)."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 404) {",
+         "    pm.test.skip(\"fixture pidSemPaleta ausente — a inversao da regra B3 nao foi verificada\");",
+         "} else {",
+         "    pm.test(\"status 200 com palette vazia — FDD secao 13.4, linha 690\", function () {",
+         "        pm.response.to.have.status(200);",
+         "    });",
+         "    pm.test(\"palette vem vazia, sem quebrar o contrato (service.py:105-118)\", function () {",
+         "        const j = pm.response.json();",
+         "        pm.expect(j.palette.colors).to.be.an(\"array\");",
+         "        pm.expect(j.refs, \"os prompts continuam sendo montados\").to.be.an(\"array\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "404 — pid inexistente (prompts/history)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/base/prompts/history",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidInexistente}}",
+        "base",
+        "prompts",
+        "history"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 6, linha 311 (KeyError de `project_dir` → 404 do nucleo) aplicada ao contrato 9 (linhas 639-640), que so declara 200. `service.prompt_history` chama `project_dir(pid)` (`service.py:235`)."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 404 — FDD secao 6, linha 311\", function () {",
+         "    pm.response.to.have.status(404);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "404 — pid inexistente (prompter)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/base/prompter",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidInexistente}}",
+        "base",
+        "prompter"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 6, linha 311. `router.py:97` chama `refs.project_dir(pid)` antes de responder o status do Claude."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 404 — FDD secao 6, linha 311\", function () {",
+         "    pm.response.to.have.status(404);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "404 — pid inexistente (guide/base)",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/guide/base",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidInexistente}}",
+        "guide",
+        "base"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 6, linha 311, aplicada ao contrato 10 (linhas 651-663). `studio/app.py:106` chama `service.project_dir(pid)` antes de rodar o hook; erro **dentro** do hook nunca vira 500, vira `generic_guide` com `status: \"unknown\"` (FDD linha 696)."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 404 — FDD secao 6, linha 311\", function () {",
+         "    pm.response.to.have.status(404);",
+         "});"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — mood vazio tambem em cost(situation)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidSemMood}}/base/cost",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidSemMood}}",
+        "base",
+        "cost"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-fdd.md`, secao 13.4, linha 689: o 422 de `mood/selected/` vazio vale para `prompts`, `prompts/generate` **e** `cost`/`generate(situation)`. `service._plan` chama os mesmos `_require_inputs` (`service.py:133-145`).\nAtencao a precedencia: em `generate` o router checa o CLI da Higgsfield **antes** do pre-requisito e o 422 vira 409 (ver `divergencias.md`); em `cost` o CLI so precisa estar instalado, entao o 422 aparece.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"situation\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 404) {",
+         "    pm.test.skip(\"fixture pidSemMood ausente — caso nao verificado\");",
+         "} else if (pm.response.code === 409) {",
+         "    pm.test.skip(\"CLI da Higgsfield ausente: o 409 do router vem antes do 422 (divergencias.md, item 2)\");",
+         "} else {",
+         "    pm.test(\"status 422 — FDD secao 13.4, linha 689\", function () {",
+         "        pm.response.to.have.status(422);",
+         "    });",
+         "    pm.test(\"mensagem da etapa 2 (service.py:141-142)\", function () {",
+         "        pm.expect(JSON.stringify(pm.response.json())).to.include(\"etapa 2\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
 }
