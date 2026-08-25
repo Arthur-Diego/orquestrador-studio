@@ -1,15 +1,19 @@
 <header class="stephead">
   <span class="eyebrow">Etapa 11 · aula 001</span>
   <h2>Prospecção</h2>
-  <p class="lede">Os primeiros clientes vêm de DM em pequenos negócios: 10 por dia, com o script literal e sem nenhum link. Quem responde recebe um teaser de 5 a 10 s com música e o convite para uma call de 15 minutos. <strong>O Studio redige e registra; enviar é com você</strong> — não existe automação de envio aqui.</p>
+  <p class="lede">Os primeiros clientes vêm de DM em pequenos negócios — <strong>clínicas, academias, advogados, estética, dentistas, comércios</strong>: 10 por dia, com o script literal, citando um post específico e sem nenhum link. <strong>Você só cria de verdade se a empresa responder</strong>: aí sai o teaser de 5 a 10 s com música e o convite para uma call de 15 minutos. <strong>O Studio redige e registra; enviar é com você</strong> — não existe automação de envio aqui.</p>
 </header>
+
+<section id="guide" class="guide"></section>
 
 <section class="panel" id="gatePanel">
   <div class="panel-head">
-    <h3>Portfólio</h3>
+    <h3>Portfólio (global)</h3>
     <span id="gateChip" class="chip mode">—</span>
   </div>
   <p id="gateMsg" class="fine"></p>
+  <p class="fine">O portfólio da aula são <strong>quatro obras diferentes</strong>, cada uma no seu projeto — não quatro formatos do mesmo comercial. Para o teaser deste lead, crie um projeto para o negócio dele e percorra as etapas 1 a 6 em versão curta (uma cena basta): o teaser sai de um take desse projeto, e o portfólio vem dos projetos anteriores.</p>
+  <div id="gateProjects" class="fine"></div>
 </section>
 
 <section class="panel hidden" id="newLeadPanel">
@@ -20,12 +24,12 @@
   <form id="leadForm" class="row wrap">
     <input id="lfBusiness" placeholder="negócio (ex.: Padaria do Zé)" required>
     <input id="lfHandle" placeholder="@perfil" required>
-    <input id="lfPostRef" placeholder="o post que ressoou (ex.: o pão das 6h)">
+    <input id="lfPostRef" placeholder="o post que ressoou (ex.: o pão das 6h)" required>
     <input id="lfWhy" placeholder="por quê (anotação sua, não vai na DM)">
     <select id="lfRole"><option value="fã">sou fã da marca</option><option value="consumidor">sou consumidor</option></select>
     <button class="primary" type="submit">Cadastrar lead</button>
   </form>
-  <p class="fine">A DM é gerada no script da aula, sem links (DM com link cai em spam). O contador de hoje é uma meta de disciplina — o Studio avisa acima de 10, nunca impede.</p>
+  <p class="fine">O post citado é <strong>obrigatório</strong>: "não é spam porque você personaliza — mostra que olhou o perfil e menciona um post específico". A DM é gerada no script da aula, sem links (DM com link cai em spam). O contador de hoje é uma meta de disciplina — o Studio avisa acima de 10, nunca impede.</p>
 </section>
 
 <section class="panel hidden" id="leadsPanel">
@@ -36,6 +40,7 @@
       <span id="jobChip" class="chip mode hidden">teaser</span>
     </div>
   </div>
+  <p class="fine">A ordem da aula é <code>novo → DM enviada → respondeu → teaser → call</code>. O botão do teaser só aparece depois de "respondeu": a aula é explícita em criar apenas para quem responde.</p>
   <div id="leadList" class="prompts"></div>
 </section>
 
@@ -44,9 +49,10 @@
     <h3>3. Pitch da call (15 minutos)</h3>
     <div class="row wrap">
       <button id="btnPitchCopy" class="ghost">Copiar</button>
-      <button id="btnPitchGen" class="ghost">Regerar do modelo</button>
+      <button id="btnPitchSave" class="primary">Salvar valores e regerar</button>
     </div>
   </div>
-  <p class="fine">Tabela de etapas de produção para ancorar valor (sem preço na tabela) e os lembretes da aula: oferta só-agora com 50% no primeiro trabalho, 50% na entrada e 50% na entrega, faixa inicial de R$ 100 a R$ 500 por vídeo de 30 s a 1 min, e vender o resultado — não a IA. Salvo em <code>prospect/pitch.md</code>.</p>
+  <p class="fine">Ancoragem da aula: <strong>revele o valor por etapa até chegar no total que você quer cobrar</strong>. Preencha a coluna abaixo; o total e o "50 % off no 1º trabalho" saem daí. Lembretes da aula: condição especial na hora, ou válida por 24h; 50 % off no primeiro trabalho, deixando claro o valor cheio para os próximos; 50 % na entrada e 50 % na entrega; faixa inicial de R$ 100 a R$ 500 por vídeo de 30 s a 1 min; vender o resultado, não a IA. Salvo em <code>prospect/pitch.md</code>.</p>
+  <div id="pitchValues"></div>
   <pre id="pitchBox" class="log mono"></pre>
 </section>

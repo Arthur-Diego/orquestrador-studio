@@ -24,8 +24,25 @@ def publish(root, videos):
          for i, v in enumerate(videos)]), encoding="utf-8")
 
 
-def open_gate(root):
-    publish(root, [f"export/v{i}.mp4" for i in range(4)])
+def outra_obra(root, slug):
+    """Projeto irmão com post registrado — o portfólio da aula é global (ADR-012)."""
+    other = root.parent / slug
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "project.json").write_text(json.dumps({"id": slug, "name": slug}), encoding="utf-8")
+    publish(other, ["export/9x16.mp4"])
+
+
+def open_gate(root, n=4):
+    publish(root, ["export/9x16.mp4"])
+    for i in range(1, n):
+        outra_obra(root, f"2026-08-obra-{i}")
+
+
+def responde(client, pid, lid):
+    """`new → dm_sent → replied`: a aula só deixa criar o teaser depois da resposta."""
+    base = f"/api/projects/{pid}/prospect/leads/{lid}"
+    client.post(f"{base}/sent", json={})
+    client.post(f"{base}/replied", json={"replied": True})
 
 
 def test_etapa_aparece_no_catalogo(client):
@@ -37,7 +54,8 @@ def test_etapa_aparece_no_catalogo(client):
 
 def test_gate_fechado_bloqueia_escrita_e_libera_leitura(client, project):
     pid, root = project
-    publish(root, ["export/a.mp4", "export/a.mp4", "export/b.mp4"])   # 3 posts, 2 vídeos distintos
+    publish(root, ["export/16x9.mp4", "export/9x16.mp4", "export/1x1.mp4"])   # 3 formatos, 1 obra
+    outra_obra(root, "2026-08-obra-1")
     g = client.get(f"/api/projects/{pid}/prospect/gate").json()
     assert g["ok"] is False and g["published"] == 2 and g["required"] == 4
     assert g["message"] == "A aula manda publicar 4 vídeos criativos antes de prospectar. Você tem 2/4."
@@ -102,6 +120,8 @@ def test_erros_de_validacao_e_lead_inexistente(client, project):
     assert client.post(f"{base}/leads/padariadoze/sent", json={"sent_at": "25/08/2026"}).status_code == 422
     assert client.post(f"{base}/leads/padariadoze/replied", json={"replied": True}).status_code == 422
     assert client.post(f"{base}/leads/padariadoze/call", json={"call_at": "amanhã"}).status_code == 422
+    sem_post = client.post(f"{base}/leads", json={**LEAD, "handle": "@sempost", "post_ref": " "})
+    assert sem_post.status_code == 422 and "post específico" in sem_post.json()["detail"], "11.3"
 
 
 def test_contador_do_dia_avisa_mas_nao_trava(client, project):
@@ -122,6 +142,10 @@ def test_teaser_erros_e_job_ocioso(client, project, monkeypatch):
     lid = client.post(f"{base}/leads", json=LEAD).json()["id"]
     assert client.get(f"{base}/job").json() == {"state": "idle"}
     assert client.post(f"{base}/leads/ninguem/teaser", json={}).status_code == 404
+
+    antes = client.post(f"{base}/leads/{lid}/teaser", json={})
+    assert antes.status_code == 422 and "depois que a empresa responder" in antes.json()["detail"], "11.1"
+    responde(client, pid, lid)
 
     from studio.prospect import service as svc
     monkeypatch.setattr(svc.ff, "available", lambda: False)
@@ -148,6 +172,7 @@ def test_teaser_por_http_ate_o_follow_up(client, project):
     open_gate(root)
     base = f"/api/projects/{pid}/prospect"
     lid = client.post(f"{base}/leads", json=LEAD).json()["id"]
+    responde(client, pid, lid)
     (root / "animate").mkdir(parents=True, exist_ok=True)
     (root / "animate" / "takes.json").write_text(json.dumps({"shots": [{"scene": "cena01", "shot": "shot01", "takes": [
         {"id": "take1", "file": "videos/cena01/shot01_take1.mp4", "liked": True, "duration": 8}]}]}), encoding="utf-8")
@@ -174,9 +199,48 @@ def test_pitch_gera_e_regenera(client, project):
     r = client.get(f"{base}/pitch").json()
     assert r["file"] == "prospect/pitch.md" and "# Pitch: Gelo Zero" in r["markdown"]
     assert "| Conceito |" in r["markdown"] and "R$ 100 a R$ 500" in r["markdown"]
+    assert r["steps"][0] == "Conceito" and r["total"] == 0 and r["priced"] is False
     assert not (root / "prospect" / "pitch.md").exists(), "gate fechado: leitura sim, escrita não"
     assert client.post(f"{base}/pitch").status_code == 409, "gate fechado não regenera"
     open_gate(root)
     assert client.get(f"{base}/pitch").status_code == 200
     assert (root / "prospect" / "pitch.md").exists()
     assert client.post(f"{base}/pitch").status_code == 200
+
+
+def test_pitch_grava_valores_por_etapa_total_e_desconto(client, project):
+    """11.4: 'revela valores por etapa até chegar no total que você quer cobrar'."""
+    pid, root = project
+    open_gate(root)
+    base = f"/api/projects/{pid}/prospect"
+    r = client.post(f"{base}/pitch", json={"values": {"Conceito": 80, "Produção": 220}})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 300.0 and body["sum"] == 300.0 and body["discount"] == 150.0
+    assert body["in_range"] is True and body["matches"] is True
+    md = (root / "prospect" / "pitch.md").read_text(encoding="utf-8")
+    assert "| Valor (R$) |" in md and "R$ 80,00" in md and "R$ 300,00" in md
+    assert "Total com 50 % off no 1º trabalho" in md
+    assert client.get(f"{base}/pitch").json()["values"]["Produção"] == 220.0, "persistido em pitch.json"
+    assert client.post(f"{base}/pitch", json={"values": {"Cafezinho": 10}}).status_code == 422
+
+
+def test_leads_expoe_segmentos_e_sugestao_de_offset(client, project):
+    """11.9 (mar azul da aula) e 11.8 (impacto no início do teaser)."""
+    pid, root = project
+    open_gate(root)
+    (root / "audio").mkdir(parents=True, exist_ok=True)
+    (root / "audio" / "beats.json").write_text(json.dumps({"impacts": [3.0]}), encoding="utf-8")
+    body = client.get(f"/api/projects/{pid}/prospect/leads").json()
+    assert "clínicas" in body["segments"] and "dentistas" in body["segments"]
+    assert body["teaser_hint"]["music_offset"] == 2.5 and body["teaser_hint"]["impact"] == 3.0
+
+
+def test_view_esconde_o_teaser_ate_a_resposta_e_mostra_os_segmentos(client):
+    html = client.get("/steps/prospect/view.html").text
+    js = client.get("/steps/prospect/view.js").text
+    assert "Etapa 11 · aula 001" in html and 'id="guide"' in html
+    for segmento in ("clínicas", "academias", "advogados", "estética", "dentistas", "comércios"):
+        assert segmento in html, segmento
+    assert "l.replied" in js and 'data-act="teaser"' in js, "o botão do teaser depende de replied"
+    assert "destroy()" in js
