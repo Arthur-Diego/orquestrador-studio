@@ -263,3 +263,50 @@ def test_cli_requires_login_and_reports_cost(sb, project, base, monkeypatch):
     assert sb.cost(project, "nano_banana_2", "edit", "Make it smaller", 4) == {"per_image": 3, "total": 12}
     monkeypatch.setattr(sb.hf, "cost", lambda model, params: {"credits": None, "error": "x"})
     assert sb.cost(project, "nano_banana_2", "edit", "Make it smaller", 1) == {"per_image": None, "total": None}
+
+
+# ---------- wave 2: fidelidade à aula 010 (auditoria 4.1–4.6) ----------
+def test_single_instruction_heuristic_accepts_one_request_split_in_two_sentences(sb, project, base):
+    """4.6: "uma instrução por vez" é sobre EDIÇÕES, não sobre pontuação. Uma frase de reforço
+    ("Realistic.") não transforma o pedido em dois."""
+    for uma in ("Make him smaller. Realistic.", "Remove the rope. Nothing else changes.",
+                "Make the climber even smaller and more realistic. Same lighting."):
+        assert sb.build_instruction(project, "edit", uma, 1)["instruction"], uma
+    for duas in ("Make it smaller. Remove the rope.", "Remove the rope. Add a shadow."):
+        with pytest.raises(sb.Invalid):
+            sb.build_instruction(project, "edit", duas, 1)
+
+
+def test_refusal_explains_that_the_rule_is_a_heuristic(sb, project, base):
+    """4.6: o erro precisa dizer que é heurística — senão o usuário acha que é regra do produto."""
+    with pytest.raises(sb.Invalid) as e:
+        sb.build_instruction(project, "edit", "Make it smaller. Remove the rope.", 4)
+    msg = str(e.value)
+    assert "heurística" in msg.lower() and "uma instrução por vez" in msg.lower()
+    assert "Make it smaller" in msg
+
+
+def test_presets_publish_models_arc_and_the_upscale_note(sb):
+    """4.1, 4.4 e 4.5: o modelo extra vem marcado, a estrutura da história e o aviso do upscale
+    saem do backend (a tela não inventa texto de aula)."""
+    p = sb.presets()
+    models = {m["id"]: m for m in p["models"]}
+    assert models["nano_banana_2"]["default"] is True
+    assert models["gpt_image_2"]["default"] is False and "[extensão]" in models["gpt_image_2"]["label"]
+    assert [a["label"] for a in p["arc"]] == ["começo", "descoberta", "ação", "desfecho"]
+    assert "etapa 5" in p["upscale_note"]
+
+
+def test_scene_arc_follows_the_lesson_structure(sb):
+    """4.5: começo → descoberta → ação → desfecho, com a ação ocupando o miolo das ~5 cenas."""
+    assert [sb.scene_arc(n, 5)["label"] for n in range(1, 6)] == \
+        ["começo", "descoberta", "ação", "ação", "desfecho"]
+    assert [sb.scene_arc(n, 3)["label"] for n in range(1, 4)] == ["começo", "descoberta", "desfecho"]
+    assert sb.scene_arc(1, 1)["label"] == "começo"
+
+
+def test_storyboard_md_carries_the_arc_and_the_upscale_note(sb, project, root, base):
+    sb.save_scenes(project, [{"text": "abre na nevasca"}, {"text": "acha a lata"}, {"text": "bebe"}])
+    md = (root / "storyboard" / "storyboard.md").read_text()
+    assert "## Cena 1 — começo" in md and "## Cena 3 — desfecho" in md
+    assert "etapa 5" in md, "4.1: o documento diz onde o upscale acontece"

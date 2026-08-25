@@ -374,6 +374,30 @@
               }
             }
           ]
+        },
+        {
+          "name": "GET instructions - modelos, arco da historia e nota do upscale (wave 2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('nano banana e o padrao', () => pm.expect(b.models[0]).to.include({ id: 'nano_banana_2', default: true }));",
+                  "pm.test('modelo extra marcado como extensao', () => pm.expect(b.models[1].label).to.include('[extensão]'));",
+                  "pm.test('arco da aula 010', () => pm.expect(b.arc.map(a => a.label)).to.eql(['começo', 'descoberta', 'ação', 'desfecho']));",
+                  "pm.test('upscale acontece na etapa 5', () => pm.expect(b.upscale_note).to.include('etapa 5'));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -1063,6 +1087,34 @@
                   "pm.test('state em idle|running|done|error', function () {",
                   "  pm.expect(['idle','running','done','error']).to.include(b.state);",
                   "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST cost - edicao encadeada na ideia escolhida (source_id)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/projects/{{pid}}/storyboard/cost",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"model\": \"nano_banana_2\", \"kind\": \"edit\", \"text\": \"Make the climber even smaller and more realistic\", \"count\": 1, \"source_id\": \"{{ideaId}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 sem CLI logado, 200 com CLI', () => pm.expect([200, 409, 422]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -1811,6 +1863,28 @@
               "    if (!err && res.code === 200) { pm.collectionVariables.set('pidVazio', res.json().id); }",
               "  });",
               "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Guia da etapa 4 (rota do nucleo)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/projects/{{pid}}/guide/storyboard"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const g = pm.response.json();",
+              "pm.test('a etapa tem guia proprio', () => pm.expect(g.status).to.not.eql('unknown'));",
+              "pm.test('validacoes da auditoria 4.5', () => pm.expect(g.validations.map(v => v.id)).to.include('v41_cinco_cenas'));"
             ]
           }
         }

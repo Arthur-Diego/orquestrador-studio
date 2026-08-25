@@ -16,7 +16,10 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 # ---------- modelos de requisição ----------
 class BaseReq(BaseModel):
+    #: `storyboard` (imagem da cena) | `base` (imagem da campanha) | `candidate` (promove um
+    #: resultado da própria cena a nova base da cena — aula 011, auditoria 5.2).
     source: str = "storyboard"
+    id: str | None = None
 
 
 class DownloadsReq(BaseModel):
@@ -33,6 +36,8 @@ class GenReq(BaseModel):
     model: str = shots.DEFAULT_MODEL
     prompts: list[str] = []
     count: int = 4
+    #: `[extensão]` (decisão 5 da wave 2 · auditoria 5.6): a aula não fixa resolução. 2k é o
+    #: default do Studio; `null` deixa o CLI decidir. A proporção vem de `project.aspect_ratio`.
     resolution: str | None = "2k"
     image_references: list[str] | None = None
 
@@ -41,7 +46,7 @@ class ProductGenReq(BaseModel):
     model: str = shots.DEFAULT_MODEL
     prompt: str = ""
     count: int = 1
-    resolution: str | None = "2k"
+    resolution: str | None = "2k"     # [extensão] — ver GenReq.resolution
     image_references: list[str] | None = None
 
 
@@ -99,7 +104,8 @@ def shots_scenes(pid: str):
 
 @router.post("/api/projects/{pid}/shots/scenes/{scene}/base")
 def shots_base(pid: str, scene: str, req: BaseReq | None = None):
-    return _call(shots.prepare_base, pid, scene, (req or BaseReq()).source)
+    r = req or BaseReq()
+    return _call(shots.prepare_base, pid, scene, r.source, None, "", r.id)
 
 
 @router.post("/api/projects/{pid}/shots/scenes/{scene}/base/upload")
@@ -112,9 +118,9 @@ async def shots_base_upload(pid: str, scene: str, file: UploadFile = File(...)):
 def shots_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None = None,
                   scale: str = "close", realism: bool = True, lens: float = 35, aperture: float = 2.8,
                   angle: str = "eye-level", edits: list[str] | None = Query(None),  # noqa: B008
-                  model: str = shots.DEFAULT_MODEL, count: int = 4):
+                  model: str = shots.DEFAULT_MODEL, count: int = 4, camera: str | None = None):
     return _call(shots.build_prompts, pid, scene, kind, subject, scale, realism, lens, aperture,
-                 angle, edits, model, count)
+                 angle, edits, model, count, camera)
 
 
 # ---------- importação ----------

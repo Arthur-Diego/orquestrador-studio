@@ -35,10 +35,18 @@ STEP = "shots"
 PRODUCT = "product"
 DEFAULT_MODEL = "nano_banana_2"
 UPSCALE_MODEL = "bytedance_image_upscale"
+#: `[extensão]` (decisão 5 da wave 2 · auditoria 5.6): a aula 011 não fixa proporção. 16:9 é só o
+#: default; o formato real vem de `project.aspect_ratio` (escolhido pelo destino, aula 007).
 ASPECT_RATIO = "16:9"
 MAX_COUNT = 8
 DOWNLOAD_RETRY_SLEEP = 2.0
 WARNING_COLORS = "Acerte cores e luz ANTES do multishot: as variações herdam o que a base tiver."
+#: Aula 013 (auditoria 5.8): a cena do produto nasce depois de escolher a trilha.
+PRODUCT_NOTE = ("Da aula 013: a cena do produto normalmente é feita **depois** de escolher a "
+                "trilha (etapa 7). Se você ainda não escolheu a música, siga o curso e volte aqui.")
+#: Aula 011 (auditoria 5.5): os enquadramentos que o instrutor pede, como exemplo no campo "foco".
+FOCUS_EXAMPLES = ["the astronaut's face (close no rosto)", "his feet (foco nos pés)",
+                  "his hands (foco nas mãos)", "the whole valley (plano aberto com cenário)"]
 DOWNLOADS_DEFAULT = ingest.DOWNLOADS_DEFAULT
 IMG_EXT = ingest.MEDIA_EXT["image"]
 
@@ -57,6 +65,18 @@ def load_scenes(pid: str) -> list[dict]:
         raise FileNotFoundError("Conclua a etapa 4 (storyboard): storyboard/scenes.json não existe.")
     data = json.loads(f.read_text())
     return sorted(data.get("scenes") or [], key=lambda s: s.get("n") or 0)
+
+
+def _project_meta(root: Path) -> dict:
+    try:
+        return json.loads((root / "project.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _aspect_ratio(root: Path) -> str:
+    """Proporção da campanha (`project.aspect_ratio`, aula 007) — 16:9 quando não escolhida."""
+    return _project_meta(root).get("aspect_ratio") or ASPECT_RATIO
 
 
 def _palette(root: Path) -> dict:
@@ -108,16 +128,21 @@ def list_scenes(pid: str) -> dict:
     for s in load_scenes(pid):
         sid = s.get("id") or ""
         sdir = _scene_dir(root, sid)
+        sel = _selection(root, sid)
         scenes.append({
             "id": sid, "n": s.get("n"), "text": s.get("text") or "", "image": s.get("image"),
             "base": f"{STEP}/{sid}/base.png", "base_ready": (sdir / "base.png").exists(),
             "candidates": len(ingest.load_candidates(root, _step_of(sid))) if sid else 0,
-            "selected": len(_selection(root, sid)),
+            "selected": len(sel),
+            # Aula 011 (auditoria 5.1): "aplicar upscale e baixar" — a tela mostra N/M por cena.
+            "upscaled": sum(1 for sh in sel if sh.get("upscaled")),
         })
     base_final = _base_final(root)
     pdir = root / STEP / PRODUCT
     return {
         "warning": WARNING_COLORS,
+        "product_note": PRODUCT_NOTE,
+        "aspect_ratio": _aspect_ratio(root),
         "palette": _palette(root),
         "base_final": "base/base_final.png" if base_final else None,
         "scenes": scenes,
@@ -148,10 +173,21 @@ def _check_ext(name: str) -> None:
 
 
 def prepare_base(pid: str, scene: str, source: str = "storyboard", data: bytes | None = None,
-                 name: str = "") -> dict:
-    """Materializa `shots/cenaNN/base.png`. Idempotente: reexecutar sobrescreve com a mesma origem."""
-    root, _ = _resolve(pid, scene)
+                 name: str = "", cand_id: str | None = None) -> dict:
+    """Materializa `shots/cenaNN/base.png`. Idempotente: reexecutar sobrescreve com a mesma origem.
+
+    `source="candidate"` promove um resultado da cena a nova base (aula 011, auditoria 5.2: o
+    Cinema Studio acerta a **base** da cena; o Multi Shot só vem depois dela estar certa)."""
+    root, step = _resolve(pid, scene)
     dest = _scene_dir(root, scene) / "base.png"
+    if source == "candidate":
+        if not cand_id:
+            raise ValueError("source=candidate exige o `id` do candidato que vira a base da cena.")
+        c = _candidate(root, step, cand_id)
+        _write_png((root / step / "candidates" / c["file"]).read_bytes(), dest)
+        log.info("shots pid=%s scene=%s op=prepare_base source=candidate id=%s", pid, scene, cand_id)
+        return {"scene": scene, "base": f"{STEP}/{scene}/base.png", "source": "candidate",
+                "candidate": cand_id}
     if data is not None:
         _check_ext(name or "upload.png")
         _write_png(data, dest)
@@ -191,9 +227,31 @@ _EDIT_LABEL = "Edição numerada (aula 011: 'Quero as seguintes modificações. 
 _KEEP = "Keep everything else identical, realistic."
 
 
-def _camera(lens: float, aperture: float, scale: str, angle: str) -> str:
+#: Presets do bloco de câmera — o que a aula escolhe no Cinema Studio, que não tem API (ADR-002).
+#: "RED comercial" é a câmera citada na aula 013 e entra como preset aprovado (decisão 9 da wave 2
+#: · auditoria 5.7); os outros dois são os estilos que a aula 011 cita ("documentário, wide").
+#: O usuário pode mandar texto livre em `camera` — o preset é sugestão, não trilho.
+CAMERA_PRESETS = [
+    {"id": "red", "label": "RED comercial (aula 013) [extensão]", "body": "Shot on RED Komodo 6K"},
+    {"id": "documentario", "label": "Documentário (aula 011)",
+     "body": "Documentary style, handheld camera, available light"},
+    {"id": "wide", "label": "Wide cinematográfico (aula 011)",
+     "body": "Anamorphic lens, cinematic wide framing"},
+]
+DEFAULT_CAMERA = "red"
+
+
+def _camera_body(camera: str | None) -> str:
+    """Corpo do bloco de câmera: id de preset ou texto livre do usuário."""
+    key = (camera or DEFAULT_CAMERA).strip()
+    preset = next((c for c in CAMERA_PRESETS if c["id"] == key), None)
+    return preset["body"] if preset else key
+
+
+def _camera(lens: float, aperture: float, scale: str, angle: str, camera: str | None = None) -> str:
     """Bloco de câmera: o que a aula escolhe no Cinema Studio, que não tem API (ADR-002)."""
-    return f"Shot on RED Komodo 6K, {lens:g}mm, f/{aperture:g}, {scale} shot, {angle} angle. Realistic."
+    return (f"{_camera_body(camera)}, {lens:g}mm, f/{aperture:g}, {scale} shot, "
+            f"{angle} angle. Realistic.")
 
 
 def _subject(root: Path) -> str:
@@ -204,9 +262,15 @@ def _subject(root: Path) -> str:
 def build_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None = None,
                   scale: str = "close", realism: bool = True, lens: float = 35, aperture: float = 2.8,
                   angle: str = "eye-level", edits: list[str] | None = None,
-                  model: str = DEFAULT_MODEL, count: int = 4) -> dict:
-    """Prompts em inglês, determinísticos para os mesmos parâmetros (rótulos e avisos em pt-BR)."""
+                  model: str = DEFAULT_MODEL, count: int = 4, camera: str | None = None) -> dict:
+    """Prompts em inglês, determinísticos para os mesmos parâmetros (rótulos e avisos em pt-BR).
+
+    `camera` é o preset (ou o texto livre) do bloco de câmera. Em `kind="angle"` o bloco entra
+    quando `realism` está ligado; em `kind="edit"` ele é **opt-in** — só entra quando `camera` é
+    informado, porque a edição da aula é uma lista de modificações, não um pedido de câmera
+    (auditoria 5.3: o bloco passa a ser oferecido também na edição, sem virar padrão)."""
     root, _ = _resolve(pid, scene)
+    ratio = _aspect_ratio(root)
     if scale not in _SHOT_PHRASE:
         raise ValueError(f"escala inválida: {scale} (close, medium ou wide)")
     if kind == "edit":
@@ -215,21 +279,29 @@ def build_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None
             raise ValueError("kind=edit exige pelo menos uma instrução em `edits`.")
         numbered = " ".join(f"{i}. {e if e.endswith('.') else e + '.'}" for i, e in enumerate(items, 1))
         text = f"I want the following modifications. {numbered} {_KEEP}"
-        return {"model": model, "aspect_ratio": ASPECT_RATIO, "count": 1, "scene": scene,
-                "ui_hint": "Uma rodada de edição por vez; se precisar de mais, gere de novo sobre o resultado.",
-                "warning": WARNING_COLORS, "prompts": [{"label": _EDIT_LABEL, "text": text}]}
+        if realism and camera:
+            text += " " + _camera(lens, aperture, scale, angle, camera)
+        return {"model": model, "aspect_ratio": ratio, "count": 1, "scene": scene,
+                "ui_hint": ("Uma rodada de edição por vez. O resultado que ficar bom vira a NOVA BASE "
+                            "da cena (\"Usar como base da cena\") — só depois faça o Multi Shot, "
+                            "porque toda variação herda as cores e a luz da base."),
+                "warning": WARNING_COLORS, "cameras": CAMERA_PRESETS, "camera": camera,
+                "focus_examples": FOCUS_EXAMPLES,
+                "prompts": [{"label": _EDIT_LABEL, "text": text}]}
     if kind != "angle":
         raise ValueError(f"kind inválido: {kind} (angle ou edit)")
     subj = (subject or "").strip() or _subject(root)
     text = (f"Bring me another point of view of this image. I want {_SHOT_PHRASE[scale]} {subj}. "
             "Same scene, same lighting and colors.")
     if realism:
-        text += " " + _camera(lens, aperture, scale, angle)
-    return {"model": model, "aspect_ratio": ASPECT_RATIO, "count": count, "scene": scene,
+        text += " " + _camera(lens, aperture, scale, angle, camera)
+    return {"model": model, "aspect_ratio": ratio, "count": count, "scene": scene,
             "ui_hint": (f"Na Higgsfield: abra {STEP}/{scene}/base.png, use Multi Shot com este prompt. "
                         "Para realismo use o Cinema Studio (câmera, lente, abertura) ou mantenha o "
                         "bloco de câmera do prompt."),
-            "warning": WARNING_COLORS, "prompts": [{"label": _ANGLE_LABEL, "text": text}]}
+            "warning": WARNING_COLORS, "cameras": CAMERA_PRESETS,
+            "camera": camera or DEFAULT_CAMERA, "focus_examples": FOCUS_EXAMPLES,
+            "prompts": [{"label": _ANGLE_LABEL, "text": text}]}
 
 
 def product_prompts(pid: str, model: str = DEFAULT_MODEL) -> dict:
@@ -238,8 +310,9 @@ def product_prompts(pid: str, model: str = DEFAULT_MODEL) -> dict:
     if not (root / STEP / PRODUCT / "ref.png").exists():
         raise FileNotFoundError("Envie a imagem de referência (imagem 1) da cena do produto.")
     return {
-        "model": model, "aspect_ratio": ASPECT_RATIO, "count": 1,
+        "model": model, "aspect_ratio": _aspect_ratio(root), "count": 1,
         "image_references": [f"{STEP}/{PRODUCT}/ref.png", "base/base_final.png"],
+        "note": PRODUCT_NOTE,
         "ui_hint": ("Nano Banana com as duas imagens como referência (imagem 1 = a cena, imagem 2 = "
                     "base/base_final.png). Rode a instrução 1; depois rode a instrução 2 sobre o resultado."),
         "prompts": [
@@ -284,7 +357,10 @@ def list_candidates(pid: str, scene: str) -> dict:
     cands = []
     for c in ingest.load_candidates(root, step):
         cands.append({**c, "file": f"{step}/candidates/{c['file']}",
-                      "thumb": f"{step}/candidates/{c['thumb']}" if c.get("thumb") else None})
+                      "thumb": f"{step}/candidates/{c['thumb']}" if c.get("thumb") else None,
+                      # Aula 011 (auditoria 5.1): a tela precisa dizer, por candidato, se ele já
+                      # passou pelo upscale — o que o CLI marca em `role`/`upscaled`.
+                      "upscaled": bool(c.get("upscaled") or c.get("role") == "upscale")})
     out = {"scene": scene, "candidates": cands}
     if scene == PRODUCT:
         out["ref"] = f"{STEP}/{PRODUCT}/ref.png"
@@ -314,9 +390,9 @@ def _refs_for(root: Path, scene: str) -> list[str]:
 def cost(pid: str, scene: str, model: str, prompts: list[str], count: int = 4,
          resolution: str | None = None) -> dict:
     """Estimativa de créditos SEM criar job — a UI mostra antes do confirm() de `generate`."""
-    _resolve(pid, scene)
+    root, _ = _resolve(pid, scene)
     _check_gen(prompts, count)
-    est = [hf.cost(model, {"prompt": p, "aspect_ratio": ASPECT_RATIO, "count": 1,
+    est = [hf.cost(model, {"prompt": p, "aspect_ratio": _aspect_ratio(root), "count": 1,
                            **({"resolution": resolution} if resolution else {})}) for p in prompts]
     known = [e["credits"] for e in est if isinstance(e.get("credits"), (int, float))]
     complete = len(known) == len(est) and bool(known)
@@ -362,12 +438,13 @@ def start_generate(pid: str, scene: str, model: str = DEFAULT_MODEL, prompts: li
     _check_gen(ps, count)
     refs = [str(root / r) if not Path(r).is_absolute() else r for r in (image_references or [])] \
         or _refs_for(root, scene)
+    ratio = _aspect_ratio(root)
 
     def run(job: dict) -> None:
         done = 0
         for pi, prompt in enumerate(ps, 1):
             for k in range(1, count + 1):
-                params = {"prompt": prompt, "aspect_ratio": ASPECT_RATIO, "count": 1,
+                params = {"prompt": prompt, "aspect_ratio": ratio, "count": 1,
                           "image_references": refs, **({"resolution": resolution} if resolution else {})}
                 res = hf.generate(model, params)
                 _save_raw(root, res, f"{pi}_{k}")
@@ -463,9 +540,15 @@ def select_shots(pid: str, scene: str, shots: list[dict]) -> dict:
         c["selected"] = c["id"] in chosen
     ingest.save_candidates(root, step, all_cands)
     write_storyboard(pid)
-    log.info("shots pid=%s scene=%s op=select count=%d", pid, scene, len(saved))
+    # Aula 011 (auditoria 5.1): "selecionar os melhores takes → aplicar upscale e baixar".
+    # A seleção não é recusada — o instrutor pede o upscale, o Studio avisa quando falta.
+    faltam = [s["id"] for s in saved if not s["upscaled"]]
+    warning = (f"{len(faltam)} frame(s) sem upscale ({', '.join(faltam)}): a aula 011 manda "
+               "fazer upscale antes de baixar. Rode o upscale e salve a ordem de novo.") if faltam else None
+    log.info("shots pid=%s scene=%s op=select count=%d sem_upscale=%d", pid, scene, len(saved), len(faltam))
     return {"scene": scene, "base": f"{STEP}/{scene}/base.png", "shots": saved,
-            "storyboard": f"{STEP}/storyboard.json"}
+            "storyboard": f"{STEP}/storyboard.json", "storyboard_md": f"{STEP}/storyboard.md",
+            "warning": warning}
 
 
 def select_product(pid: str, cand_id: str | None, upscaled: bool = False) -> dict:
@@ -492,7 +575,8 @@ def select_product(pid: str, cand_id: str | None, upscaled: bool = False) -> dic
         ingest.save_candidates(root, step, cands)
     board = write_storyboard(pid)
     log.info("shots pid=%s scene=product op=product_select id=%s", pid, cand_id)
-    return {"product_scene": board["product_scene"], "storyboard": f"{STEP}/storyboard.json"}
+    return {"product_scene": board["product_scene"], "storyboard": f"{STEP}/storyboard.json",
+            "storyboard_md": f"{STEP}/storyboard.md", "note": PRODUCT_NOTE}
 
 
 def write_storyboard(pid: str) -> dict:
@@ -516,7 +600,56 @@ def write_storyboard(pid: str) -> dict:
     out = root / STEP / "storyboard.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(board, ensure_ascii=False, indent=1))
+    write_storyboard_md(pid, board)
     return board
+
+
+def _md_row(root: Path, base: str, shots: list[dict]) -> list[str]:
+    """Grid de uma cena em Markdown: a base e os frames na ordem, com o estado do upscale."""
+    cells: list[tuple[str, str]] = []
+    if base and (root / base).exists():
+        cells.append(("base", base))
+    cells += [(f"{sh['id']} · {'upscalado' if sh.get('upscaled') else 'sem upscale'}", sh["file"])
+              for sh in shots]
+    if not cells:
+        return ["_(nenhum frame escolhido ainda)_", ""]
+
+    def rel(p: str) -> str:
+        """O .md mora em `shots/`: os caminhos do storyboard perdem esse prefixo."""
+        return p[len(STEP) + 1:] if p.startswith(f"{STEP}/") else p
+
+    return ["| " + " | ".join(c[0] for c in cells) + " |",
+            "| " + " | ".join("---" for _ in cells) + " |",
+            "| " + " | ".join(f"![{c[0]}]({rel(c[1])})" for c in cells) + " |", ""]
+
+
+def write_storyboard_md(pid: str, board: dict | None = None) -> str:
+    """`shots/storyboard.md` — o documento de storyboard da aula 011 ("monta a ordem dos frames
+    dentro do documento, usando prints"). Regravado a cada seleção (auditoria 5.4)."""
+    root = project_dir(pid)
+    board = board if board is not None else load_storyboard(pid)
+    meta = _project_meta(root)
+    texts = {s.get("id"): (s.get("text") or "") for s in load_scenes(pid)}
+    lines = [f"# Ângulos por cena: {meta.get('name') or root.name}", "",
+             f"Produto: {meta.get('product') or '—'} · Vibe: {meta.get('vibe') or '—'} · "
+             f"Proporção: {_aspect_ratio(root)}", "",
+             "Aula 011: a base de cada cena vem primeiro; os frames aparecem na ordem em que a "
+             "cena progride. Cada frame deve estar upscalado antes de virar vídeo (etapa 6).", ""]
+    for scene in board.get("scenes") or []:
+        sid = scene.get("id") or ""
+        lines += [f"## {sid}", ""]
+        if texts.get(sid):
+            lines += [texts[sid], ""]
+        lines += _md_row(root, scene.get("base") or "", scene.get("shots") or [])
+    product = board.get("product_scene")
+    if product:
+        lines += ["## Cena do produto (aula 013)", "", PRODUCT_NOTE, ""]
+        lines += _md_row(root, product.get("base") or "", product.get("shots") or [])
+    lines += ["---", "", f"Gerado em {time.strftime('%Y-%m-%d %H:%M')}."]
+    f = root / STEP / "storyboard.md"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("\n".join(lines) + "\n")
+    return f"{STEP}/storyboard.md"
 
 
 def load_storyboard(pid: str) -> dict:

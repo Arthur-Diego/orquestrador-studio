@@ -30,17 +30,27 @@ sequenceDiagram
   R->>S: import_downloads(pid, "cena01", …)
   S->>I: import_downloads(root, "shots/cena01", …)
   I-->>S: {added, scanned, folder}
+  U->>V: "Usar como base da cena" no melhor resultado (aula 011)
+  V->>R: POST /scenes/cena01/base {source:"candidate", id}
+  R->>S: prepare_base(pid, "cena01", "candidate", cand_id=id)
+  S-->>V: base.png trocada — só agora vale gerar o grid de ângulos
   U->>V: Escolher e ordenar
-  V->>R: POST /scenes/cena01/select {shots:[…]}
+  V->>R: POST /scenes/cena01/select {shots:[{id, upscaled}]}
   R->>S: select_shots(pid, "cena01", shots)
-  S-->>V: shotMM_final.png gravados e shots/storyboard.json reescrito
+  S-->>V: shotMM_final.png + shots/storyboard.json + shots/storyboard.md
+  Note over S,V: warning quando algum frame não está upscalado<br/>(a aula manda upscalar antes de baixar — avisa, não recusa)
 ```
 
 ## 2. Origem da base de cada cena
 
 ```mermaid
 flowchart TD
-  A["POST /scenes/{scene}/base"] --> B{upload enviado?}
+  A["POST /scenes/{scene}/base"] --> K{"source = candidate?"}
+  K -- sim --> KC{"id informado<br/>e candidato existe?"}
+  KC -- não --> KE["422 (sem id) / 404 (id desconhecido)"]
+  KC -- sim --> KP["copia shots/cenaNN/candidates/&lt;file&gt;<br/>(promove o resultado a nova base — aula 011)"]
+  KP --> H
+  K -- não --> B{upload enviado?}
   B -- sim --> U["shots/cenaNN/base.png (upload)"]
   B -- não --> C{"scenes.json tem image<br/>e o arquivo existe?"}
   C -- sim --> D["copia storyboard/ideas/&lt;file&gt;"]
@@ -83,4 +93,18 @@ flowchart LR
   I2 --> IM["import upload / downloads / history<br/>step = shots/product"]
   IM --> SE["POST /product/select {id}"]
   SE --> F["shots/product/product_final.png<br/>+ product_scene em shots/storyboard.json"]
+```
+
+## 5. Guia da etapa (wave 2 · `studio/etapas/shots/guide.py`)
+
+```mermaid
+flowchart LR
+  G["GET /api/projects/{pid}/guide/shots"] --> H["guide(pid) — leitura pura"]
+  H --> IN{"storyboard/scenes.json<br/>com cenas escritas?"}
+  IN -- não --> BL["status: blocked<br/>atalho para a etapa 4"]
+  IN -- sim --> OUT["saídas: base de toda cena ·<br/>storyboard.json com ≥1 frame · storyboard.md"]
+  OUT --> ST{"todas as saídas ok?"}
+  ST -- sim --> D["status: done → etapa 6"]
+  ST -- não --> P["status: in_progress<br/>progress = saídas ok / saídas"]
+  H --> V["validações V5.2–V5.8 + paleta [extensão]<br/>(atenção — nunca bloqueiam)"]
 ```

@@ -1,18 +1,21 @@
 <header class="stephead">
   <span class="eyebrow">Etapa 5 · aula 011 (+ cena do produto, aula 013)</span>
   <h2>Ângulos por cena</h2>
-  <p class="lede">Cada cena do storyboard vira vários ângulos da mesma imagem: prepare a base da cena, peça "outro ponto de vista" (Multi Shot na interface da Higgsfield, onde o ilimitado vale), importe, escolha, faça upscale e ordene. No fim a etapa grava <code>shots/storyboard.json</code> — é o que a etapa 6 anima.</p>
+  <p class="lede">Cada cena do storyboard vira vários ângulos da mesma imagem: acerte a base da cena (é ela que define cor e luz de todas as variações), peça "outro ponto de vista" (Multi Shot na interface da Higgsfield, onde o ilimitado vale), importe, escolha, <b>faça upscale</b> e ordene. No fim a etapa grava <code>shots/storyboard.json</code> — é o que a etapa 6 anima — e <code>shots/storyboard.md</code>, o documento com os prints na ordem.</p>
 </header>
+
+<section id="guide" class="guide"></section>
 
 <section class="panel">
   <div class="panel-head">
     <h3>1. Cenas do storyboard</h3>
     <div class="row wrap">
       <span id="shotsWarn" class="chip warn"></span>
+      <span id="shotsRatio" class="chip mode">proporção: ?</span>
       <button id="btnShotsReload" class="ghost">Recarregar</button>
     </div>
   </div>
-  <p class="fine">Paleta do mood board (etapa 2) — acerte cores e luz na base <b>antes</b> do multishot: toda variação herda o que a base tiver.</p>
+  <p class="fine">Paleta do mood board (etapa 2) — acerte cores e luz na base <b>antes</b> do multishot: toda variação herda o que a base tiver. O chip de cada cena mostra quantos frames escolhidos já estão upscalados (a aula manda fazer upscale antes de baixar).</p>
   <div id="shotsPalette" class="palette"></div>
   <div id="sceneList" class="gallery"></div>
 </section>
@@ -27,6 +30,7 @@
       <label class="drop" id="baseDrop">outra imagem<input id="baseUpload" type="file" accept="image/*" hidden></label>
     </div>
   </div>
+  <p class="fine">A ordem da aula 011 é: <b>1)</b> acerte a base da cena com a edição numerada (realismo, rosto oculto, sem elementos estranhos, sensação de movimento); <b>2)</b> promova o resultado bom a nova base — botão <b>"Usar como base da cena"</b> no candidato; <b>3)</b> só então gere o grid de ângulos no Multi Shot.</p>
   <div class="grid2">
     <div class="col">
       <div class="row wrap">
@@ -34,14 +38,16 @@
           <option value="angle">Outro ponto de vista (Multi Shot)</option>
           <option value="edit">Edição numerada (uma rodada por vez)</option>
         </select>
-        <input id="promptSubject" placeholder="foco (ex.: the astronaut)" style="flex:1;min-width:180px">
+        <input id="promptSubject" placeholder="foco (ex.: the astronaut's face — close no rosto)" style="flex:1;min-width:180px">
         <select id="promptScale" style="flex:0 0 auto;min-width:110px"><option value="close">close</option><option value="medium">médio</option><option value="wide">aberto</option></select>
         <select id="promptAngle" style="flex:0 0 auto;min-width:150px"><option value="eye-level">altura dos olhos</option><option value="low">contra-plongée</option><option value="high">plongée</option></select>
         <label class="inline"><input id="promptRealism" type="checkbox" checked> bloco de câmera</label>
+        <select id="promptCamera" style="flex:0 0 auto;min-width:200px"></select>
         <label class="inline">lente <input id="promptLens" type="number" value="35" min="12" max="200"></label>
         <label class="inline">f/ <input id="promptAperture" type="number" value="2.8" min="1" max="22" step="0.1"></label>
         <button id="btnPrompts" class="ghost">Gerar prompt</button>
       </div>
+      <p class="fine" id="focusExamples"></p>
       <div id="editsBox" class="row wrap hidden">
         <textarea id="promptEdits" rows="3" placeholder="uma modificação por linha, em inglês (ex.: Make the helmet visor tinted) — a aula manda numerar e fazer uma rodada por vez"></textarea>
       </div>
@@ -71,11 +77,11 @@
     <div class="row wrap">
       <span id="shotsCounts" class="chip mode">0 candidatos · 0 escolhidos</span>
       <button id="btnShotsUpscale" class="ghost" disabled>Upscale do último escolhido (CLI)</button>
-      <label class="inline"><input id="shotsUpscaled" type="checkbox"> já upscalei na UI</label>
+      <label class="inline"><input id="shotsUpscaled" type="checkbox"> já upscalei estes na UI</label>
       <button id="btnShotsSave" class="primary">Salvar ordem da cena</button>
     </div>
   </div>
-  <p class="fine">Clique nos candidatos na ordem em que os frames entram na cena — o número no card é a ordem (<code>shot01_final.png</code>, <code>shot02_final.png</code>…).</p>
+  <p class="fine">Clique nos candidatos na ordem em que os frames entram na cena — o número no card é a ordem (<code>shot01_final.png</code>, <code>shot02_final.png</code>…). Cada card diz se aquele frame está <b>upscalado</b>; o que veio do upscale do CLI já entra marcado. Salvar regrava também <code>shots/storyboard.md</code>.</p>
   <div id="shotsGallery" class="gallery"></div>
 </section>
 
@@ -88,6 +94,7 @@
       <button id="btnProdPrompts" class="ghost">Ver as duas instruções</button>
     </div>
   </div>
+  <p class="fine" id="prodNote">Da aula 013: a cena do produto normalmente é feita <b>depois</b> de escolher a trilha (etapa 7). Se você ainda não escolheu a música, siga o curso e volte aqui.</p>
   <p class="fine">A imagem 2 é sempre <code>base/base_final.png</code> (a lata com o rótulo próprio da etapa 3). Rode a instrução 1; depois rode a instrução 2 sobre o resultado da primeira.</p>
   <div id="prodPrompts" class="prompts"></div>
   <div class="row wrap">
@@ -101,8 +108,11 @@
 <section class="panel">
   <div class="panel-head">
     <h3>4. Storyboard da etapa</h3>
-    <button id="btnBoard" class="ghost">Conferir shots/storyboard.json</button>
+    <div class="row wrap">
+      <button id="btnBoard" class="ghost">Conferir shots/storyboard.json</button>
+      <a id="shotsMd" class="hidden" target="_blank" rel="noopener">abrir shots/storyboard.md</a>
+    </div>
   </div>
-  <p class="fine">É o arquivo que a etapa 6 (animação) lê sem adaptação: toda cena na ordem, com os frames escolhidos.</p>
+  <p class="fine"><code>storyboard.json</code> é o arquivo que a etapa 6 (animação) lê sem adaptação: toda cena na ordem, com os frames escolhidos. <code>storyboard.md</code> é o documento da aula, com a base e os prints de cada cena na ordem em que ela progride.</p>
   <div id="boardOut" class="log mono"></div>
 </section>
