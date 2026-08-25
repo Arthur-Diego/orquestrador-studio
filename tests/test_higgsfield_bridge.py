@@ -23,11 +23,13 @@ def test_json_parser_accepts_json_lines():
 
 
 def test_status_without_cli(monkeypatch):
+    hf.reset_status_cache()
     monkeypatch.setattr(hf, "BIN", None)
     assert hf.status() == {"installed": False, "logged_in": False}
 
 
 def test_status_not_logged_in(monkeypatch):
+    hf.reset_status_cache()
     monkeypatch.setattr(hf, "BIN", "/bin/false")
     monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (1, "", "Error: Not authenticated."))
     s = hf.status()
@@ -82,3 +84,36 @@ def test_run_handles_missing_binary_and_timeout(monkeypatch):
     monkeypatch.setattr(hf, "BIN", "/bin/true")
     code, _, err = hf._run(["generate", "create"], timeout=1)
     assert code == 124 and "tempo esgotado" in err
+
+
+def test_status_cache_avoids_repeated_subprocess(monkeypatch):
+    """`account status` custa até 30 s e 7 telas pedem o chip a cada troca de projeto."""
+    hf.reset_status_cache()
+    calls = []
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (calls.append(args), (0, '{"plan": "ultimate"}', ""))[1])
+    assert hf.status()["plan"] == "ultimate"
+    assert hf.status()["plan"] == "ultimate" and len(calls) == 1, "segunda leitura vem do cache"
+    assert hf.status(refresh=True)["plan"] == "ultimate" and len(calls) == 2, "refresh ignora o cache"
+    hf.reset_status_cache()
+    hf.status()
+    assert len(calls) == 3, "cache zerado volta a consultar o CLI"
+
+
+def test_status_cache_expires_after_ttl(monkeypatch):
+    hf.reset_status_cache()
+    calls = []
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (calls.append(args), (0, "{}", ""))[1])
+    hf.status()
+    monkeypatch.setattr(hf.time, "monotonic", lambda: hf._STATUS_CACHE["at"] + hf.STATUS_TTL + 1)
+    hf.status()
+    assert len(calls) == 2
+
+
+def test_status_without_cli_is_never_cached(monkeypatch):
+    """Sem binário não há subprocess para poupar — e cachear atrapalharia os testes seguintes."""
+    hf.reset_status_cache()
+    monkeypatch.setattr(hf, "BIN", None)
+    assert hf.status() == {"installed": False, "logged_in": False}
+    assert hf._STATUS_CACHE["data"] is None

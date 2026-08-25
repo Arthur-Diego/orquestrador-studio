@@ -172,8 +172,11 @@ def test_remover_desfaz_o_portfolio_pronto(svc, studio_env, project):
 
 
 def test_portfolio_status_nao_grava_nada(svc, studio_env, project):
+    # A pasta `publish/` passou a nascer com o projeto (PROJECT_LAYOUT, wave 2): o que o GET
+    # não pode criar é artefato dentro dela.
     svc.portfolio_status(project)
-    assert not (studio_env["refs"].project_dir(project) / "publish").exists(), "GET não cria artefato"
+    pasta = studio_env["refs"].project_dir(project) / "publish"
+    assert list(pasta.iterdir()) == [], "GET não cria artefato"
 
 
 # ---------- resiliência ----------

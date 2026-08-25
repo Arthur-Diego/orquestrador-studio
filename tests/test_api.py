@@ -73,3 +73,47 @@ def test_mood_prompter_endpoints(client, monkeypatch):
     assert len(client.get(f"/api/projects/{pid}/mood/prompts/history").json()) == 2
     monkeypatch.setattr(prompter, "from_brief", lambda kind, brief: (_ for _ in ()).throw(RuntimeError("Claude falhou: x")))
     assert client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "brief"}).status_code == 502
+
+
+def test_project_detail_and_patch(client):
+    pid = client.post("/api/projects", json={"name": "Detalhe", "product": "energy drink"}).json()["id"]
+    p = client.get(f"/api/projects/{pid}").json()
+    assert p["id"] == pid and p["product"] == "energy drink"
+    assert p["progress"] == 0.0 and p["current"] == "refs", "projeto vazio começa na etapa 1"
+
+    r = client.patch(f"/api/projects/{pid}", json={"vibe": "snow neon", "aspect_ratio": "9:16", "brand": "Gelo Zero"})
+    assert r.status_code == 200
+    assert r.json()["vibe"] == "snow neon" and r.json()["aspect_ratio"] == "9:16" and r.json()["brand"] == "Gelo Zero"
+    assert r.json()["name"] == "Detalhe", "campo ausente no PATCH não é apagado"
+    assert client.get(f"/api/projects/{pid}").json()["vibe"] == "snow neon", "gravado em project.json"
+    assert client.get("/api/projects").json()[0]["aspect_ratio"] == "9:16"
+
+    assert client.patch(f"/api/projects/{pid}", json={"aspect_ratio": "4:3"}).status_code == 422
+    assert client.get(f"/api/projects/{pid}").json()["aspect_ratio"] == "9:16", "422 não altera nada"
+    assert client.patch("/api/projects/nao-existe", json={"name": "x"}).status_code == 404
+    assert client.get("/api/projects/nao-existe").status_code == 404
+
+
+def test_project_can_be_created_without_vibe(client):
+    """Aula 009: a vibe é encontrada na etapa 2 — não se pede na criação do projeto."""
+    r = client.post("/api/projects", json={"name": "Sem vibe", "product": "soda"})
+    assert r.status_code == 200 and r.json()["vibe"] == ""
+    pid = r.json()["id"]
+    termos = client.get("/api/suggest-terms", params={"product": "soda"}).json()
+    assert "soda ad campaign" in termos and all(t.strip() for t in termos)
+    p = client.patch(f"/api/projects/{pid}", json={"vibe": "ice"}).json()
+    assert p["vibe"] == "ice", "a etapa 2 grava a vibe depois"
+
+
+def test_higgsfield_status_is_cached_and_refreshable(client, monkeypatch):
+    from studio import higgsfield as hf
+    calls = []
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (calls.append(args), (0, '{"credits": 7}', ""))[1])
+    hf.reset_status_cache()
+
+    assert client.get("/api/higgsfield/status").json()["credits"] == 7
+    client.get("/api/higgsfield/status")
+    assert len(calls) == 1, "a 2ª chamada em menos de 60 s vem do cache"
+    assert client.get("/api/higgsfield/status", params={"refresh": 1}).json()["logged_in"] is True
+    assert len(calls) == 2, "?refresh=1 ignora o cache"

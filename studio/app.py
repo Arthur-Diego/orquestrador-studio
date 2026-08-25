@@ -1,10 +1,13 @@
 """Orquestrador Studio — núcleo da API + frontend. Rode: ./run.sh  (ou uvicorn studio.app:app)
 
-O núcleo conhece só projetos, catálogo de etapas, arquivos e estáticos. Cada etapa é um
-plugin em `studio/etapas/<id>/` (router + view) descoberto em `studio.etapas.discover()`.
+O núcleo conhece só projetos, catálogo de etapas, guia por etapa, arquivos e estáticos. Cada
+etapa é um plugin em `studio/etapas/<id>/` (router + view + guia opcional) descoberto em
+`studio.etapas.discover()`.
 """
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -13,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import higgsfield as hf
+from .common import guide as guide_lib
 from .config import PROJECTS_DIR, WEB_DIR
 from .etapas import discover
 from .refs import service
@@ -20,6 +24,13 @@ from .steps import all_steps
 
 app = FastAPI(title="Orquestrador Studio")
 PLUGINS = discover()
+
+#: Formatos aceitos em `project.aspect_ratio` `[extensão]` — a aula 007 manda escolher o
+#: formato pelo destino (vertical para Reels/TikTok, wide para YouTube). Default: 16:9.
+ASPECT_RATIOS = ("16:9", "9:16", "1:1")
+DEFAULT_ASPECT_RATIO = "16:9"
+#: Campos de `project.json` que o PATCH pode alterar.
+PATCHABLE = ("name", "product", "vibe", "aspect_ratio", "brand")
 
 
 @app.exception_handler(KeyError)
@@ -31,7 +42,16 @@ async def _project_not_found(_request, exc: KeyError):
 class NewProject(BaseModel):
     name: str
     product: str = ""
-    vibe: str = ""
+    vibe: str = ""      # opcional: a aula 009 encontra a vibe na etapa 2, não na criação
+
+
+class ProjectPatch(BaseModel):
+    """Campos editáveis do projeto; ausente = não muda (`None` nunca sobrescreve)."""
+    name: str | None = None
+    product: str | None = None
+    vibe: str | None = None
+    aspect_ratio: str | None = None     # [extensão] — 16:9 | 9:16 | 1:1
+    brand: str | None = None            # [extensão] — a marca que substitui o rótulo (etapa 3)
 
 
 @app.get("/api/steps")
@@ -52,9 +72,85 @@ def new_project(req: NewProject):
         raise HTTPException(409, str(e)) from e
 
 
+@app.get("/api/projects/{pid}")
+def project(pid: str):
+    """`project.json` + o progresso da campanha e a etapa atual (derivados dos artefatos)."""
+    meta = _read_project(pid)
+    over = _overview(_all_guides(pid))
+    return {**meta, "progress": over["progress"], "current": over["current"]}
+
+
+@app.patch("/api/projects/{pid}")
+def patch_project(pid: str, req: ProjectPatch):
+    """Atualiza campos do projeto. `aspect_ratio` fora de `ASPECT_RATIOS` → 422."""
+    fields = {k: v for k, v in req.model_dump().items() if v is not None and k in PATCHABLE}
+    if "aspect_ratio" in fields and fields["aspect_ratio"] not in ASPECT_RATIOS:
+        raise HTTPException(422, f"aspect_ratio inválido: use {' | '.join(ASPECT_RATIOS)}")
+    meta = {**_read_project(pid), **fields}
+    _write_project(pid, meta)
+    return meta
+
+
+@app.get("/api/projects/{pid}/guide")
+def project_guide(pid: str):
+    """Guia das 11 etapas de uma vez — usado pelo menu, pela barra de progresso e pelo painel."""
+    guides = _all_guides(pid)
+    return {"steps": guides, **_overview(guides)}
+
+
+@app.get("/api/projects/{pid}/guide/{step}")
+def step_guide(pid: str, step: str):
+    plugin = PLUGINS.get(step)
+    if not plugin:
+        raise HTTPException(404, f"etapa inexistente: {step}")
+    service.project_dir(pid)   # 404 se o projeto não existe
+    return _guide_of(pid, plugin)
+
+
 @app.get("/api/higgsfield/status")
-def hf_status():
-    return hf.status()
+def hf_status(refresh: bool = False):
+    """Status do CLI, cacheado por 60 s no backend (`?refresh=1` força uma consulta nova)."""
+    return hf.status(refresh=True) if refresh else hf.status()
+
+
+# ---------- projeto e guia (helpers do núcleo) ----------
+def _read_project(pid: str) -> dict:
+    return json.loads((service.project_dir(pid) / "project.json").read_text())
+
+
+def _write_project(pid: str, meta: dict) -> None:
+    """Escrita atômica: grava em `.tmp` e troca — nunca deixa `project.json` pela metade."""
+    path = service.project_dir(pid) / "project.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=1))
+    os.replace(tmp, path)
+
+
+def _guide_of(pid: str, plugin: dict) -> dict:
+    """Guia de uma etapa: hook do plugin, protegido. Erro no hook nunca vira 500."""
+    hook = plugin.get("guide")
+    if hook is None:
+        return guide_lib.generic_guide(plugin["meta"])
+    try:
+        return hook(pid)
+    except KeyError:
+        raise                                    # projeto inexistente continua sendo 404
+    except Exception as e:                       # noqa: BLE001 — o guia é informativo, nunca quebra a tela
+        return guide_lib.generic_guide(plugin["meta"], detail=f"{type(e).__name__}: {e}")
+
+
+def _all_guides(pid: str) -> list[dict]:
+    service.project_dir(pid)                     # 404 antes de rodar 11 hooks
+    return [_guide_of(pid, p) for p in PLUGINS.values()]
+
+
+def _overview(guides: list[dict]) -> dict:
+    """`{progress, current}` da campanha: fração de etapas concluídas e a 1ª não concluída."""
+    total = len(guides)
+    done = sum(1 for g in guides if g["status"] == "done")
+    current = next((g["id"] for g in guides if g["status"] != "done"), None)
+    return {"done": done, "total": total,
+            "progress": round(done / total, 2) if total else 0.0, "current": current}
 
 
 # ---------- plugins de etapa ----------
