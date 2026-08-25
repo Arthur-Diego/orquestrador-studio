@@ -1,0 +1,84 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 8 · aula 014</span>
+  <h2>Montagem no ritmo</h2>
+  <p class="lede">A trilha dita o ritmo: cada corte cai num impacto da música, com quadro preto no impacto, speed ramp com mistura de quadros, SFX de formiguinha e fade de opacidade no fim. Os takes com <em>like</em> da etapa 6 já entram na ordem do storyboard.</p>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>1. Timeline</h3>
+    <div class="row wrap">
+      <span id="editState" class="chip mode">—</span>
+      <span id="ffState" class="chip mode">ffmpeg: ?</span>
+      <button id="btnReset" class="ghost" title="Recria a timeline a partir dos takes com like da etapa 6 (usar depois de gerar takes novos)">Recriar do zero</button>
+      <button id="btnSave" class="primary">Salvar timeline</button>
+    </div>
+  </div>
+  <div id="clips" class="col"></div>
+  <p class="fine">Corte por clipe com <code>in</code>/<code>out</code> em segundos; <code>speed</code> acima de 1 acelera (o speed ramp da aula); <em>mistura de quadros</em> é o frame blending — desligue se ficar borrado demais.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>2. Cortes no ritmo</h3>
+    <div class="row wrap">
+      <label class="inline">quadro preto <input id="blackDur" type="number" value="0.2" min="0" max="1" step="0.05"> s</label>
+      <button id="btnPropose" class="ghost">Propor cortes nos impactos</button>
+      <button id="btnApply" class="primary">Aplicar proposta</button>
+    </div>
+  </div>
+  <p id="cutsInfo" class="fine">Precisa de <code>audio/beats.json</code> da etapa 7. Sem ele, monte os cortes na mão.</p>
+  <div id="blacks" class="row wrap"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>3. Música e fade</h3>
+    <div class="row wrap">
+      <label class="inline">cortar a música em <input id="musicOffset" type="number" value="0" min="0" step="0.1"> s</label>
+      <label class="inline">fade final <input id="fadeOut" type="number" value="1.5" min="0" max="5" step="0.1"> s</label>
+    </div>
+  </div>
+  <p id="musicInfo" class="fine mono"></p>
+  <audio id="musicPlay" controls class="hidden"></audio>
+  <p class="fine">O offset é a escolha humana da aula: ouça a trilha e comece no trecho que leva ao ápice. Os cortes propostos usam esse mesmo offset.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>4. SFX</h3>
+    <div class="row wrap">
+      <label class="drop" id="sfxDrop">Arraste SFX aqui ou <input id="sfxUpload" type="file" accept="audio/*" multiple hidden><u>escolha arquivos</u></label>
+      <span id="sfxCount" class="chip mode">0 SFX</span>
+    </div>
+  </div>
+  <div id="sfxLib" class="col"></div>
+  <div id="sfxTimeline" class="col"></div>
+  <p class="fine">Trabalho de formiguinha da aula 014: respiração do astronauta, ambiente, impacto. wav, mp3, m4a ou ogg, até 25 MB.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>5. Transição colada</h3>
+    <div class="row wrap">
+      <select id="lfClip"></select>
+      <button id="btnLastFrame" class="ghost">Exportar último frame</button>
+    </div>
+  </div>
+  <p id="lfInfo" class="fine"></p>
+  <img id="lfImg" class="hidden" alt="último frame" style="max-width:320px;border-radius:8px">
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>6. Render</h3>
+    <div class="row wrap">
+      <span id="durInfo" class="chip mode">duração 0 s</span>
+      <button id="btnRough" class="ghost" title="Prévia rápida: só música, sem SFX, sem loudnorm e sem fade">Rough cut</button>
+      <button id="btnMaster" class="primary">Master 1920×1080 · 30 fps</button>
+    </div>
+  </div>
+  <div class="progress"><div id="renderBar" class="bar" style="width:0%"></div></div>
+  <div id="renderLog" class="log"></div>
+  <video id="preview" class="hidden" controls style="max-width:100%;border-radius:8px"></video>
+</section>
