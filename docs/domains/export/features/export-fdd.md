@@ -509,3 +509,50 @@ Arquivos da entrega: `studio/etapas/export/{__init__.py, router.py, view.html, v
 - Confirmar que `reframe` pode ficar como opcional apesar de ADR-004 listá-lo como [INFERÊNCIA]; se não, remover contratos 8 e 9 e o painel correspondente.
 - Confirmar leitura da aula 007 para o formato 1:1 (a aula cita vertical e 16:9; o 1:1 vem do catálogo `SOON` da etapa 9 e do plano §3.3).
 - `MEDIA_URL_RE`/`hf.generate` devolvendo URLs de mp4 depende da extensão transversal já mergeada; confirmar no bootstrap da worktree.
+
+---
+
+### Notas de implementação (frente OS-009, wave 1)
+
+Registro das diferenças entre o que este FDD especificou e o que a frente entregou. Nada aqui
+muda contrato publicado; são detalhes que o revisor do lote (W5) precisa ver.
+
+- **`export/.state.json` (novo, interno).** O contrato 1 devolve `outputs.thumb.t`, mas nada no
+  schema guardava esse tempo entre requisições. A frente grava um arquivo oculto
+  `export/.state.json` com `{"thumb_t": <s>}`. É dotfile: `GET /export/list` ignora arquivos
+  que começam com `.` e `previews/`, então o schema da wave (`16x9.mp4`, `9x16.mp4`, `1x1.mp4`,
+  `thumb.jpg`, `qa_report.md`) continua exato para a etapa 10.
+- **502 do contrato 9 não implementado.** `POST /export/reframe` só chama o CLI dentro do job
+  (`hf.generate` roda na thread), então não existe "falha do CLI ao iniciar" para traduzir em
+  502: falha do CLI vira `state=error` no job, como já previsto na seção 6. Os 404/409/422 do
+  início da rota valem como especificado.
+- **`_filter_for` recebeu um quarto parâmetro opcional.** `_filter_for(fmt, width, height,
+  vcodec="")`: o codec é necessário para decidir o caminho `-c copy` do 16:9 (o FDD já exigia a
+  decisão, mas a assinatura da seção 5 não passava o codec). Parâmetro com default, sem quebra.
+- **Ordem de validação no reframe.** As duas rotas de reframe resolvem o projeto antes de checar
+  o CLI, para que um `pid` inexistente responda 404 (e não 409 "CLI não instalado").
+- **HLD não atualizado nesta branch.** `docs/domains/studio/hld.md` é arquivo único compartilhado
+  pela wave e está proibido para as frentes; o parágrafo da etapa 9 e o bump ficam para a W5.
+- **Download do reframe também é atômico.** A seção 4 descrevia `hf.download(url, export/<fmt>.mp4)`
+  direto no arquivo final; a implementação baixa para `export/.<fmt>.reframe.tmp.mp4` e só então faz
+  `replace`, pelo mesmo invariante do render (o arquivo do formato nunca fica parcial). Se o download
+  falhar, o arquivo anterior continua intacto.
+- **URL do vídeo vem de `res["urls"]`, não de uma regex própria.** `hf.generate` já aplica
+  `MEDIA_URL_RE` e devolve `urls`; o serviço apenas filtra por sufixo de vídeo (`.mp4`, `.mov`,
+  `.webm`). Efeito igual, sem duplicar regex.
+- **Crop calculado em Python, não por expressão do ffmpeg.** A tabela da seção 4 usava
+  `crop=ih*9/16:ih:(iw-ih*9/16)/2:0`. A implementação calcula o retângulo (`_crop_rect`) e emite
+  números concretos — o que também define o comportamento quando o master é **mais estreito** que a
+  proporção alvo (corta pela largura em vez de pedir um crop maior que o frame). O retângulo devolvido
+  por `POST /export/preview` é exatamente o que vai para o filtro.
+- **Mensagem do 409 de concorrência.** O texto vem da `JobRegistry` ("Já existe um trabalho em
+  andamento para este projeto."), não da string `"job em andamento"` do FDD. O status é o
+  especificado; quem assertar mensagem precisa usar a da registry.
+- **`GET /export/status` sem ffmpeg é mais enxuto que o exemplo do contrato 1.** Sem ffmpeg não há
+  probe: `master` vem só com `exists`/`file` e cada output só com `file`. É o que permite a rota
+  continuar respondendo 200 nesse estado.
+- **`reframe_cost` blinda o CLI, não a entrada.** Erro do CLI vira `{"credits": null, "error": ...}`,
+  mas `aspect_ratio` inválido continua 422 e master ausente continua 404.
+- **Critérios `[cross-feature]` pendentes.** O master usado na verificação foi fixture
+  (`make_video`, 1920x1080/30 fps e 320x240), nunca o `edit/master.mp4` real da frente `edit`;
+  o consumo por `publish` também não foi exercido. Ambos ficam para a integração.
