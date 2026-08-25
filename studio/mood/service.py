@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 from PIL import Image
 
 from .. import higgsfield as hf
-from ..common import ingest
+from ..common import ingest, prompter
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -72,6 +72,83 @@ def suggest_prompts(pid: str, model: str = "nano_banana_2", variation: int = 0) 
                if model == "nano_banana_2" else "Na UI: GPT Image 2 · 2K · 16:9 · gere 4 imagens.")
     return {"model": model, "ui_hint": ui_hint, "aspect_ratio": "16:9", "variation": variation,
             "prompts": [{"label": "Vibe da campanha", "text": text}]}
+
+
+# ---------- imagens de vibe + bot de prompts (aula 009: achar a vibe → bot → prompt) ----------
+VIBE_STEP = "mood/vibe"
+MAX_VIBE_IMAGES = 4
+
+
+def vibe_images(pid: str) -> list[dict]:
+    return ingest.load_candidates(project_dir(pid), VIBE_STEP)
+
+
+def vibe_import_upload(pid: str, files: list[tuple[str, bytes]]) -> dict:
+    return ingest.import_upload(project_dir(pid), VIBE_STEP, files, "vibe")
+
+
+def vibe_import_downloads(pid: str, folder: str | None = None, since_minutes: int = 120) -> dict:
+    return ingest.import_downloads(project_dir(pid), VIBE_STEP, folder, since_minutes, kind="image")
+
+
+def _brief(root: Path, extra: dict | None = None) -> dict:
+    meta = json.loads((root / "project.json").read_text())
+    b = {"product": meta.get("product") or "", "vibe": meta.get("vibe") or "",
+         "hints": "; ".join(h for h in _refs_summary(root) if h)[:300]}
+    for k in ("purpose", "tone", "reference", "instruction"):
+        if extra and extra.get(k):
+            b[k] = extra[k]
+    return b
+
+
+def _ui_hint(model: str) -> str:
+    return ("Na UI da Higgsfield: Nano Banana Pro · 2K · 16:9 · gere um grid de 4 (ilimitado no Ultra); "
+            "no modo com imagens, anexe as imagens de vibe como referência. "
+            "Não pegou a vibe? Gere outro grid ou ajuste a instrução."
+            if model == "nano_banana_2" else "Na UI: GPT Image 2 · 2K · 16:9 · gere 4 imagens.")
+
+
+def generate_prompt(pid: str, mode: str = "images", instruction: str = "", image_ids: list[str] | None = None,
+                    purpose: str = "", tone: str = "", reference: str = "", model: str = "nano_banana_2",
+                    variation: int = 0) -> dict:
+    """mode: 'template' (sem Claude), 'brief' (Claude, só texto) ou 'images' (Claude olha as imagens de vibe)."""
+    root = project_dir(pid)
+    brief = _brief(root, {"purpose": purpose, "tone": tone, "reference": reference, "instruction": instruction})
+    if mode == "template":
+        res = prompter.fallback_template("mood", brief, variation)
+        images = []
+    elif mode == "brief":
+        if not prompter.available():
+            raise RuntimeError("Claude CLI indisponível — use o modo template ou instale o Claude Code")
+        res = prompter.from_brief("mood", brief)
+        images = []
+    elif mode == "images":
+        ids = list(image_ids or [])[:MAX_VIBE_IMAGES]
+        if not ids:
+            raise ValueError("escolha de 1 a 4 imagens de vibe")
+        if not prompter.available():
+            raise RuntimeError("Claude CLI indisponível — use o modo template ou instale o Claude Code")
+        by_id = {c["id"]: c for c in vibe_images(pid)}
+        missing = [i for i in ids if i not in by_id]
+        if missing:
+            raise ValueError(f"imagem de vibe inexistente: {', '.join(missing)}")
+        paths = [root / VIBE_STEP / "candidates" / by_id[i]["file"] for i in ids]
+        res = prompter.from_images("mood", paths, instruction, brief)
+        images = ids
+    else:
+        raise ValueError("mode deve ser template, brief ou images")
+    res = prompter.enforce_mood_rules(res)
+    entry = {"mode": mode, "instruction": instruction, "images": images, "model": model, "aspect_ratio": "16:9",
+             "ui_hint": _ui_hint(model), "created": datetime.now().isoformat(timespec="seconds"), **res}
+    hist = prompt_history(pid)
+    hist.insert(0, entry)
+    (root / "mood" / "prompts.json").write_text(json.dumps(hist[:50], ensure_ascii=False, indent=1))
+    return entry
+
+
+def prompt_history(pid: str) -> list[dict]:
+    f = project_dir(pid) / "mood" / "prompts.json"
+    return json.loads(f.read_text()) if f.exists() else []
 
 
 # ---------- importação (delegada a studio/common/ingest.py) ----------
