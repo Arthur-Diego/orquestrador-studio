@@ -1,0 +1,26 @@
+# ambiente
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.compozy/tasks/*/memory/
+node_modules/
+
+# dados de projetos de vídeo (locais)
+projects/
+
+# mídia, transcrições e material bruto do curso — ficam só locais
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.m4a
+*.srt
+*.vtt
+media/
+texts/
+transcricoes/
+harvest-report.json
