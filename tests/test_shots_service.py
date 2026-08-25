@@ -346,3 +346,133 @@ def test_upscale_of_unknown_candidate(shots, project):
     shots.prepare_base(project, "cena01")
     with pytest.raises(LookupError):
         shots.start_upscale(project, "cena01", "naoexiste")
+
+
+# ---------- wave 2: fidelidade à aula 011 (auditoria 5.1–5.8) ----------
+def test_candidate_can_be_promoted_to_the_scene_base(shots, studio_env, project):
+    """5.2: a aula acerta a BASE da cena antes do Multishot — o resultado bom vira a nova base."""
+    root = studio_env["refs"].project_dir(project)
+    a, _b = _two_candidates(shots, project)
+    antes = (root / "shots" / "cena01" / "base.png").read_bytes()
+    r = shots.prepare_base(project, "cena01", "candidate", cand_id=a)
+    assert r["source"] == "candidate" and r["candidate"] == a
+    assert (root / "shots" / "cena01" / "base.png").read_bytes() != antes
+    with pytest.raises(ValueError):
+        shots.prepare_base(project, "cena01", "candidate")
+    with pytest.raises(LookupError):
+        shots.prepare_base(project, "cena01", "candidate", cand_id="naoexiste")
+
+
+def test_edit_prompt_hint_points_to_the_new_base(shots, project):
+    """5.2: o `ui_hint` da edição diz o que fazer com o resultado."""
+    hint = shots.build_prompts(project, "cena01", "edit", edits=["Remove the can"])["ui_hint"]
+    assert "NOVA BASE" in hint and "Multi Shot" in hint
+
+
+def test_camera_block_is_offered_in_the_edit_prompt(shots, project):
+    """5.3: a linguagem de câmera é do realismo da BASE — passa a ser oferecida também na edição,
+    sem virar padrão (a edição da aula é uma lista de modificações)."""
+    plain = shots.build_prompts(project, "cena01", "edit", edits=["Remove the can"])
+    assert plain["prompts"][0]["text"].endswith("Keep everything else identical, realistic.")
+    with_cam = shots.build_prompts(project, "cena01", "edit", edits=["Remove the can"], camera="red")
+    assert "Shot on RED Komodo 6K, 35mm" in with_cam["prompts"][0]["text"]
+
+
+def test_camera_presets_are_published_and_editable(shots, project):
+    """5.7: "RED comercial" é preset aprovado (decisão 9), não trilho — dá para trocar e escrever."""
+    r = shots.build_prompts(project, "cena01")
+    ids = [c["id"] for c in r["cameras"]]
+    assert ids == ["red", "documentario", "wide"] and r["camera"] == "red"
+    assert "[extensão]" in r["cameras"][0]["label"]
+    doc = shots.build_prompts(project, "cena01", camera="documentario")["prompts"][0]["text"]
+    assert "Documentary style, handheld camera, available light, 35mm" in doc
+    livre = shots.build_prompts(project, "cena01", camera="Shot on ARRI Alexa 35")["prompts"][0]["text"]
+    assert "Shot on ARRI Alexa 35, 35mm" in livre
+
+
+def test_aspect_ratio_comes_from_the_project_not_from_a_constant(shots, studio_env, project):
+    """5.6: 16:9 é só o default `[extensão]`; o formato real é escolhido pelo destino (aula 007)."""
+    assert shots.build_prompts(project, "cena01")["aspect_ratio"] == "16:9"
+    root = studio_env["refs"].project_dir(project)
+    meta = json.loads((root / "project.json").read_text())
+    (root / "project.json").write_text(json.dumps({**meta, "aspect_ratio": "9:16"}))
+    assert shots.build_prompts(project, "cena01")["aspect_ratio"] == "9:16"
+    assert shots.build_prompts(project, "cena01", "edit", edits=["x"])["aspect_ratio"] == "9:16"
+    shots.set_product_ref(project, image_bytes(color=(3, 3, 3)))
+    assert shots.product_prompts(project)["aspect_ratio"] == "9:16"
+    assert shots.list_scenes(project)["aspect_ratio"] == "9:16"
+
+
+def test_generate_sends_the_project_aspect_ratio_to_the_cli(shots, studio_env, project, monkeypatch):
+    root = studio_env["refs"].project_dir(project)
+    meta = json.loads((root / "project.json").read_text())
+    (root / "project.json").write_text(json.dumps({**meta, "aspect_ratio": "1:1"}))
+    seen = []
+    shots.prepare_base(project, "cena01")
+    monkeypatch.setattr(shots.hf, "generate",
+                        lambda model, params, **k: (seen.append(params), {"urls": [], "id": "x", "raw": {}})[1])
+    shots.start_generate(project, "cena01", prompts=["p"], count=1)
+    _wait(shots, project)
+    assert seen[0]["aspect_ratio"] == "1:1"
+
+
+def test_select_warns_when_a_frame_is_not_upscaled(shots, project):
+    """5.1: a aula manda "aplicar upscale e baixar" — o Studio avisa em vez de recusar."""
+    a, b = _two_candidates(shots, project)
+    r = shots.select_shots(project, "cena01", [{"id": b, "upscaled": True}, {"id": a}])
+    assert r["warning"] and "1 frame(s) sem upscale" in r["warning"] and "shot02" in r["warning"]
+    ok = shots.select_shots(project, "cena01", [{"id": b, "upscaled": True}, {"id": a, "upscaled": True}])
+    assert ok["warning"] is None
+
+
+def test_list_scenes_counts_upscaled_frames_per_scene(shots, project):
+    """5.1: o chip da cena mostra N/M upscalados."""
+    a, b = _two_candidates(shots, project)
+    shots.select_shots(project, "cena01", [{"id": b, "upscaled": True}, {"id": a}])
+    cena01 = next(s for s in shots.list_scenes(project)["scenes"] if s["id"] == "cena01")
+    assert cena01["selected"] == 2 and cena01["upscaled"] == 1
+
+
+def test_candidates_always_report_the_upscale_state(shots, project, monkeypatch):
+    """5.1: por candidato, a tela precisa saber se aquele frame já passou pelo upscale."""
+    a, _b = _two_candidates(shots, project)
+    assert all(c["upscaled"] is False for c in shots.list_candidates(project, "cena01")["candidates"])
+    _fake_cli(monkeypatch, shots)
+    shots.start_upscale(project, "cena01", a)
+    _wait(shots, project)
+    filhos = [c for c in shots.list_candidates(project, "cena01")["candidates"] if c["upscaled"]]
+    assert len(filhos) == 1 and filhos[0]["role"] == "upscale"
+
+
+def test_select_writes_the_storyboard_document(shots, studio_env, project):
+    """5.4: a aula monta a ordem dos frames DENTRO do documento de storyboard, com prints."""
+    root = studio_env["refs"].project_dir(project)
+    a, b = _two_candidates(shots, project)
+    r = shots.select_shots(project, "cena01", [{"id": b, "upscaled": True}, {"id": a}])
+    assert r["storyboard_md"] == "shots/storyboard.md"
+    md = (root / "shots" / "storyboard.md").read_text()
+    assert "## cena01" in md and "close no astronauta andando na nevasca" in md
+    assert "![base](cena01/base.png)" in md
+    assert "![shot01 · upscalado](cena01/shot01_final.png)" in md
+    assert "![shot02 · sem upscale](cena01/shot02_final.png)" in md
+    assert "## cena05" in md and "_(nenhum frame escolhido ainda)_" in md
+
+
+def test_product_scene_document_and_note_carry_lesson_013(shots, studio_env, project):
+    """5.8: a cena do produto nasce depois da trilha — a etapa diz isso em vez de esconder."""
+    root = studio_env["refs"].project_dir(project)
+    assert "depois" in shots.PRODUCT_NOTE and "trilha" in shots.PRODUCT_NOTE
+    shots.set_product_ref(project, image_bytes(color=(3, 3, 3)))
+    assert "trilha" in shots.product_prompts(project)["note"]
+    shots.import_upload(project, "product", [("p.png", image_bytes(color=(120, 10, 10)))])
+    cid = shots.list_candidates(project, "product")["candidates"][0]["id"]
+    shots.select_product(project, cid, upscaled=True)
+    md = (root / "shots" / "storyboard.md").read_text()
+    assert "## Cena do produto (aula 013)" in md and "trilha" in md
+
+
+def test_focus_examples_come_from_the_lesson(shots, project):
+    """5.5: "close no rosto, foco nos pés, foco nas mãos, plano aberto" viram exemplo na tela."""
+    ex = " ".join(shots.build_prompts(project, "cena01")["focus_examples"])
+    for termo in ("rosto", "pés", "mãos", "cenário"):
+        assert termo in ex

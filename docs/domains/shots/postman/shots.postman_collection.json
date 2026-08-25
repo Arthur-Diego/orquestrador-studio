@@ -317,6 +317,68 @@
         "  });",
         "}"
       ]}}]
+    },
+    {
+      "name": "Promover candidato a base da cena (aula 011 · auditoria 5.2)",
+      "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"source\": \"candidate\", \"id\": \"{{candidateId}}\"}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/base"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 (preencha candidateId com um candidato da cena)', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('a base passa a vir do candidato', () => pm.expect(b.source).to.eql('candidate'));",
+        "pm.test('eco do candidato promovido', () => pm.expect(b.candidate).to.eql(pm.variables.get('candidateId')));"
+      ]}}]
+    },
+    {
+      "name": "source=candidate sem id é 422",
+      "request": {"method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"source\": \"candidate\"}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/base"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "Prompt de ângulo com preset de câmera (auditoria 5.6 e 5.7)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/prompts?kind=angle&camera=wide"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('preset aplicado no bloco de câmera', () => pm.expect(b.prompts[0].text).to.include('Anamorphic lens'));",
+        "pm.test('presets publicados para a tela', () => pm.expect(b.cameras.map(c => c.id)).to.eql(['red', 'documentario', 'wide']));",
+        "pm.test('proporção vem de project.aspect_ratio', () => pm.expect(b.aspect_ratio).to.be.a('string'));",
+        "pm.test('exemplos de enquadramento da aula', () => pm.expect(b.focus_examples).to.be.an('array').that.is.not.empty);"
+      ]}}]
+    },
+    {
+      "name": "Prompt de edição com bloco de câmera opt-in (auditoria 5.3)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/prompts?kind=edit&edits=Remove the can in the background&camera=documentario"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('bloco de câmera entra só quando pedido', () => pm.expect(b.prompts[0].text).to.include('Documentary style'));",
+        "pm.test('o resultado vira a nova base da cena', () => pm.expect(b.ui_hint).to.include('NOVA BASE'));"
+      ]}}]
+    },
+    {
+      "name": "Guia da etapa 5 (rota do núcleo)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/guide/shots"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const g = pm.response.json();",
+        "pm.test('a etapa tem guia próprio', () => pm.expect(g.status).to.not.eql('unknown'));",
+        "pm.test('validações da auditoria §5.5', () => pm.expect(g.validations.map(v => v.id)).to.include('v53_upscale'));",
+        "pm.test('entradas com atalho para a etapa que produz', () => pm.expect(g.inputs.map(i => i.step)).to.eql(['storyboard', 'base']));"
+      ]}}]
+    },
+    {
+      "name": "shots/storyboard.md — documento da aula (auditoria 5.4)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/files/{{pid}}/shots/storyboard.md"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 depois da primeira seleção', () => pm.response.to.have.status(200));",
+        "pm.test('grid com a base da cena', () => pm.expect(pm.response.text()).to.include('![base]'));"
+      ]}}]
     }
   ]
 }

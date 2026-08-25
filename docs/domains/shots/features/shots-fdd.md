@@ -488,3 +488,76 @@ load_storyboard(pid) -> dict                         # FileNotFoundError se ause
 | 6 | CLI: cost, generate, upscale, job | 4 | `service.cost`, `start_generate`, `start_upscale`, `job_status` com `JobRegistry`; rotas `cost`, `generate`, `upscale`, `job`; fakes de `hf` nos testes | job done/error/409; upscale role/parent |
 | 7 | View completa | 3, 5, 6 | `view.html` (stephead, painel de cenas com paleta e aviso, painel por cena, painel do produto, progress/log), `view.js` (polling 3 s, confirm() antes de generate, botões desabilitados sem `logged_in`, upload multipart) | fluxo manual ponta a ponta em modo UI |
 | 8 | Fechamento | 7 | `ruff`, `pytest`, final report com auto-aceites, PR para `develop` (gate `ft-pr`) | make verify verde |
+
+---
+
+### 12. Wave 2 — fidelidade e guia (OS-016)
+
+Escrito em **modo batch** (Gate 1 pré-aprovado em lote; auto-aceites rotulados abaixo). Fonte
+normativa: `docs/domains/studio/waves/wave-2.md` e a auditoria `wave-2-auditoria-etapas-4-6.md`
+§5.3 (divergências), §5.4 (textos) e §5.5 (validações).
+
+#### 12.1 O guia da etapa — `studio/etapas/shots/guide.py`
+
+Hook `guide(pid) -> dict` do contrato transversal (`studio/common/guide.py`), **puro**.
+
+- **`what` / `checklist`**: texto literal da auditoria §5.4 (aula 011) + a nota da aula 013.
+- **Entradas** (bloqueiam): `storyboard/scenes.json` com cenas escritas (etapa 4);
+  `base/base_final.png` (etapa 3).
+- **Saídas**: `shots/cenaNN/base.png` em todas as cenas; `shots/storyboard.json` com ≥ 1 frame
+  por cena; `shots/storyboard.md`.
+- **Validações** (nunca bloqueiam) — §5.5:
+
+| id | Regra | Estado |
+| --- | --- | --- |
+| `v52_cena_com_shot` | V5.2 toda cena tem ≥ 1 frame antes da etapa 6 | ok/warn/todo |
+| `v53_upscale` | V5.3 todo `shots[].upscaled == true` | ok/warn/todo |
+| `v54_ordem_e_arquivos` | V5.4 `order` contíguo e `file` existente | ok/fail/todo |
+| `v55_variacoes` | V5.5 cena com ≥ 2 frames (aviso) | ok/warn/todo |
+| `v56_candidatos_antigos` | V5.6 candidatos importados antes da base atual (cores/luz) | ok/warn/todo |
+| `v57_formula_do_angulo` | V5.7 prompt de ângulo com "another point of view" | ok/warn/todo |
+| `v58_cena_do_produto` | V5.8 `product_scene` presente antes da etapa 8 | ok/todo |
+| `palette` | `mood/palette.json` (etapa 2) `[extensão]` | ok/warn |
+
+#### 12.2 Correções de fidelidade
+
+| # | Correção | Onde |
+| --- | --- | --- |
+| 5.1 | Upscale visível e cobrado: `candidates[].upscaled` sempre presente (deriva de `role == "upscale"`), chip **"N/M upscalados"** por cena (`scenes[].upscaled`), `select` devolve `warning` quando algum frame não está upscalado (avisa, não recusa) | `service.py`, `view.js` |
+| 5.2 | **"Usar como base da cena"**: `POST …/scenes/{scene}/base {source:"candidate", id}` promove um candidato a `base.png`; o `ui_hint` do `kind=edit` diz que o resultado vira a nova base e que o Multi Shot vem depois | `service.py` (`prepare_base`), `router.py` (`BaseReq.id`), `view.js` |
+| 5.3 | Bloco de câmera oferecido também em `kind=edit` — **opt-in** (só quando `camera` é informado), porque a edição da aula é uma lista de modificações | `service.py` (`build_prompts`) |
+| 5.4 | `shots/storyboard.md` regravado a cada `select` (grid por cena: base + frames na ordem + texto da cena + estado do upscale) | `service.py` (`write_storyboard_md`) |
+| 5.5 | Placeholders e `focus_examples` com os enquadramentos da aula (rosto, pés, mãos, cenário aberto) | `service.py` (`FOCUS_EXAMPLES`), `view.html` |
+| 5.6 | `16:9`/`2k` marcados `[extensão]` e a proporção passa a vir de `project.aspect_ratio` (aula 007), com `16:9` só como default | `service.py` (`_aspect_ratio`), `router.py` |
+| 5.7 | Presets de câmera editáveis (`CAMERA_PRESETS`: RED comercial `[extensão]`, documentário, wide) + texto livre em `camera`; "RED Komodo 6K" deixa de ser fixo | `service.py`, `view.html` |
+| 5.8 | Nota da aula 013 (`PRODUCT_NOTE`) no painel da cena do produto, em `product_prompts`, em `list_scenes.product_note`, no `storyboard.md` e no checklist do guia | `service.py`, `view.html` |
+
+#### 12.3 Contrato ampliado (tudo aditivo)
+
+- `POST /api/projects/{pid}/shots/scenes/{scene}/base` — corpo ganha `id`; `source` aceita
+  `"candidate"`. `422` sem `id`; `404` para candidato inexistente.
+- `GET …/scenes/{scene}/prompts` — query `camera` (id de preset ou texto livre); resposta ganha
+  `cameras[]`, `camera` e `focus_examples[]`; `aspect_ratio` passa a refletir o projeto.
+- `GET /shots/scenes` — ganha `aspect_ratio`, `product_note` e `scenes[].upscaled`.
+  `product_scene` **não mudou de forma** (contrato fixado por teste).
+- `POST …/scenes/{scene}/select` — resposta ganha `warning` (ou `null`) e `storyboard_md`.
+- `POST /shots/product/select` — resposta ganha `storyboard_md` e `note`.
+- Novo artefato: `shots/storyboard.md` (o `storyboard.json` mantém as duas chaves de sempre).
+
+#### 12.4 Tela (contrato de wave 2)
+
+`<section id="guide" class="guide"></section>` após o `stephead`; `Studio.ui` (`esc`, `hfChip`,
+`drop`, `upload`, `confirmCost`, `poll`); `ctx.guide()` após cada ação que muda artefato;
+`destroy()` parando o poll do job.
+
+#### 12.5 Auto-aceites desta frente
+
+1. **`mood/palette.json` é validação, não entrada bloqueante.** A §5.4 a lista como entrada
+   necessária, mas a paleta é `[extensão]` do Studio (OS-014) e travaria uma etapa que a aula
+   libera; ela entra como `warn` com atalho para a etapa 2.
+2. **O aviso de upscale não recusa a seleção.** A aula manda fazer upscale antes de baixar; o
+   Studio avisa (`select.warning` + V5.3) e deixa o usuário decidir — recusar inventaria um gate.
+3. **Bloco de câmera na edição é opt-in.** Ligá-lo por padrão quebraria a fórmula literal da
+   edição numerada da aula ("I want the following modifications. 1. … Keep everything else…").
+4. **`aspect_ratio` lido do projeto a cada chamada** (sem cache e sem campo novo em `shots/`),
+   coerente com ADR-003 (a verdade é o arquivo).
