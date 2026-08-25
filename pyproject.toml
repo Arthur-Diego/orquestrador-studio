@@ -1,0 +1,19 @@
+[project]
+name = "orquestrador-studio"
+version = "0.2.0"
+description = "Ferramenta local para executar, etapa por etapa, o método de produção de vídeo com IA do curso O Orquestrador."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [".venv", "projects", "docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E501"]

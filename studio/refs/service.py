@@ -10,7 +10,7 @@ from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
-from ..config import PROJECTS_DIR, PROJECT_LAYOUT
+from ..config import PROJECT_LAYOUT, PROJECTS_DIR
 from . import pinterest
 
 _jobs: dict[str, dict] = {}   # project_id -> estado do job em andamento
@@ -43,7 +43,12 @@ def create_project(name: str, product: str = "", vibe: str = "") -> dict:
     return meta
 
 
+PID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,80}$")
+
+
 def project_dir(pid: str) -> Path:
+    if not PID_RE.match(pid or ""):
+        raise KeyError(pid)   # nunca usar um pid arbitrário em caminho de arquivo
     p = PROJECTS_DIR / pid
     if not (p / "project.json").exists():
         raise KeyError(pid)

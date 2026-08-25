@@ -1,0 +1,17 @@
+#!/bin/sh
+# Valida o trailer Task-Id em todo commit (SDD: OS-*; ad-hoc: ADH-OS-*).
+# Instalacao: make hooks  (equivale a: git config core.hooksPath .githooks)
+msg_file="$1"
+first_line=$(head -n1 "$msg_file")
+case "$first_line" in
+  Merge\ *|Revert\ *) exit 0;;
+esac
+if grep -qE "^Task-Id: (OS|ADH)-[A-Za-z0-9.-]+" "$msg_file"; then
+  exit 0
+fi
+echo "" >&2
+echo "ERRO: commit sem trailer Task-Id valido." >&2
+echo "Fluxo SDD: use o ID da task (ex.: Task-Id: OS-012)." >&2
+echo "Fora do SDD: cunhe um ID ad-hoc (ex.: Task-Id: ADH-OS-$(date +%Y%m%d)-01)." >&2
+echo "Prefixos aceitos: OS- ADH-" >&2
+exit 1

@@ -8,7 +8,7 @@ import json
 import re
 import shutil
 import subprocess
-from typing import Any, Iterable
+from typing import Any
 
 BIN = shutil.which("higgsfield") or shutil.which("hf")
 IMG_URL_RE = re.compile(r"https?://[^\s\"']+\.(?:png|jpe?g|webp)(?:\?[^\s\"']*)?", re.I)
@@ -21,7 +21,12 @@ def available() -> bool:
 def _run(args: list[str], timeout: int = 120) -> tuple[int, str, str]:
     if not BIN:
         return 127, "", "higgsfield CLI não encontrado (npm i -g @higgsfield/cli)"
-    p = subprocess.run([BIN, *args, "--json"], capture_output=True, text=True, timeout=timeout)
+    try:
+        p = subprocess.run([BIN, *args, "--json"], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, "", f"higgsfield {' '.join(args[:2])}: tempo esgotado após {timeout}s"
+    except (FileNotFoundError, PermissionError) as e:
+        return 127, "", f"higgsfield CLI indisponível: {e}"
     return p.returncode, p.stdout, p.stderr
 
 
@@ -83,9 +88,15 @@ def history_images(size: int = 50) -> list[dict]:
     return result
 
 
-def cost(model: str, params: dict) -> dict | str:
+def cost(model: str, params: dict) -> dict:
+    """Estimativa de créditos SEM criar job (`generate cost`). Devolve {'credits': n|None, 'raw'|'error'}."""
     code, out, err = _run(["generate", "cost", model, *_params(params)], timeout=60)
-    return _json(out) if code == 0 else (err or out).strip()[:300]
+    if code != 0:
+        return {"credits": None, "error": (err or out).strip()[:300]}
+    data = _json(out)
+    flat = _flatten(data if isinstance(data, dict) else {"d": data})
+    credits = _pick(flat, "credits", "cost", "estimated_credits", "total_credits")
+    return {"credits": credits, "raw": data}
 
 
 def generate(model: str, params: dict, timeout_s: int = 600) -> dict:
