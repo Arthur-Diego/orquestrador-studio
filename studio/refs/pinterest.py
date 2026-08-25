@@ -11,12 +11,12 @@ import json
 import random
 import re
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import quote_plus
 
-from playwright.sync_api import sync_playwright, BrowserContext, Page
+from playwright.sync_api import BrowserContext, Page, sync_playwright
 
 from ..config import PINTEREST_PROFILE
 
@@ -113,7 +113,9 @@ def search(
     out_dir.mkdir(parents=True, exist_ok=True)
     thumbs_dir = out_dir / "thumbs"
     thumbs_dir.mkdir(exist_ok=True)
-    report = lambda **kw: progress and progress(kw)
+    def report(**kw):
+        if progress:
+            progress(kw)
 
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()

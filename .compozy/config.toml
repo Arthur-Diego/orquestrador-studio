@@ -1,0 +1,22 @@
+# Configuração do workspace Compozy (SDD). Flags de CLI sempre sobrepõem estes valores.
+[defaults]
+ide = "claude"
+model = "opus"
+auto_commit = true
+reasoning_effort = "high"
+
+[tasks]
+types = ["backend", "frontend", "docs", "test", "infra", "refactor", "chore", "bugfix"]
+
+[tasks.run]
+include_completed = false
+recursive = false
+
+[fix_reviews]
+concurrent = 2
+batch_size = 3
+
+[exec]
+verbose = false
+tui = false
+persist = false

@@ -146,7 +146,7 @@ async function initMood() {
   if (!pid) return;
   hfStatus(); loadMoodCands();
   const d = await api("/api/mood/downloads-folder"); $("#dlFolder").textContent = d.folder + (d.exists ? "" : " (não encontrada)");
-  if (!moodInit) { moodInit = true; genPrompts(); }
+  if (!moodInit) { moodInit = true; moodVariation = 0; genPrompts(false); }
 }
 async function hfStatus() {
   const s = await api("/api/higgsfield/status"), el = $("#hfState");
@@ -155,14 +155,16 @@ async function hfStatus() {
   else { el.textContent = `CLI: ${s.plan || "logado"} · ${s.credits ?? "?"} créditos`; el.className = "chip ok"; }
   $("#btnMoodGen").disabled = !s.logged_in;
 }
-async function genPrompts() {
-  const r = await api(`/api/projects/${pid}/mood/prompts?model=${$("#moodModel").value}`);
-  $("#moodHint").textContent = r.ui_hint + " Proporção " + r.aspect_ratio + ".";
+let moodVariation = 0;
+async function genPrompts(next) {
+  if (next) moodVariation += 1;
+  const r = await api(`/api/projects/${pid}/mood/prompts?model=${$("#moodModel").value}&variation=${moodVariation}`);
+  $("#moodHint").textContent = r.ui_hint + " Proporção " + r.aspect_ratio + `. Variação ${r.variation + 1}.`;
   $("#promptList").innerHTML = r.prompts.map((p, i) =>
     `<div class="prompt"><div class="row"><span class="eyebrow">${p.label}</span><button class="ghost copy" data-i="${i}">Copiar</button><span class="ok"></span></div><textarea data-i="${i}">${p.text}</textarea></div>`).join("");
 }
-$("#btnMoodPrompts").onclick = genPrompts;
-$("#moodModel").onchange = genPrompts;
+$("#btnMoodPrompts").onclick = () => genPrompts(true);
+$("#moodModel").onchange = () => genPrompts(false);
 $("#promptList").addEventListener("click", async e => {
   const b = e.target.closest("button.copy"); if (!b) return;
   const ta = $(`#promptList textarea[data-i="${b.dataset.i}"]`); await navigator.clipboard.writeText(ta.value);

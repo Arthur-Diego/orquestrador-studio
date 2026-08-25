@@ -3,16 +3,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .config import WEB_DIR, PROJECTS_DIR
-from .steps import STEPS
-from .refs import service
-from .mood import service as mood
 from . import higgsfield as hf
+from .config import PROJECTS_DIR, WEB_DIR
+from .mood import service as mood
+from .refs import service
+from .steps import STEPS
 
 app = FastAPI(title="Orquestrador Studio")
 
@@ -49,7 +49,7 @@ def new_project(req: NewProject):
     try:
         return service.create_project(req.name, req.product, req.vibe)
     except ValueError as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
 
 
 @app.get("/api/suggest-terms")
@@ -71,10 +71,10 @@ def pin_login_status():
 def refs_search(pid: str, req: SearchReq):
     try:
         return service.start_search(pid, [t for t in req.terms if t.strip()], req.max_per_term, req.headless)
-    except KeyError:
-        raise HTTPException(404, "projeto não encontrado")
+    except KeyError as e:
+        raise HTTPException(404, "projeto não encontrado") from e
     except RuntimeError as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
 
 
 @app.get("/api/projects/{pid}/refs/job")
@@ -86,8 +86,8 @@ def refs_job(pid: str):
 def refs_candidates(pid: str):
     try:
         return service.candidates(pid)
-    except KeyError:
-        raise HTTPException(404, "projeto não encontrado")
+    except KeyError as e:
+        raise HTTPException(404, "projeto não encontrado") from e
 
 
 @app.post("/api/projects/{pid}/refs/select")
@@ -121,8 +121,11 @@ def hf_status():
 
 
 @app.get("/api/projects/{pid}/mood/prompts")
-def mood_prompts(pid: str, model: str = "nano_banana_2"):
-    return mood.suggest_prompts(pid, model)
+def mood_prompts(pid: str, model: str = "nano_banana_2", variation: int = 0):
+    try:
+        return mood.suggest_prompts(pid, model, variation)
+    except KeyError as e:
+        raise HTTPException(404, "projeto não encontrado") from e
 
 
 @app.get("/api/projects/{pid}/mood/candidates")
@@ -130,9 +133,17 @@ def mood_candidates(pid: str):
     return mood.load(pid)
 
 
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
 @app.post("/api/projects/{pid}/mood/import/upload")
-async def mood_upload(pid: str, files: list[UploadFile] = File(...), prompt: str = Form("")):
-    payload = [(f.filename or "upload.png", await f.read()) for f in files]
+async def mood_upload(pid: str, files: list[UploadFile] = File(...), prompt: str = Form("")):  # noqa: B008
+    payload = []
+    for f in files:
+        data = await f.read()
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"{f.filename}: arquivo acima de 25 MB")
+        payload.append((f.filename or "upload.png", data))
     return mood.import_upload(pid, payload, prompt)
 
 
@@ -141,7 +152,7 @@ def mood_downloads(pid: str, req: DownloadsReq):
     try:
         return mood.import_downloads(pid, req.folder, req.since_minutes)
     except FileNotFoundError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, str(e)) from e
 
 
 @app.get("/api/mood/downloads-folder")
@@ -154,7 +165,7 @@ def mood_history(pid: str):
     try:
         return mood.import_history(pid)
     except RuntimeError as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, str(e)) from e
 
 
 @app.post("/api/projects/{pid}/mood/generate")
@@ -173,7 +184,10 @@ def mood_job(pid: str):
 
 @app.post("/api/projects/{pid}/mood/select")
 def mood_select(pid: str, req: MoodSelectReq):
-    return mood.select(pid, req.ids, req.note)
+    try:
+        return mood.select(pid, req.ids, req.note)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 # arquivos dos projetos (thumbs e originais) e frontend

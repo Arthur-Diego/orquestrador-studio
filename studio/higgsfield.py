@@ -8,7 +8,7 @@ import json
 import re
 import shutil
 import subprocess
-from typing import Any, Iterable
+from typing import Any
 
 BIN = shutil.which("higgsfield") or shutil.which("hf")
 IMG_URL_RE = re.compile(r"https?://[^\s\"']+\.(?:png|jpe?g|webp)(?:\?[^\s\"']*)?", re.I)
