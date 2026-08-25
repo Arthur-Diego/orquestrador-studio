@@ -1,0 +1,39 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 6 · aula 012</span>
+  <h2>Animação</h2>
+  <p class="lede">Cada frame da etapa 5 vira take de vídeo. Prompt simples para cena simples; movimento de câmera elaborado quando não; start/end frame entre dois frames seguidos da mesma cena; 10 s para mudanças lentas. Áudio do modelo sempre OFF, dois takes por shot, like no usável. Três falhas no mesmo shot? Troque de modelo. Sem jeito? Corte para preto na montagem.</p>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>1. Takes por shot</h3>
+    <div class="row wrap">
+      <span id="anReady" class="chip mode">0/0 shots prontos</span>
+      <span id="anHfState" class="chip mode">CLI: ?</span>
+      <button id="anReload" class="ghost">Recarregar plano</button>
+    </div>
+  </div>
+  <p id="anWarnings" class="fine"></p>
+  <div id="anShots" class="col"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>2. Importar os vídeos que você gerou na UI</h3>
+    <span id="anCandCount" class="chip mode">0 vídeos</span>
+  </div>
+  <div class="row wrap">
+    <label class="drop" id="anDrop">Arraste os mp4 aqui ou <input id="anUpload" type="file" accept="video/*" multiple hidden><u>escolha arquivos</u></label>
+    <div class="col">
+      <button id="anBtnDownloads">Importar da pasta Downloads</button>
+      <span id="anDlFolder" class="fine mono"></span>
+      <label class="inline">últimos <input id="anDlMinutes" type="number" value="120" min="5"> min</label>
+    </div>
+    <div class="col">
+      <button id="anBtnHistory">Importar do histórico Higgsfield</button>
+      <span class="fine">via <code>higgsfield generate list --video</code> (precisa de login no CLI)</span>
+    </div>
+  </div>
+  <p class="fine">Clique em um vídeo para selecioná-lo e depois use <strong>Atribuir selecionado</strong> no shot correspondente. Ele vira <code>videos/cenaNN/shotMM_takeK.mp4</code>.</p>
+  <div id="anGallery" class="gallery"></div>
+</section>

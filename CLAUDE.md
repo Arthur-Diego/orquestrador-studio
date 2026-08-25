@@ -45,7 +45,7 @@ Todo o contexto deste repositório vive em `docs/`. Não há contexto em `contex
   modo paralelo: `docs/dd-parallel.md`
 - Guidelines: `docs/guidelines/python-development-guidelines.md` (seguir sempre)
 - Domínios (HLD): `docs/domains/<dominio>/hld.md` — ler antes de mexer no domínio.
-  Domínios: `refs` (etapa 1), `mood` (etapa 2), `higgsfield` (ponte com o CLI), `studio` (app/web)
+  Domínios: `studio` (app/web/plugins), `higgsfield` (ponte com o CLI) e um por etapa: `refs` (1), `mood` (2), `base` (3), `storyboard` (4), `shots` (5), `animate` (6), `music` (7), `edit` (8), `export` (9), `publish` (10), `prospect` (11). Contratos entre etapas: `docs/domains/studio/waves/wave-1.md`
 - FDDs: `docs/domains/<dominio>/features/` — fonte de verdade de comportamento por etapa;
   nascem sob demanda via `dd-feature`
 - Diagramas: `docs/domains/<dominio>/diagrams/{mermaid,c4}/`
@@ -74,6 +74,10 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
 - Python 3.12 · FastAPI + Uvicorn · Playwright (Chromium) · Pillow. Sem banco: persistência
   em arquivos sob `projects/<id>/` (nunca versionado).
 - Frontend estático em `studio/web/` (HTML/CSS/JS sem build).
+- **Etapas são plugins**: `studio/etapas/<id>/` com `META`, `router.py`, `view.html`, `view.js`
+  (descoberta automática; ver `docs/domains/studio/hld.md`). Para implementar uma etapa nova,
+  crie só essa pasta + `studio/<id>/service.py` + testes; **não edite** `app.py`, `index.html`,
+  `app.js` nem `steps.py`. O `view.js` registra `Studio.register("<id>", ctx => ({init, onProject}))`.
 - Ponte com a Higgsfield **somente** via CLI oficial (`studio/higgsfield.py`, subprocess +
   `--json`). Nunca chamar `api.higgsfield.ai` direto; nunca automatizar a UI da Higgsfield.
 - Testes: `pytest` sem rede e sem navegador (fakes); `make verify` = ruff + pytest.

@@ -1,0 +1,1820 @@
+{
+  "info": {
+    "name": "storyboard (OS-004) - Etapa 4 - Storyboard - aula 010",
+    "_postman_id": "os004-storyboard-collection",
+    "description": "Colecao gerada a partir da SECAO 5 (Contratos publicos) do FDD `docs/domains/storyboard/features/storyboard-fdd.md` e cruzada com a implementacao real em `studio/etapas/storyboard/router.py` + `studio/storyboard/service.py` (a implementacao e a verdade sobre rota, metodo e status; divergencias em `divergencias.md`).\n\nStudio local: monolito FastAPI, sem banco e SEM AUTENTICACAO (ADR-001) - nao ha header de Authorization em nenhuma rota.\n\nPre-requisitos: (1) rodar a pasta '00 preparo' primeiro, que cria o projeto e preenche `pid`; (2) `base/base_final.png` e artefato da etapa 3 (base), NAO implementada nesta wave - instructions, cost e generate respondem 409 ate ela existir; (3) import/history, cost e generate dependem do CLI pago da Higgsfield logado.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8768",
+      "type": "string",
+      "description": "App local: PORT=8768 ./run.sh na raiz da worktree"
+    },
+    {
+      "key": "pid",
+      "value": "",
+      "type": "string",
+      "description": "id do projeto, preenchido pelo request 'Criar projeto'"
+    },
+    {
+      "key": "projectName",
+      "value": "",
+      "type": "string",
+      "description": "nome unico por execucao (pre-request)"
+    },
+    {
+      "key": "pidInexistente",
+      "value": "projeto-que-nao-existe",
+      "type": "string",
+      "description": "usado nos casos de 404"
+    },
+    {
+      "key": "pidVazio",
+      "value": "",
+      "type": "string",
+      "description": "projeto sem cenas com texto, para o 422 do render"
+    },
+    {
+      "key": "ideaId",
+      "value": "",
+      "type": "string",
+      "description": "id do candidato, preenchido por GET candidates"
+    },
+    {
+      "key": "ideaFileSelecionado",
+      "value": "",
+      "type": "string",
+      "description": "storyboard/ideas/<id>.<ext>, para o campo image das cenas"
+    },
+    {
+      "key": "instrucao",
+      "value": "",
+      "type": "string",
+      "description": "instrucao montada por POST instructions, enviada como prompt nos imports"
+    },
+    {
+      "key": "downloadsFolder",
+      "value": "",
+      "type": "string",
+      "description": "vazio = pasta Downloads real da maquina (ingest.DOWNLOADS_DEFAULT)"
+    },
+    {
+      "key": "model",
+      "value": "nano_banana_2",
+      "type": "string",
+      "description": "default do formulario; o catalogo real e vivo (ADR-002)"
+    },
+    {
+      "key": "hasBase",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "hfLoggedIn",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "presetComPontoEVirgula",
+      "value": "There is a rope hanging from the top of the can down to the ground; make it thinner, proportional to the character and realistic",
+      "type": "string"
+    },
+    {
+      "key": "textoLongo",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 preparo (nucleo do Studio)",
+      "description": "Rotas do nucleo, fora do contrato de storyboard, necessarias para ter `pid` e saber se o CLI esta logado.",
+      "item": [
+        {
+          "name": "Criar projeto (pre-requisito de dados)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
+            "description": "Nucleo do Studio, nao e rota do FDD de storyboard: cria o projeto que todas as rotas de storyboard exigem. O `id` devolvido vira a variavel de colecao `pid`. O nome recebe um sufixo de timestamp no pre-request para a colecao poder rodar varias vezes (mesmo nome no mesmo mes => 409 'Projeto ja existe').",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{projectName}}\",\n  \"product\": \"lata gigante de refrigerante\",\n  \"vibe\": \"cinematic realistic\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// nome unico por execucao: create_project deriva o id de AAAA-MM + slug(name)",
+                  "pm.collectionVariables.set('projectName', 'Storyboard Postman ' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 projeto criado', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('pid', b.id);",
+                  "pm.test('devolve id usavel como pid', function () { pm.expect(b.id).to.be.a('string').and.not.empty; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status do CLI da Higgsfield (habilita a pasta CLI)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/higgsfield/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "higgsfield",
+                "status"
+              ]
+            },
+            "description": "Nucleo do Studio (FDD secao 4, fluxo alternativo, linha 87): a UI so habilita 'gerar por CLI' com `logged_in: true`. Guarda `hfLoggedIn` para os testes da pasta '05 CLI (pago)' saberem se o 409 de login e esperado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 status do CLI', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('hfLoggedIn', String(!!b.logged_in));",
+                  "console.log('CLI Higgsfield instalado=' + b.installed + ' logado=' + b.logged_in);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 estado e instrucoes",
+      "description": "FDD secao 5, contratos 1 a 3 (linhas 112-176).",
+      "item": [
+        {
+          "name": "GET storyboard - estado da etapa",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard"
+              ]
+            },
+            "description": "FDD secao 5, contrato 1 (linhas 112-124). 200 estado da etapa; 404 projeto inexistente. Guarda `hasBase`: `base/base_final.png` e artefato da etapa 3 (base), NAO implementada nesta wave, entao o esperado aqui e `has_base: false`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 estado da etapa (FDD c1)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('hasBase', String(!!b.has_base));",
+                  "pm.test('contrato 1: campos do estado', function () {",
+                  "  pm.expect(b).to.have.all.keys('base_image','has_base','ideas','selected','scenes','scenes_with_text','storyboard_md');",
+                  "});",
+                  "if (!b.has_base) { console.log('sem base/base_final.png (etapa 3 pendente): instructions/cost/generate respondem 409'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET instructions - presets da aula 010",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 5, contrato 2 (linhas 126-149). 200 sempre que o projeto exista; nao exige base final. Guarda o texto do preset 'Inpaint: corda proporcional' para o request de erro que demonstra a divergencia ALTA registrada em divergencias.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 presets (FDD c2)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('kinds, presets, suffix e counts', function () {",
+                  "  pm.expect(b.kinds.map(k => k.kind)).to.have.members(['draw_to_edit','edit','multishot']);",
+                  "  pm.expect(b.counts).to.eql({uncertain: 4, tweak: 1});",
+                  "  pm.expect(b.suffix).to.be.a('string').and.not.empty;",
+                  "});",
+                  "const inpaint = (b.presets || []).find(p => p.text && p.text.indexOf(';') >= 0);",
+                  "if (inpaint) { pm.collectionVariables.set('presetComPontoEVirgula', inpaint.text); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST instructions - montar instrucao (edit, count 4)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 5, contrato 3 (linhas 152-176). 200 instrucao montada; 409 sem `base/base_final.png`; 422 kind/text/count invalidos.\n\nDEPENDE DA ETAPA 3: sem `base/base_final.png` a resposta e 409 e isso e o esperado nesta wave. No router (`_guard` + `sb.build_instruction`) o `_require_base` roda ANTES da validacao de kind/text/count.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"edit\",\n  \"text\": \"Make the climber even smaller and more realistic\",\n  \"count\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com base, 409 sem base (FDD c3)', function () { pm.expect([200, 409]).to.include(c); });",
+                  "if (c === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.test('instrucao termina com o sufixo do curso', function () {",
+                  "    pm.expect(b.instruction).to.contain('Keep everything else identical, realistic.');",
+                  "    pm.expect(b.kind).to.eql('edit'); pm.expect(b.count).to.eql(4);",
+                  "  });",
+                  "  pm.collectionVariables.set('instrucao', b.instruction);",
+                  "} else {",
+                  "  pm.test('409 aponta a etapa 3 (base) como pre-requisito', function () {",
+                  "    pm.expect(pm.response.json().detail).to.contain('etapa 3');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST instructions - multishot (count 1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 5, contrato 3, regra de montagem do `multishot` (linha 176): `Another point of view of this exact scene: <text>. Same subject, same lighting, realistic.` DEPENDE DA ETAPA 3 (409 sem base).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"multishot\",\n  \"text\": \"a close-up on the character\",\n  \"count\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com base, 409 sem base (FDD c3)', function () { pm.expect([200, 409]).to.include(c); });",
+                  "if (c === 200) {",
+                  "  pm.test('formula do multishot', function () {",
+                  "    pm.expect(pm.response.json().instruction).to.contain('Another point of view of this exact scene:');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 importacao das ideias",
+      "description": "FDD secao 5, contratos 4 a 6 (linhas 178-218). Ordem do fluxo principal da secao 4 (linha 81).",
+      "item": [
+        {
+          "name": "POST import/upload - 2 PNG + 1 TXT",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD secao 5, contrato 4 (linhas 178-188). multipart/form-data com `files` (1..n) e `prompt` opcional. 200 {added, skipped}; 413 arquivo acima de 25 MB; 422 sem arquivos.\n\nOs arquivos vem de `fixtures/` desta pasta: rode o newman com `--working-dir` apontando aqui. No Postman, reanexe os arquivos manualmente (o app nao guarda o binario no .json).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [
+                    "fixtures/idea-a.png",
+                    "fixtures/idea-b.png"
+                  ],
+                  "description": "duas imagens validas (fixtures desta pasta)"
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [
+                    "fixtures/nao-imagem.txt"
+                  ],
+                  "description": "arquivo nao-imagem: entra em `skipped` (FDD secao 6, linha 337)"
+                },
+                {
+                  "key": "prompt",
+                  "value": "{{instrucao}}",
+                  "type": "text",
+                  "description": "instrucao usada na Higgsfield, gravada no candidato para rastreabilidade (FDD secao 4, linha 81)"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 upload (FDD c4)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('resposta tem added e skipped', function () {",
+                  "  pm.expect(b).to.have.property('added'); pm.expect(b).to.have.property('skipped');",
+                  "});",
+                  "pm.test('o .txt nao vira ideia (skipped >= 1)', function () { pm.expect(b.skipped).to.be.at.least(1); });",
+                  "pm.test('added + skipped = arquivos enviados', function () { pm.expect(b.added + b.skipped).to.eql(3); });",
+                  "console.log('added=' + b.added + ' skipped=' + b.skipped + ' (2a execucao: added=0 por dedupe sha12)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST import/upload - reimportacao (dedupe, added 0)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD secao 2 (linha 48) e secao 9 (linha 408): reimportar o mesmo conteudo devolve `added: 0` (dedupe por sha12 do `ingest.py`), sem erro.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [
+                    "fixtures/idea-a.png"
+                  ]
+                },
+                {
+                  "key": "prompt",
+                  "value": "{{instrucao}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (FDD c4)', function () { pm.response.to.have.status(200); });",
+                  "pm.test('dedupe por conteudo: added = 0', function () { pm.expect(pm.response.json().added).to.eql(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST import/downloads - pasta Downloads",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/import/downloads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "import",
+                "downloads"
+              ]
+            },
+            "description": "FDD secao 5, contrato 5 (linhas 190-206). 200 {added, scanned, folder}; 422 se o `folder` informado nao existir.\n\nATENCAO: com `folder` vazio o servico varre a pasta Downloads REAL da maquina (`ingest.DOWNLOADS_DEFAULT`) e importa as imagens dos ultimos `since_minutes`. Aponte `downloadsFolder` para uma pasta de teste se nao quiser isso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder\": \"{{downloadsFolder}}\",\n  \"since_minutes\": 120,\n  \"prompt\": \"{{instrucao}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200, ou 422 se a pasta nao existir (FDD c5)', function () { pm.expect([200, 422]).to.include(c); });",
+                  "if (c === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.test('resposta tem added, scanned e folder', function () {",
+                  "    pm.expect(b).to.have.property('added'); pm.expect(b).to.have.property('scanned'); pm.expect(b).to.have.property('folder');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST import/history - historico do CLI (pago, nao executavel)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/import/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "import",
+                "history"
+              ]
+            },
+            "description": "FDD secao 5, contrato 6 (linhas 208-218). 200 {added, jobs}; 409 CLI nao instalado ou nao logado; 502 falha do CLI.\n\nNAO EXECUTAVEL sem login pago na Higgsfield: o teste aceita 409 (caminho normal em maquina sem login) e nao exige sucesso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"size\": 50,\n  \"prompt_filter\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com CLI logado, 409 sem CLI/login, 502 falha do CLI (FDD c6)', function () {",
+                  "  pm.expect([200, 409, 502]).to.include(c);",
+                  "});",
+                  "if (c === 409) { console.log('esperado sem login pago no CLI: ' + pm.response.json().detail); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 galeria e selecao",
+      "description": "FDD secao 5, contratos 7 e 8 (linhas 220-250).",
+      "item": [
+        {
+          "name": "GET candidates - listar ideias",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "candidates"
+              ]
+            },
+            "description": "FDD secao 5, contrato 7 (linhas 220-233). 200 com lista vazia se nada foi importado. Guarda `ideaId` e `ideaFileSelecionado` para os requests de selecao e de cenas."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 lista de ideias (FDD c7)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('resposta tem a chave ideas', function () { pm.expect(b.ideas).to.be.an('array'); });",
+                  "if (b.ideas.length) {",
+                  "  const first = b.ideas[0];",
+                  "  pm.collectionVariables.set('ideaId', first.id);",
+                  "  pm.collectionVariables.set('ideaFileSelecionado', 'storyboard/ideas/' + first.file.split('/').pop());",
+                  "  pm.test('projecao publica do candidato', function () {",
+                  "    pm.expect(first).to.include.keys('id','file','thumb','prompt','selected');",
+                  "  });",
+                  "} else { console.log('nenhuma ideia importada: select e PUT scenes com imagem viram 422'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST candidates/select - usar no storyboard",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/candidates/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "candidates",
+                "select"
+              ]
+            },
+            "description": "FDD secao 5, contrato 8 (linhas 235-250). 200 {selected, detached}; 422 se algum id nao existir. Copia os escolhidos para `storyboard/ideas/<id>.<ext>` e desanexa das cenas quem saiu.\n\nDepende de `ideaId`, preenchido pelo GET candidates. Sem nenhuma ideia importada, `ideaId` fica vazio e a resposta e 422 - o teste aceita os dois casos.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"{{ideaId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com ideaId valido, 422 sem ideia importada (FDD c8)', function () { pm.expect([200, 422]).to.include(c); });",
+                  "if (c === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.test('resposta tem selected e detached', function () {",
+                  "    pm.expect(b).to.have.property('selected'); pm.expect(b.detached).to.be.an('array');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 cenas e storyboard.md",
+      "description": "FDD secao 5, contratos 9 a 11 (linhas 252-300). Rode em ordem: GET, PUT, render.",
+      "item": [
+        {
+          "name": "GET scenes - le (e cria) as 5 cenas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 5, contrato 9 (linhas 252-268) e secao 2 (linha 46): na primeira leitura cria e persiste `cena01..cena05` com texto vazio e `image: null`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 cenas (FDD c9)', function () { pm.response.to.have.status(200); });",
+                  "const s = pm.response.json().scenes;",
+                  "pm.test('n contiguo a partir de 1 e id == cenaNN (invariante, FDD secao 6)', function () {",
+                  "  s.forEach(function (sc, i) {",
+                  "    pm.expect(sc.n).to.eql(i + 1);",
+                  "    pm.expect(sc.id).to.eql('cena' + String(i + 1).padStart(2, '0'));",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT scenes - gravar 5 cenas (sem imagem)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 5, contrato 10 (linhas 270-293). 200 cenas normalizadas + `storyboard.md` regravado na mesma chamada; 422 para <1 ou >10 cenas, texto acima de 500 chars, ou `image` fora de `storyboard/ideas/`. `id` e `n` enviados pelo cliente sao ignorados e recalculados pela ordem.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenes\": [\n    {\n      \"text\": \"Close no astronauta andando na nevasca\",\n      \"image\": null\n    },\n    {\n      \"text\": \"Ele encontra a lata gigante\",\n      \"image\": null\n    },\n    {\n      \"text\": \"Olha o chao e ve a corda\",\n      \"image\": null\n    },\n    {\n      \"text\": \"Puxa a corda\",\n      \"image\": null\n    },\n    {\n      \"text\": \"A lata cai e inunda tudo\",\n      \"image\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 cenas gravadas (FDD c10)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('normaliza ids pela ordem e devolve o caminho do md', function () {",
+                  "  pm.expect(b.scenes.map(function (s) { return s.id; })).to.eql(['cena01','cena02','cena03','cena04','cena05']);",
+                  "  pm.expect(b.storyboard_md).to.eql('storyboard/storyboard.md');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT scenes - anexar imagem selecionada a cena 1",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 5, contrato 10 + secao 6 (invariante: toda cena com imagem aponta para uma ideia SELECIONADA em `storyboard/ideas/`). Usa `ideaFileSelecionado` do GET candidates depois do select; sem ideia selecionada a resposta e 422 e o teste aceita esse caso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenes\": [\n    {\n      \"text\": \"Close no astronauta andando na nevasca\",\n      \"image\": \"{{ideaFileSelecionado}}\"\n    },\n    {\n      \"text\": \"Ele encontra a lata gigante\",\n      \"image\": null\n    },\n    {\n      \"text\": \"Olha o chao e ve a corda\",\n      \"image\": null\n    },\n    {\n      \"text\": \"Puxa a corda\",\n      \"image\": null\n    },\n    {\n      \"text\": \"A lata cai e inunda tudo\",\n      \"image\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com ideia selecionada, 422 sem ela (FDD c10)', function () { pm.expect([200, 422]).to.include(c); });",
+                  "if (c === 200) {",
+                  "  pm.test('cena01 aponta para storyboard/ideas/', function () {",
+                  "    pm.expect(pm.response.json().scenes[0].image).to.match(/^storyboard\\/ideas\\//);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST render - gerar storyboard.md sob demanda",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/render",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "render"
+              ]
+            },
+            "description": "FDD secao 5, contrato 11 (linhas 295-300). 200 {storyboard_md, scenes}; 422 se nenhuma cena tiver texto. Rode depois do PUT scenes; o arquivo fica em `/files/{{pid}}/storyboard/storyboard.md`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 md gerado (FDD c11)', function () { pm.response.to.have.status(200); });",
+                  "pm.test('devolve o caminho do md e as cenas', function () {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.storyboard_md).to.eql('storyboard/storyboard.md');",
+                  "  pm.expect(b.scenes).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET storyboard.md (arquivo servido pelo nucleo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{pid}}/storyboard/storyboard.md",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "{{pid}}",
+                "storyboard",
+                "storyboard.md"
+              ]
+            },
+            "description": "FDD secao 4, linha 84: o link 'abrir storyboard.md' aponta para `/files/<pid>/storyboard/<rel>`. Nao e rota do contrato de storyboard (mount estatico do nucleo), incluida para conferir o artefato final."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 arquivo existe apos o render', function () { pm.response.to.have.status(200); });",
+                  "pm.test('contem o cabecalho de cena da aula', function () { pm.expect(pm.response.text()).to.contain('## Cena 1'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 CLI pago (nao executavel sem login)",
+      "description": "FDD secao 5, contrato 12 (linhas 302-320). Nenhum teste aqui exige sucesso: sem login pago o esperado e 409, e `generate` gasta creditos quando executavel.",
+      "item": [
+        {
+          "name": "POST cost - custo antes de gerar (pago)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "cost"
+              ]
+            },
+            "description": "FDD secao 5, contrato 12 (linhas 302-315). 200 {per_image, total} (`null` quando o CLI nao informa); 409 CLI ausente/nao logado ou sem base final; 422 como no contrato 3.\n\nNAO EXECUTAVEL sem login pago. No router o servico chama `_cli_ready()` ANTES de checar a base, entao sem login o 409 e o do CLI, nao o da etapa 3.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit\",\n  \"text\": \"Make the climber even smaller and more realistic\",\n  \"count\": 4,\n  \"source_id\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com CLI logado, 409 sem CLI/login ou sem base (FDD c12)', function () {",
+                  "  pm.expect([200, 409]).to.include(c);",
+                  "});",
+                  "if (c === 409) { console.log('esperado: ' + pm.response.json().detail); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST generate - iniciar job no CLI (pago)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 5, contrato 12. 200 estado inicial do job; 409 job em execucao, CLI ausente/nao logado ou sem base final; 422 como no contrato 3 (e `kind: draw_to_edit`).\n\nNAO EXECUTAVEL sem login pago - e GASTA CREDITOS quando executavel. O teste nao exige sucesso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit\",\n  \"text\": \"Make the climber even smaller and more realistic\",\n  \"count\": 4,\n  \"source_id\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 job iniciado, 409 sem CLI/login/base ou job em curso (FDD c12)', function () {",
+                  "  pm.expect([200, 409]).to.include(c);",
+                  "});",
+                  "if (c === 200) {",
+                  "  pm.test('estado inicial do job', function () { pm.expect(pm.response.json().state).to.eql('running'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET job - polling do job de CLI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "job"
+              ]
+            },
+            "description": "FDD secao 5, contrato 12 (linha 309) e secao 4 (linha 90): 200 {state, done, total, added, error, log}; estado `idle` se nunca rodou. Executavel sempre (le estado em memoria do `JobRegistry`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 estado do job (FDD c12)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('state em idle|running|done|error', function () {",
+                  "  pm.expect(['idle','running','done','error']).to.include(b.state);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "erros",
+      "description": "FDD secao 6 (matriz de erros, linhas 330-347) e os status de erro declarados na secao 5. Cada request confere o status; os casos que dependem da base da etapa 3 aceitam o 409 que a wave produz hoje.",
+      "item": [
+        {
+          "name": "404 - pid inexistente (GET storyboard)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard"
+              ]
+            },
+            "description": "FDD secao 6, linha 332: `pid` invalido/inexistente => 404 pelo handler global de `KeyError` (`refs.service.project_dir`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });",
+                  "pm.test('mensagem do handler global', function () { pm.expect(pm.response.json().detail).to.contain('projeto'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - pid inexistente (GET scenes)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 5, cabecalho (linha 110): todas as rotas sob `/api/projects/{pid}/storyboard/...` devolvem 404 para pid inexistente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - duas instrucoes no texto (lista numerada)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 6, linha 334 e secao 9, linha 407: `1. ... 2. ...` => 422 citando 'uma instrucao por vez' com a primeira frase sugerida.\n\nSEM BASE (etapa 3 pendente) esta rota responde 409 antes de validar o texto - o teste aceita os dois e so exige a mensagem quando o 422 acontece.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"edit\",\n  \"text\": \"1. Make it smaller 2. Remove the rope\",\n  \"count\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('422 com base; 409 sem base (etapa 3 pendente)', function () { pm.expect([422, 409]).to.include(c); });",
+                  "if (c === 422) {",
+                  "  pm.test('mensagem cita uma instrucao por vez', function () {",
+                  "    pm.expect(pm.response.json().detail.toLowerCase()).to.contain('uma instru');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "200 - preset da secao 5 com ponto-e-virgula e aceito (409 sem base)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "DIVERGENCIA ALTA (ver divergencias.md): o preset 'Inpaint: corda proporcional' devolvido por GET .../instructions (FDD secao 5, contrato 2, linha 143) contem um ponto-e-virgula e e recusado com 422 por `_check_single_instruction` (`re.split(r'[.;]')` conta 2 frases). O texto vem da variavel `presetComPontoEVirgula`, preenchida pelo GET instructions.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"edit\",\n  \"text\": \"{{presetComPontoEVirgula}}\",\n  \"count\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('preset publicado e aceito: 200 com base; 409 sem base (etapa 3 pendente)', function () {",
+                  "  pm.expect([200, 409]).to.include(c);",
+                  "});",
+                  "if (c === 200) {",
+                  "  pm.test('a instrucao foi montada (ponto-e-virgula nao separa instrucao)', function () {",
+                  "    pm.expect(pm.response.json().instruction).to.be.a('string').and.not.empty;",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - count fora de {1, 4}",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 5, contrato 3 (linha 159) e secao 2 (linha 45): `count` so admite 4 (incerto) ou 1 (tweak).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"edit\",\n  \"text\": \"Make it smaller\",\n  \"count\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('422 com base; 409 sem base (etapa 3 pendente)', function () { pm.expect([422, 409]).to.include(c); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - kind desconhecido",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 5, contrato 3 (linha 159): `kind` fora de draw_to_edit|edit|multishot => 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"zoom\",\n  \"text\": \"Make it smaller\",\n  \"count\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('422 com base; 409 sem base (etapa 3 pendente)', function () { pm.expect([422, 409]).to.include(c); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - texto vazio",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 5, contrato 3 (linha 159): `text` vazio => 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"edit\",\n  \"text\": \"\",\n  \"count\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('422 com base; 409 sem base (etapa 3 pendente)', function () { pm.expect([422, 409]).to.include(c); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - instrucao sem base/base_final.png (etapa 3 pendente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/instructions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "instructions"
+              ]
+            },
+            "description": "FDD secao 6, linha 333: sem `base/base_final.png` => 409 'Imagem base ausente: conclua a etapa 3 (base)'. Como a etapa 3 nao existe nesta wave, este e o caminho normal; com a base presente o 200 tambem e aceito.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"edit\",\n  \"text\": \"Make the climber even smaller and more realistic\",\n  \"count\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('409 sem base (esperado nesta wave), 200 com base', function () { pm.expect([409, 200]).to.include(c); });",
+                  "if (c === 409) {",
+                  "  pm.test('mensagem aponta a etapa 3', function () { pm.expect(pm.response.json().detail).to.contain('etapa 3'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - upload sem arquivos",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "FDD secao 5, contrato 4 (linha 182): 422 sem arquivos. Na pratica quem responde e a validacao do FastAPI (`files: list[UploadFile] = File(...)`), com `detail` em lista, nao a mensagem do router.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "prompt",
+                  "value": "sem arquivos",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 sem arquivos (FDD c4)', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - folder inexistente no import de Downloads",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/import/downloads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "import",
+                "downloads"
+              ]
+            },
+            "description": "FDD secao 5, contrato 5 (linha 194) e secao 6 (linha 338): `folder` informado que nao existe => 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder\": \"/caminho/que/nao/existe\",\n  \"since_minutes\": 120,\n  \"prompt\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 pasta inexistente (FDD c5)', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita a pasta', function () { pm.expect(pm.response.json().detail).to.contain('pasta'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - selecionar ideia inexistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/candidates/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "candidates",
+                "select"
+              ]
+            },
+            "description": "FDD secao 5, contrato 8 (linha 239): 422 se algum id nao existir.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"c0ffee123456\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 id inexistente (FDD c8)', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita ideia inexistente', function () { pm.expect(pm.response.json().detail).to.contain('inexistente'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - zero cenas",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 5, contrato 10 (linha 276) e secao 6 (linha 345): menos de 1 cena => 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenes\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 zero cenas (FDD c10)', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - 11 cenas (acima do maximo)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 5, contrato 10 (linha 276): mais de 10 cenas => 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenes\": [\n    {\n      \"text\": \"cena 1\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 2\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 3\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 4\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 5\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 6\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 7\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 8\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 9\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 10\",\n      \"image\": null\n    },\n    {\n      \"text\": \"cena 11\",\n      \"image\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 acima de 10 cenas (FDD c10)', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - image fora de storyboard/ideas (path traversal)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 6, linha 344 e secao 9, linha 413: `image` fora de `storyboard/ideas/` (inclusive `../base/base_final.png`) => 422, com `Path.resolve()` barrando o traversal.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenes\": [\n    {\n      \"text\": \"cena com imagem proibida\",\n      \"image\": \"../base/base_final.png\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 imagem fora de ideas/ (FDD c10)', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita storyboard/ideas', function () { pm.expect(pm.response.json().detail).to.contain('storyboard/ideas'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - texto de cena acima de 500 caracteres",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "scenes"
+              ]
+            },
+            "description": "FDD secao 5, contrato 10 (linha 276) e secao 6 (linha 345): `text` acima de 500 chars => 422. O texto e montado no pre-request (`textoLongo`) para nao inchar o arquivo da colecao.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenes\": [\n    {\n      \"text\": \"{{textoLongo}}\",\n      \"image\": null\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 texto acima de 500 chars (FDD c10)', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - render sem nenhuma cena com texto",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidVazio}}/storyboard/render",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidVazio}}",
+                "storyboard",
+                "render"
+              ]
+            },
+            "description": "FDD secao 5, contrato 11 (linha 299) e secao 6 (linha 346): `render` sem nenhuma cena com texto => 422. Usa `pidVazio` (segundo projeto, criado no pre-request desta pasta) para nao depender da ordem em relacao ao PUT scenes do projeto principal."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 sem cena com texto (FDD c11)', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// texto de 501 caracteres para o caso de 422 do PUT scenes",
+              "pm.collectionVariables.set('textoLongo', 'a'.repeat(501));",
+              "// projeto vazio (sem cenas com texto) para o 422 do render, criado uma vez por execucao",
+              "if (!pm.collectionVariables.get('pidVazio')) {",
+              "  pm.sendRequest({",
+              "    url: pm.variables.get('baseUrl') + '/api/projects',",
+              "    method: 'POST',",
+              "    header: {'Content-Type': 'application/json'},",
+              "    body: {mode: 'raw', raw: JSON.stringify({name: 'Storyboard Vazio ' + Date.now(), product: '', vibe: ''})}",
+              "  }, function (err, res) {",
+              "    if (!err && res.code === 200) { pm.collectionVariables.set('pidVazio', res.json().id); }",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

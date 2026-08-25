@@ -1,6 +1,6 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.0
+Versão: 1.1 (wave 1: 11 etapas como plugins)
 Data: 2026-08-25
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
@@ -14,7 +14,8 @@ SPA estática (`web/`). A lógica de cada etapa vive nos domínios `refs`, `mood
 um domínio por etapa.
 
 Dependências com outros sistemas
-- Domínio `refs` (etapa 1) e `mood` (etapa 2): serviços chamados pelos endpoints.
+- Um domínio por etapa (`refs`, `mood`, `base`, `storyboard`, `shots`, `animate`, `music`, `edit`, `export`, `publish`, `prospect`): serviços chamados pelos routers dos plugins. Contratos de handoff entre etapas em `docs/domains/studio/waves/wave-1.md`.
+- `studio/common/` (transversal): `ingest.py` (imagem/vídeo/áudio por etapa), `jobs.py` (`JobRegistry`), `ffmpeg.py` (ffmpeg/ffprobe estático em `~/.local/bin`).
 - Domínio `higgsfield`: status do CLI exposto em `/api/higgsfield/status`.
 - Sistema de arquivos local: `projects/<id>/` (dados) e `~/.orquestrador-studio/` (estado).
 
@@ -31,7 +32,7 @@ Ambiente de implantação
 - Sem container por enquanto; `make run` / `./run.sh`.
 
 Tecnologias principais
-- Python 3.12, FastAPI, Uvicorn, Pydantic (validação de corpo), Pillow.
+- Python 3.12, FastAPI, Uvicorn, Pydantic (validação de corpo), Pillow, numpy (batidas), ffmpeg 7 estático (montagem/export/thumbs/teaser).
 - Frontend: HTML/CSS/JS vanilla, sem build; fontes via Google Fonts.
 
 Padrões adotados
@@ -47,7 +48,14 @@ Padrões adotados
 | `app.py` | Rotas, validação de entrada (Pydantic), tradução de exceções em HTTP (404/409/413/422/502), estáticos | `refs.service`, `mood.service`, `higgsfield` |
 | `config.py` | `PROJECTS_DIR`, `STATE_DIR`, `PINTEREST_PROFILE`, `WEB_DIR`, `PROJECT_LAYOUT`; overrides por env | os, pathlib |
 | `steps.py` | Catálogo das 11 etapas: id, ordem, aula, status `ready`/`soon`, descrição | nenhuma |
-| `web/` | Seleção de projeto, navegação por etapa (só `ready` clicável), telas das etapas 1 e 2, polling de jobs, galeria de seleção | API `/api/*`, `localStorage` (projeto e etapa atuais) |
+| `etapas/` (plugins) | Uma pasta por etapa implementada: `META` (id, n, aula), `router.py` (APIRouter com as rotas da etapa), `view.html` e `view.js`; descobertas por `etapas.discover()` e montadas pelo `app.py`; servidas em `/steps/<id>/view.{html,js}` | serviços do domínio da etapa |
+| `common/` | Ingestão de mídia por etapa com dedupe e thumbs; `JobRegistry` (um job por projeto por serviço); ffmpeg (`run`, `probe`, `last_frame`, `video_thumb`) | Pillow, ffmpeg, `higgsfield.py` |
+| `web/` | Núcleo da SPA: seleção de projeto, menu de etapas, carregamento sob demanda do `view.html`/`view.js` da etapa e contexto (`Studio.ctx`: `api`, `toast`, `pid()`, `project()`, `files()`) | API `/api/*`, `/steps/*`, `localStorage` |
+
+Regra de extensão (desde 2026-08-25): uma etapa nova **cria só `studio/etapas/<id>/`** e sua
+pasta de serviço; nunca edita `app.py`, `index.html`, `app.js` nem `steps.py` (o catálogo
+`SOON` já lista as 11 etapas e a descoberta promove a etapa a `ready`). Isso permite frentes
+paralelas sem conflito nos arquivos únicos.
 
 ---
 
@@ -107,7 +115,7 @@ Autorização
 
 Proteção de dados
 - `pid` validado por regex antes de compor caminhos (evita path traversal).
-- Upload limitado a 25 MB por arquivo; só imagens são aceitas na importação.
+- Upload limitado por etapa (25 MB imagens; 200 MB vídeo na etapa 6); `common/ingest.py` valida o conteúdo por tipo (imagem via Pillow, vídeo/áudio via ffprobe) e descarta o que não abre.
 - Perfil do Pinterest (cookies) fica em `~/.orquestrador-studio/`, fora do repositório.
 
 Gestão de segredos
@@ -140,5 +148,6 @@ Dashboards e alertas
 ---
 
 ### ADRs associados e próximos passos
-- ADRs gerados pelo pipeline `/adr-*` em `docs/adrs/generated/STUDIO/`.
+- ADRs gerados pelo pipeline `/adr-*` em `docs/adrs/generated/STUDIO/`; ADR-009 (batidas com numpy + ffmpeg) em `MUSIC/`.
+- Pastas de etapa (`base/`, `storyboard/`, `shots/`, `publish/`, `prospect/`) são criadas pelo próprio serviço; `PROJECT_LAYOUT` continua listando só as da aula 009/011 (decisão da integração: não tocar `config.py`).
 - Próximos passos: FDD por etapa nova (domínio próprio), `JobRegistry` único, logging estruturado.

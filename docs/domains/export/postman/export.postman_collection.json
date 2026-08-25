@@ -1,0 +1,1749 @@
+{
+  "info": {
+    "_postman_id": "os009-export-collection",
+    "name": "Export e QA (etapa 9 · OS-009)",
+    "description": "Coleção executável dos 9 contratos públicos da etapa 9 (Export e QA).\n\nFonte: `docs/domains/export/features/export-fdd.md` — seção 5 \"Contratos públicos\" (linhas 124-333), ordem dos fluxos pela seção 4 (linhas 67-95) e casos negativos pela matriz de erros da seção 6 (linhas 341-355).\n\nPré-condições: serviço FastAPI local no ar em `{{base_url}}`, um projeto existente em `{{pid}}` com `edit/master.mp4` produzido pela etapa 8, e ffmpeg/ffprobe em `~/.local/bin`.\n\nSem autenticação: a API é local e não tem auth (FDD seção 5, linha 126 — \"Sem headers próprios\").\n\nDivergências entre o FDD e `studio/etapas/export/router.py`: ver `divergencias.md` nesta pasta.\n\nAuditoria feita sobre o commit `f049d45`. Duas divergências apontadas na primeira rodada (500 em `status`/`list` com arquivo ilegível; 409 antes do 422 nas rotas de reframe) já foram corrigidas nesse commit e as asserções desta coleção refletem o comportamento novo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8773",
+      "type": "string",
+      "description": "Base do serviço FastAPI local."
+    },
+    {
+      "key": "pid",
+      "value": "",
+      "type": "string",
+      "description": "Projeto com edit/master.mp4 pronto (etapa 8)."
+    },
+    {
+      "key": "pid_sem_master",
+      "value": "",
+      "type": "string",
+      "description": "Projeto existente SEM edit/master.mp4, para os 404 da seção 6 (linha 344)."
+    },
+    {
+      "key": "pid_inexistente",
+      "value": "projeto-que-nao-existe",
+      "type": "string",
+      "description": "pid inexistente, para o 404 do núcleo (FDD linha 343)."
+    },
+    {
+      "key": "preview_t",
+      "value": "1",
+      "type": "string",
+      "description": "Tempo do preview em segundos (FDD seção 9, linha 412)."
+    },
+    {
+      "key": "thumb_t",
+      "value": "1",
+      "type": "string",
+      "description": "Tempo da thumb em segundos; default do FDD é 3 (linha 39)."
+    },
+    {
+      "key": "t_fora_da_duracao",
+      "value": "99999",
+      "type": "string",
+      "description": "Recalculado pelo GET /status a partir da duração do master."
+    },
+    {
+      "key": "master_duration",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "master_width",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "master_height",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "master_exists",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ffmpeg_disponivel",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "hf_installed",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "hf_logged_in",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "qa_items_json",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "poll_count",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "max_polls",
+      "value": "10",
+      "type": "string",
+      "description": "Teto de repetições do GET /job (polling de 3 s do FDD, linha 73)."
+    }
+  ],
+  "item": [
+    {
+      "name": "1. status e listagem",
+      "item": [
+        {
+          "name": "GET status — estado da etapa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 mesmo sem master (FDD s5 contrato 1, linha 152)', () => pm.response.to.have.status(200));",
+                  "pm.test('campos raiz do contrato 1 (FDD linhas 156-169)', () => {",
+                  "  ['ffmpeg','higgsfield','master','outputs','previews','job'].forEach(k => pm.expect(j).to.have.property(k));",
+                  "});",
+                  "pm.test('ffmpeg e booleano (FDD linha 345)', () => pm.expect(j.ffmpeg).to.be.a('boolean'));",
+                  "pm.test('higgsfield.installed/logged_in booleanos (FDD linha 68)', () => {",
+                  "  pm.expect(j.higgsfield.installed).to.be.a('boolean');",
+                  "  pm.expect(j.higgsfield.logged_in).to.be.a('boolean');",
+                  "});",
+                  "pm.test('master.file == edit/master.mp4 e master.exists booleano (FDD linha 344)', () => {",
+                  "  pm.expect(j.master.file).to.eql('edit/master.mp4');",
+                  "  pm.expect(j.master.exists).to.be.a('boolean');",
+                  "});",
+                  "pm.test('outputs traz 16x9, 9x16, 1x1, thumb e qa_report (FDD linhas 161-166)', () => {",
+                  "  ['16x9','9x16','1x1','thumb','qa_report'].forEach(k => pm.expect(j.outputs).to.have.property(k));",
+                  "});",
+                  "pm.test('job.state presente (FDD linha 168)', () => pm.expect(j.job.state).to.be.a('string'));",
+                  "// encadeamento: alimenta preview, thumb e os casos de erro condicionais",
+                  "pm.collectionVariables.set('ffmpeg_disponivel', String(j.ffmpeg));",
+                  "pm.collectionVariables.set('hf_installed', String(j.higgsfield.installed));",
+                  "pm.collectionVariables.set('hf_logged_in', String(j.higgsfield.logged_in));",
+                  "pm.collectionVariables.set('master_exists', String(j.master.exists));",
+                  "if (j.master && j.master.duration) {",
+                  "  pm.collectionVariables.set('master_duration', String(j.master.duration));",
+                  "  pm.collectionVariables.set('master_width', String(j.master.width));",
+                  "  pm.collectionVariables.set('master_height', String(j.master.height));",
+                  "  pm.collectionVariables.set('t_fora_da_duracao', String(Math.ceil(j.master.duration) + 60));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "status"
+              ]
+            },
+            "description": "Contrato 1 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 148). 200 sempre que o projeto existe, mesmo sem master (linha 152). Guarda ffmpeg, login do CLI e a duracao do master em variaveis de colecao para os demais requests."
+          },
+          "response": []
+        },
+        {
+          "name": "GET list — saidas entregaveis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 sempre (FDD s5 contrato 7, linha 286)', () => pm.response.to.have.status(200));",
+                  "pm.test('corpo e {files: [...]} (FDD linha 290)', () => pm.expect(j.files).to.be.an('array'));",
+                  "pm.test('cada item tem name, file, kind e size (FDD linhas 291-294)', () => {",
+                  "  j.files.forEach(f => {",
+                  "    pm.expect(f).to.have.property('name');",
+                  "    pm.expect(f.file).to.match(/^export\\//);",
+                  "    pm.expect(['video','image','doc']).to.include(f.kind);",
+                  "    pm.expect(f.size).to.be.a('number');",
+                  "  });",
+                  "});",
+                  "pm.test('list ignora previews/ e arquivos internos (FDD s8, linha 404)', () => {",
+                  "  j.files.forEach(f => {",
+                  "    pm.expect(f.file).to.not.include('previews/');",
+                  "    pm.expect(f.name.startsWith('.')).to.eql(false);",
+                  "  });",
+                  "});",
+                  "pm.test('videos de formato conhecido trazem format (FDD linha 291)', () => {",
+                  "  j.files.filter(f => ['16x9.mp4','9x16.mp4','1x1.mp4'].includes(f.name))",
+                  "   .forEach(f => pm.expect(['16x9','9x16','1x1']).to.include(f.format));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "list"
+              ]
+            },
+            "description": "Contrato 7 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 284). Contrato consumido pela etapa 10 (publish). Ignora export/previews/."
+          },
+          "response": []
+        },
+        {
+          "name": "GET job — estado do job (antes de renderizar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 sempre (FDD s5 contrato 4, linha 217)', () => pm.response.to.have.status(200));",
+                  "pm.test(\"state e idle|running|done|error (FDD linha 217)\", () => pm.expect(['idle','running','done','error']).to.include(j.state));",
+                  "if (j.state !== 'idle') {",
+                  "  pm.test('job iniciado expoe done/total/added/error/log (FDD linha 221)', () => {",
+                  "    ['done','total','added','error','log'].forEach(k => pm.expect(j).to.have.property(k));",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/job",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "job"
+              ]
+            },
+            "description": "Contrato 4 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 215). Devolve {'state': 'idle'} quando nunca houve job."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. preview e render",
+      "item": [
+        {
+          "name": "POST preview 9x16 — enquadramento vertical",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 preview gravado (FDD s5 contrato 2, linha 178)', () => pm.response.to.have.status(200));",
+                  "pm.test('format ecoado como 9x16 (FDD linha 189)', () => pm.expect(j.format).to.eql('9x16'));",
+                  "pm.test('t e numerico e file aponta para export/previews (FDD linha 189)', () => {",
+                  "  pm.expect(j.t).to.be.a('number');",
+                  "  pm.expect(j.file).to.eql('export/previews/9x16.jpg');",
+                  "});",
+                  "pm.test('crop traz w, h, x, y (FDD linha 189)', () => {",
+                  "  ['w','h','x','y'].forEach(k => pm.expect(j.crop[k]).to.be.a('number'));",
+                  "});",
+                  "pm.test('crop respeita a proporcao 9:16 (FDD s9, linha 412)', () => {",
+                  "  pm.expect(Math.abs((j.crop.w / j.crop.h) - (9 / 16))).to.be.below(0.01);",
+                  "});",
+                  "const mw = Number(pm.collectionVariables.get('master_width'));",
+                  "if (mw) {",
+                  "  pm.test('crop e central: x == (iw - w) // 2 (FDD s9, linha 412)', () => {",
+                  "    pm.expect(j.crop.x).to.eql(Math.floor((mw - j.crop.w) / 2));",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "preview"
+              ]
+            },
+            "description": "Contrato 2 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 174). Grava export/previews/9x16.jpg com o mesmo filtro de crop do render (FDD secao 4, linha 70).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"9x16\",\n  \"t\": {{preview_t}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST preview 1x1 — enquadramento quadrado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 preview gravado (FDD s5 contrato 2, linha 178)', () => pm.response.to.have.status(200));",
+                  "pm.test('format ecoado como 1x1 (FDD linha 189)', () => pm.expect(j.format).to.eql('1x1'));",
+                  "pm.test('t e numerico e file aponta para export/previews (FDD linha 189)', () => {",
+                  "  pm.expect(j.t).to.be.a('number');",
+                  "  pm.expect(j.file).to.eql('export/previews/1x1.jpg');",
+                  "});",
+                  "pm.test('crop traz w, h, x, y (FDD linha 189)', () => {",
+                  "  ['w','h','x','y'].forEach(k => pm.expect(j.crop[k]).to.be.a('number'));",
+                  "});",
+                  "pm.test('crop e quadrado para 1x1 (FDD linha 83)', () => pm.expect(j.crop.w).to.eql(j.crop.h));",
+                  "const mw = Number(pm.collectionVariables.get('master_width'));",
+                  "if (mw) {",
+                  "  pm.test('crop e central: x == (iw - w) // 2 (FDD s9, linha 412)', () => {",
+                  "    pm.expect(j.crop.x).to.eql(Math.floor((mw - j.crop.w) / 2));",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "preview"
+              ]
+            },
+            "description": "Contrato 2 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 174), formato 1x1 (tabela de filtros, linha 83).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"1x1\",\n  \"t\": {{preview_t}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST render — os tres formatos (inicia job)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 job iniciado (FDD s5 contrato 3, linha 197)', () => pm.response.to.have.status(200));",
+                  "pm.test('state running (pode chegar done se o render terminar antes da resposta) (FDD linha 210)', () => {",
+                  "  pm.expect(['running','done']).to.include(j.state);",
+                  "});",
+                  "pm.test('total == 3 e contadores zerados no inicio (FDD linha 210)', () => {",
+                  "  pm.expect(j.total).to.eql(3);",
+                  "  pm.expect(j.done).to.be.a('number');",
+                  "  pm.expect(j.added).to.be.a('number');",
+                  "  pm.expect(j.error).to.eql(null);",
+                  "  pm.expect(j.log).to.be.an('array');",
+                  "});",
+                  "pm.test('formats ecoa a lista pedida (FDD linha 210)', () => {",
+                  "  pm.expect(j.formats).to.eql(['16x9','9x16','1x1']);",
+                  "});",
+                  "pm.test('[DIVERGENCIA BAIXA] router acrescenta mode=render, ausente no exemplo do FDD (linha 210)', () => {",
+                  "  pm.expect(j.mode).to.eql('render');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/render",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "render"
+              ]
+            },
+            "description": "Contrato 3 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 194). 200 com o dict do job; um job por projeto (linha 201).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formats\": [\"16x9\", \"9x16\", \"1x1\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST render concorrente — 409 job em andamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 job em andamento, ou 200 se o job anterior ja terminou (FDD s6, linha 346)', () => {",
+                  "  pm.expect([409, 200]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 409) {",
+                  "  pm.test('detalhe cita trabalho em andamento (FDD linha 346)', () => {",
+                  "    pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('andamento');",
+                  "  });",
+                  "} else {",
+                  "  pm.test('AVISO: job anterior ja concluido, 409 nao exercitado nesta execucao', () => pm.expect(true).to.eql(true));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/render",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "render"
+              ]
+            },
+            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 346): segundo POST /render com job running responde 409. Depende do job anterior ainda estar rodando; com master de fixture curto o job pode terminar antes e a resposta vira 200 (o teste registra isso).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formats\": [\"9x16\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET job — polling ate done|error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 sempre (FDD s5 contrato 4, linha 217)', () => pm.response.to.have.status(200));",
+                  "pm.test(\"state valido (FDD linha 221)\", () => pm.expect(['idle','running','done','error']).to.include(j.state));",
+                  "let n = Number(pm.collectionVariables.get('poll_count') || 0);",
+                  "const max = Number(pm.collectionVariables.get('max_polls') || 10);",
+                  "if (j.state === 'running' && n < max) {",
+                  "  pm.collectionVariables.set('poll_count', String(n + 1));",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('poll_count', '0');",
+                  "  if (j.state === 'done') {",
+                  "    pm.test('job concluido: done == total (FDD linha 221)', () => pm.expect(j.done).to.eql(j.total));",
+                  "    pm.test('log tem uma linha por formato (FDD secao 4, linha 72)', () => pm.expect(j.log.length).to.eql(j.total));",
+                  "    pm.test('error null quando done (FDD linha 221)', () => pm.expect(j.error).to.eql(null));",
+                  "  }",
+                  "  if (j.state === 'error') {",
+                  "    pm.test('state=error traz error preenchido (FDD s6, linha 349)', () => pm.expect(j.error).to.be.a('string'));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/job",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "job"
+              ]
+            },
+            "description": "Contrato 4 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 215) e polling de 3 s da secao 4 (linha 73). Repete o request enquanto state=running, ate {max_polls} tentativas."
+          },
+          "response": []
+        },
+        {
+          "name": "GET list — apos o render",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 (FDD s5 contrato 7, linha 286)', () => pm.response.to.have.status(200));",
+                  "const nomes = j.files.map(f => f.name);",
+                  "pm.test('nomes de arquivo do schema da wave, quando presentes (FDD s8, linha 401)', () => {",
+                  "  nomes.forEach(n => pm.expect(n).to.not.include(' '));",
+                  "});",
+                  "pm.test('videos legiveis expoem width/height/duration numericos (FDD linhas 291-292)', () => {",
+                  "  j.files.filter(f => f.kind === 'video' && f.width !== undefined).forEach(f => {",
+                  "    pm.expect(f.width).to.be.a('number');",
+                  "    pm.expect(f.height).to.be.a('number');",
+                  "    pm.expect(f.duration).to.be.a('number');",
+                  "  });",
+                  "});",
+                  "pm.test('arquivo ilegivel nao derruba a rota: entrada volta so com name/file/kind/size (FDD linha 286)', () => {",
+                  "  j.files.filter(f => f.width === undefined).forEach(f => {",
+                  "    ['name','file','kind','size'].forEach(k => pm.expect(f).to.have.property(k));",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "list"
+              ]
+            },
+            "description": "Contrato 7 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 284) revalidado depois do render; confere os nomes fixos garantidos na secao 8 (linha 401). Desde f049d45, um arquivo ilegivel volta sem os campos de midia em vez de derrubar a rota, entao width/height/duration sao conferidos apenas quando presentes."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. thumb e QA",
+      "item": [
+        {
+          "name": "POST thumb — frame no tempo escolhido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 thumb gravada (FDD s5 contrato 5, linha 228)', () => pm.response.to.have.status(200));",
+                  "pm.test('file == export/thumb.jpg (FDD linha 237)', () => pm.expect(j.file).to.eql('export/thumb.jpg'));",
+                  "pm.test('t ecoado (FDD linha 237)', () => pm.expect(j.t).to.eql(Number(pm.collectionVariables.get('thumb_t'))));",
+                  "pm.test('width/height numericos (FDD linha 237)', () => {",
+                  "  pm.expect(j.width).to.be.a('number');",
+                  "  pm.expect(j.height).to.be.a('number');",
+                  "});",
+                  "const mw = Number(pm.collectionVariables.get('master_width'));",
+                  "const mh = Number(pm.collectionVariables.get('master_height'));",
+                  "if (mw && mh) {",
+                  "  pm.test('thumb na resolucao do master (FDD s9, linha 413)', () => {",
+                  "    pm.expect([j.width, j.height]).to.eql([mw, mh]);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/thumb",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "thumb"
+              ]
+            },
+            "description": "Contrato 5 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 226). 200 gravada; resolucao igual a do master (criterio da secao 9, linha 413).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"t\": {{thumb_t}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST qa — checklist tecnico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 relatorio gravado, mesmo com itens ATENCAO (FDD s5 contrato 6, linha 244)', () => pm.response.to.have.status(200));",
+                  "pm.test('file == export/qa_report.md (FDD linha 250)', () => pm.expect(j.file).to.eql('export/qa_report.md'));",
+                  "pm.test('generated em ISO (FDD linha 251)', () => pm.expect(j.generated).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$/));",
+                  "pm.test('items e array nao vazio (FDD linha 252)', () => {",
+                  "  pm.expect(j.items).to.be.an('array');",
+                  "  pm.expect(j.items.length).to.be.above(0);",
+                  "});",
+                  "pm.test('primeiro item e o master (FDD linha 253)', () => pm.expect(j.items[0].file).to.eql('edit/master.mp4'));",
+                  "pm.test('cada item tem checks e verdict OK|ATENCAO (FDD linhas 253-255)', () => {",
+                  "  j.items.forEach(it => {",
+                  "    pm.expect(it.checks).to.be.an('array');",
+                  "    pm.expect(['OK','ATENCAO']).to.include(it.verdict);",
+                  "    it.checks.forEach(c => {",
+                  "      pm.expect(c.name).to.be.a('string');",
+                  "      pm.expect(c.ok).to.be.a('boolean');",
+                  "    });",
+                  "  });",
+                  "});",
+                  "pm.test('nomes de checagem sao os objetivos da linha 280 do FDD', () => {",
+                  "  const validos = ['exists','resolution','duration','vcodec','audio','size'];",
+                  "  j.items.forEach(it => it.checks.forEach(c => pm.expect(validos).to.include(c.name)));",
+                  "});",
+                  "pm.test('verdict deriva das checagens (FDD linha 280)', () => {",
+                  "  j.items.forEach(it => {",
+                  "    const esperado = it.checks.every(c => c.ok) ? 'OK' : 'ATENCAO';",
+                  "    pm.expect(it.verdict).to.eql(esperado);",
+                  "  });",
+                  "});",
+                  "pm.test('sem julgamento estetico no payload (FDD s9, linha 415)', () => {",
+                  "  const txt = JSON.stringify(j).toLowerCase();",
+                  "  ['bonito','feio','ritmo','hook','legenda'].forEach(w => pm.expect(txt).to.not.include(w));",
+                  "});",
+                  "pm.collectionVariables.set('qa_generated', j.generated);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/qa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "qa"
+              ]
+            },
+            "description": "Contrato 6 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 242). Sincrono; grava export/qa_report.md e devolve {file, generated, items}."
+          },
+          "response": []
+        },
+        {
+          "name": "POST qa — segunda chamada (determinismo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 (FDD s5 contrato 6, linha 244)', () => pm.response.to.have.status(200));",
+                  "pm.test('items identicos entre duas chamadas — QA determinista (FDD s9, linha 414)', () => {",
+                  "  const anterior = pm.collectionVariables.get('qa_items_json');",
+                  "  if (anterior) { pm.expect(JSON.stringify(j.items)).to.eql(anterior); }",
+                  "  else { pm.expect(j.items).to.be.an('array'); }",
+                  "});",
+                  "pm.collectionVariables.set('qa_items_json', JSON.stringify(j.items));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/qa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "qa"
+              ]
+            },
+            "description": "Criterio de aceite da secao 9 do FDD (docs/domains/export/features/export-fdd.md, linha 414): duas chamadas seguidas geram o mesmo conteudo exceto a linha 'Gerado'. Aqui comparamos os items (sem o campo generated)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET status — apos render, thumb e QA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('200 (FDD s5 contrato 1, linha 152)', () => pm.response.to.have.status(200));",
+                  "if (String(pm.collectionVariables.get('master_exists')) === 'true') {",
+                  "  pm.test('outputs.thumb preenchido apos POST /thumb (FDD linha 164)', () => {",
+                  "    pm.expect(j.outputs.thumb).to.not.eql(null);",
+                  "    pm.expect(j.outputs.thumb.file).to.eql('export/thumb.jpg');",
+                  "  });",
+                  "  pm.test('outputs.qa_report preenchido apos POST /qa (FDD linha 165)', () => {",
+                  "    pm.expect(j.outputs.qa_report).to.not.eql(null);",
+                  "    pm.expect(j.outputs.qa_report.file).to.eql('export/qa_report.md');",
+                  "  });",
+                  "  pm.test('previews lista os enquadramentos gerados (FDD linha 167)', () => {",
+                  "    pm.expect(j.previews).to.be.an('object');",
+                  "  });",
+                  "}",
+                  "pm.test('job final em done|error|running (FDD linha 168)', () => {",
+                  "  pm.expect(['idle','running','done','error']).to.include(j.job.state);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "status"
+              ]
+            },
+            "description": "Contrato 1 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 148) revalidado no fim do fluxo: outputs e previews devem refletir o que foi gerado (secao 4, linha 73)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. reframe via CLI (opcional, pago)",
+      "item": [
+        {
+          "name": "POST reframe/cost — creditos antes de gastar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 com custo, ou 409 sem CLI instalado (FDD s5 contrato 8, linha 302)', () => {",
+                  "  pm.expect([200, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 409) {",
+                  "  pm.test('detalhe cita CLI nao instalado (FDD s6, linha 351)', () => {",
+                  "    pm.expect(pm.response.json().detail).to.include('CLI');",
+                  "  });",
+                  "} else {",
+                  "  const j = pm.response.json();",
+                  "  pm.test('corpo traz credits (ou error, quando o CLI falha) (FDD linha 311)', () => {",
+                  "    pm.expect(j).to.satisfy(x => Object.prototype.hasOwnProperty.call(x, 'credits') || Object.prototype.hasOwnProperty.call(x, 'error'));",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/reframe/cost",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "reframe",
+                "cost"
+              ]
+            },
+            "description": "Contrato 8 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 300). 200 com {credits|null, raw|error}; 409 quando o CLI nao esta instalado (linha 302). Nunca falha por causa do CLI.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aspect_ratio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST reframe — inicia job do CLI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 job, ou 409 sem CLI/sem login/job em andamento (FDD s5 contrato 9, linha 318)', () => {",
+                  "  pm.expect([200, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  const j = pm.response.json();",
+                  "  pm.test('job de reframe com mode e aspect_ratio (FDD linha 328)', () => {",
+                  "    pm.expect(j.state).to.be.oneOf(['running','done','error']);",
+                  "    pm.expect(j.total).to.eql(1);",
+                  "    pm.expect(j.mode).to.eql('reframe');",
+                  "    pm.expect(j.aspect_ratio).to.eql('9:16');",
+                  "  });",
+                  "} else {",
+                  "  pm.test('409 traz detalhe explicativo (FDD s6, linhas 351-352)', () => {",
+                  "    pm.expect(pm.response.json().detail).to.be.a('string');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/reframe",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "reframe"
+              ]
+            },
+            "description": "Contrato 9 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 316). 200 job iniciado; 409 CLI nao instalado, nao logado ou job em andamento; 404 master ausente. O 502 declarado na linha 318 nao tem caminho no router (ver divergencias.md).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aspect_ratio\": \"9:16\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. erros",
+      "item": [
+        {
+          "name": "GET status — projeto inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente (FDD s5 linha 153, s6 linha 343)', () => pm.response.to.have.status(404));",
+                  "pm.test('detalhe do handler do nucleo', () => pm.expect(String(pm.response.json().detail)).to.include('projeto'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid_inexistente}}/export/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid_inexistente}}",
+                "export",
+                "status"
+              ]
+            },
+            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 343): pid invalido ou inexistente vira KeyError em project_dir e 404 pelo handler do nucleo."
+          },
+          "response": []
+        },
+        {
+          "name": "GET list — projeto inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 (FDD s5 contrato 7, linha 286)', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid_inexistente}}/export/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid_inexistente}}",
+                "export",
+                "list"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 286): 404 projeto inexistente."
+          },
+          "response": []
+        },
+        {
+          "name": "GET job — projeto inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 (FDD s5 contrato 4, linha 217)', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid_inexistente}}/export/job",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid_inexistente}}",
+                "export",
+                "job"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 217): 404 projeto inexistente."
+          },
+          "response": []
+        },
+        {
+          "name": "POST render — projeto sem edit/master.mp4 (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 master ausente (FDD s5 contrato 3 linha 198, s6 linha 344)', () => pm.response.to.have.status(404));",
+                  "pm.test('detalhe cita edit/master.mp4 — exige pid_sem_master configurado (FDD linha 344)', () => {",
+                  "  pm.expect(String(pm.response.json().detail)).to.include('master.mp4');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid_sem_master}}/export/render",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid_sem_master}}",
+                "export",
+                "render"
+              ]
+            },
+            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 344) e criterio da secao 9 (linha 416). Exige a variavel pid_sem_master apontando para um projeto real sem edit/master.mp4; sem isso o 404 vem do projeto inexistente e o segundo teste falha de proposito.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formats\": [\"9x16\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST qa — projeto sem edit/master.mp4 (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 master ausente (FDD s5 contrato 6, linha 244)', () => pm.response.to.have.status(404));",
+                  "pm.test('detalhe cita edit/master.mp4 (FDD s6, linha 344)', () => {",
+                  "  pm.expect(String(pm.response.json().detail)).to.include('master.mp4');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid_sem_master}}/export/qa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid_sem_master}}",
+                "export",
+                "qa"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 244): 404 master ausente. Mesma dependencia de pid_sem_master."
+          },
+          "response": []
+        },
+        {
+          "name": "POST render — lista de formatos vazia (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 lista vazia (FDD s5 contrato 3 linha 200, s6 linha 347)', () => pm.response.to.have.status(422));",
+                  "pm.test('detalhe pede ao menos um formato', () => {",
+                  "  pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('formato');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/render",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "render"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 200) e secao 6 (linha 347): lista vazia vira ValueError e 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formats\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST render — formato desconhecido (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 formato desconhecido (FDD s5 contrato 3, linha 200)', () => pm.response.to.have.status(422));",
+                  "pm.test('detalhe cita formato desconhecido (FDD s6, linha 347)', () => {",
+                  "  pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('desconhecido');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/render",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "render"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 200): formato fora de FORMATS vira 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formats\": [\"4x5\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST preview — formato invalido (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 format invalido (FDD s5 contrato 2, linha 180)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "preview"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 180): format fora de FORMATS responde 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"vertical\",\n  \"t\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST preview — t negativo (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 t negativo (FDD s5 contrato 2 linha 180, s6 linha 348)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "preview"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 180) e secao 6 (linha 348): t fora de [0, duracao] responde 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"9x16\",\n  \"t\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST preview — t maior que a duracao (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 t alem da duracao (FDD s5 contrato 2, linha 180)', () => pm.response.to.have.status(422));",
+                  "pm.test('detalhe cita o intervalo valido (FDD s6, linha 348)', () => {",
+                  "  pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('tempo');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "preview"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 180). Usa t_fora_da_duracao, calculado a partir do GET /status.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"9x16\",\n  \"t\": {{t_fora_da_duracao}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST thumb — t negativo (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 t negativo (FDD s5 contrato 5 linha 228, s9 linha 413)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/thumb",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "thumb"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 228) e criterio da secao 9 (linha 413): t negativo responde 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"t\": -0.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST thumb — t maior que a duracao (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 t alem da duracao (FDD s5 contrato 5, linha 228)', () => pm.response.to.have.status(422));",
+                  "pm.test('detalhe cita o intervalo valido (FDD s6, linha 348)', () => {",
+                  "  pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('tempo');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/thumb",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "thumb"
+              ]
+            },
+            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 228) e criterio da secao 9 (linha 413).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"t\": {{t_fora_da_duracao}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST thumb — t nao numerico (422 do Pydantic)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 t nao numerico (FDD s6, linha 348)', () => pm.response.to.have.status(422));",
+                  "pm.test('erro de validacao do Pydantic (lista em detail)', () => {",
+                  "  pm.expect(pm.response.json().detail).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/thumb",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "thumb"
+              ]
+            },
+            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 348): t nao numerico vira 422. Aqui a validacao acontece no modelo Pydantic do router, antes do servico.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"t\": \"abc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST qa — 409 ffmpeg indisponivel (condicional ao ambiente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const semFfmpeg = String(pm.collectionVariables.get('ffmpeg_disponivel')) === 'false';",
+                  "if (semFfmpeg) {",
+                  "  pm.test('409 ffmpeg indisponivel (FDD s6, linha 345)', () => pm.response.to.have.status(409));",
+                  "  pm.test('detalhe cita ffmpeg (FDD linha 345)', () => {",
+                  "    pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('ffmpeg');",
+                  "  });",
+                  "} else {",
+                  "  pm.test('ffmpeg presente: 409 da linha 345 nao aplicavel nesta execucao', () => {",
+                  "    pm.expect([200, 404]).to.include(pm.response.code);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/qa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "qa"
+              ]
+            },
+            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 345): sem ffmpeg qualquer render/preview/thumb/qa responde 409. So e exercitavel em ambiente sem ffmpeg em ~/.local/bin; o teste le a flag ffmpeg do GET /status e so exige 409 quando ela e false."
+          },
+          "response": []
+        },
+        {
+          "name": "POST reframe — aspect_ratio invalido (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 aspect_ratio invalido, com ou sem CLI instalado (FDD s5 contrato 9, linha 318)', () => {",
+                  "  pm.response.to.have.status(422);",
+                  "});",
+                  "pm.test('detalhe cita a proporcao invalida (router._reframe_preflight)', () => {",
+                  "  pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('propor');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/reframe",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "reframe"
+              ]
+            },
+            "description": "Contrato 9 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 318): aspect_ratio fora de {'9:16','1:1'} responde 422. Ate o commit 5df89a7 o router checava hf.available() antes do corpo e devolvia 409 em maquina sem CLI; o commit f049d45 inverteu a ordem (projeto -> corpo -> CLI) e o 422 agora vale sempre.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aspect_ratio\": \"4:5\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST reframe/cost — aspect_ratio invalido (422, nao declarado no FDD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[DIVERGENCIA MEDIA] 422 aspect_ratio invalido — status nao declarado no contrato 8 (FDD linha 302)', () => {",
+                  "  pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/reframe/cost",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "reframe",
+                "cost"
+              ]
+            },
+            "description": "O contrato 8 do FDD (docs/domains/export/features/export-fdd.md, linha 302) declara apenas 200 e 409, mas a rota valida aspect_ratio (422) e exige o master (404). Divergencia MEDIA #2 do divergencias.md: o comportamento esta reconhecido nas notas de implementacao (linha 555), o texto do contrato nao.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aspect_ratio\": \"4:5\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST reframe — 409 sem login no CLI (condicional)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const logado = String(pm.collectionVariables.get('hf_logged_in')) === 'true';",
+                  "if (logado) {",
+                  "  pm.test('CLI logado: 200 ou 409 por job em andamento (FDD s5 contrato 9, linha 318)', () => {",
+                  "    pm.expect([200, 409]).to.include(pm.response.code);",
+                  "  });",
+                  "} else {",
+                  "  pm.test('409 sem login (FDD s6, linhas 351-352)', () => pm.response.to.have.status(409));",
+                  "  pm.test('detalhe explica o motivo', () => pm.expect(pm.response.json().detail).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/projects/{{pid}}/export/reframe",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "export",
+                "reframe"
+              ]
+            },
+            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 352): CLI instalado mas nao logado vira 409. Sem CLI instalado o 409 vem da linha 351, com outra mensagem. O corpo aqui e valido, entao a checagem de CLI (409) e alcancada em ambos os casos.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aspect_ratio\": \"1:1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

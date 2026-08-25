@@ -1,0 +1,1499 @@
+{
+  "info": {
+    "_postman_id": "0b1f5c1e-11a4-4c9d-9b3e-prospect011cc",
+    "name": "Orquestrador Studio · Prospect (etapa 11)",
+    "description": "Coleção executável dos contratos HTTP da etapa 11 (Prospecção, aula 001) do Orquestrador Studio, na ordem do fluxo da aula: gate → leads → lead → DM → teaser → follow-up → call → pitch, com os cenários negativos no fim.\n\n**Fonte de verdade**: `studio/etapas/prospect/router.py` (rotas, status e corpos) e `studio/prospect/service.py` (regras). O FDD `docs/domains/prospect/features/prospect-fdd.md` é a spec normativa.\n\n**Regra do gate (decisão do lote, prevalece sobre o texto do FDD)**: o gate conta os valores **DISTINTOS** do campo `video` em `publish/log.json` — 4 VÍDEOS distintos, não 4 entradas de log. O campo `posts` da resposta é o total de entradas; `published` é a contagem de distintos, e por isso `published <= posts`.\n\n**Como rodar**: suba o Studio (`./run.sh`, http://127.0.0.1:8765), importe o environment `prospect.postman_environment.json`, aponte `pid` para um projeto existente em `projects/` e rode a coleção inteira, na ordem.\n\n**Dependências entre requests**: a primeira request grava `gate_ok`; o cadastro grava `lid` (handle sorteado a cada execução, para não esbarrar no 422 de handle duplicado). Tudo que escreve é pulado quando o gate está fechado, e o cenário 409 do gate só é cobrado quando ele está mesmo fechado.\n\n**Ambiente do teaser**: o job depende de `animate/takes.json` (etapa 6), `audio/music.*` (etapa 7) e do ffmpeg local; sem eles a rota responde 404/409 e o teste registra o motivo em vez de falhar.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 · Gate (4 vídeos publicados)",
+      "description": "O portão da etapa 11: sem 4 vídeos distintos publicados, nada é escrito em `prospect/`.",
+      "item": [
+        {
+          "name": "Gate: portfólio de 4 vídeos publicados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/gate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "gate"
+              ]
+            },
+            "description": "Consulta o gate da etapa 11. `published` é a contagem de valores DISTINTOS do campo `video` em `publish/log.json` (decisão do lote: 4 VÍDEOS distintos, não 4 entradas de log). Sempre responde 200, mesmo com o gate fechado — quem bloqueia são os POST/PUT/DELETE. Guarda `gate_ok` para os cenários seguintes."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Gate responde 200 mesmo fechado\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set(\"gate_ok\", String(b.ok === true));",
+                  "",
+                  "pm.test(\"Corpo traz published, required, ok e message\", function () {",
+                  "    pm.expect(b).to.have.property(\"published\");",
+                  "    pm.expect(b).to.have.property(\"required\");",
+                  "    pm.expect(b).to.have.property(\"ok\");",
+                  "    pm.expect(b).to.have.property(\"message\");",
+                  "    pm.expect(b.published).to.be.a(\"number\");",
+                  "    pm.expect(b.ok).to.be.a(\"boolean\");",
+                  "});",
+                  "",
+                  "pm.test(\"Exige 4 vídeos publicados\", function () {",
+                  "    pm.expect(b.required).to.eql(4);",
+                  "});",
+                  "",
+                  "pm.test(\"published conta VÍDEOS DISTINTOS (nunca passa do total de entradas do log)\", function () {",
+                  "    // `posts` é o total de entradas com campo `video` em publish/log.json;",
+                  "    // `published` é a quantidade de valores distintos — por definição, published <= posts.",
+                  "    pm.expect(b).to.have.property(\"posts\");",
+                  "    pm.expect(b.published).to.be.at.most(b.posts);",
+                  "});",
+                  "",
+                  "pm.test(\"ok é published >= required\", function () {",
+                  "    pm.expect(b.ok).to.eql(b.published >= b.required);",
+                  "});",
+                  "",
+                  "pm.test(\"Mensagem da aula reflete a contagem N/4\", function () {",
+                  "    if (b.ok) {",
+                  "        pm.expect(b.message).to.include(\"Pode prospectar\");",
+                  "    } else {",
+                  "        pm.expect(b.message).to.include(b.published + \"/\" + b.required);",
+                  "    }",
+                  "});",
+                  "",
+                  "pm.test(\"Contador de DMs do dia vem junto (meta de 10/dia)\", function () {",
+                  "    pm.expect(b.today_sent).to.be.a(\"number\");",
+                  "    pm.expect(b.daily_limit).to.eql(10);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 · Leads (listar e cadastrar)",
+      "description": "Lista e cadastro de leads em `prospect/leads.json`. O cadastro já devolve a DM pronta do script literal da aula.",
+      "item": [
+        {
+          "name": "Leads: listar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads"
+              ]
+            },
+            "description": "Lista os leads de `prospect/leads.json` com o contador do dia, a contagem por status e o gate embutido (a UI usa isso para decidir se mostra os painéis)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Listagem responde 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const b = pm.response.json();",
+                  "",
+                  "pm.test(\"Corpo traz leads, contador e gate\", function () {",
+                  "    pm.expect(b.leads).to.be.an(\"array\");",
+                  "    pm.expect(b.today_sent).to.be.a(\"number\");",
+                  "    pm.expect(b.daily_limit).to.eql(10);",
+                  "    pm.expect(b.gate).to.have.property(\"ok\");",
+                  "});",
+                  "",
+                  "pm.test(\"by_status cobre os seis estados do lead\", function () {",
+                  "    const estados = [\"new\", \"dm_sent\", \"replied\", \"teaser_ready\", \"call_scheduled\", \"call_done\"];",
+                  "    estados.forEach(function (s) { pm.expect(b.by_status).to.have.property(s); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Leads: cadastrar (gera a DM do script literal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads"
+              ]
+            },
+            "description": "Cadastra o lead e já devolve `dm_text` com o script literal da aula (sem link nenhum). O `handle` é normalizado (sem `@`, minúsculo) e o `id` é o slug dele. O pré-script sorteia um handle novo a cada execução para a coleção poder rodar várias vezes sem esbarrar no 422 de handle duplicado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business\": \"Padaria do Zé\",\n  \"handle\": \"@{{handle}}\",\n  \"post_ref\": \"o pão de fermentação natural das 6h\",\n  \"why\": \"fotos com luz de manhã, combina com o mood do Gelo Zero\",\n  \"role\": \"consumidor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Handle novo a cada execução: o serviço recusa handle repetido com 422.",
+                  "pm.collectionVariables.set(\"handle\", \"padaria-do-ze-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: cadastro de lead não se aplica (ver cenário 409)\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Cadastro responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const lead = pm.response.json();",
+                  "    pm.collectionVariables.set(\"lid\", lead.id);",
+                  "",
+                  "    pm.test(\"Lead nasce com id, dm_text e status new\", function () {",
+                  "        pm.expect(lead).to.have.property(\"id\");",
+                  "        pm.expect(lead).to.have.property(\"dm_text\");",
+                  "        pm.expect(lead.id).to.eql(pm.collectionVariables.get(\"handle\"));",
+                  "        pm.expect(lead.status).to.eql(\"new\");",
+                  "        pm.expect(lead.sent_at).to.eql(null);",
+                  "        pm.expect(lead.replied).to.eql(false);",
+                  "        pm.expect(lead.teaser).to.eql(null);",
+                  "    });",
+                  "",
+                  "    pm.test(\"dm_text traz as substituições do script (negócio, papel, post)\", function () {",
+                  "        pm.expect(lead.dm_text).to.include(\"Padaria do Zé\");",
+                  "        pm.expect(lead.dm_text).to.include(\"consumidor\");",
+                  "        pm.expect(lead.dm_text).to.include(\"o pão de fermentação natural das 6h\");",
+                  "        pm.expect(lead.dm_text).to.include(\"Quer ver como ficou?\");",
+                  "    });",
+                  "",
+                  "    pm.test(\"DM sem link nenhum (a aula avisa que link cai em spam)\", function () {",
+                  "        pm.expect(lead.dm_text).to.not.include(\"http\");",
+                  "        pm.expect(lead.dm_text).to.not.include(\"www.\");",
+                  "        pm.expect(lead.dm_text).to.not.include(\".com\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 · Lead (obter, atualizar, remover)",
+      "description": "Operações sobre um lead. O DELETE roda sobre um lead descartável para o lead principal seguir vivo no resto do fluxo.",
+      "item": [
+        {
+          "name": "Lead: obter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}"
+              ]
+            },
+            "description": "Devolve o lead cadastrado. GET nunca é bloqueado pelo gate."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Lead encontrado (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const lead = pm.response.json();",
+                  "",
+                  "pm.test(\"É o lead que acabamos de cadastrar\", function () {",
+                  "    pm.expect(lead.id).to.eql(pm.collectionVariables.get(\"lid\"));",
+                  "    pm.expect(lead.business).to.eql(\"Padaria do Zé\");",
+                  "    pm.expect(lead.role).to.eql(\"consumidor\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lead: atualizar (regenera a DM enquanto não foi enviada)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}"
+              ]
+            },
+            "description": "Atualiza campos editáveis. Enquanto `sent_at` for `null`, o `dm_text` é regerado com o novo `post_ref`; depois de marcada como enviada, o texto congela (o lead já leu aquilo).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"post_ref\": \"a vitrine de Natal\",\n  \"why\": \"post mais comentado do perfil\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: PUT devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Atualização responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const lead = pm.response.json();",
+                  "",
+                  "    pm.test(\"Campos atualizados\", function () {",
+                  "        pm.expect(lead.post_ref).to.eql(\"a vitrine de Natal\");",
+                  "        pm.expect(lead.why).to.eql(\"post mais comentado do perfil\");",
+                  "    });",
+                  "",
+                  "    pm.test(\"DM ainda não enviada é regerada com o novo post\", function () {",
+                  "        pm.expect(lead.dm_text).to.include(\"a vitrine de Natal\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lead: cadastrar um descartável (só para o DELETE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads"
+              ]
+            },
+            "description": "Cadastra um segundo lead exclusivamente para o cenário de remoção — assim o lead principal segue vivo pelo resto do fluxo (DM, teaser, follow-up, call).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business\": \"Loja de Teste\",\n  \"handle\": \"@{{handle_descartavel}}\",\n  \"post_ref\": \"a promoção de sábado\",\n  \"why\": \"lead usado só para exercitar o DELETE\",\n  \"role\": \"fã\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handle_descartavel\", \"loja-de-teste-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: cadastro não se aplica\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Lead descartável criado (200)\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "    const lead = pm.response.json();",
+                  "    pm.collectionVariables.set(\"lid_descartavel\", lead.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lead: remover",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid_descartavel}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid_descartavel}}"
+              ]
+            },
+            "description": "Remove o lead do `leads.json` e apaga o teaser dele (`prospect/teasers/<lid>.mp4`), se existir. Responde `{\"removed\": true}`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: DELETE devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Remoção responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    pm.test(\"Corpo confirma a remoção\", function () {",
+                  "        pm.expect(pm.response.json().removed).to.eql(true);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 · DM (texto, enviada, respondeu)",
+      "description": "O Studio redige e registra; enviar é humano. Inclui o desfazer do \"respondeu\".",
+      "item": [
+        {
+          "name": "DM: ver o texto para copiar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/dm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "dm"
+              ]
+            },
+            "description": "Devolve o texto da DM e a contagem de caracteres. O envio é sempre humano: o Studio só redige e registra."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DM responde 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const b = pm.response.json();",
+                  "",
+                  "pm.test(\"Corpo traz text e chars coerentes\", function () {",
+                  "    pm.expect(b.text).to.be.a(\"string\");",
+                  "    pm.expect(b.chars).to.eql(b.text.length);",
+                  "    pm.expect(b.chars).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test(\"Texto continua sem link\", function () {",
+                  "    pm.expect(b.text).to.not.include(\"http\");",
+                  "    pm.expect(b.text).to.not.include(\"www.\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DM: marcar como enviada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/sent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "sent"
+              ]
+            },
+            "description": "Marca `sent_at` (padrão: agora, hora local) e leva o lead para `dm_sent`. Devolve o contador do dia; acima de 10 o Studio avisa (`over_limit`), mas nunca trava — a aula dá 10/dia como meta de disciplina.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sent_at\": \"2026-08-25T10:20:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Marcação responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const b = pm.response.json();",
+                  "",
+                  "    pm.test(\"Corpo traz today_sent, daily_limit e over_limit\", function () {",
+                  "        pm.expect(b).to.have.property(\"today_sent\");",
+                  "        pm.expect(b).to.have.property(\"daily_limit\");",
+                  "        pm.expect(b).to.have.property(\"over_limit\");",
+                  "        pm.expect(b.daily_limit).to.eql(10);",
+                  "        pm.expect(b.today_sent).to.be.at.least(1);",
+                  "    });",
+                  "",
+                  "    pm.test(\"over_limit é apenas o aviso de passar de 10/dia\", function () {",
+                  "        pm.expect(b.over_limit).to.eql(b.today_sent > b.daily_limit);",
+                  "    });",
+                  "",
+                  "    pm.test(\"Lead vai para dm_sent com sent_at preenchido\", function () {",
+                  "        pm.expect(b.lead.status).to.eql(\"dm_sent\");",
+                  "        pm.expect(b.lead.sent_at).to.eql(\"2026-08-25T10:20:00\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DM: registrar que respondeu",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/replied",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "replied"
+              ]
+            },
+            "description": "Corpo opcional `{\"replied\": true}`. Só vale depois da DM marcada como enviada (senão 422). Leva o lead para `replied`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"replied\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Registro responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const lead = pm.response.json();",
+                  "",
+                  "    pm.test(\"Lead marcado como respondeu\", function () {",
+                  "        pm.expect(lead.replied).to.eql(true);",
+                  "        pm.expect(lead.status).to.eql(\"replied\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DM: desfazer o \"respondeu\"",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/replied",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "replied"
+              ]
+            },
+            "description": "`{\"replied\": false}` desfaz a marcação: o lead volta de `replied` para `dm_sent` (a transição de volta da máquina de estados).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"replied\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Desfazer responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const lead = pm.response.json();",
+                  "",
+                  "    pm.test(\"Volta para dm_sent com replied false\", function () {",
+                  "        pm.expect(lead.replied).to.eql(false);",
+                  "        pm.expect(lead.status).to.eql(\"dm_sent\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DM: registrar de novo que respondeu (segue o fluxo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/replied",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "replied"
+              ]
+            },
+            "description": "Refaz a marcação para o lead seguir para o teaser.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"replied\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Remarcação responde 200 e volta para replied\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "        pm.expect(pm.response.json().status).to.eql(\"replied\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 · Teaser (job de 3 passos)",
+      "description": "Teaser de 5 a 10 s com música: corte do take, corte da música com fade e mux, com polling em `GET /prospect/job`.",
+      "item": [
+        {
+          "name": "Teaser: iniciar o job (5 a 10 s, com música)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/teaser",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "teaser"
+              ]
+            },
+            "description": "Dispara o job de 3 passos (corta o take, corta a música com fade, mixa) e devolve o job em `running`. Depende das etapas 6 (`animate/takes.json`) e 7 (`audio/music.*`) e do ffmpeg local: sem eles a resposta é 404 (etapa pendente) ou 409 (ffmpeg ausente / job em andamento) — o teste aceita esses casos de ambiente e só cobra o contrato do 200.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"take\": {\n    \"scene\": \"cena01\",\n    \"shot\": \"shot01\",\n    \"take\": \"take1\"\n  },\n  \"duration\": 8,\n  \"take_offset\": 0,\n  \"music_offset\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Responde 200 (job iniciado) ou 404/409 de pré-requisito de ambiente\", function () {",
+                  "        pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "    });",
+                  "",
+                  "    if (pm.response.code === 200) {",
+                  "        const job = pm.response.json();",
+                  "        pm.collectionVariables.set(\"teaser_iniciado\", \"true\");",
+                  "",
+                  "        pm.test(\"Job nasce running com 3 passos e o lead anotado\", function () {",
+                  "            pm.expect(job.state).to.eql(\"running\");",
+                  "            pm.expect(job.total).to.eql(3);",
+                  "            pm.expect(job.lead).to.eql(pm.collectionVariables.get(\"lid\"));",
+                  "        });",
+                  "    } else {",
+                  "        pm.collectionVariables.set(\"teaser_iniciado\", \"false\");",
+                  "        console.log(\"Teaser não iniciado (pré-requisito de ambiente): \" + pm.response.text());",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Teaser: consultar o job (polling)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "job"
+              ]
+            },
+            "description": "O `view.js` chama esta rota a cada 3 s até `done` ou `error`. Sempre 200: sem job para o projeto, o registry devolve `{\"state\": \"idle\"}`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Job responde 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const job = pm.response.json();",
+                  "",
+                  "pm.test(\"Estado é um dos previstos pelo registry\", function () {",
+                  "    pm.expect(job.state).to.be.oneOf([\"idle\", \"running\", \"done\", \"error\"]);",
+                  "});",
+                  "",
+                  "pm.test(\"Job de teaser tem 3 passos e o progresso dentro do total\", function () {",
+                  "    if (job.state === \"idle\") {",
+                  "        pm.expect(job).to.not.have.property(\"total\");",
+                  "    } else {",
+                  "        pm.expect(job.total).to.eql(3);",
+                  "        pm.expect(job.done).to.be.at.most(job.total);",
+                  "    }",
+                  "});",
+                  "",
+                  "if (job.state === \"done\") {",
+                  "    pm.test(\"Concluído entrega o caminho do teaser e a duração dentro de 5 a 10 s\", function () {",
+                  "        pm.expect(job.teaser).to.eql(\"prospect/teasers/\" + pm.collectionVariables.get(\"lid\") + \".mp4\");",
+                  "        pm.expect(job.duration).to.be.within(4.75, 10.25);",
+                  "    });",
+                  "} else if (job.state === \"error\") {",
+                  "    pm.test(\"Job com erro devolve a mensagem em error\", function () {",
+                  "        pm.expect(job.error).to.be.a(\"string\");",
+                  "    });",
+                  "} else {",
+                  "    pm.test.skip(\"Job ainda não concluído nesta execução (idle ou running)\", function () {});",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 · Follow-up e call",
+      "description": "Convite literal para a call de 15 minutos e registro da call.",
+      "item": [
+        {
+          "name": "Follow-up: texto do convite para a call",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/followup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "followup"
+              ]
+            },
+            "description": "Texto literal da aula para mandar junto com o teaser, mais o caminho do teaser do lead (`null` enquanto o job não terminou)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Follow-up responde 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const b = pm.response.json();",
+                  "",
+                  "pm.test(\"Texto é o convite literal para a call de 15 minutos\", function () {",
+                  "    pm.expect(b.text).to.include(\"15 minutinhos\");",
+                  "    pm.expect(b.text).to.not.include(\"http\");",
+                  "});",
+                  "",
+                  "pm.test(\"Traz o campo teaser (caminho relativo ou null)\", function () {",
+                  "    pm.expect(b).to.have.property(\"teaser\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Call: registrar a call agendada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/call",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "call"
+              ]
+            },
+            "description": "Registra `call_at` (ISO 8601), a nota curta e o estado: `call_scheduled` com `done: false`, `call_done` com `done: true`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"call_at\": \"2026-08-27T15:00:00\",\n  \"done\": false,\n  \"note\": \"quer ver o anúncio da vitrine de Natal\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Registro responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const lead = pm.response.json();",
+                  "",
+                  "    pm.test(\"Call agendada grava data, nota e status\", function () {",
+                  "        pm.expect(lead.call_at).to.eql(\"2026-08-27T15:00:00\");",
+                  "        pm.expect(lead.call_note).to.eql(\"quer ver o anúncio da vitrine de Natal\");",
+                  "        pm.expect(lead.status).to.eql(\"call_scheduled\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Call: marcar a call como feita",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/call",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "call"
+              ]
+            },
+            "description": "Mesma rota com `done: true` — fecha o fluxo do lead em `call_done`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"call_at\": \"2026-08-27T15:00:00\",\n  \"done\": true,\n  \"note\": \"call feita: mostrei o teaser e a tabela de etapas\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Call feita responde 200 e leva o lead para call_done\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "        pm.expect(pm.response.json().status).to.eql(\"call_done\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 · Pitch da call",
+      "description": "`prospect/pitch.md`: tabela de etapas para ancorar valor (sem preço) e os lembretes da aula.",
+      "item": [
+        {
+          "name": "Pitch: ler (gera na primeira vez)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/pitch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "pitch"
+              ]
+            },
+            "description": "Devolve `prospect/pitch.md`. Se o arquivo não existir, o serviço o gera do template. GET não passa pelo gate."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Pitch responde 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const b = pm.response.json();",
+                  "",
+                  "pm.test(\"Aponta para prospect/pitch.md\", function () {",
+                  "    pm.expect(b.file).to.eql(\"prospect/pitch.md\");",
+                  "});",
+                  "",
+                  "pm.test(\"Markdown traz a tabela de etapas de produção\", function () {",
+                  "    pm.expect(b.markdown).to.include(\"Etapas de produção\");",
+                  "    pm.expect(b.markdown).to.include(\"| Conceito |\");",
+                  "    pm.expect(b.markdown).to.include(\"| Entrega |\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pitch: regerar do template",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/pitch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "pitch"
+              ]
+            },
+            "description": "Sobrescreve `prospect/pitch.md` com o template do serviço (perde edição manual). Passa pelo gate: fechado, 409."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: POST devolveria 409\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Regeração responde 200\", function () {",
+                  "        pm.response.to.have.status(200);",
+                  "    });",
+                  "",
+                  "    const b = pm.response.json();",
+                  "",
+                  "    pm.test(\"Devolve o arquivo e o markdown do template\", function () {",
+                  "        pm.expect(b.file).to.eql(\"prospect/pitch.md\");",
+                  "        pm.expect(b.markdown).to.include(\"Lembretes da aula 001\");",
+                  "        pm.expect(b.markdown).to.include(\"50%\");",
+                  "    });",
+                  "",
+                  "    pm.test(\"A tabela de etapas não tem preço (o preço fica nos lembretes)\", function () {",
+                  "        const tabela = b.markdown.split(\"## Lembretes\")[0];",
+                  "        pm.expect(tabela).to.not.include(\"R$\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "99 · Cenários negativos",
+      "description": "Gate fechado (409), lead inexistente (404) e validações (422).",
+      "item": [
+        {
+          "name": "Negativo: cadastrar lead com o gate fechado (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads"
+              ]
+            },
+            "description": "Com menos de 4 vídeos DISTINTOS em `publish/log.json`, todo POST/PUT/DELETE de `/prospect/` responde 409 com a mensagem da aula. Para exercitar de propósito, esvazie (ou remova) `projects/<pid>/publish/log.json` e rode de novo: o teste passa a cobrar o 409. Com o gate aberto ele é pulado, porque o cenário não existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business\": \"Bar do Gate Fechado\",\n  \"handle\": \"@bar-do-gate-fechado\",\n  \"post_ref\": \"o chope da sexta\",\n  \"why\": \"cenário negativo do gate\",\n  \"role\": \"fã\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (gateAberto) {",
+                  "    pm.test.skip(\"Gate aberto nesta execução: o 409 não se aplica (esvazie publish/log.json para exercitar)\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Gate fechado bloqueia a escrita com 409\", function () {",
+                  "        pm.response.to.have.status(409);",
+                  "    });",
+                  "",
+                  "    pm.test(\"Detalhe traz a mensagem da aula com a contagem N/4\", function () {",
+                  "        const detail = pm.response.json().detail;",
+                  "        pm.expect(detail).to.include(\"4 vídeos criativos antes de prospectar\");",
+                  "        pm.expect(detail).to.match(/\\d+\\/4/);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Negativo: lead inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/lead-que-nao-existe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "lead-que-nao-existe"
+              ]
+            },
+            "description": "`FileNotFoundError` do serviço vira 404 no router."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Lead inexistente responde 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test(\"Detalhe explica que o lead não foi encontrado\", function () {",
+                  "    pm.expect(pm.response.json().detail).to.include(\"lead não encontrado\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Negativo: role inválido (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads"
+              ]
+            },
+            "description": "A aula manda escolher entre `fã` e `consumidor`; qualquer outro papel é `ValueError` → 422. Com o gate fechado a resposta seria 409 (o gate é verificado antes), por isso o teste é pulado nesse caso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business\": \"Café do Role Inválido\",\n  \"handle\": \"@cafe-do-role-invalido\",\n  \"post_ref\": \"o coado das 7h\",\n  \"why\": \"cenário negativo de validação\",\n  \"role\": \"amigo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: o 409 do gate vem antes da validação de role\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Role fora de fã|consumidor responde 422\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "    });",
+                  "",
+                  "    pm.test(\"Detalhe cita os dois papéis da aula\", function () {",
+                  "        const detail = pm.response.json().detail;",
+                  "        pm.expect(detail).to.include(\"fã\");",
+                  "        pm.expect(detail).to.include(\"consumidor\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Negativo: sent_at fora do ISO 8601 (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/sent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "sent"
+              ]
+            },
+            "description": "`datetime.fromisoformat` recusa a data e o serviço levanta `ValueError` → 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sent_at\": \"27/08/2026 15h\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// O gate manda em tudo que escreve: sem 4 vídeos DISTINTOS publicados,",
+                  "// POST/PUT/DELETE devolvem 409 e este cenário não se aplica.",
+                  "const gateAberto = pm.collectionVariables.get(\"gate_ok\") === \"true\";",
+                  "",
+                  "if (!gateAberto) {",
+                  "    pm.test.skip(\"Gate fechado: o 409 do gate vem antes da validação da data\", function () {});",
+                  "} else {",
+                  "    pm.test(\"Data inválida responde 422\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "    });",
+                  "",
+                  "    pm.test(\"Detalhe pede ISO 8601\", function () {",
+                  "        pm.expect(pm.response.json().detail).to.include(\"ISO 8601\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "handle",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "handle_descartavel",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lid_descartavel",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "gate_ok",
+      "value": "false",
+      "type": "string"
+    },
+    {
+      "key": "teaser_iniciado",
+      "value": "false",
+      "type": "string"
+    }
+  ]
+}

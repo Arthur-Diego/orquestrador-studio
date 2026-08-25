@@ -1,0 +1,104 @@
+// Etapa 10 — Publicar (aula 015): registro manual dos posts, contador de 4 vídeos e feedback.
+// Decisão 1 do lote: o portfólio conta VÍDEOS DISTINTOS (distinct_videos), não o total de posts.
+Studio.register("publish", (ctx) => {
+  const { $, api, toast } = ctx;
+  let exports_ = [], thumb = null, posts = [], status = { count: 0, distinct_videos: 0, goal: 4, ready: false, missing: 4 };
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+  const mb = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B");
+  const base = () => `/api/projects/${ctx.pid()}/publish`;
+
+  async function load() {
+    if (!ctx.pid()) { exports_ = []; posts = []; render(); return; }
+    const [ex, lg, st] = await Promise.all([api(`${base()}/exports`), api(`${base()}/log`), api(`${base()}/portfolio`)]);
+    exports_ = ex.files; thumb = ex.thumb; posts = lg.posts; status = st;
+    render();
+  }
+
+  function renderExports() {
+    const sel = $("#pubVideo");
+    const current = sel.value;
+    sel.innerHTML = exports_.map((f) => `<option value="${esc(f.file)}">${esc(f.name)}</option>`).join("")
+      || `<option value="">nenhum export disponível</option>`;
+    if (exports_.some((f) => f.file === current)) sel.value = current;
+    $("#pubExports").innerHTML = exports_.length ? exports_.map((f) => `
+      <div class="card ${f.published ? "sel" : ""}" data-file="${esc(f.file)}" tabindex="0" title="${esc(f.file)} · ${mb(f.size)}">
+        ${thumb ? `<img loading="lazy" src="${ctx.files(thumb)}" alt="">` : ""}
+        <span class="src">${f.published ? "publicado" : "a publicar"}</span>
+        <span class="term">${esc(f.name)} · ${mb(f.size)}</span>
+      </div>`).join("")
+      : `<div class="empty">Nenhum export ainda. Volte à etapa 9 e gere os formatos do vídeo.</div>`;
+  }
+
+  function renderLog() {
+    $("#pubLog").innerHTML = posts.length ? posts.map((p) => {
+      const orfao = exports_.length && !exports_.some((f) => f.file === p.video);
+      return `<div class="prompt" data-id="${esc(p.id)}">
+        <div class="row wrap">
+          <span class="eyebrow">${esc(p.network)} · ${esc(p.posted_at)}</span>
+          <button class="ghost del" data-id="${esc(p.id)}">Remover</button>
+        </div>
+        <div class="fine mono">${esc(p.video)}${orfao ? " — arquivo não está mais em export/" : ""}</div>
+        <a class="fine" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>
+        ${p.note ? `<div class="fine">${esc(p.note)}</div>` : ""}
+        <div class="row">
+          <input class="fb" data-id="${esc(p.id)}" placeholder="Feedback recebido (aula 015: peça feedback)" value="${esc(p.feedback)}">
+          <button class="ghost save" data-id="${esc(p.id)}">Salvar</button>
+        </div>
+      </div>`;
+    }).join("") : `<div class="empty">Nenhuma publicação registrada. Poste na rede e cole o link aqui.</div>`;
+  }
+
+  function render() {
+    renderExports(); renderLog();
+    $("#pubCounter").textContent = `${status.distinct_videos}/${status.goal} vídeos`;
+    $("#pubPosts").textContent = `${status.count} ${status.count === 1 ? "publicação" : "publicações"}`;
+    const ready = $("#pubReady");
+    ready.textContent = status.ready ? "portfólio pronto — pode prospectar (etapa 11)"
+      : `portfólio: ${status.missing === 1 ? "falta 1 vídeo" : `faltam ${status.missing} vídeos`}`;
+    ready.className = status.ready ? "chip ok" : "chip warn";
+    const link = $("#pubPortfolio");
+    if (status.portfolio_md) { link.href = ctx.files(status.portfolio_md); link.classList.remove("hidden"); }
+    else link.classList.add("hidden");
+  }
+
+  return {
+    init() {
+      $("#pubDate").value = today();
+      $("#pubExports").addEventListener("click", (e) => {
+        const card = e.target.closest(".card"); if (!card) return;
+        $("#pubVideo").value = card.dataset.file; $("#pubUrl").focus();
+      });
+      $("#btnPubAdd").onclick = async () => {
+        const body = {
+          video: $("#pubVideo").value, network: $("#pubNetwork").value,
+          url: $("#pubUrl").value, posted_at: $("#pubDate").value || null, note: $("#pubNote").value,
+        };
+        try {
+          await api(`${base()}/log`, { method: "POST", body: JSON.stringify(body) });
+          $("#pubUrl").value = ""; $("#pubNote").value = "";
+          toast("Publicação registrada"); load();
+        } catch (err) { toast(err.message); }
+      };
+      $("#pubLog").addEventListener("click", async (e) => {
+        const del = e.target.closest("button.del"), save = e.target.closest("button.save");
+        if (del) {
+          if (!confirm("Remover este registro de publicação? O post continua no ar na rede.")) return;
+          try { await api(`${base()}/log/${del.dataset.id}`, { method: "DELETE" }); toast("Registro removido"); load(); }
+          catch (err) { toast(err.message); }
+        } else if (save) {
+          const input = $(`#pubLog input.fb[data-id="${save.dataset.id}"]`);
+          try { await api(`${base()}/log/${save.dataset.id}/feedback`, { method: "POST", body: JSON.stringify({ feedback: input.value }) }); toast("Feedback salvo"); load(); }
+          catch (err) { toast(err.message); }
+        }
+      });
+      this.onProject();
+    },
+    async onProject() {
+      if (!ctx.pid()) return;
+      $("#pubDate").value = today();
+      load();
+    },
+  };
+});

@@ -1,0 +1,250 @@
+{
+  "info": {
+    "name": "animate — Etapa 6 (aula 012)",
+    "description": "Contratos públicos da seção 5 do FDD docs/domains/animate/features/animate-fdd.md. Ordem: plano → prompt → candidatos → take → like → erros. Requer um projeto com shots/storyboard.json e pelo menos um candidato de vídeo importado (variável pid).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:8770"},
+    {"key": "pid", "value": "2026-08-smoke-animate"},
+    {"key": "scene", "value": "cena01"},
+    {"key": "shot", "value": "shot01"}
+  ],
+  "item": [
+    {
+      "name": "GET /api/steps — etapa 6 pronta",
+      "request": {"method": "GET", "url": "{{base_url}}/api/steps"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const animate = pm.response.json().find(s => s.id === 'animate');",
+        "pm.test('animate ready, n=6, aula 012', () => {",
+        "  pm.expect(animate.status).to.eql('ready');",
+        "  pm.expect(animate.n).to.eql(6);",
+        "  pm.expect(animate.aula).to.eql('012');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "GET animate/shots — plano na ordem do storyboard",
+      "request": {"method": "GET", "url": "{{base_url}}/api/projects/{{pid}}/animate/shots"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('plano com contadores e ordem de modelos', () => {",
+        "  pm.expect(b.total).to.be.a('number');",
+        "  pm.expect(b.ready).to.be.a('number');",
+        "  pm.expect(b.model_order[0]).to.eql('kling3_0');",
+        "});",
+        "const s = b.shots[0];",
+        "pm.test('shot traz frame, modo, duração e modelo sugerido', () => {",
+        "  pm.expect(s).to.have.keys(['scene','shot','order','image','scene_prompt','prompt','mode','duration','start_end','fallback_black','orphan','next_in_scene','failures','suggested_model','suggest_fallback_black','ready','takes']);",
+        "});",
+        "pm.collectionVariables.set('scene', s.scene);",
+        "pm.collectionVariables.set('shot', s.shot);"
+      ]}}]
+    },
+    {
+      "name": "GET animate/prompt — sugestão elaborada",
+      "request": {"method": "GET", "url": {
+        "raw": "{{base_url}}/api/projects/{{pid}}/animate/prompt?scene={{scene}}&shot={{shot}}&mode=elaborate&camera=Dramatic dolly-in&action=focusing on the reflection in his helmet&slow=false",
+        "host": ["{{base_url}}"],
+        "path": ["api", "projects", "{{pid}}", "animate", "prompt"],
+        "query": [
+          {"key": "scene", "value": "{{scene}}"}, {"key": "shot", "value": "{{shot}}"},
+          {"key": "mode", "value": "elaborate"}, {"key": "camera", "value": "Dramatic dolly-in"},
+          {"key": "action", "value": "focusing on the reflection in his helmet"}, {"key": "slow", "value": "false"}
+        ]}},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('template da aula em inglês, 5 s, áudio OFF no hint', () => {",
+        "  pm.expect(b.prompt).to.eql('Dramatic dolly-in camera movement, focusing on the reflection in his helmet. Realistic, cinematic');",
+        "  pm.expect(b.duration).to.eql(5);",
+        "  pm.expect(b.ui_hint).to.include('áudio do modelo OFF');",
+        "  pm.expect(b.example_pt).to.be.a('string');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "GET animate/prompt — 10 s quando a mudança é lenta",
+      "request": {"method": "GET", "url": {
+        "raw": "{{base_url}}/api/projects/{{pid}}/animate/prompt?scene={{scene}}&shot={{shot}}&mode=simple&slow=true",
+        "host": ["{{base_url}}"],
+        "path": ["api", "projects", "{{pid}}", "animate", "prompt"],
+        "query": [{"key": "scene", "value": "{{scene}}"}, {"key": "shot", "value": "{{shot}}"},
+                  {"key": "mode", "value": "simple"}, {"key": "slow", "value": "true"}]}},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200 e duração 10 s', () => {",
+        "  pm.response.to.have.status(200);",
+        "  pm.expect(pm.response.json().duration).to.eql(10);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "GET animate/prompt — modo inválido (422)",
+      "request": {"method": "GET", "url": {
+        "raw": "{{base_url}}/api/projects/{{pid}}/animate/prompt?scene={{scene}}&shot={{shot}}&mode=magic",
+        "host": ["{{base_url}}"],
+        "path": ["api", "projects", "{{pid}}", "animate", "prompt"],
+        "query": [{"key": "scene", "value": "{{scene}}"}, {"key": "shot", "value": "{{shot}}"},
+                  {"key": "mode", "value": "magic"}]}},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots/{scene}/{shot} — salva prompt e duração",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"prompt\": \"Dramatic dolly-in camera movement, focusing on the reflection in his helmet. Realistic, cinematic\", \"mode\": \"elaborate\", \"duration\": 10}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200 e campos persistidos', () => {",
+        "  pm.response.to.have.status(200);",
+        "  const b = pm.response.json();",
+        "  pm.expect(b.mode).to.eql('elaborate');",
+        "  pm.expect(b.duration).to.eql(10);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots — duração fora de {5,10} (422)",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"duration\": 7}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "GET animate/candidates — galeria de vídeos importados",
+      "request": {"method": "GET", "url": "{{base_url}}/api/projects/{{pid}}/animate/candidates"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200 e lista', () => {",
+        "  pm.response.to.have.status(200);",
+        "  pm.expect(pm.response.json()).to.be.an('array');",
+        "});",
+        "const livre = pm.response.json().filter(c => c.kind === 'video' && !c.selected);",
+        "pm.test('há candidato de vídeo livre para virar take', () => pm.expect(livre.length).to.be.above(0));",
+        "if (livre.length) pm.collectionVariables.set('candidate_id', livre[0].id);"
+      ]}}]
+    },
+    {
+      "name": "POST animate/.../takes — candidato vira take (201)",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}/takes",
+        "body": {"mode": "raw", "raw": "{\"candidate_id\": \"{{candidate_id}}\", \"model\": \"kling3_0\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('201', () => pm.response.to.have.status(201));",
+        "const t = pm.response.json().take;",
+        "pm.test('take na convenção videos/cenaNN/shotMM_takeK.mp4', () => {",
+        "  pm.expect(t.file).to.match(/^videos\\/cena\\d{2}\\/shot\\d{2}_take\\d+\\.mp4$/);",
+        "  pm.expect(t.liked).to.eql(null);",
+        "  pm.expect(t.model).to.eql('kling3_0');",
+        "});",
+        "pm.collectionVariables.set('take_id', t.id);"
+      ]}}]
+    },
+    {
+      "name": "POST animate/.../takes — mesmo vídeo duas vezes (409)",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}/takes",
+        "body": {"mode": "raw", "raw": "{\"candidate_id\": \"{{candidate_id}}\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('409', () => pm.response.to.have.status(409));"
+      ]}}]
+    },
+    {
+      "name": "POST animate/.../takes — modelo fora da ordem (422)",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}/takes",
+        "body": {"mode": "raw", "raw": "{\"candidate_id\": \"nao-existe\", \"model\": \"wan2_7\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('404 ou 422 antes de copiar arquivo', () => pm.expect([404, 422]).to.include(pm.response.code));"
+      ]}}]
+    },
+    {
+      "name": "POST animate/.../like — like grava o _final",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}/takes/{{take_id}}/like",
+        "body": {"mode": "raw", "raw": "{\"liked\": true}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200 e shot pronto', () => {",
+        "  pm.response.to.have.status(200);",
+        "  const b = pm.response.json();",
+        "  pm.expect(b.ready).to.eql(true);",
+        "  pm.expect(b.takes.filter(t => t.liked === true).length).to.eql(1);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "POST animate/.../like — take inexistente (404)",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}/takes/take99/like",
+        "body": {"mode": "raw", "raw": "{\"liked\": true}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('404', () => pm.response.to.have.status(404));"
+      ]}}]
+    },
+    {
+      "name": "GET animate/job — ocioso sem geração",
+      "request": {"method": "GET", "url": "{{base_url}}/api/projects/{{pid}}/animate/job"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200 e estado conhecido', () => {",
+        "  pm.response.to.have.status(200);",
+        "  pm.expect(['idle','running','done','error']).to.include(pm.response.json().state);",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "GET /api/animate/downloads-folder",
+      "request": {"method": "GET", "url": "{{base_url}}/api/animate/downloads-folder"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200 com pasta e existência', () => {",
+        "  pm.response.to.have.status(200);",
+        "  pm.expect(pm.response.json()).to.have.property('folder');",
+        "  pm.expect(pm.response.json()).to.have.property('exists');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "POST animate/import/downloads — pasta inexistente (404)",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/import/downloads",
+        "body": {"mode": "raw", "raw": "{\"folder\": \"/tmp/pasta-que-nao-existe-animate\", \"since_minutes\": 60}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('404', () => pm.response.to.have.status(404));"
+      ]}}]
+    },
+    {
+      "name": "GET animate/shots — projeto inexistente (404)",
+      "request": {"method": "GET", "url": "{{base_url}}/api/projects/nao-existe/animate/shots"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('404 pelo handler global de KeyError', () => pm.response.to.have.status(404));"
+      ]}}]
+    }
+  ]
+}

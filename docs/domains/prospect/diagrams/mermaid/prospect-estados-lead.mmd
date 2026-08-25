@@ -1,0 +1,43 @@
+%% Etapa 11 (prospect, aula 001) — máquina de estados de um lead em prospect/leads.json.
+%% ---
+%% Fonte de verdade: studio/prospect/service.py (STATUSES, create_lead, mark_sent,
+%% mark_replied, start_teaser, register_call, delete_lead) e studio/etapas/prospect/router.py.
+%% Os identificadores dos estados são exatamente os valores gravados no campo status;
+%% o rótulo entre aspas é a leitura em português que a tela mostra.
+%% ---
+%% Regra que vale para TODA transição: elas só acontecem com o gate aberto, ou seja, 4 VÍDEOS
+%% DISTINTOS publicados em publish/log.json (ver prospect-gate.mmd). Com o gate fechado, todo
+%% POST, PUT e DELETE responde 409 e o lead não sai do lugar.
+stateDiagram-v2
+    direction LR
+
+    state "novo — lead cadastrado e DM já redigida" as new
+    state "DM enviada — sent_at gravado, conta no N/10 do dia" as dm_sent
+    state "respondeu" as replied
+    state "teaser pronto — 5 a 10 s, com música" as teaser_ready
+    state "call agendada" as call_scheduled
+    state "call feita" as call_done
+
+    [*] --> new: POST /prospect/leads
+    new --> dm_sent: POST .../leads/lid/sent
+    dm_sent --> replied: POST .../leads/lid/replied com replied=true
+    replied --> dm_sent: POST .../leads/lid/replied com replied=false, desfaz o respondeu
+    replied --> teaser_ready: job do teaser concluído, state done
+    teaser_ready --> call_scheduled: POST .../leads/lid/call com done=false
+    teaser_ready --> call_done: POST .../leads/lid/call com done=true
+    call_scheduled --> call_done: POST .../leads/lid/call com done=true
+    call_done --> [*]: DELETE .../leads/lid, apaga o lead e o teaser
+
+    note right of replied
+        Desfazer o respondeu só volta o status enquanto ele ainda é
+        replied. Depois do teaser, replied=false apenas limpa a
+        marcação e o status continua teaser_ready.
+        Registrar resposta antes da DM enviada é 422:
+        marque a DM como enviada antes de registrar a resposta.
+    end note
+
+    note left of teaser_ready
+        Regerar o teaser sobrescreve o arquivo do lead e o mantém em
+        teaser_ready. Se o job falhar, o status não muda e o arquivo
+        parcial é removido (job.state = error).
+    end note

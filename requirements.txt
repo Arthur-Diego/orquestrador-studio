@@ -3,3 +3,4 @@ fastapi
 uvicorn[standard]
 pillow
 python-multipart
+numpy

@@ -1,0 +1,46 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 10 · aula 015</span>
+  <h2>Publicar</h2>
+  <p class="lede">Publique os vídeos nas suas redes — à mão, na interface de cada uma — e registre aqui o link de cada post. A aula 015 manda ter <strong>4 vídeos publicados</strong> antes de prospectar (etapa 11) e pedir feedback sobre o que você postou. Aula 014: publique mesmo que o primeiro fique ruim.</p>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>1. Vídeos prontos em <code>export/</code></h3>
+    <div class="row wrap">
+      <span id="pubCounter" class="chip mode">0/4 vídeos</span>
+      <span id="pubPosts" class="chip mode">0 publicações</span>
+      <a id="pubPortfolio" class="fine hidden" target="_blank" rel="noopener">ver portfolio.md</a>
+    </div>
+  </div>
+  <div id="pubExports" class="gallery"></div>
+  <p class="fine">Clique em um arquivo para escolhê-lo no formulário abaixo. O contador conta <strong>vídeos distintos</strong>: o mesmo arquivo no Instagram e no TikTok são 2 publicações e 1 vídeo do portfólio.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h3>2. Registrar uma publicação</h3></div>
+  <p class="fine">Poste na rede, copie o link do post e cole aqui. O Studio não publica por você e não escreve legenda nem hashtag — a aula 015 publica na mão; a nota é campo livre seu.</p>
+  <div class="row wrap">
+    <label class="inline">vídeo <select id="pubVideo"></select></label>
+    <label class="inline">rede <input id="pubNetwork" list="pubNetworks" placeholder="instagram"></label>
+    <datalist id="pubNetworks">
+      <option value="instagram"></option><option value="tiktok"></option>
+      <option value="youtube"></option><option value="outro"></option>
+    </datalist>
+    <label class="inline">data <input id="pubDate" type="date"></label>
+  </div>
+  <div class="row wrap">
+    <input id="pubUrl" placeholder="https://www.instagram.com/reel/...">
+    <input id="pubNote" placeholder="nota livre (o que você testou nesse post)">
+    <button id="btnPubAdd" class="primary">Registrar publicação</button>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>3. Publicações e feedback</h3>
+    <span id="pubReady" class="chip warn">portfólio: faltam 4 vídeos</span>
+  </div>
+  <div id="pubLog" class="prompts"></div>
+  <p class="fine">Aula 015: peça feedback sobre o que publicou. O texto de cada post entra em <code>publish/portfolio.md</code>, regravado a cada mudança.</p>
+</section>

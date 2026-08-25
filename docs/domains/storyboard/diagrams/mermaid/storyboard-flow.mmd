@@ -1,0 +1,114 @@
+%% storyboard (OS-004) - Etapa 4 - aula 010
+%% Fluxo principal em modo UI: instrucao -> geracao na Higgsfield -> import -> selecao -> cenas -> storyboard.md
+%% Fonte: docs/domains/storyboard/features/storyboard-fdd.md (secao 4)
+%%         studio/storyboard/service.py + studio/etapas/storyboard/router.py
+sequenceDiagram
+    autonumber
+    actor user as Usuário
+    participant ui as view.js (SPA da etapa 4)
+    participant api as router.py (FastAPI)
+    participant svc as storyboard/service.py
+    participant ing as studio/common/ingest.py
+    participant fs as projects/[pid]/
+    participant hfui as Interface da Higgsfield (fora do Studio)
+
+    %% --- 1. Status da etapa ---
+    user->>ui: abre a etapa 4 com projeto selecionado
+    ui->>api: GET /api/projects/{pid}/storyboard
+    api->>svc: status(pid)
+    svc->>fs: lê base/base_final.png, candidates.json, scenes.json
+    svc-->>api: {has_base, ideas, selected, scenes, scenes_with_text}
+    api-->>ui: 200 status da etapa
+
+    alt has_base = false
+        ui-->>user: aviso "conclua a etapa 3" — ideação desabilitada, import e cenas seguem
+    else has_base = true
+        ui-->>user: painel "Ideação" com imagem base, tipos e presets
+    end
+
+    %% --- 2. Montagem da instrução (uma por vez) ---
+    user->>ui: escolhe o tipo (draw_to_edit | edit | multishot), escreve o texto e clica "gerar 4" ou "gerar 1"
+    ui->>api: POST /api/projects/{pid}/storyboard/instructions {kind, text, count}
+    api->>svc: build_instruction(pid, kind, text, count)
+    svc->>fs: verifica base/base_final.png
+
+    alt sem base/base_final.png
+        svc-->>api: Precondition
+        api-->>ui: 409 "Imagem base ausente: conclua a etapa 3 (base)"
+    else texto com 2 ou mais instruções, count fora de {1, 4}, kind ou tamanho inválidos
+        svc-->>api: Invalid
+        api-->>ui: 422 "Uma instrução por vez (aula 010)"
+    else pedido válido
+        Note over svc: monta a instrução em inglês com o sufixo do curso<br/>count = 4 quando incerto, 1 quando é só um tweak
+        svc-->>api: {kind, count, instruction, ui_hint, base_image}
+        api-->>ui: 200 instrução montada
+        ui-->>user: mostra a instrução com "copiar" e a dica de onde colar
+    end
+
+    %% --- 3. Geração fora do Studio (nunca automatizada, ADR-002) ---
+    user->>hfui: cola a instrução e gera as imagens na interface da Higgsfield
+    Note over user,hfui: passo manual, fora do Studio: o Studio nunca automatiza a UI da Higgsfield
+    hfui-->>user: imagens de ideação (download ou histórico)
+
+    %% --- 4. Importação dos resultados ---
+    user->>ui: importa por arquivos, pasta Downloads ou histórico do CLI
+    alt upload de arquivos
+        ui->>api: POST /storyboard/import/upload (multipart: files, prompt)
+        api->>svc: import_upload(pid, files, prompt)
+        svc->>ing: ingest.import_upload(root, "storyboard", files, prompt)
+    else pasta Downloads
+        ui->>api: POST /storyboard/import/downloads {folder, since_minutes, prompt}
+        api->>svc: import_downloads(pid, folder, since_minutes, prompt)
+        svc->>ing: ingest.import_downloads(root, "storyboard", ...)
+    else histórico do CLI (só com CLI instalado e logado)
+        ui->>api: POST /storyboard/import/history {size, prompt_filter}
+        api->>svc: import_history(pid, size, prompt_filter)
+        svc->>ing: ingest.import_history(root, "storyboard", ...)
+    end
+    Note over ing: dedupe por sha12 do conteúdo:<br/>reimportar a mesma imagem devolve added = 0
+    ing->>fs: grava storyboard/candidates/ + thumbs + candidates.json
+    ing-->>svc: {added, skipped | scanned | jobs}
+    svc-->>api: contagens do import
+    api-->>ui: 200 {added, ...}
+
+    %% --- 5. Galeria e seleção das ideias ---
+    ui->>api: GET /storyboard/candidates
+    api->>svc: list_ideas(pid)
+    svc-->>api: {ideas: [{id, file, thumb, prompt, selected, source, imported}]}
+    api-->>ui: 200 galeria
+    user->>ui: marca as ideias que valem e clica "usar no storyboard"
+    ui->>api: POST /storyboard/candidates/select {ids}
+    api->>svc: select_ideas(pid, ids)
+    alt algum id inexistente
+        svc-->>api: Invalid
+        api-->>ui: 422 "ideia inexistente"
+    else ids válidos
+        svc->>fs: copia as escolhidas para storyboard/ideas/[id].[ext]
+        svc->>fs: remove de ideas/ as que saíram e zera image das cenas afetadas
+        svc->>ing: ingest.save_candidates(root, "storyboard", cands)
+        svc->>fs: regrava ideas.json, scenes.json e storyboard.md
+        svc-->>api: {selected, detached}
+        api-->>ui: 200 {selected, detached}
+    end
+
+    %% --- 6. Cenas e storyboard.md ---
+    ui->>api: GET /storyboard/scenes
+    api->>svc: load_scenes(pid)
+    Note over svc: na primeira leitura cria e persiste<br/>5 cenas vazias cena01..cena05
+    svc->>fs: lê ou cria storyboard/scenes.json
+    svc-->>api: {scenes}
+    api-->>ui: 200 cenas
+    user->>ui: escreve o texto das cenas, anexa imagens e reordena
+    ui->>api: PUT /storyboard/scenes {scenes: [{text, image}]}
+    api->>svc: save_scenes(pid, scenes)
+    alt menos de 1 ou mais de 10 cenas, texto acima de 500 ou image fora de storyboard/ideas/
+        svc-->>api: Invalid
+        api-->>ui: 422 detalhe da validação
+    else cenas válidas
+        Note over svc: normaliza id e n pela ordem recebida (cena01..cenaNN)<br/>e valida cada image dentro de storyboard/ideas/
+        svc->>fs: grava storyboard/scenes.json
+        svc->>fs: regrava storyboard/storyboard.md na mesma chamada
+        svc-->>api: {scenes, storyboard_md}
+        api-->>ui: 200 cenas normalizadas
+        ui-->>user: link "abrir storyboard.md" em /files/{pid}/storyboard/storyboard.md
+    end

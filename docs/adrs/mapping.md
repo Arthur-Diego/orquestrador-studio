@@ -430,3 +430,8 @@ refletido em `MOOD::suggest_prompts` (comentário explícito no código sobre a 
 - **Nota de discrepância com o contexto**: os relatórios em `docs/agents/` (gerados a partir
   de um estado de código anterior ao commit `2b5fd95`) afirmam ausência total de testes e de
   CI/CD. Isso está desatualizado — ver seção Context Notes acima para o detalhe.
+
+
+## Atualização 2026-08-25 (wave 1)
+
+Novos módulos/domínios após a wave 1 (todos plugins em `studio/etapas/<id>/` + `studio/<id>/service.py`): BASE, STORYBOARD, SHOTS, ANIMATE, MUSIC, EDIT, EXPORT, PUBLISH, PROSPECT; e o transversal COMMON (`studio/common/`). As rotas deixaram `app.py` e vivem nos routers dos plugins. ADR nova: ADR-009 (MUSIC).
