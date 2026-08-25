@@ -252,14 +252,21 @@ def set_community(pid: str, **flags) -> dict:
 
 # ---------- portfólio GLOBAL (ADR-012) ----------
 def _project_name(root: Path) -> str:
+    """Nome do projeto; qualquer `project.json` ilegível vira o nome da pasta (nunca levanta)."""
     try:
-        return json.loads((root / "project.json").read_text(encoding="utf-8")).get("name") or root.name
-    except (OSError, json.JSONDecodeError):
+        meta = json.loads((root / "project.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return root.name
+    return (meta.get("name") if isinstance(meta, dict) else None) or root.name
 
 
 def posts_at(root: Path) -> list[dict]:
-    """Posts de um projeto qualquer, lido pelo caminho (não passa por `project_dir`)."""
+    """Posts de um projeto qualquer, lido pelo caminho (não passa por `project_dir`).
+
+    Mesma tolerância de `load_log`: arquivo ausente, ilegível, que não seja uma lista, ou com
+    entradas que não sejam objetos, conta como zero. Um projeto qualquer do `PROJECTS_DIR` com
+    log estragado não pode derrubar `GET /api/portfolio` nem o gate da etapa 11.
+    """
     path = root / LOG_REL
     if not path.exists():
         return []
@@ -268,7 +275,10 @@ def posts_at(root: Path) -> list[dict]:
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         log.warning("publish.log_corrompido path=%s", path)
         return []
-    return [_normalize(p) for p in data] if isinstance(data, list) else []
+    if not isinstance(data, list):
+        log.warning("publish.log_invalido path=%s (esperava lista)", path)
+        return []
+    return [_normalize(p) for p in data if isinstance(p, dict)]
 
 
 def global_portfolio() -> dict:

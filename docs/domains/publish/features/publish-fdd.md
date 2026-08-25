@@ -41,6 +41,9 @@ Suposições e restrições:
   expostos; `ready = distinct_videos >= 4`.
   [decisão 1 do lote (`docs/domains/studio/waves/wave-1.md`), prevalece sobre o auto-aceite original
   desta seção: aula 015 "publicar esses 4 vídeos"; o gate de `prospect` usa `distinct_videos >= 4`]
+  **Wave 2 (ADR-012):** a regra "não são posts" continua valendo, mas `distinct_videos` deixou de
+  contar arquivos deste projeto e passou a contar **projetos distintos** com post — quatro obras.
+  Dentro do projeto, a contagem por arquivo virou o campo `videos`.
 
 ---
 
@@ -52,6 +55,8 @@ Suposições e restrições:
   com validação de vídeo existente, rede não vazia, URL `http(s)://` e data ISO `YYYY-MM-DD`.
 - Expor `count` (posts), `distinct_videos`, `goal = 4`, `ready = distinct_videos >= 4` e
   `missing = max(0, 4 - distinct_videos)` em uma rota de status, sem efeitos colaterais.
+  **Wave 2 (ADR-012):** a mesma rota passou a expor também `videos` e `published` (deste projeto)
+  e `projects` + `community`; `distinct_videos`, `ready` e `missing` viraram globais.
 - Regravar `publish/portfolio.md` a cada mutação do log (adicionar, remover, feedback), nunca em GET.
 - Nenhuma dependência de rede, CLI ou ffmpeg: a etapa funciona só com a stdlib.
 
@@ -232,13 +237,22 @@ YouTube mas a 015 fala só em "redes sociais"]
 - Método: GET
 - Semântica de status: 200 sempre que o projeto existe. Não grava nada.
 
-**Exemplo de resposta**
+**Exemplo de resposta (wave 2 — ADR-012)**
 ```json
-{"count": 5, "distinct_videos": 4, "goal": 4, "ready": true, "missing": 0, "portfolio_md": "publish/portfolio.md"}
+{"count": 5, "videos": 3, "published": true,
+ "distinct_videos": 4, "goal": 4, "ready": true, "missing": 0,
+ "projects": [{"project_id": "2026-08-gelo-zero", "name": "Gelo Zero",
+               "posts": 5, "videos": 3, "first_posted": "2026-08-25"}],
+ "community": {"posted": true, "commented": false, "feedback": false,
+               "updated": "2026-08-25T19:40:00", "done": 1, "total": 3},
+ "portfolio_md": "publish/portfolio.md"}
 ```
 `portfolio_md` é `null` quando o arquivo ainda não foi gerado (log nunca teve mutação).
-`ready` e `missing` usam `distinct_videos` (decisão 1 do lote); `count` é o total de posts e segue
-exposto para leitura do log.
+`count`, `videos` e `published` são **deste projeto**; `distinct_videos`, `ready`, `missing` e
+`projects` são do **portfólio global** (ADR-012). Antes da wave 2 a resposta tinha só
+`{count, distinct_videos, goal, ready, missing, portfolio_md}`, com `distinct_videos` contando
+arquivos deste projeto. As rotas `GET /api/portfolio` e `GET|POST .../publish/community` estão
+especificadas na seção "Wave 2 — fidelidade e guia".
 
 **Contrato 7: serviço (`studio/publish/service.py`)**
 - Tipo: function
@@ -306,8 +320,12 @@ resumo `0/4` e "Nenhuma publicação registrada ainda."
   é longo, então não há `JobRegistry` nem polling.
 - Política de fallback: sem ffmpeg, sem CLI e sem rede a etapa funciona integralmente.
 - Invariantes:
-  - `count == len(log.json)`, `distinct_videos == |{post.video}|` e `ready == (distinct_videos >= 4)`
-    em qualquer leitura.
+  - `count == len(log.json)` e, **desde a wave 2 (ADR-012)**, `videos == |{post.video}|` deste
+    projeto, `distinct_videos == |projetos do PROJECTS_DIR com >= 1 post|` e
+    `ready == (distinct_videos >= 4)`. Antes da wave 2, `distinct_videos == |{post.video}|`.
+  - Nenhum `publish/log.json` estragado — em **qualquer** projeto varrido — derruba uma rota:
+    ausente, ilegível, que não seja lista ou com entradas que não sejam objetos conta como zero
+    (`posts_at`, mesma tolerância de `load_log`).
   - `portfolio.md` reflete o último estado do log após toda mutação bem sucedida.
   - Nenhuma entrada do log aponta para arquivo fora de `export/` no momento do registro
     (o arquivo pode ser apagado depois; a listagem então mostra o post sem export correspondente).
@@ -320,12 +338,18 @@ resumo `0/4` e "Nenhuma publicação registrada ainda."
 - Não há sistema de métricas no monólito local (ADR-001). Os contadores expostos são `count`,
   `distinct_videos` (o número que sustenta o gate), `goal`, `missing` e `ready` na rota
   `portfolio`; `count`, `distinct_videos` e `goal` também na rota `log`.
+- **Wave 2:** a rota `portfolio` expõe ainda `videos` e `published` (deste projeto), `projects`
+  (as obras que compõem o portfólio global) e `community.done`/`community.total`; a rota
+  `GET /api/portfolio` expõe os mesmos números sem `pid`.
 
 **Logs**
 - Logger `studio.publish` (stdlib `logging`), nível INFO: `publish.add pid=<pid> id=<id>
   network=<rede> count=<n>`, `publish.remove pid=<pid> id=<id> count=<n>`,
   `publish.feedback pid=<pid> id=<id>`; WARNING `publish.log_corrompido` (JSON quebrado) e
   `publish.log_invalido` (JSON válido que não é lista).
+- **Wave 2:** INFO `publish.community pid=<pid> done=<n>`; WARNING
+  `publish.community_corrompido pid=<pid>`. `publish.log_corrompido` e `publish.log_invalido`
+  passam a sair também com `path=` (varredura do portfólio global, que não conhece `pid`).
 - Nunca logar `note` ou `feedback` (texto livre do usuário).
 
 **Tracing**
@@ -374,16 +398,20 @@ resumo `0/4` e "Nenhuma publicação registrada ainda."
   pela etapa 9 no projeto de integração.
 - `POST .../publish/log` válido devolve 201 com `id` de 12 caracteres, grava `publish/log.json` e
   cria `publish/portfolio.md`; o mesmo vídeo passa a `published: true` na listagem.
-- Com 4 vídeos distintos, `GET .../publish/portfolio` devolve `{"ready": true, "missing": 0}`; com
-  3 distintos (mesmo que sejam 5 posts), `ready: false` e `missing: 1`. `[cross-feature]`
-  `publish/log.json` com 4 vídeos distintos é lido por `prospect` sem adaptação e libera a etapa 11;
-  com 3 distintos, `prospect` bloqueia.
+- ~~Com 4 vídeos distintos, `GET .../publish/portfolio` devolve `{"ready": true, "missing": 0}`~~
+  **SUPERADO pela wave 2 (ADR-012):** quatro arquivos distintos de um projeto só devolvem
+  `ready: false` e `missing: 3`. O critério passou a ser: com **4 projetos** que tenham pelo menos
+  um post, `{"ready": true, "missing": 0}`; com 3, `ready: false` e `missing: 1`.
+  `[cross-feature]` o gate de `prospect` consome `GET /api/portfolio` e libera a etapa 11.
 - `POST .../publish/log/{id}/feedback` persiste o texto e ele aparece em `portfolio.md`.
 - `DELETE .../publish/log/{id}` reduz `count`, regrava `portfolio.md` e devolve 404 na segunda chamada.
 - 404 para vídeo fora de `export/` e para `../` no caminho; 422 para rede vazia, URL sem esquema,
   data inválida e URL duplicada.
-- `log.json` corrompido não derruba nenhuma rota (`GET log` devolve `posts: []`).
-- `portfolio.md` contém a linha "Publicados: N/4" e uma linha de tabela por post.
+- `log.json` corrompido não derruba nenhuma rota (`GET log` devolve `posts: []`) — inclusive o
+  log de **outro** projeto durante a varredura do portfólio global (wave 2).
+- ~~`portfolio.md` contém a linha "Publicados: N/4"~~ **SUPERADO pela wave 2:** o resumo passou a
+  ser "Este projeto: N vídeo(s) … Portfólio global: N/4 vídeos distintos …", seguido do checklist
+  de comunidade e da tabela do portfólio global. Continua havendo uma linha de tabela por post.
 - Nenhum teste toca rede, CLI ou ffmpeg; `ruff check studio tests` limpo; `make verify` verde.
 - UI: contador `N/4`, chip "portfólio pronto" quando `ready`, campo de feedback por post,
   formulário sem campo de legenda/hashtag.
@@ -528,3 +556,34 @@ Arquivo ausente ou corrompido = tudo por fazer (nunca levanta).
 - Os checkboxes da comunidade **não têm `id`** no HTML, de propósito: o teste de fidelidade da
   tela fixa o conjunto exato de campos com `id` (`pubVideo`, `pubNetwork`, `pubDate`, `pubUrl`,
   `pubNote`) para provar que a etapa não pede legenda, hashtag nem métrica de alcance.
+
+#### Pendências para a integração (W5) — frente OS-019
+
+Levantadas pelo fiscal de doc-sync no fechamento da frente. Nada aqui é editável por uma frente
+de etapa: são arquivos compartilhados da wave.
+
+**`docs/domains/studio/hld.md` (v1.2) precisa de cinco ajustes:**
+
+1. **Interfaces públicas** (§ "Interfaces públicas") não prevê rota de plugin **sem `pid`**.
+   `GET /api/portfolio` (`studio/etapas/publish/router.py`) foge do padrão
+   `/api/projects/{pid}/<etapa>/*` — de propósito, porque o portfólio é do aluno. Precisa de linha
+   própria e de uma nota dizendo que esse é o caso excepcional previsto pelo ADR-012.
+2. **"Um domínio por etapa … serviços chamados pelos routers dos plugins"** precisa registrar a
+   **dependência direta `prospect → publish`**. A W5 decide se vira regra geral ("dependência entre
+   serviços de etapa só na direção da ordem do curso") ou exceção pontual do ADR-012.
+3. **Seção do guia por etapa** diz que o hook "só lê arquivos **do projeto**".
+   `studio/etapas/{publish,prospect}/guide.py` varrem o `PROJECTS_DIR` inteiro. Continua sendo
+   leitura pura e sem escrita, mas o texto precisa ser relaxado para "leitura pura, sem escrita,
+   sem CLI e sem ffprobe" com a exceção do ADR-012 apontada.
+4. **`aspect_ratio`** está descrito como "a **aula 007** manda escolher o formato pelo destino".
+   Contraria a auditoria 9.2, aplicada nesta frente: a 007 fala de formato de imagem no Midjourney;
+   a escolha por destino vem do plano §1.4.
+5. **Lista de ADRs associados** não inclui o ADR-012 (PUBLISH).
+
+**Conflito de merge previsto:** `docs/adrs/mapping.md` recebeu um bloco no fim tanto desta frente
+(ADR-012) quanto da frente OS-018 (ADR-011, commit `ec1fcbc`). A numeração das ADRs não colide;
+o conflito é textual, no fim do arquivo, e resolve-se mantendo os dois blocos.
+
+**Não verificável antes da integração:** o smoke visual das 11 telas (Playwright), a contagem de
+requisições após troca de tela (timers órfãos) e o consumo do `edit/master.mp4` real da frente
+`music+edit`.

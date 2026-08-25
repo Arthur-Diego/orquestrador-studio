@@ -24,7 +24,9 @@ WHAT = (
     "spam. O script tem três ideias (você acompanha a marca, um post ressoou, você cria anúncios "
     "criativos e o portfólio está no perfil) e o gancho: \"Tive uma inspiração e criei algo para "
     "o seu negócio. Quer ver como ficou?\". Você só cria de verdade se a empresa responder: aí "
-    "produz 5 a 10 segundos com música e impacto, envia e chama para uma call de 15 minutos. Na "
+    "produz 5 a 10 segundos com música e impacto, envia e chama para uma call de 15 minutos — "
+    "crie um projeto para o negócio do lead e percorra as etapas 1 a 6 em versão curta (uma cena "
+    "basta): o teaser sai de um take desse projeto, e o portfólio vem dos projetos anteriores. Na "
     "call você não vende IA, vende resultado: mostre as etapas de produção, ancore valor por "
     "etapa até o total, ofereça condição especial na hora (ou por 24h), 50 % na entrada e 50 % na "
     "entrega. No começo, cobre R$ 100 a R$ 500 por vídeo de 30 s a 1 min para girar volume e "
@@ -129,8 +131,11 @@ def guide(pid: str) -> dict:
                 fix=None if pitch["in_range"] else
                 "no começo a aula manda cobrar R$ 100 a R$ 500 por vídeo de 30 s a 1 min")
 
+    # A janela conta a partir da RESPOSTA (`replied_at`); leads antigos, gravados antes do
+    # campo existir, caem no `sent_at` — é o melhor dado disponível para eles.
     atrasados = [x for x in responderam
-                 if not x.get("call_at") and (d := _dias(x.get("sent_at") or "")) is not None
+                 if not x.get("call_at")
+                 and (d := _dias(x.get("replied_at") or x.get("sent_at") or "")) is not None
                  and d > CALL_WINDOW_DAYS]
     g.check("followup", "Call marcada em até 7 dias da resposta `[extensão]`",
             "warn" if atrasados else ("ok" if responderam else "todo"),

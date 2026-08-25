@@ -218,6 +218,36 @@ def test_community_persiste_e_nunca_bloqueia(svc, studio_env, project):
     assert svc.set_community(project, posted=False)["posted"] is False, "dá para desmarcar"
 
 
+def test_portfolio_global_sobrevive_a_log_de_outro_projeto_estragado(svc, studio_env, project):
+    """Invariante do FDD: log estragado NUNCA derruba rota — vale para qualquer projeto varrido."""
+    add(svc, project)
+    outra_obra(studio_env, "2026-08-obra-1")
+    ruim = studio_env["tmp"] / "projects" / "2026-08-ruim"
+    (ruim / "publish").mkdir(parents=True, exist_ok=True)
+    (ruim / "project.json").write_text(json.dumps({"id": "2026-08-ruim", "name": "Ruim"}))
+    for conteudo in ('["nao sou um post", 42, null]', '{"nao": "e lista"}', "{quebrado"):
+        (ruim / "publish" / "log.json").write_text(conteudo)
+        g = svc.global_portfolio()
+        assert g["distinct_videos"] == 2, f"log {conteudo!r} não pode derrubar nem inflar a contagem"
+        assert "2026-08-ruim" not in {p["project_id"] for p in g["projects"]}
+    # Lista válida com UM post bom no meio do lixo: o projeto conta, o lixo é ignorado.
+    (ruim / "publish" / "log.json").write_text(json.dumps(
+        ["lixo", {"id": "b", "video": "export/9x16.mp4", "network": "x",
+                  "url": "https://x.test/b", "posted_at": "2026-08-21", "note": ""}]))
+    g = svc.global_portfolio()
+    assert g["distinct_videos"] == 3
+    assert next(p for p in g["projects"] if p["project_id"] == "2026-08-ruim")["posts"] == 1
+
+
+def test_portfolio_global_sobrevive_a_project_json_ilegivel(svc, studio_env, project):
+    add(svc, project)
+    outra_obra(studio_env, "2026-08-obra-1")
+    (studio_env["tmp"] / "projects" / "2026-08-obra-1" / "project.json").write_bytes(b"\xff\xfe binario")
+    g = svc.global_portfolio()
+    assert g["distinct_videos"] == 2
+    assert next(p for p in g["projects"] if p["project_id"] == "2026-08-obra-1")["name"] == "2026-08-obra-1"
+
+
 def test_community_corrompido_vira_checklist_vazio(svc, studio_env, project):
     root = studio_env["refs"].project_dir(project)
     (root / "publish").mkdir(parents=True, exist_ok=True)

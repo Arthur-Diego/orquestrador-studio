@@ -202,6 +202,7 @@ def create_lead(root: Path, business: str, handle: str, post_ref: str = "", why:
         "dm_text": "",
         "sent_at": None,
         "replied": False,
+        "replied_at": None,     # quando a empresa respondeu — base do follow-up de 7 dias
         "teaser": None,
         "call_at": None,
         "call_note": "",
@@ -301,8 +302,11 @@ def mark_replied(root: Path, lid: str, replied: bool = True) -> dict:
     lead["replied"] = bool(replied)
     if replied:
         lead["status"] = "replied"
-    elif lead.get("status") == "replied":
-        lead["status"] = "dm_sent"
+        lead["replied_at"] = datetime.now().isoformat(timespec="seconds")
+    else:
+        lead["replied_at"] = None
+        if lead.get("status") == "replied":
+            lead["status"] = "dm_sent"
     log.info("replied lead=%s replied=%s", lid, bool(replied))
     return _replace(root, lead)
 

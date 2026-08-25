@@ -20,11 +20,15 @@ com Instagram ou rede social; nenhuma automação de envio.
 
 **Provides** (copiado de `wave-1.md`)
 - `prospect/leads.json`: `[{id, business, handle, post_ref, why, dm_text, sent_at, replied, teaser, call_at, status}]`
+  (**wave 2:** `+ replied_at`, aditivo — base da janela de 7 dias do follow-up)
 - `prospect/teasers/<lead>.mp4`: 5 a 10 s com música
-- `prospect/pitch.md`: tabela de etapas de produção + ancoragem (sem valores) para a call
+- `prospect/pitch.md`: tabela de etapas de produção + ancoragem ~~(sem valores)~~ para a call
+  (**wave 2, item 11.4:** a tabela passou a ter valor por etapa, total e 50 % off; os números
+  vivem em `prospect/pitch.json`)
 
 **Consumes** (copiado de `wave-1.md`)
-- `publish/log.json` (gate: ≥ 4 vídeos publicados) ← publish
+- ~~`publish/log.json` (gate: ≥ 4 vídeos publicados) ← publish~~ **wave 2 (ADR-012):** o gate passou
+  a consumir `publish.global_portfolio()` — quatro **projetos** distintos com post, não o log deste projeto
 - `animate/takes.json`, `audio/music.*` ← animate, music (teaser)
 
 **Atores**: o aluno (usuário único, local, sem auth, ADR-001); o núcleo do Studio (resolve `pid`, serve
@@ -60,14 +64,16 @@ com Instagram ou rede social; nenhuma automação de envio.
 - Teaser por lead (5 a 10 s, com música): um take de `animate/takes.json` + `audio/music.*` cortados e mixados via ffmpeg → `prospect/teasers/<lead>.mp4`; job com polling.
 - Texto de follow-up literal (convite para call de 15 minutos) com botão copiar.
 - Registro da call (`call_at`, feito ou não, nota curta).
-- `prospect/pitch.md` com a tabela de etapas de produção (conceito, mood board, roteirização, direção criativa, produção, montagem, entrega) sem valores, e os lembretes da aula (oferta só-agora 50% no primeiro, 50/50, faixa inicial R$ 100 a 500 por vídeo de 30 s a 1 min, vender resultado e não IA).
+- `prospect/pitch.md` com a tabela de etapas de produção (conceito, mood board, roteirização, direção criativa, produção, montagem, entrega) — **wave 2, item 11.4: com coluna "Valor (R$)" por etapa, linha Total e "Total com 50 % off no 1º trabalho"** —, e os lembretes da aula (oferta só-agora 50% no primeiro, 50/50, faixa inicial R$ 100 a 500 por vídeo de 30 s a 1 min, vender resultado e não IA).
 - Testes `tests/test_prospect_service.py` e `tests/test_prospect_api.py`.
 
 **Excluído**
 - Envio de DM, leitura de respostas, qualquer API de rede social (a aula manda enviar à mão; anti-spam).
 - Geração de vídeo ou música nova para o teaser via Higgsfield CLI (o teaser reaproveita take e trilha já existentes). [auto-aceito: o plano-higgsfield §2 sugere `kling3_0 5s` + `sonilo_music 8s`; a wave fixou "um take de animate + audio/music.*", que é o caminho sem crédito e sem login; a variante por CLI fica como sugestão no PR]
 - Texto sobreposto, logo, legenda ou end card no teaser (a aula não ensina).
-- Valores de preço na tabela de etapas (a aula manda a tabela só para ancorar; os valores ficam nos lembretes).
+- ~~Valores de preço na tabela de etapas~~ **INCLUÍDO pela wave 2 (auditoria 11.4).** A leitura
+  original estava errada: a aula manda *"revelar valores por etapa até chegar no total que você
+  quer cobrar"* — a ancoragem **é** a tabela com valores. Ver a seção "Wave 2" no fim deste FDD.
 - CRM, agenda, lembretes automáticos, exportação de leads.
 - Bloqueio duro no limite de 10 DMs/dia. [auto-aceito: a aula dá "10 por dia" como meta de disciplina, não como trava; o Studio mostra o contador e avisa acima de 10, sem impedir a marcação]
 
@@ -152,9 +158,14 @@ Todas as rotas vivem em `studio/etapas/prospect/router.py`, prefixo `/api/projec
 ```json
 {"published": 2, "posts": 3, "required": 4, "ok": false,
  "message": "A aula manda publicar 4 vídeos criativos antes de prospectar. Você tem 2/4.",
+ "projects": [{"project_id": "2026-08-gelo-zero", "name": "Gelo Zero",
+               "posts": 2, "videos": 1, "first_posted": "2026-08-20"}],
+ "this_project_published": false,
  "today_sent": 0, "daily_limit": 10}
 ```
-`published` = vídeos distintos (o que abre o gate); `posts` = entradas do log (o mesmo vídeo em várias redes).
+`published` = **projetos distintos com post** (wave 2, ADR-012 — antes era "vídeos distintos do log
+deste projeto"); `posts` = total de entradas de log de todos eles; `projects` lista as obras que
+contam; `this_project_published` diz se este projeto já entrou no portfólio.
 Com o gate aberto, `message` vira `"Portfólio pronto: N vídeos publicados. Pode prospectar."`.
 
 **Leads (listar e criar)**
@@ -269,6 +280,10 @@ Todos os campos são opcionais. [auto-aceito: default `duration = 8` s, dentro d
 - Semântica de status/headers:
   - 200: `{"file": "prospect/pitch.md", "markdown": "<conteúdo>"}`; GET gera o arquivo se não existir; POST regenera a partir do template (sobrescreve)
   - 409: gate fechado (POST)
+  - **wave 2 (11.4):** a resposta traz também `values`, `total`, `sum`, `matches`, `priced`,
+    `in_range`, `discount`, `steps`, `min_price` e `max_price`; o POST aceita o corpo
+    `{"values"?: {etapa: número}, "total"?: número}` e responde 422 para etapa desconhecida,
+    valor negativo ou total inválido. POST com corpo vazio segue só regerando o arquivo.
 
 **Conteúdo fixo de `pitch.md`** (template no serviço, `project.name` no título)
 ```markdown
@@ -297,7 +312,8 @@ Todos os campos são opcionais. [auto-aceito: default `duration = 8` s, dentro d
 **Assinaturas do serviço** (`studio/prospect/service.py`)
 - Tipo: function
 - Assinatura/Rota:
-  - `gate(root: Path) -> dict` (`{published, required, ok, message}`)
+  - `gate(root: Path) -> dict` (`{published, posts, required, ok, message, projects, this_project_published}`
+    — **wave 2:** derivado de `publish.global_portfolio()`)
   - `require_gate(root: Path) -> None` (levanta `GateClosed(RuntimeError)` com a mensagem da aula)
   - `load_leads(root) -> list[dict]`, `save_leads(root, leads) -> None`, `get_lead(root, lid) -> dict`
   - `create_lead(root, business, handle, post_ref, why, role="fã") -> dict`
@@ -307,10 +323,14 @@ Todos os campos são opcionais. [auto-aceito: default `duration = 8` s, dentro d
   - `today_sent(leads, today: date | None = None) -> int`, `DAILY_LIMIT = 10`
   - `pick_take(root, take: dict | None) -> dict` (devolve `{scene, shot, take, file, duration}`)
   - `find_music(root) -> Path`
-  - `start_teaser(root, pid, lid, take=None, duration=8.0, take_offset=0.0, music_offset=0.0) -> dict`
+  - `start_teaser(root, pid, lid, take=None, duration=8.0, take_offset=0.0, music_offset=None) -> dict`
+    (**wave 2:** exige `lead["replied"]` → 422; `music_offset=None` usa `suggest_music_offset`)
+  - `suggest_music_offset(root) -> dict` (**wave 2, 11.8**: `{music_offset, impact, source}`)
+  - `load_pitch_values(root) -> dict`, `save_pitch_values(root, values=None, total=None) -> dict`,
+    `clean_values(values) -> dict[str, float]` (**wave 2, 11.4**)
   - `job_status(pid) -> dict`
   - `register_call(root, lid, call_at: str, done: bool = False, note: str = "") -> dict`
-  - `pitch_markdown(project: dict) -> str`, `write_pitch(root, project) -> Path`, `read_pitch(root, project) -> str`
+  - `pitch_markdown(project: dict, pitch: dict | None = None) -> str`, `write_pitch(root, project) -> Path`, `read_pitch(root, project) -> str`
 - Semântica de status/headers: exceções `GateClosed`/`RuntimeError` → 409, `ValueError` → 422, `FileNotFoundError` → 404 (tradução no router, padrão do recon).
 
 Limites: payload JSON ≤ 64 KB (campos de texto do lead ≤ 2.000 caracteres cada, `ValueError` acima); teaser `run(..., timeout=120)` por chamada de ffmpeg; um job por projeto. Versionamento: `leads.json` é uma lista; campos novos são aditivos; ausência de campo é lida como default.
@@ -323,7 +343,11 @@ Limites: payload JSON ≤ 64 KB (campos de texto do lead ≤ 2.000 caracteres ca
 
 | Condição | Tratamento | Notas |
 | --- | --- | --- |
-| `publish/log.json` ausente, vazio ou inválido | `published = 0`, gate fechado | nunca levanta; log `warning` só se JSON inválido |
+| Nenhum projeto do `PROJECTS_DIR` com post (ou todos com `publish/log.json` ausente, vazio, não-lista ou com entradas não-objeto) | `published = 0`, gate fechado | **wave 2 (ADR-012):** a varredura é global; nenhum log estragado, em nenhum projeto, levanta — `warning` `publish.log_corrompido`/`publish.log_invalido` |
+| Teaser pedido antes de `replied` | 422 "a aula manda criar só depois que a empresa responder" | **wave 2 (11.1)**; checado antes de ffmpeg, duração, take e trilha |
+| `post_ref` vazio em `create_lead`, `update_lead` ou `dm_text` | 422 com a mensagem do post específico | **wave 2 (11.3)**; lead legado com o campo vazio não é rejeitado na leitura — vira validação `fail` no guia |
+| `pitch` com etapa desconhecida, valor negativo ou total inválido | 422 `ValueError` | **wave 2 (11.4)**; `total` diferente da soma é aceito, com aviso no markdown e no guia |
+| `audio/beats.json` ausente ou ilegível | `music_offset` sugerido = `None` → o teaser usa `0.0` | **wave 2 (11.8)**; `warning` `beats_invalid`; sugestão, nunca trava |
 | Gate fechado em POST/PUT/DELETE | 409 `{"detail": mensagem da aula com N/4}` | GET nunca bloqueia |
 | `business`/`handle` vazio, handle duplicado, `role` inválido, texto > 2.000 chars | 422 `ValueError` | handle normalizado antes de comparar |
 | Lead inexistente | 404 `FileNotFoundError` | |
@@ -356,7 +380,9 @@ Limites: payload JSON ≤ 64 KB (campos de texto do lead ≤ 2.000 caracteres ca
 - Contagem por `status` dos leads devolvida em `GET leads` como `by_status` (`{new, dm_sent, replied, teaser_ready, call_scheduled, call_done}`).
 
 **Logs**
-- Logger `studio.prospect` (stdlib `logging`, formato do núcleo). Eventos `info`: `lead_created`, `dm_sent`, `replied`, `teaser_started`, `teaser_done`, `call_registered`, `pitch_written`; `warning`: `gate_closed`, `over_daily_limit`, `publish_log_invalid`; `error`: `teaser_failed` (com stderr truncado). Campos: `pid`, `lead`, `event`, `status`, `duration` quando aplicável. Nunca logar `dm_text` completo nem `why` (dado pessoal do lead).
+- Logger `studio.prospect` (stdlib `logging`, formato do núcleo). Eventos `info`: `lead_created`, `dm_sent`, `replied`, `teaser_started`, `teaser_done`, `call_registered`, `pitch_written`; `warning`: `gate_closed`, `over_daily_limit`; **wave 2:** `info` `pitch_values_saved`,
+  `warning` `pitch_values_invalid` e `beats_invalid` (`publish_log_invalid` saiu junto com
+  `_published_videos` — a tolerância do log agora é do `publish`); `error`: `teaser_failed` (com stderr truncado). Campos: `pid`, `lead`, `event`, `status`, `duration` quando aplicável. Nunca logar `dm_text` completo nem `why` (dado pessoal do lead).
 - `job.log` humano em pt-BR (take escolhido, duração efetiva, arquivo gravado).
 
 **Tracing**
@@ -377,12 +403,13 @@ Limites: payload JSON ≤ 64 KB (campos de texto do lead ≤ 2.000 caracteres ca
 | `studio/common/ffmpeg.py` | wave 1 | `available()`, `run()`, `probe()`; ffmpeg 7.0.2 estático em `~/.local/bin` |
 | `studio/refs/service.project_dir` | atual | resolução e validação de `pid` |
 | `tests/conftest.py` | wave 1 | `studio_env["svc"]("prospect")`, `make_video`, `make_audio`, `client` |
-| `publish/log.json` | schema wave 1 | lista `[{id, video, network, url, posted_at, note}]`; só `len()` é usado |
+| `studio/publish/service.py` | **wave 2** | `global_portfolio()` e `posts_at()` — **dependência direta serviço→serviço** (11 → 10), registrada nas Consequências do ADR-012; primeira do Studio |
+| `publish/log.json` | schema wave 1 | lida agora pelo `publish`, em todos os projetos (ADR-012) |
 | `animate/takes.json` | schema wave 1 | `shots[].takes[]` com `file`, `liked`, `duration` |
 | `audio/music.{wav,mp3}` | schema wave 1 | primeiro encontrado |
 
 **Garantias de compatibilidade**
-- Não toca arquivos únicos (`app.py`, `steps.py`, `conftest.py`, `requirements*.txt`, plugins de outras etapas); `META = {"id": "prospect", "n": 11, "title": "Prospecção", "aula": "001", "desc": ...}` bate com `SOON`.
+- Não toca arquivos únicos (`app.py`, `steps.py`, `conftest.py`, `requirements*.txt`) nem edita plugins de outras etapas. **Wave 2:** passou a *importar* `studio/publish/service.py` (só leitura pura); a direção segue a ordem do curso e não cria ciclo; `META = {"id": "prospect", "n": 11, "title": "Prospecção", "aula": "001", "desc": ...}` bate com `SOON`.
 - Leitura tolerante dos handoffs: campos ausentes em `takes.json` viram default (`liked = False`, `duration` via `probe`).
 - `leads.json` aditivo: leitores ignoram campos desconhecidos; ninguém além desta etapa lê o arquivo.
 - Nenhuma dependência nova em `requirements.txt`.
@@ -400,7 +427,7 @@ Limites: payload JSON ≤ 64 KB (campos de texto do lead ≤ 2.000 caracteres ca
 - Job de teaser: segundo `POST` durante `running` responde 409; ffmpeg ausente responde 409; falha do ffmpeg deixa `state = error` sem tocar `leads.json`; conclusão grava `teaser` e `status = "teaser_ready"`.
 - Sem `takes.json` ou sem `audio/music.*`, `POST teaser` responde 404 com a mensagem da etapa pendente.
 - `register_call` grava `call_at`, `call_note` e status `call_scheduled`/`call_done`; `call_at` inválido responde 422.
-- `GET pitch` cria `prospect/pitch.md` com as sete etapas na ordem (conceito, mood board, roteirização, direção criativa, produção, montagem, entrega), sem `R$` dentro da tabela, e com os quatro lembretes (50% no primeiro, 50/50, R$ 100 a 500, resultado e não IA).
+- `GET pitch` cria `prospect/pitch.md` com as sete etapas na ordem (conceito, mood board, roteirização, direção criativa, produção, montagem, entrega), ~~sem `R$` dentro da tabela~~ (**wave 2, 11.4:** a tabela passou a ter a coluna "Valor (R$)", o Total e o Total com 50 % off), e com os lembretes (50% no primeiro, 50/50, R$ 100 a 500, resultado e não IA).
 - `DELETE lead` remove a entrada e o arquivo de teaser.
 - `GET /api/steps` lista `prospect` com `status = "ready"`, `n = 11`, e `GET /steps/prospect/view.{html,js}` respondem 200 (validação dinâmica de `tests/test_steps_and_config.py`).
 - `ruff check studio tests` e `pytest` verdes; testes de ffmpeg pulam com `pytest.skip` quando `ffmpeg.available()` é False.
@@ -605,7 +632,7 @@ lista de leads e em `GET /prospect/leads` (`segments`).
 | Validação | `teaser_apos_resposta` | `fail` se existe teaser sem `replied` |
 | Validação | `pitch_valores` | `warn` quando a soma das etapas ≠ total |
 | Validação | `pitch_faixa` | `warn` fora de R$ 100–500 (aula 016) |
-| Validação | `followup` | `[extensão]` — `warn` quando respondeu há mais de 7 dias sem call |
+| Validação | `followup` | `[extensão]` — `warn` quando respondeu há mais de 7 dias sem call (conta a partir de `replied_at`; leads gravados antes desse campo caem no `sent_at`) |
 
 `leads.json` corrompido vira lista vazia dentro do guia (a tela nunca cai por causa dele).
 
@@ -623,3 +650,6 @@ lista de leads e em `GET /prospect/leads` (`segments`).
   continua sendo preservado; os números precisam ser legíveis pelo guia.
 - Leads continuam **por projeto**. O arquivo global de leads com `project_id` que a auditoria
   sugeriu como `[extensão]` ficou de fora desta wave (registrado no ADR-012).
+- `replied_at` (aditivo em `leads.json`) nasceu para a janela de 7 dias do follow-up: sem ele o
+  prazo seria contado a partir da DM, e a auditoria diz "≤ 7 dias **após `replied`**". Desmarcar a
+  resposta limpa o campo.

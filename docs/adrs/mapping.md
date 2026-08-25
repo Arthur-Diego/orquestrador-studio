@@ -499,3 +499,7 @@ Correções de fidelidade das etapas 9 (export), 10 (publish) e 11 (prospect), a
 
 **ADR nova: ADR-012** (PUBLISH) — portfólio global conta projetos distintos (obras), não arquivos
 do mesmo projeto; o gate da etapa 11 passa a ler o portfólio do aluno, não o do projeto do lead.
+
+> **Nota para a integração (W5):** este bloco e o da frente OS-018 (ADR-011, MUSIC) foram
+> apensados no fim deste arquivo em worktrees paralelas. O conflito de merge é textual e se
+> resolve mantendo os dois blocos; a numeração das ADRs não colide.

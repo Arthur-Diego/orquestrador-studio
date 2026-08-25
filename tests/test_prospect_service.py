@@ -192,9 +192,22 @@ def test_replied_exige_dm_enviada_e_pode_ser_desfeito(svc, root):
     with pytest.raises(ValueError):
         svc.mark_replied(root, lid)
     svc.mark_sent(root, lid)
-    assert svc.mark_replied(root, lid)["status"] == "replied"
+    respondeu = svc.mark_replied(root, lid)
+    assert respondeu["status"] == "replied" and respondeu["replied_at"], "data da resposta gravada"
     desfeito = svc.mark_replied(root, lid, False)
     assert desfeito["replied"] is False and desfeito["status"] == "dm_sent"
+    assert desfeito["replied_at"] is None, "desfazer a resposta limpa a data do follow-up"
+
+
+def test_gate_sobrevive_a_log_de_outro_projeto_estragado(svc, root):
+    """O gate varre todos os projetos: um log estragado em qualquer um não pode levantar."""
+    open_gate(root)
+    ruim = root.parent / "2026-08-ruim"
+    (ruim / "publish").mkdir(parents=True, exist_ok=True)
+    (ruim / "project.json").write_text(json.dumps({"id": "2026-08-ruim", "name": "Ruim"}), encoding="utf-8")
+    (ruim / "publish" / "log.json").write_text('["nao sou um post"]', encoding="utf-8")
+    g = svc.gate(root)
+    assert g["ok"] is True and g["published"] == 4, "o projeto estragado é ignorado, não conta nem explode"
 
 
 def test_call_registra_data_nota_e_status(svc, root):

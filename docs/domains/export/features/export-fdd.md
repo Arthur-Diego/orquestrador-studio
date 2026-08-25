@@ -1,4 +1,9 @@
-### FDD: export (Etapa 9 · Export e QA · aulas 007/014)
+### FDD: export (Etapa 9 · Export · aula 014; QA e thumb são `[extensão]`)
+
+> **Título e §1 corrigidos pela wave 2 (OS-019, auditoria 9.2).** A atribuição original "aulas
+> 007/014" estava errada: a aula 007 fala de formato de **imagem** no Midjourney ("vertical,
+> quadrado, widescreen"), não de export de vídeo. A escolha 16:9 / 9:16 pelo destino vem do
+> plano §1.4. Ver a seção "Wave 2 — fidelidade e guia" no fim deste FDD.
 
 Versão: 0.1.0
 Data: 2026-08-25
@@ -10,7 +15,7 @@ Documento gerado em modo batch: cada decisão auto-decidida está marcada `[auto
 
 ### 1. Contexto e motivação técnica
 
-A etapa 8 (`edit`) entrega um único `edit/master.mp4` 16:9. A aula 007 diz que vertical serve para Instagram/TikTok e 16:9 para YouTube; a aula 014 encerra com "publique mesmo que o primeiro fique ruim". A etapa 9 materializa isso: deriva os formatos por rede a partir do master, extrai uma thumb no tempo escolhido pelo usuário e escreve um checklist técnico (o que o ffprobe consegue medir), sem julgamento estético.
+A etapa 8 (`edit`) entrega um único `edit/master.mp4` 16:9. ~~A aula 007 diz que vertical serve para Instagram/TikTok e 16:9 para YouTube~~ — **corrigido na wave 2:** quem diz isso é o plano §1.4; a aula 007 trata de formato de imagem no Midjourney. A aula 014 encerra com "publique mesmo que o primeiro fique ruim". A etapa 9 materializa isso: deriva os formatos por rede a partir do master, extrai uma thumb no tempo escolhido pelo usuário e escreve um checklist técnico (o que o ffprobe consegue medir), sem julgamento estético.
 
 Encaixe no HLD `studio`: plugin `studio/etapas/export/` descoberto por `discover()` (`META.n = 9`, `aula = "014"`), serviço puro em `studio/export/service.py`, rotas sob `/api/projects/{pid}/export/...`, jobs longos via `studio/common/jobs.JobRegistry` (ADR-006), ffmpeg/ffprobe via `studio/common/ffmpeg` (estático em `~/.local/bin`), persistência em `projects/<pid>/export/` (ADR-003, pasta já criada por `create_project`). Higgsfield somente via CLI (ADR-002) e apenas como alternativa opcional paga.
 
@@ -47,9 +52,11 @@ Suposições e restrições:
 **Incluído**
 - Plugin `studio/etapas/export/` (`__init__.py` com META, `router.py`, `view.html`, `view.js`).
 - Serviço `studio/export/service.py`: `status`, `preview`, `start_render`, `job_status`, `make_thumb`, `qa_report`, `list_outputs`, `reframe_cost`, `start_reframe`.
-- Render local por ffmpeg dos três formatos, crop central fixo com preview.
-- Thumb por tempo.
-- QA técnico via ffprobe, gravado em `export/qa_report.md`.
+- Render local por ffmpeg dos três formatos, crop central fixo com preview. **[extensão]** o 1:1
+  (a aula não trata de formato de vídeo; 16:9 e 9:16 vêm do destino, plano §1.4).
+- Thumb por tempo. **[extensão]** — a aula 014 não pede capa (auditoria 9.1).
+- QA técnico via ffprobe, gravado em `export/qa_report.md`. **[extensão]** — a aula não ensina QA;
+  é ferramenta de entrega. Desde a wave 2, a única checagem bloqueante é `audio` (auditoria 9.5).
 - Opcional pago via CLI: `generate workflow reframe --video edit/master.mp4 --aspect-ratio 9:16|1:1`, só com `logged_in`, sempre com `cost` antes e `confirm()` na UI; resultado baixado por URL para o mesmo nome de arquivo do formato (substitui o render local). `[auto-aceito: reframe entra como alternativa de ferramenta (gate 3 do CLAUDE.md, regra comum da wave "alternativa paga via CLI só quando logado, sempre com cost antes"); ADR-004 lista reframe como inferência, registrado como pendência para o lote]`
 - Testes `tests/test_export_service.py` e `tests/test_export_api.py`.
 
@@ -85,7 +92,9 @@ Filtros ffmpeg por formato (crop central fixo; `iw`, `ih` do master):
 Flags comuns nos re-encodes: `-c:v libx264 -crf 18 -preset medium -pix_fmt yuv420p -c:a copy -movflags +faststart -y`. `[auto-aceito: crf 18 e libx264 seguem o comando do master no plano §4.2; áudio copiado em vez de re-encodado para preservar o mix da etapa 8]`
 
 **Fluxos alternativos e exceções**
-- Master sem áudio: render continua; o QA marca "áudio presente: não" como `ATENCAO` em todos os arquivos (a aula 013 manda ter trilha).
+- Master sem áudio: render continua; ~~o QA marca "áudio presente: não" como `ATENCAO`~~ —
+  **wave 2 (9.5): o veredito é `BLOQUEIO`** e a resposta traz `blocking: true`, porque a trilha da
+  etapa 7 é obrigatória e o master da etapa 8 passou a exigi-la (frente OS-018).
 - Master com proporção diferente de 16:9 (ex.: fixture 320x240): os filtros de crop funcionam igual (usam `ih`); o 16x9 cai no caminho scale+pad.
 - ffmpeg indisponível (`ffmpeg.available()` False): `GET /status` devolve `ffmpeg: false`; qualquer render/preview/thumb/qa responde 409 "ffmpeg não disponível".
 - Job em andamento: novo `POST /render` responde 409 "job em andamento".
@@ -242,7 +251,8 @@ def _safe_probe(path: Path) -> dict                              # _probe_full q
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/export/qa`
 - Método: POST
-- Semântica de status: 200 relatório gravado (mesmo com itens `ATENCAO`); 404 master ausente; 409 ffmpeg/ffprobe indisponível.
+- Semântica de status: 200 relatório gravado (mesmo com itens `ATENCAO` ou `BLOQUEIO`); 404 master ausente; 409 ffmpeg/ffprobe indisponível.
+- **Wave 2 (9.5):** a resposta traz `blocking: bool` no topo; `verdict` ∈ `OK | ATENCAO | BLOQUEIO`; o item de checagem ganha `blocking: true` quando a falha impede publicar (hoje só `audio`).
 - Síncrono (ffprobe leva menos de 1 s por arquivo).
 
 **Exemplo de resposta**
@@ -250,12 +260,19 @@ def _safe_probe(path: Path) -> dict                              # _probe_full q
 {
   "file": "export/qa_report.md",
   "generated": "2026-08-25T14:02:11",
+  "blocking": false,
   "items": [
-    {"file": "edit/master.mp4", "duration": 30.4, "width": 1920, "height": 1080, "fps": 30.0, "vcodec": "h264", "acodec": "aac", "has_audio": true, "size": 14210344, "checks": [{"name": "audio", "ok": true}, {"name": "duration", "ok": true}], "verdict": "OK"},
+    {"file": "edit/master.mp4", "duration": 30.4, "width": 1920, "height": 1080, "fps": 30.0, "vcodec": "h264", "acodec": "aac", "has_audio": true, "size": 14210344, "checks": [{"name": "audio", "ok": true, "blocking": true}, {"name": "duration", "ok": true}], "verdict": "OK"},
     {"file": "export/9x16.mp4", "duration": 30.4, "width": 1080, "height": 1920, "fps": 30.0, "vcodec": "h264", "acodec": "aac", "has_audio": true, "size": 8123456, "checks": [{"name": "exists", "ok": true}, {"name": "resolution", "ok": true, "expected": "1080x1920"}, {"name": "duration", "ok": true, "expected": 30.4, "tolerance": 0.5}, {"name": "vcodec", "ok": true, "expected": "h264"}, {"name": "audio", "ok": true}, {"name": "size", "ok": true}], "verdict": "OK"},
     {"file": "export/1x1.mp4", "exists": false, "checks": [{"name": "exists", "ok": false}], "verdict": "ATENCAO"}
   ]
 }
+```
+Master mudo (wave 2): `blocking: true` no topo e o item vira
+```json
+{"file": "edit/master.mp4", "has_audio": false,
+ "checks": [{"name": "audio", "ok": false, "blocking": true}, {"name": "duration", "ok": true}],
+ "verdict": "BLOQUEIO"}
 ```
 
 Formato de `export/qa_report.md` (pt-BR, determinístico, sem julgamento estético):
@@ -412,7 +429,7 @@ Invariantes:
 - `POST /render {formats:["16x9"]}` produz `export/16x9.mp4` 1920x1080; com master 1920x1080 H.264 o log contém `copy`.
 - `POST /preview {format:"9x16", t:1}` grava `export/previews/9x16.jpg` com proporção 9:16 (tolerância de 1 px) e devolve o retângulo de crop central (`x == (iw - w) // 2`).
 - `POST /thumb {t:1.0}` grava `export/thumb.jpg` com a resolução do master; `t` maior que a duração responde 422; `t` negativo responde 422.
-- `POST /qa` grava `export/qa_report.md` com uma linha por arquivo (master, 3 formatos, thumb), veredito `ATENCAO` para arquivo ausente e para master sem áudio, `OK` quando todas as checagens passam; duas chamadas seguidas geram o mesmo conteúdo exceto a linha `Gerado`.
+- `POST /qa` grava `export/qa_report.md` com uma linha por arquivo (master, 3 formatos, thumb), veredito `ATENCAO` para arquivo ausente, ~~e para master sem áudio~~ **`BLOQUEIO` para master sem áudio (wave 2, 9.5)**, `OK` quando todas as checagens passam; duas chamadas seguidas geram o mesmo conteúdo exceto a linha `Gerado`.
 - O relatório não contém nenhuma palavra de avaliação estética (teste verifica ausência de "bonito", "feio", "ritmo", "hook", "legenda").
 - `GET /status` com projeto sem master responde 200 com `master.exists=false`; `POST /render` no mesmo estado responde 404.
 - Segundo `POST /render` com job `running` (gate por `threading.Event`) responde 409.
@@ -582,7 +599,7 @@ aula 007. Passam a ficar explicitamente marcados `[extensão]` no código, na te
 
 | Item | Marca | Onde |
 | --- | --- | --- |
-| Formato 1:1 (feed) | `[extensão]` | `view.html` §2, `guide.py` (`formato_1x1`), `FORMATS` |
+| Formato 1:1 (feed) | `[extensão]` | `view.html` (lede), `view.js` (`LABELS`), `guide.py` (`formato_1x1`) |
 | Thumb (`export/thumb.jpg`) | `[extensão]` | `view.html` §3, `guide.py` (`thumb`) |
 | QA técnico (`export/qa_report.md`) | `[extensão]` | `view.html` §4, `guide.py` (`qa`) |
 | Reframe pelo CLI | `[extensão]` (já era opcional) | `view.html` §5 |
@@ -629,3 +646,8 @@ timeline, a validação fica `todo` em vez de mentir.
   fonte disponível para um hook puro. Divergência entre timeline e arquivo final é assunto do QA.
 - O formato cobrado como **saída** é só o da rede-alvo. Os demais são validações opcionais — a
   aula manda publicar, não manda publicar em toda rede.
+- **Auto-aceite que merece revisão no lote (candidato a ADR):** o veredito `BLOQUEIO` cria, numa
+  etapa cujo lema é "publique mesmo imperfeito", uma falha que **não** é atenção. A justificativa é
+  de coerência interna (o master da etapa 8 passou a exigir trilha, frente OS-018), não da aula —
+  e o acoplamento entre as duas etapas é justamente o que precisa ser confirmado na retro. Se a
+  decisão 8.2 for revertida, este veredito volta a ser `ATENCAO`.
