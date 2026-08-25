@@ -1,6 +1,6 @@
 ### HLD: mood (etapa 2 — mood board, aula 009)
 
-Versão: 1.0
+Versão: 1.1 (prompter, OS-012)
 Data: 2026-08-25
 Responsável: Arthur Diego (pré-preenchido pelo raio-X; aprovado em lote no brownfield)
 
@@ -42,7 +42,8 @@ Padrões adotados
 ### Componentes e responsabilidades
 | Componente | Responsabilidades | Dependências |
 | ----------- | ----------------- | ------------ |
-| `suggest_prompts` | prompt de vibe a partir de `project.json` + referências selecionadas (filtra alt "Salvar Pins"); `variation` troca a estilização | `refs/candidates.json` |
+| `suggest_prompts` | template fixo de prompt de vibe (fallback sem Claude); `variation` troca a estilização | `refs/candidates.json` |
+| `vibe_*` / `generate_prompt` / `prompt_history` | imagens de vibe em `mood/vibe/` (≤ 4 escolhidas); o "bot" da aula via `common/prompter.py` (Claude CLI): modo `images` (imagens + instrução) ou `brief`; regras da aula 009 impostas (`enforce_mood_rules`); histórico em `mood/prompts.json` | `common/prompter`, `common/ingest` |
 | `import_upload` / `import_downloads` / `import_history` | ingestão com dedupe, thumbnails, metadados de origem | Pillow, `higgsfield.history_images` |
 | `start_generate` / `job_status` | geração paga via CLI em thread, download das URLs, registro em `jobs/mood_<id>.json` | `higgsfield.generate` |
 | `select` | copia escolhidas, limita a 8, gera paleta e `mood.md` | Pillow |

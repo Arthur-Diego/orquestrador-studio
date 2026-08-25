@@ -6,26 +6,61 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h3>1. Prompt de vibe</h3>
+    <h3>1. Achar a vibe</h3>
     <div class="row wrap">
-      <select id="moodModel"><option value="nano_banana_2">Nano Banana Pro (UI: ilimitado 2K no Ultra)</option><option value="gpt_image_2">GPT Image 2 (mais fiel ao prompt)</option></select>
-      <button id="btnMoodPrompts" class="ghost" title="Mesma vibe, outra estilização — como ajustar o Stylization e regerar o grid">Nova variação</button>
-      <button id="btnCopyAll" class="ghost">Copiar</button>
+      <span id="claudeState" class="chip mode">bot: ?</span>
+      <span id="vibeCount" class="chip mode">0 imagens · 0 escolhidas (máx. 4)</span>
     </div>
+  </div>
+  <p class="fine">Aula 009: a vibe é <b>encontrada</b>, não descrita — uma imagem cujo sentimento você gosta (não precisa ter a ver com o produto). Traga 1 a 4 imagens de vibe (Pinterest, Explore do Midjourney, frame de filme) e marque as que definem a identidade visual.</p>
+  <div class="row wrap">
+    <label class="drop" id="vibeDrop">Arraste imagens de vibe aqui ou <input id="vibeUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
+    <div class="col">
+      <button id="btnVibeDownloads">Importar da pasta Downloads</button>
+      <label class="inline">últimos <input id="vibeMinutes" type="number" value="120" min="5"> min</label>
+    </div>
+  </div>
+  <div id="vibeGallery" class="gallery" style="margin-top:12px"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>2. Prompt de vibe (o "bot" da aula)</h3>
+    <div class="row wrap">
+      <select id="moodMode">
+        <option value="images">A partir das imagens de vibe + instrução (Claude)</option>
+        <option value="brief">Brief profissional, sem imagem (Claude)</option>
+        <option value="template">Template fixo (sem Claude)</option>
+      </select>
+      <select id="moodModel"><option value="nano_banana_2">Nano Banana Pro (UI: ilimitado 2K no Ultra)</option><option value="gpt_image_2">GPT Image 2 (mais fiel ao prompt)</option></select>
+    </div>
+  </div>
+  <div id="briefFields" class="row wrap">
+    <input id="bfPurpose" placeholder="propósito (ex.: campanha de energético para Reels)" style="flex:1;min-width:220px">
+    <input id="bfTone" placeholder="tom emocional (ex.: épico, frio, silencioso)" style="flex:1;min-width:200px">
+    <input id="bfRef" placeholder="referência estética (filme, fotógrafo, campanha)" style="flex:1;min-width:220px">
+  </div>
+  <textarea id="moodInstruction" rows="2" placeholder="sua instrução para o bot (ex.: bastante neon e neve, sem pessoas, mais dramático)" style="margin-top:8px"></textarea>
+  <div class="row wrap" style="margin-top:8px">
+    <button id="btnMoodGenPrompt" class="primary">Gerar prompt</button>
+    <button id="btnMoodPrompts" class="ghost" title="Só no modo template: mesma vibe, outra estilização">Nova variação (template)</button>
+    <button id="btnCopyAll" class="ghost">Copiar prompt</button>
+    <span id="promptStatus" class="fine mono"></span>
   </div>
   <p id="moodHint" class="fine"></p>
   <div id="promptList" class="prompts"></div>
+  <details style="margin-top:8px"><summary class="fine">Histórico de prompts gerados</summary><div id="promptHistory" class="log mono"></div></details>
   <div class="row wrap cli">
     <span id="hfState" class="chip mode">CLI: ?</span>
     <label class="inline">variações por prompt <input id="moodCount" type="number" value="2" min="1" max="4"></label>
     <label class="inline"><input id="moodUseRefs" type="checkbox" checked> usar referências como imagem de referência</label>
-    <button id="btnMoodGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
+    <button id="btnMoodGen" class="primary" disabled>Gerar imagens via CLI (gasta créditos)</button>
     <span id="moodGenLog" class="mono fine"></span>
   </div>
 </section>
 
 <section class="panel">
-  <div class="panel-head"><h3>2. Importar o que você gerou na UI</h3></div>
+  <div class="panel-head"><h3>3. Importar o grid que você gerou na UI</h3></div>
   <div class="row wrap">
     <label class="drop" id="drop">Arraste imagens aqui ou <input id="upload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col">
@@ -42,7 +77,7 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h3>3. Escolher o mood</h3>
+    <h3>4. Escolher o mood</h3>
     <div class="row wrap">
       <input id="moodNote" placeholder="a vibe em 3 palavras (ex.: neve, neon, silêncio)">
       <span id="moodCounts" class="chip mode">0 candidatas · 0 escolhidas</span>
