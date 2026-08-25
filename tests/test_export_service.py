@@ -242,15 +242,21 @@ def test_qa_report_is_deterministic(svc, studio_env, project):
     assert strip(first) == strip(second)
 
 
-def test_qa_flags_a_master_without_audio(svc, studio_env, project):
+def test_qa_bloqueia_master_sem_audio(svc, studio_env, project):
+    """9.5: a trilha da etapa 7 é obrigatória — sem áudio o QA bloqueia, não avisa."""
     _need_ffmpeg(svc)
     root = _root(studio_env, project)
     svc.ff.run(["-f", "lavfi", "-i", "testsrc=size=320x240:rate=30", "-t", "1", "-c:v", "libx264",
                 "-pix_fmt", "yuv420p", str(root / "edit" / "master.mp4")])
     r = svc.qa_report(project)
     master = next(i for i in r["items"] if i["file"] == "edit/master.mp4")
-    assert master["has_audio"] is False and master["verdict"] == "ATENCAO"
-    assert "áudio ausente" in (root / "export" / "qa_report.md").read_text()
+    assert master["has_audio"] is False and master["verdict"] == "BLOQUEIO"
+    assert r["blocking"] is True
+    assert next(c for c in master["checks"] if c["name"] == "audio")["blocking"] is True
+    md = (root / "export" / "qa_report.md").read_text()
+    assert "áudio ausente — BLOQUEIO" in md
+    ausente = next(i for i in r["items"] if i["file"] == "export/9x16.mp4")
+    assert ausente["verdict"] == "ATENCAO", "arquivo ainda não renderizado é atenção, não bloqueio"
 
 
 # ---------- listagem (contrato consumido pela etapa 10) ----------

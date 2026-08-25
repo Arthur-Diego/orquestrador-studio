@@ -1,9 +1,12 @@
-"""Etapa 9 — Export e QA (aulas 007/014).
+"""Etapa 9 — Export (aula 014); QA e thumb são `[extensão]`.
 
-A etapa 8 entrega um único `edit/master.mp4` 16:9. A aula 007 diz que vertical serve para
-Instagram/TikTok e 16:9 para YouTube; a aula 014 encerra com "publique mesmo que o primeiro
-fique ruim". Aqui o master vira os formatos por rede (crop central), uma thumb no tempo
-escolhido e um checklist **técnico** — o que o ffprobe mede, sem julgar gosto.
+A etapa 8 entrega um único `edit/master.mp4` 16:9. A aula 014 termina em *"publique o seu
+trabalho, mesmo imperfeito"* — ela não ensina QA nem export. A escolha do formato pelo destino
+(9:16 para Reels/TikTok, 16:9 para YouTube) vem do plano §1.4; a aula 007 só fala de formato de
+**imagem** no Midjourney. O 1:1 é opcional `[extensão]`.
+
+Aqui o master vira os formatos por rede (crop central), uma thumb no tempo escolhido `[extensão]`
+e um checklist **técnico** `[extensão]` — o que o ffprobe mede, sem julgar gosto.
 
 Caminho canônico: ffmpeg local. O `reframe` do CLI da Higgsfield é alternativa opcional paga
 (mesma saída, ferramenta diferente — gate 3 do CLAUDE.md), nunca acionada automaticamente.
@@ -24,7 +27,7 @@ from ..refs.service import project_dir
 
 log = logging.getLogger("studio.export")
 
-# Formatos por rede (aula 007): 16:9 YouTube, 9:16 Instagram/TikTok, 1:1 feed.
+# Formatos por rede (plano §1.4): 16:9 YouTube, 9:16 Instagram/TikTok. 1:1 é [extensão].
 FORMATS = {"16x9": (1920, 1080), "9x16": (1080, 1920), "1x1": (1080, 1080)}
 MASTER = "edit/master.mp4"
 THUMB = "export/thumb.jpg"
@@ -326,12 +329,20 @@ def _human(size: int) -> str:
     return f"{size} B"
 
 
-def _check(name: str, ok: bool, **extra) -> dict:
-    return {"name": name, "ok": bool(ok), **extra}
+def _check(name: str, ok: bool, blocking: bool = False, **extra) -> dict:
+    """`blocking=True` marca a checagem que não é questão de gosto: sem ela não dá para publicar."""
+    item = {"name": name, "ok": bool(ok), **extra}
+    if blocking:
+        item["blocking"] = True
+    return item
 
 
 def _verdict(checks: list[dict]) -> str:
-    return "OK" if all(c["ok"] for c in checks) else "ATENCAO"
+    """`BLOQUEIO` quando falha uma checagem bloqueante (hoje: áudio); `ATENCAO` no resto."""
+    falhas = [c for c in checks if not c["ok"]]
+    if not falhas:
+        return "OK"
+    return "BLOQUEIO" if any(c.get("blocking") for c in falhas) else "ATENCAO"
 
 
 def qa_report(pid: str) -> dict:
@@ -343,7 +354,8 @@ def qa_report(pid: str) -> dict:
     edir = root / "export"
     items: list[dict] = []
 
-    mchecks = [_check("audio", m["has_audio"]), _check("duration", m["duration"] > 0)]
+    # 9.5: a trilha é obrigatória desde a etapa 7; master mudo não é "atenção", é bloqueio.
+    mchecks = [_check("audio", m["has_audio"], blocking=True), _check("duration", m["duration"] > 0)]
     items.append({"file": MASTER, "exists": True, "duration": m["duration"], "width": m["width"], "height": m["height"],
                   "fps": m["fps"], "vcodec": m["vcodec"], "acodec": m["acodec"], "has_audio": m["has_audio"],
                   "size": m["size"], "checks": mchecks, "verdict": _verdict(mchecks)})
@@ -362,7 +374,7 @@ def qa_report(pid: str) -> dict:
             _check("duration", abs(p["duration"] - m["duration"]) <= DURATION_TOLERANCE,
                    expected=round(m["duration"], 2), tolerance=DURATION_TOLERANCE),
             _check("vcodec", p["vcodec"] == "h264", expected="h264"),
-            _check("audio", p["has_audio"] == m["has_audio"] and p["has_audio"] is True),
+            _check("audio", p["has_audio"] == m["has_audio"] and p["has_audio"] is True, blocking=True),
             _check("size", p["size"] > 0),
         ]
         items.append({"file": rel, "format": fmt, "exists": True, "duration": p["duration"], "width": p["width"],
@@ -382,9 +394,11 @@ def qa_report(pid: str) -> dict:
 
     generated = datetime.now().replace(microsecond=0).isoformat()
     _export_dir(root).joinpath("qa_report.md").write_text(_qa_markdown(pid, generated, items))
-    log.info("export qa pid=%s itens=%d atencoes=%d ok=True", pid, len(items),
-             sum(1 for i in items if i["verdict"] != "OK"))
-    return {"file": QA_REPORT, "generated": generated, "items": items}
+    blocking = any(i["verdict"] == "BLOQUEIO" for i in items)
+    log.info("export qa pid=%s itens=%d atencoes=%d bloqueios=%d ok=True", pid, len(items),
+             sum(1 for i in items if i["verdict"] == "ATENCAO"),
+             sum(1 for i in items if i["verdict"] == "BLOQUEIO"))
+    return {"file": QA_REPORT, "generated": generated, "items": items, "blocking": blocking}
 
 
 _REASONS = {
@@ -392,7 +406,7 @@ _REASONS = {
     "resolution": "resolução diferente da esperada",
     "duration": "duração fora da tolerância de 0,5 s em relação ao master",
     "vcodec": "codec de vídeo diferente de h264",
-    "audio": "áudio ausente (a trilha da etapa 7 precisa estar no arquivo)",
+    "audio": "áudio ausente — BLOQUEIO: a trilha da etapa 7 precisa estar no arquivo",
     "size": "arquivo vazio",
 }
 
@@ -402,8 +416,9 @@ def _qa_markdown(pid: str, generated: str, items: list[dict]) -> str:
         "# QA técnico do export",
         "",
         f"Projeto: {pid} · Gerado: {generated} · Fonte: {MASTER}",
-        "Checklist técnico do que o ffprobe mede: duração, resolução, fps, codec e presença de áudio.",
+        "Checklist técnico [extensão] do que o ffprobe mede: duração, resolução, fps, codec e áudio.",
         "Não avalia gosto. Aula 014: publique mesmo que o primeiro fique fraco.",
+        "Só uma checagem bloqueia: áudio ausente (a trilha da etapa 7 é obrigatória).",
         "",
         "| Arquivo | Duração (s) | Resolução | fps | Vídeo | Áudio | Áudio presente | Tamanho | Veredito |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
