@@ -1,0 +1,322 @@
+{
+  "info": {
+    "name": "Orquestrador Studio — shots (Etapa 5, OS-005)",
+    "description": "Contratos públicos da seção 5 do FDD `docs/domains/shots/features/shots-fdd.md`.\n\nPré-requisitos para rodar: Studio no ar (`PORT=8769 ./run.sh`) e um projeto cujo `storyboard/scenes.json` já exista (etapa 4) com `cena01`, além de `base/base_final.png` (etapa 3). Ajuste as variáveis `baseUrl` e `pid`.\n\nAs rotas multipart (`import/upload`, `base/upload`, `product/ref`) exigem um arquivo local e por isso ficam desabilitadas por padrão no runner: preencha `formdata.src` antes de rodar.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://127.0.0.1:8769"},
+    {"key": "pid", "value": "2026-08-gelo-zero"},
+    {"key": "scene", "value": "cena01"},
+    {"key": "candidateId", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "Catálogo — etapa 5 pronta",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/steps"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const shots = pm.response.json().find(s => s.id === 'shots');",
+        "pm.test('shots ready, n=5, aula 011', () => {",
+        "  pm.expect(shots.status).to.eql('ready');",
+        "  pm.expect(shots.n).to.eql(5);",
+        "  pm.expect(shots.aula).to.eql('011');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "Listar cenas com status, paleta e aviso",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('aviso de cores e luz da aula 011', () => pm.expect(b.warning).to.include('ANTES do multishot'));",
+        "pm.test('paleta e cenas presentes', () => {",
+        "  pm.expect(b.palette).to.have.property('colors');",
+        "  pm.expect(b.scenes).to.be.an('array').that.is.not.empty;",
+        "  pm.expect(b.product_scene).to.have.property('ref_ready');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "Projeto inexistente é 404",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/nao-existe/shots/scenes"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('404', () => pm.response.to.have.status(404));"
+      ]}}]
+    },
+    {
+      "name": "Preparar base da cena",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"source\": \"storyboard\"}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/base"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('base gravada em shots/<cena>/base.png', () => pm.expect(b.base).to.eql(`shots/${pm.variables.get('scene')}/base.png`));",
+        "pm.test('origem declarada', () => pm.expect(['storyboard', 'base', 'upload']).to.include(b.source));"
+      ]}}]
+    },
+    {
+      "name": "Cena desconhecida é 404",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/cena99/base"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('404', () => pm.response.to.have.status(404));"
+      ]}}]
+    },
+    {
+      "name": "Cena fora do padrão cenaNN é 422",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/nao-cena/base"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "Prompt de ângulo (aula 011)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/prompts?kind=angle&subject=the astronaut&scale=close&realism=true&lens=35&aperture=2.8&angle=eye-level",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "projects", "{{pid}}", "shots", "scenes", "{{scene}}", "prompts"],
+          "query": [
+            {"key": "kind", "value": "angle"},
+            {"key": "subject", "value": "the astronaut"},
+            {"key": "scale", "value": "close"},
+            {"key": "realism", "value": "true"},
+            {"key": "lens", "value": "35"},
+            {"key": "aperture", "value": "2.8"},
+            {"key": "angle", "value": "eye-level"}
+          ]
+        }
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const t = pm.response.json().prompts[0].text;",
+        "pm.test('fórmula da aula', () => pm.expect(t).to.include('Bring me another point of view of this image'));",
+        "pm.test('foco pedido', () => pm.expect(t).to.include('close-up on the astronaut'));",
+        "pm.test('bloco de câmera no lugar do Cinema Studio', () => pm.expect(t).to.include('Shot on RED Komodo 6K, 35mm, f/2.8, close shot, eye-level angle'));"
+      ]}}]
+    },
+    {
+      "name": "Prompt de ângulo sem bloco de câmera",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/prompts?kind=angle&realism=false",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "projects", "{{pid}}", "shots", "scenes", "{{scene}}", "prompts"],
+          "query": [{"key": "kind", "value": "angle"}, {"key": "realism", "value": "false"}]
+        }
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('sem bloco de câmera', () => pm.expect(pm.response.json().prompts[0].text).to.not.include('RED Komodo'));"
+      ]}}]
+    },
+    {
+      "name": "Prompt de edição numerada (aula 011)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/prompts?kind=edit&edits=Make the helmet visor tinted so the face cannot be seen&edits=Remove the can in the background",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "projects", "{{pid}}", "shots", "scenes", "{{scene}}", "prompts"],
+          "query": [
+            {"key": "kind", "value": "edit"},
+            {"key": "edits", "value": "Make the helmet visor tinted so the face cannot be seen"},
+            {"key": "edits", "value": "Remove the can in the background"}
+          ]
+        }
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('um prompt só (uma rodada por vez)', () => pm.expect(b.prompts).to.have.lengthOf(1));",
+        "const t = b.prompts[0].text;",
+        "pm.test('instruções numeradas', () => { pm.expect(t).to.include('1. Make the helmet visor tinted'); pm.expect(t).to.include('2. Remove the can in the background'); });",
+        "pm.test('fecha com keep everything else identical', () => pm.expect(t).to.have.string('Keep everything else identical, realistic.'));"
+      ]}}]
+    },
+    {
+      "name": "kind=edit sem edits é 422",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/prompts?kind=edit",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "projects", "{{pid}}", "shots", "scenes", "{{scene}}", "prompts"],
+          "query": [{"key": "kind", "value": "edit"}]
+        }
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "Importar por upload (multipart — preencha src para importar de verdade)",
+      "request": {
+        "method": "POST",
+        "body": {"mode": "formdata", "formdata": [
+          {"key": "files", "type": "file", "src": ""},
+          {"key": "prompt", "type": "text", "value": "Bring me another point of view of this image."}
+        ]},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/import/upload"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 com arquivo, 422 sem arquivo no formdata', () => pm.expect([200, 422]).to.include(pm.response.code));",
+        "if (pm.response.code === 200) pm.test('added presente', () => pm.expect(pm.response.json()).to.have.property('added'));"
+      ]}}]
+    },
+    {
+      "name": "Importar da pasta Downloads",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"folder\": null, \"since_minutes\": 120}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/import/downloads"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 (importou) ou 404 (pasta ausente)', () => pm.expect([200, 404]).to.include(pm.response.code));",
+        "if (pm.response.code === 200) pm.test('contadores do import', () => { const b = pm.response.json(); pm.expect(b).to.have.property('added'); pm.expect(b).to.have.property('scanned'); });"
+      ]}}]
+    },
+    {
+      "name": "Pasta de Downloads padrão",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/shots/downloads-folder"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('folder e exists', () => { const b = pm.response.json(); pm.expect(b).to.have.property('folder'); pm.expect(b.exists).to.be.a('boolean'); });"
+      ]}}]
+    },
+    {
+      "name": "Listar candidatos da cena",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/candidates"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('base e lista de candidatos', () => { pm.expect(b.base).to.include('base.png'); pm.expect(b.candidates).to.be.an('array'); });",
+        "if (b.candidates.length) {",
+        "  pm.collectionVariables.set('candidateId', b.candidates[0].id);",
+        "  pm.test('file relativo à raiz do projeto', () => pm.expect(b.candidates[0].file).to.include('candidates/'));",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "Status do job",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/shots/job"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('estado conhecido', () => pm.expect(['idle', 'running', 'done', 'error']).to.include(pm.response.json().state));"
+      ]}}]
+    },
+    {
+      "name": "Custo via CLI (409 sem CLI logado)",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"model\": \"nano_banana_2\", \"prompts\": [\"Bring me another point of view of this image.\"], \"count\": 4, \"resolution\": \"2k\"}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/cost"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 com CLI logado, 409 sem CLI', () => pm.expect([200, 409]).to.include(pm.response.code));",
+        "if (pm.response.code === 200) pm.test('per_prompt e total', () => { const b = pm.response.json(); pm.expect(b).to.have.property('per_prompt'); pm.expect(b).to.have.property('total'); });"
+      ]}}]
+    },
+    {
+      "name": "Geração via CLI (gasta créditos — 409 sem CLI)",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"model\": \"nano_banana_2\", \"prompts\": [\"Bring me another point of view of this image.\"], \"count\": 4, \"resolution\": \"2k\"}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/generate"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 (job iniciado) ou 409 (sem CLI / job em andamento)', () => pm.expect([200, 409]).to.include(pm.response.code));",
+        "if (pm.response.code === 200) pm.test('job running', () => pm.expect(pm.response.json().state).to.eql('running'));"
+      ]}}]
+    },
+    {
+      "name": "Selecionar e ordenar shots da cena",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"shots\": [{\"id\": \"{{candidateId}}\", \"upscaled\": false}]}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/select"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 com candidato válido, 422 sem candidato importado', () => pm.expect([200, 422]).to.include(pm.response.code));",
+        "if (pm.response.code === 200) {",
+        "  const b = pm.response.json();",
+        "  pm.test('shot01_final.png na ordem 1', () => { pm.expect(b.shots[0].id).to.eql('shot01'); pm.expect(b.shots[0].order).to.eql(1); pm.expect(b.shots[0].file).to.include('shot01_final.png'); });",
+        "  pm.test('storyboard reescrito', () => pm.expect(b.storyboard).to.eql('shots/storyboard.json'));",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "Candidato inexistente na seleção é 422",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"shots\": [{\"id\": \"naoexiste000\"}]}"},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/scenes/{{scene}}/select"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "Prompts da cena do produto (aula 013)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/shots/product/prompts"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 com ref.png, 409 sem ref.png', () => pm.expect([200, 409]).to.include(pm.response.code));",
+        "if (pm.response.code === 200) {",
+        "  const b = pm.response.json();",
+        "  pm.test('imagem 2 é a base da campanha', () => pm.expect(b.image_references[1]).to.eql('base/base_final.png'));",
+        "  pm.test('instrução 1: trocar a lata', () => pm.expect(b.prompts[0].text).to.include('Replace the can in image 1 with the can from image 2'));",
+        "  pm.test('instrução 2: congelar tudo ao redor', () => pm.expect(b.prompts[1].text).to.include('make everything around it frozen'));",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "Referência da cena do produto (multipart — preencha src para enviar de verdade)",
+      "request": {
+        "method": "POST",
+        "body": {"mode": "formdata", "formdata": [{"key": "file", "type": "file", "src": ""}]},
+        "url": "{{baseUrl}}/api/projects/{{pid}}/shots/product/ref"
+      },
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 com imagem válida, 409 sem base_final, 422 sem arquivo ou conteúdo inválido', () => pm.expect([200, 409, 422]).to.include(pm.response.code));"
+      ]}}]
+    },
+    {
+      "name": "Storyboard final da etapa",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/shots/storyboard"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 após alguma seleção, 404 antes', () => pm.expect([200, 404]).to.include(pm.response.code));",
+        "if (pm.response.code === 200) {",
+        "  const b = pm.response.json();",
+        "  pm.test('schema da wave-1 lido por animate', () => {",
+        "    pm.expect(b).to.have.property('scenes');",
+        "    pm.expect(b).to.have.property('product_scene');",
+        "    b.scenes.forEach(s => { pm.expect(s).to.have.property('id'); pm.expect(s).to.have.property('base'); pm.expect(s.shots).to.be.an('array');",
+        "      s.shots.forEach(sh => ['id', 'file', 'order', 'prompt'].forEach(k => pm.expect(sh).to.have.property(k))); });",
+        "  });",
+        "}"
+      ]}}]
+    }
+  ]
+}
