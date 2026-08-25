@@ -1,13 +1,16 @@
-// Studio.ui — componentes compartilhados das telas de etapa (wave 2, preparo).
+// Studio.ui — componentes compartilhados das telas de etapa (wave 2: preparo + shell OS-013).
 //
 // Carregado ANTES do app.js: cria `window.Studio` se ainda não existir e pendura `ui` nele.
 // Cada plugin usa estas funções em vez de recopiar `esc`, chip do CLI, drag&drop, upload,
-// confirmação de custo e polling — que hoje vivem duplicados em 7 views.
+// confirmação de custo e polling — que antes viviam duplicados em 7 views.
 //
 // Contrato de tela (wave 2): todo `view.html` começa com `<header class="stephead">` seguido de
 // `<section id="guide" class="guide"></section>`; o `view.js` chama `Studio.ui.renderGuide("<id>")`
 // em `onProject()` e depois de cada ação que muda artefatos, e devolve `destroy()` parando os
 // polls (`app.js` chama `destroy()` ao trocar de tela).
+//
+// Regra de compatibilidade (OS-013): esta API é consumida pelos 11 plugins — dá para ESTENDER,
+// nunca remover nem renomear função existente.
 window.Studio = window.Studio || {};
 
 window.Studio.ui = {
@@ -18,7 +21,16 @@ window.Studio.ui = {
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   },
 
-  /** HTML de um chip. `kind`: "ok" | "warn" | "mode" (default) — classes já existentes no CSS. */
+  /** `0.42 → "42%"` (aceita também 42 quando o valor já vem em porcentagem). */
+  fmtPct(x) {
+    const v = Number(x) || 0;
+    return `${Math.round(v <= 1 ? v * 100 : v)}%`;
+  },
+
+  /**
+   * HTML de um chip. `kind`: "ok" | "done" | "warn" | "fail" | "blocked" | "todo" | "info" |
+   * "in_progress" | "unknown" | "mode" (default). Todos existem em style.css.
+   */
   chip(text, kind = "mode") {
     return `<span class="chip ${this.esc(kind)}">${this.esc(text)}</span>`;
   },
@@ -117,45 +129,118 @@ window.Studio.ui = {
     return { stop() { live = false; clearTimeout(timer); } };
   },
 
+  // ---------- modal ----------
+  /**
+   * Modal acessível: foco preso dentro do diálogo, `Esc` e clique no fundo fecham, o foco volta
+   * para quem abriu. `opts = {title, subtitle, html, wide}`. Devolve `{el, close()}` — quem
+   * chama liga os botões pelo `el.querySelector(...)`.
+   */
+  modal({ title, subtitle = "", html = "", onClose } = {}) {
+    const prev = document.activeElement;
+    const back = document.createElement("div");
+    back.className = "modal-backdrop";
+    back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="${this.esc(title)}">
+      <div class="modal-head">
+        <div>
+          <h3>${this.esc(title)}</h3>
+          ${subtitle ? `<p class="sub">${this.esc(subtitle)}</p>` : ""}
+        </div>
+        <button class="modal-close" type="button" title="Fechar" aria-label="Fechar">✕</button>
+      </div>
+      <div class="modal-body">${html}</div>
+    </div>`;
+    const close = () => {
+      if (!back.isConnected) return;
+      document.removeEventListener("keydown", onKey, true);
+      back.remove();
+      if (prev && prev.focus) prev.focus();
+      if (onClose) onClose();
+    };
+    const focusables = () => [...back.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((n) => !n.disabled && n.offsetParent !== null);
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); close(); return; }
+      if (e.key !== "Tab") return;
+      const f = focusables();
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    back.addEventListener("mousedown", (e) => { if (e.target === back) close(); });
+    back.querySelector(".modal-close").onclick = close;
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(back);
+    const auto = back.querySelector("input, select, textarea, button:not(.modal-close)");
+    if (auto) auto.focus();
+    return { el: back, close };
+  },
+
   // ---------- painel do guia ----------
   /** Rótulo pt-BR de cada status de etapa. */
   STATUS_LABEL: { todo: "a fazer", blocked: "bloqueada", in_progress: "em andamento", done: "concluída", unknown: "sem guia" },
   /** Rótulo pt-BR de cada status de item (entrada, saída, validação). */
   ITEM_LABEL: { ok: "ok", fail: "falta", todo: "a fazer", warn: "atenção" },
+  /** Status da etapa → `kind` do chip (menu, visão geral e painel usam o mesmo mapa). */
+  STATUS_KIND: { done: "done", in_progress: "in_progress", blocked: "blocked", todo: "todo", unknown: "unknown" },
 
-  /** Renderiza o painel padrão do guia (`GET /api/projects/{pid}/guide/{step}`) dentro de `el`. */
+  /**
+   * Renderiza o painel do guia (`GET /api/projects/{pid}/guide/{step}`) dentro de `el`.
+   * O painel é colapsável: o resumo (status, progresso, o que falta e a próxima ação) fica
+   * sempre visível; as seções detalhadas abrem e fecham, com o estado guardado por etapa.
+   */
   guide(el, g) {
     const node = typeof el === "string" ? document.querySelector(el) : el;
     if (!node) return;
     if (!g) { node.innerHTML = `<div class="empty">Guia indisponível para esta etapa.</div>`; return; }
     const e = (s) => this.esc(s);
     const pct = Math.round((g.progress || 0) * 100);
-    const blocks = [];
+    const open = this._guideOpen(g.id);
+    const missing = g.missing && g.missing.length
+      ? `<span class="k">faltando</span><span class="v">${e(g.missing.join(" · "))}</span>`
+      : `<span class="k">tudo pronto</span><span class="v">nenhuma entrada ou saída pendente nesta etapa</span>`;
 
-    blocks.push(`<div class="guide-head">
-      <div class="row wrap">
-        <span class="eyebrow">Etapa ${e(g.n)} · aula ${e(g.aula)}</span>
-        ${this.chip(this.STATUS_LABEL[g.status] || g.status, this._statusKind(g.status))}
-        ${this.chip(`${pct}%`, "mode")}
-      </div>
-      <div class="progress"><div class="bar" style="width:${pct}%"></div></div>
-    </div>`);
-
-    if (g.what) blocks.push(this._section("O que fazer", `<p class="guide-what">${e(g.what)}</p>`));
-    if (g.detail) blocks.push(this._section("Aviso", `<p class="fine mono">${e(g.detail)}</p>`));
-    if (g.inputs && g.inputs.length) blocks.push(this._section("Entradas", this._items(g.inputs)));
-    if (g.outputs && g.outputs.length) blocks.push(this._section("Saídas", this._items(g.outputs)));
-    if (g.validations && g.validations.length) blocks.push(this._section("Validações", this._items(g.validations)));
+    const secs = [];
+    if (g.what) secs.push(this._section("O que fazer nesta etapa", `<p class="guide-what">${e(g.what)}</p>`));
+    if (g.detail) secs.push(this._section("Aviso", `<p class="fine mono">${e(g.detail)}</p>`));
+    if (g.inputs && g.inputs.length) secs.push(this._section("Entradas (vêm de outras etapas)", this._items(g.inputs)));
+    if (g.outputs && g.outputs.length) secs.push(this._section("Saídas (o que esta etapa produz)", this._items(g.outputs)));
+    if (g.validations && g.validations.length) secs.push(this._section("Validações da aula", this._items(g.validations)));
     if (g.checklist && g.checklist.length) {
-      blocks.push(this._section("Checklist da aula", `<ul class="guide-check">${g.checklist.map((c) =>
-        `<li><label><input type="checkbox"> ${e(c)}</label></li>`).join("")}</ul>`));
+      secs.push(this._section("Checklist da aula", `<ul class="guide-check">${g.checklist.map((c) =>
+        `<li><label><input type="checkbox"> <span>${e(c)}</span></label></li>`).join("")}</ul>`));
     }
     if (g.next_action) {
-      const btn = g.next_step ? `<button class="ghost" data-go="${e(g.next_step)}">Ir para a próxima etapa</button>` : "";
-      blocks.push(this._section("Próxima ação", `<div class="row wrap"><p class="guide-next">${e(g.next_action)}</p>${btn}</div>`));
+      const btn = g.next_step ? `<button class="ghost" data-go="${e(g.next_step)}">Ir para a etapa seguinte</button>` : "";
+      secs.push(this._section("Próxima ação", `<div class="row wrap"><p class="guide-next">${e(g.next_action)}</p>${btn}</div>`));
     }
 
-    node.innerHTML = `<div class="guide-body">${blocks.join("")}</div>`;
+    node.innerHTML = `<div class="guide-body" data-open="${open ? 1 : 0}">
+      <div class="guide-head">
+        <button class="guide-toggle" type="button" aria-expanded="${open}">
+          <span class="caret">▾</span>
+          <span class="ttl">Guia da etapa ${e(g.n)}</span>
+          ${this.chip(`aula ${g.aula}`, "mode")}
+          ${this.chip(this.STATUS_LABEL[g.status] || g.status, this.STATUS_KIND[g.status] || "mode")}
+          ${this.chip(`${pct}%`, "mode")}
+          <span class="hint">${open ? "recolher" : "abrir"}</span>
+        </button>
+        <div class="progress${g.status === "done" ? " ok" : ""}"><div class="bar" style="width:${pct}%"></div></div>
+        <div class="guide-missing${g.missing && g.missing.length ? "" : " all-ok"}">${missing}</div>
+        ${g.next_action ? `<p class="guide-pin">→ ${e(g.next_action)}</p>` : ""}
+      </div>
+      <div class="guide-sections">${secs.join("")}</div>
+    </div>`;
+
+    const body = node.querySelector(".guide-body");
+    const toggle = node.querySelector(".guide-toggle");
+    toggle.onclick = () => {
+      const now = body.dataset.open !== "1";
+      body.dataset.open = now ? "1" : "0";
+      toggle.setAttribute("aria-expanded", String(now));
+      toggle.querySelector(".hint").textContent = now ? "recolher" : "abrir";
+      this._guideOpen(g.id, now);
+    };
     node.onclick = (ev) => {
       const b = ev.target.closest("[data-go]");
       if (b && window.Studio.go) window.Studio.go(b.dataset.go);
@@ -165,28 +250,39 @@ window.Studio.ui = {
   /** Busca e renderiza o guia da etapa `stepId` no `#guide` da tela (ou em `el`). */
   async renderGuide(stepId, el) {
     const node = (typeof el === "string" ? document.querySelector(el) : el) || document.querySelector("#guide");
-    if (!node) return null;
     const pid = window.Studio.ctx && window.Studio.ctx.pid();
     if (!pid) {
-      node.innerHTML = `<div class="empty">Sem projeto selecionado — crie um projeto para ver o guia desta etapa.</div>`;
+      if (node) node.innerHTML = `<div class="empty">Sem campanha selecionada — crie uma campanha para ver o guia desta etapa.</div>`;
       return null;
     }
     try {
       const r = await fetch(`/api/projects/${encodeURIComponent(pid)}/guide/${encodeURIComponent(stepId)}`);
       if (!r.ok) throw new Error(((await r.json().catch(() => ({}))).detail) || r.statusText);
       const g = await r.json();
-      this.guide(node, g);
+      if (node) this.guide(node, g);
+      // Avisa o shell: o menu, a barra de progresso e a visão geral refletem a mudança.
+      if (window.Studio.onGuide) window.Studio.onGuide(stepId, g);
       return g;
     } catch (err) {
-      node.innerHTML = `<div class="empty">Não foi possível carregar o guia: ${this.esc(err.message)}</div>`;
+      if (node) node.innerHTML = `<div class="empty">Não foi possível carregar o guia: ${this.esc(err.message)}</div>`;
       return null;
     }
   },
 
   // ---------- internos ----------
+  /** Lê (ou grava, quando `set` vem) o estado colapsado do painel de guia da etapa. */
+  _guideOpen(stepId, set) {
+    const key = `studio.guide.${stepId}`;
+    try {
+      if (set === undefined) return localStorage.getItem(key) !== "0";
+      localStorage.setItem(key, set ? "1" : "0");
+    } catch (e) { /* localStorage bloqueado: o painel só não lembra do estado */ }
+    return set !== false;
+  },
   _statusKind(status) {
     if (status === "done" || status === "ok") return "ok";
-    if (status === "blocked" || status === "fail" || status === "warn") return "warn";
+    if (status === "blocked" || status === "fail") return "fail";
+    if (status === "warn") return "warn";
     return "mode";
   },
   _section(title, html) {
