@@ -106,3 +106,33 @@ def test_start_generate_refuses_concurrent_job(studio_env, project, monkeypatch)
             break
         threading.Event().wait(0.05)
     assert mood.job_status(project)["state"] == "done"
+
+
+def test_generate_prompt_modes_and_history(studio_env, project, monkeypatch):
+    mood = studio_env["mood"]
+    from studio.common import prompter
+    # template não precisa de Claude
+    t = mood.generate_prompt(project, "template", variation=2)
+    assert t["source"] == "template" and t["mode"] == "template" and "No product" in t["prompt"]
+    # sem Claude, brief/images → RuntimeError (409 na API)
+    monkeypatch.setattr(prompter, "BIN", None)
+    with pytest.raises(RuntimeError):
+        mood.generate_prompt(project, "brief")
+    # com Claude fakeado: imagens de vibe + instrução
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    mood.vibe_import_upload(project, [("v1.png", image_bytes(color=(0, 90, 200)))])
+    vid = mood.vibe_images(project)[0]["id"]
+    seen = {}
+    def fake_from_images(kind, images, instruction="", brief=None):
+        seen.update(kind=kind, images=[str(p) for p in images], instruction=instruction, brief=brief)
+        return {"prompt": "Cold neon snowfield", "negative": "text", "camera": "RED 35mm", "notes_pt": "n", "source": "claude", "seconds": 1.0}
+    monkeypatch.setattr(prompter, "from_images", fake_from_images)
+    r = mood.generate_prompt(project, "images", "bastante neon", [vid])
+    assert seen["kind"] == "mood" and seen["images"][0].endswith(".png") and seen["instruction"] == "bastante neon"
+    assert seen["brief"]["product"] == "energy drink" and "No product" in r["prompt"] and r["images"] == [vid]
+    with pytest.raises(ValueError):
+        mood.generate_prompt(project, "images", "x", [])
+    with pytest.raises(ValueError):
+        mood.generate_prompt(project, "images", "x", ["nao-existe"])
+    hist = mood.prompt_history(project)
+    assert [h["mode"] for h in hist] == ["images", "template"]

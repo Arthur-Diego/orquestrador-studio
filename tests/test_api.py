@@ -51,3 +51,25 @@ def test_unknown_project_is_404_everywhere(client):
     ]:
         r = getattr(client, method)(path, **kw)
         assert r.status_code == 404, (path, r.status_code, r.text)
+
+
+def test_mood_prompter_endpoints(client, monkeypatch):
+    from studio.common import prompter
+    pid = client.post("/api/projects", json={"name": "P", "product": "soda", "vibe": "ice"}).json()["id"]
+    v = client.get(f"/api/projects/{pid}/mood/vibe").json()
+    assert v["max_images"] == 4 and v["images"] == []
+    up = client.post(f"/api/projects/{pid}/mood/vibe/import/upload", files=[("files", ("v.png", image_bytes(), "image/png"))])
+    assert up.json() == {"added": 1}
+    vid = client.get(f"/api/projects/{pid}/mood/vibe").json()["images"][0]["id"]
+    assert client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "images", "image_ids": []}).status_code == 422
+    monkeypatch.setattr(prompter, "BIN", None)
+    assert client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "images", "image_ids": [vid]}).status_code == 409
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter, "from_brief", lambda kind, brief: {"prompt": "Icy", "negative": "", "camera": "", "notes_pt": "", "source": "claude", "seconds": 2})
+    r = client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "brief", "tone": "épico"})
+    assert r.status_code == 200 and r.json()["source"] == "claude" and "No product" in r.json()["prompt"]
+    t = client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "template"}).json()
+    assert t["source"] == "template"
+    assert len(client.get(f"/api/projects/{pid}/mood/prompts/history").json()) == 2
+    monkeypatch.setattr(prompter, "from_brief", lambda kind, brief: (_ for _ in ()).throw(RuntimeError("Claude falhou: x")))
+    assert client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "brief"}).status_code == 502

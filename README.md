@@ -39,8 +39,12 @@ Aviso: automatizar o Pinterest contraria os termos dele — use uma conta secund
 imagens são só referência de mood; nunca entram no vídeo final.
 
 ### 2 · Mood board (aula 009)
-**Uma vibe só.** O Studio gera **um prompt de vibe** (ambiente, luz, cor — sem produto, sem
-pessoas) a partir das referências escolhidas; você gera um grid de 4 na interface da
+**Uma vibe só.** Primeiro você **acha a vibe**: traz 1–4 imagens cujo sentimento gosta (Pinterest,
+Explore do Midjourney, frame de filme). Depois o "bot" da aula — reproduzido com o **Claude CLI**
+local (`studio/common/prompter.py`) — escreve **um prompt de vibe** profissional (câmera, lente,
+luz, negativos) em dois modos: a partir das imagens + sua instrução, ou só do brief (propósito,
+tom, referência estética); há um template fixo sem Claude como fallback. Ambiente, luz e cor — sem
+produto, sem pessoas; você gera um grid de 4 na interface da
 Higgsfield (onde o ilimitado do plano vale) ou via CLI (gasta créditos); "Nova variação"
 troca só a estilização, como ajustar o *Stylization* e regerar. Importe por arrastar,
 pela pasta **Downloads do Windows** ou pelo **histórico do CLI**; escolha até 8 imagens no
