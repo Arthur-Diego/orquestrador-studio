@@ -4,36 +4,64 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orquestrador Studio</title>
+<meta name="description" content="Produza uma campanha de vídeo com IA seguindo, etapa por etapa, o método do curso O Orquestrador.">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/ui.css">
+<script>
+  // Aplica o tema salvo antes do primeiro paint (sem isso a tela pisca no tema errado).
+  try { var t = localStorage.getItem("studio.theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) { /* localStorage bloqueado: fica no tema do sistema */ }
+</script>
 </head>
 <body>
 <div class="app">
   <aside class="side">
-    <div class="brand"><span class="eyebrow">Orquestrador</span><h1>Studio</h1></div>
-    <section class="proj">
-      <label class="eyebrow" for="projSel">Projeto</label>
+    <div class="brand">
+      <span class="eyebrow"><span class="dot"></span>Orquestrador</span>
+      <h1>Studio</h1>
+    </div>
+
+    <section class="side-sec">
+      <label class="eyebrow" for="projSel">Campanha</label>
       <div class="row">
-        <select id="projSel"></select>
-        <button id="btnNewProj" class="ghost" title="Novo projeto">+</button>
+        <select id="projSel" aria-label="Campanha atual"></select>
+        <button id="btnNewProj" class="ghost icon" title="Nova campanha" aria-label="Nova campanha">+</button>
       </div>
-      <form id="newProj" class="newproj hidden">
-        <input id="npName" placeholder="Nome (ex.: Gelo Zero)" required>
-        <input id="npProduct" placeholder="Produto (ex.: energy drink)">
-        <input id="npVibe" placeholder="Vibe (ex.: snow neon)">
-        <div class="row"><button type="submit">Criar</button><button type="button" id="npCancel" class="ghost">Cancelar</button></div>
-      </form>
+      <button id="btnOverview" class="navlink" type="button">Visão geral da campanha</button>
     </section>
-    <nav>
+
+    <nav aria-label="Etapas do curso">
       <div class="eyebrow">Etapas do curso</div>
       <ol id="steps"></ol>
     </nav>
+
+    <div class="side-foot row">
+      <button id="btnTheme" class="ghost icon" type="button" title="Alternar tema" aria-label="Alternar tema">◐</button>
+      <span class="eyebrow" id="themeLabel">tema: sistema</span>
+    </div>
   </aside>
 
-  <main id="main"><div class="empty">Carregando…</div></main>
+  <div class="workspace">
+    <header class="topbar" id="topbar">
+      <div class="tb-id">
+        <span class="eyebrow" id="tbEyebrow">Campanha</span>
+        <h2 class="tb-name" id="tbName">Carregando…</h2>
+        <div class="row wrap tb-meta" id="tbMeta"></div>
+      </div>
+      <div class="tb-actions">
+        <div class="tb-prog">
+          <div class="lbl"><span>Progresso</span><span id="tbCount">—</span></div>
+          <div class="progress"><div class="bar" id="tbBar" style="width:0%"></div></div>
+        </div>
+        <button id="btnEditCamp" class="ghost" type="button" title="Editar a campanha">Editar</button>
+        <button id="btnContinue" class="primary" type="button">Continuar de onde parei</button>
+      </div>
+    </header>
+
+    <main id="main"><div class="empty">Carregando…</div></main>
+  </div>
 </div>
-<div id="toast" class="toast hidden"></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <script src="/static/ui.js"></script>
 <script src="/static/app.js"></script>
 </body>
