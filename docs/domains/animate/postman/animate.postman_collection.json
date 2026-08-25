@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "animate — Etapa 6 (aula 012)",
-    "description": "Contratos públicos da seção 5 do FDD docs/domains/animate/features/animate-fdd.md. Ordem: plano → prompt → candidatos → take → like → erros. Requer um projeto com shots/storyboard.json e pelo menos um candidato de vídeo importado (variável pid).",
+    "description": "Contratos públicos da seção 5 do FDD docs/domains/animate/features/animate-fdd.md. Ordem: plano → prompt → candidatos → take → like → erros. Requer um projeto com shots/storyboard.json e pelo menos um candidato de vídeo importado (variável pid). Wave 2 (OS-017): start/end gravado no plano, notas da aula no GET shots, overrides [extensão] de proporção/modo do CLI e o guia da etapa.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -119,6 +119,111 @@
       },
       "event": [{"listen": "test", "script": {"exec": [
         "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots — modo start/end grava o par (wave 2 · 6.1)",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"mode\": \"start_end\", \"prompt\": \"Slow dramatic camera movement between the two frames\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('par start/end gravado', () => {",
+        "  pm.expect(b.start_end).to.be.an('object');",
+        "  pm.expect(b.start_end.start).to.be.a('string');",
+        "  pm.expect(b.start_end.end).to.be.a('string');",
+        "});",
+        "pm.test('end = frame do proximo shot da cena', () => pm.expect(b.start_end.end).to.eql(b.next_image));"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots — sair do modo start/end limpa o par",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"mode\": \"simple\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('start_end limpo', () => pm.expect(pm.response.json().start_end).to.eql(null));"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots — proporção [extensão] com override por shot (6.7)",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"aspect_ratio\": \"9:16\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('override gravado', () => pm.expect(pm.response.json().aspect_ratio).to.eql('9:16'));"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots — proporção inválida (422)",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"aspect_ratio\": \"21:9\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots — proporção null volta ao padrão do projeto",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"aspect_ratio\": null}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('herda o projeto', () => pm.expect(pm.response.json().aspect_ratio).to.eql(null));"
+      ]}}]
+    },
+    {
+      "name": "PUT animate/shots — modo do CLI inválido (422)",
+      "request": {
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/shots/{{scene}}/{{shot}}",
+        "body": {"mode": "raw", "raw": "{\"cli_mode\": \"turbo\"}"}
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "GET animate/shots — notas da aula na tela (6.3, 6.5)",
+      "request": {"method": "GET", "url": "{{base_url}}/api/projects/{{pid}}/animate/shots"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('nota dos modelos da aula', () => pm.expect(b.model_note).to.include('Kling 2.6'));",
+        "pm.test('veo3_1_lite fora da ordem padrao', () => pm.expect(b.model_order).to.not.include('veo3_1_lite'));",
+        "pm.test('dica de paralelismo', () => pm.expect(b.parallel_hint).to.include('paralelo'));",
+        "pm.test('opcoes de end frame', () => pm.expect(b.last_frames).to.be.an('array'));"
+      ]}}]
+    },
+    {
+      "name": "GET guide/animate — guia da etapa (wave 2)",
+      "request": {"method": "GET", "url": "{{base_url}}/api/projects/{{pid}}/guide/animate"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const g = pm.response.json();",
+        "pm.test('nao e generico', () => pm.expect(g.status).to.not.eql('unknown'));",
+        "pm.test('10 validacoes da auditoria', () => pm.expect(g.validations.length).to.eql(10));",
+        "pm.test('proxima etapa', () => pm.expect(g.next_step).to.eql('music'));"
       ]}}]
     },
     {

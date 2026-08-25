@@ -1,8 +1,12 @@
 ### FDD: animate (Etapa 6 · Animação · aula 012)
 
-Versão: 0.1.0
+Versão: 0.2.0
 Data: 2026-08-25
-Responsável: frente OS-006 (wave 1, `/dd-parallel`, modo batch com auto-aceite)
+Responsável: frente OS-006 (wave 1) · frente OS-017 (wave 2, `/dd-parallel`, modo batch com auto-aceite)
+
+> **Wave 2 (OS-017):** a seção 12 registra as correções de fidelidade 6.1–6.8 da auditoria
+> `docs/domains/studio/waves/wave-2-auditoria-etapas-4-6.md` e o guia da etapa. Onde as duas
+> seções divergirem, **vale a seção 12**.
 
 ---
 
@@ -47,7 +51,7 @@ Suposições e restrições:
 - Produzir `animate/takes.json` válido contra o schema do handoff; invariante: todo `file` referenciado existe em disco e segue `videos/cena{NN}/shot{MM}_take{K}.mp4`.
 - No máximo um take com `liked: true` por shot; quando existe, `videos/cenaNN/shotMM_final.mp4` é cópia byte a byte dele.
   `[auto-aceito: cópia _final gerada no like, seguindo a convenção de nomes do recon (ATENCAO), embora edit leia takes.json]`
-- Toda chamada a `hf.generate` carrega `sound: false`, `duration` em {5, 10} (8 apenas para `veo3_1_lite` com start+end) e `start_image` do shot.
+- Toda chamada a `hf.generate` carrega `sound: false`, `duration` em {5, 10} (8 apenas para `veo3_1_lite` `[extensão]` com start+end) e `start_image` do shot; com `start_end` preenchido, também `end_image` (wave 2, §12.1).
 - Sugestão de prompt determinística: mesma entrada (shot, modo, câmera, ação, lento) devolve o mesmo texto.
 - Importação idempotente: reimportar o mesmo mp4 não cria take duplicado (dedupe por sha do `ingest_bytes`).
 - Contagem de falhas por shot (`failures` = takes com `liked: false` + erros de CLI); a partir de 3 o serviço devolve `suggested_model` = próximo da ordem.
@@ -99,7 +103,8 @@ Suposições e restrições:
 **Fluxo alternativo: start/end frame**
 - Modo disponível quando o shot tem sucessor na mesma cena (ordem do storyboard) ou quando o usuário informa `end_image` manualmente (por exemplo `edit/last_frames/<shot>_last.png` produzido pela etapa 8).
 - `PUT .../shots/{scene}/{shot}` com `start_end: {"start": "<file do shot>", "end": "<file do próximo>"}`; a sugestão de prompt usa o template START/END e `duration` 5 (10 se `slow`).
-- Na geração por CLI: `params` ganha `end_image`; para `veo3_1_lite` a duração é forçada a 8 com aviso no log; `seedance_2_0` e `kling3_0` aceitam 5/10.
+- Na geração por CLI: `params` ganha `end_image`; para `veo3_1_lite` `[extensão]` a duração é forçada a 8 com aviso no log; `seedance_2_0` e `kling3_0` aceitam 5/10.
+- **Wave 2 (§12.1):** o par deixou de ser opcional na prática — escolher o modo `start_end` já grava `{start, end}` (end = frame do próximo shot da cena), e sair do modo limpa o par.
 
 **Fluxo alternativo: troca de modelo e corte para preto**
 - Após `failures >= 3` no shot, `GET .../shots` devolve `suggested_model` = próximo da ordem e a UI destaca o chip "Tente <modelo>".
@@ -118,10 +123,13 @@ Todas as rotas HTTP ficam sob `/api/projects/{pid}/animate/...`, JSON, sem auth 
 **Serviço (`studio/animate/service.py`)**
 - Tipo: function (módulo puro sobre `Path`, raiz por `project_dir(pid)`)
 - Assinaturas:
-  - `MODEL_ORDER = ["kling3_0", "seedance_2_0", "veo3_1_lite"]` (override por env `STUDIO_ANIMATE_MODELS`, separado por vírgula)
-  - `FAIL_THRESHOLD = 3`; `DURATIONS = (5, 10)`; `DEFAULT_TAKES = 2`; `GENERATE_TIMEOUT_S = 900`
+  - `MODEL_ORDER = ["kling3_0", "seedance_2_0"]` — modelos da aula (override por env `STUDIO_ANIMATE_MODELS`, separado por vírgula); `EXTENSION_MODELS = ("veo3_1_lite",)` `[extensão]` (wave 2, §12.2)
+  - `FAIL_THRESHOLD = 3`; `ADAPT_THRESHOLD = 6`; `DURATIONS = (5, 10)`; `DEFAULT_TAKES = 2`; `GENERATE_TIMEOUT_S = 900`
+  - `ASPECT_RATIOS`, `DEFAULT_ASPECT_RATIO = "16:9"`, `CLI_MODES`, `DEFAULT_CLI_MODE = "pro"` `[extensão]` (wave 2, §12.7)
+  - `storyboard_entries(pid)`, `stored_takes(pid)` — leituras **puras** para o guia (wave 2, §12.9)
+  - `project_aspect_ratio(root)`, `default_cli_mode()`, `last_frames(root)`
   - `load_plan(pid) -> dict` (lê storyboard + takes.json, mescla, grava takes.json, devolve `{"shots": [...], "ready": n, "total": m}`)
-  - `update_shot(pid, scene, shot, *, prompt=None, mode=None, duration=None, start_end=None, fallback_black=None) -> dict`
+  - `update_shot(pid, scene, shot, *, prompt=None, mode=None, duration=None, start_end=_UNSET, fallback_black=None, aspect_ratio=_UNSET, cli_mode=_UNSET) -> dict`
   - `suggest_prompt(pid, scene, shot, mode="simple", camera="", action="", slow=False) -> dict`
   - `list_candidates(pid) -> list[dict]`
   - `import_upload(pid, files) -> dict`; `import_downloads(pid, folder=None, since_minutes=120) -> dict`; `import_history(pid, size=50) -> dict` (delegam a `studio.common.ingest` com `step="animate"`, `kind="video"`)
@@ -129,7 +137,7 @@ Todas as rotas HTTP ficam sob `/api/projects/{pid}/animate/...`, JSON, sem auth 
   - `set_like(pid, scene, shot, take_id, liked: bool | None) -> dict`
   - `cost(pid, scene, shot, model, count=2) -> dict`
   - `start_generate(pid, scene, shot, model, count=2, prompt=None, duration=None) -> dict`; `job_status(pid) -> dict`
-  - `build_params(shot_entry, model, prompt, duration) -> dict` (pura; sempre inclui `sound: False`)
+  - `build_params(shot_entry, model, prompt, duration, root=None, aspect_ratio=None) -> dict` (pura; sempre inclui `sound: False`)
 - Exceções: `KeyError` (projeto), `FileNotFoundError` (storyboard, candidato, take ausente), `ValueError` (validação: modelo fora da ordem, duração, cena/shot inexistente, K inválido), `RuntimeError` (job concorrente, CLI).
 
 **GET /api/projects/{pid}/animate/shots**
@@ -139,12 +147,18 @@ Todas as rotas HTTP ficam sob `/api/projects/{pid}/animate/...`, JSON, sem auth 
 Exemplo de resposta
 ```json
 {
-  "ready": 1, "total": 2, "model_order": ["kling3_0", "seedance_2_0", "veo3_1_lite"],
+  "ready": 1, "total": 2, "model_order": ["kling3_0", "seedance_2_0"],
+  "model_note": "A aula 012 usa Kling 2.6 …; o CLI da Higgsfield oferece o Kling 3.0 para os dois casos.",
+  "parallel_hint": "Enquanto um take gera, dispare os outros shots em paralelo …",
+  "mode_tips": {"simple": ["…"], "elaborate": ["…"], "start_end": ["…"]},
+  "last_frames": ["edit/last_frames/shot01_last.png"], "aspect_ratio": "16:9", "cli_mode": "pro",
+  "aspect_ratios": ["16:9", "9:16", "1:1"], "cli_modes": ["pro", "fast"], "adapt_threshold": 6,
   "shots": [
     {"scene": "cena01", "shot": "shot01", "order": 1, "image": "shots/cena01/shot01_final.png",
      "next_in_scene": "shot02", "prompt": "The astronaut walks forward through the blizzard, struggling to move, realistic",
      "mode": "simple", "duration": 5, "start_end": null, "fallback_black": false,
-     "failures": 0, "suggested_model": "kling3_0",
+     "aspect_ratio": null, "cli_mode": null, "next_image": "shots/cena01/shot02_final.png",
+     "failures": 0, "suggested_model": "kling3_0", "adapt_idea": false,
      "takes": [
        {"id": "take1", "file": "videos/cena01/shot01_take1.mp4", "liked": true, "model": "kling3_0",
         "prompt": "The astronaut walks forward…", "duration": 5, "start_end": null, "source": "downloads",
@@ -369,3 +383,132 @@ Invariantes
 | 4 | Troca de modelo e geração por CLI | 3 | `MODEL_ORDER`, `suggested_model`, `build_params`, `cost`, `start_generate` com `JobRegistry`, rotas cost/generate/job; fakes de `hf.generate/download/cost` nos testes | suggested_model por faixa; sound false e duration 8; job done/added; 409 concorrente; 409 sem CLI |
 | 5 | UI da etapa | 2, 3, 4 | `studio/etapas/animate/view.html` (stephead + panel por shot + galeria de candidatos + bloco "Na Higgsfield"), `studio/etapas/animate/view.js` (`Studio.register("animate", ...)`, upload multipart, polling 3 s, confirm() com cost) | view.{html,js} 200; contador N/M; chips de modelo e fallback |
 | 6 | Verificação e handoff | 5 | `make verify`; registro dos auto-aceites e pendências no final report; fixture de `takes.json` entregue à frente edit | ruff + pytest verdes; `[cross-feature]` takes.json válido |
+
+---
+
+### 12. Wave 2 — fidelidade e guia (OS-017)
+
+Fonte normativa: `docs/domains/studio/waves/wave-2.md` ("Feature: animate (OS-017)") e a auditoria
+`docs/domains/studio/waves/wave-2-auditoria-etapas-4-6.md` (§6.3 divergências, §6.4 textos,
+§6.5 validações). Gate 1 pré-aprovado em lote pelo dono do produto; os `[auto-aceite]` abaixo são
+decisões que a frente tomou sozinha dentro dessa autorização.
+
+#### 12.1 Start/end frame gravado e enviado ao CLI (divergência 6.1 — **alta**)
+
+Era o defeito de maior gravidade da etapa: a UI enviava só `{prompt, mode, duration, fallback_black}`,
+`takes.json.start_end` ficava `null` e o modo start/end saía do CLI **sem `end_image`** — a
+transição que a aula ensina com o Kling 2.5 Turbo nunca acontecia.
+
+- `update_shot` passa a preencher o par quando `mode == "start_end"` e `start_end` não veio no
+  corpo: `{start: image do shot, end: image do próximo shot da mesma cena}`.
+- Sem próximo shot na cena (ou com o frame ausente), o par fica `null` — **não é erro**: a tela
+  pede um `end` manual e a validação V6.4 aponta a pendência.
+  `[auto-aceite: escolher o modo nunca pode falhar; a falta vira aviso no guia, não 422]`
+- Sair do modo start/end limpa o par.
+  `[auto-aceite: `build_params` decide `end_image` pela presença de `start_end`; um par órfão
+  mandaria end_image numa cena simples]`
+- Campo ausente no corpo = "não mexa"; `null` explícito = "volte ao padrão" (mesma convenção do
+  `PATCH /api/projects/{pid}` do núcleo).
+- UI: campo "end frame" no modo start/end, com o próximo shot como padrão e os
+  `edit/last_frames/*.png` (etapa 8) como alternativas — `GET .../animate/shots` devolve
+  `last_frames` e `next_image` para a tela montar as opções sem outra rota.
+- `takes.json` registra o par usado no take (`start_end`), mais `prompt_mode` e `aspect_ratio`.
+- Teste: `test_generate_in_start_end_mode_sends_the_end_image` (o teste que a auditoria pediu).
+
+#### 12.2 `veo3_1_lite` fora da ordem padrão (6.2)
+
+`MODEL_ORDER = ["kling3_0", "seedance_2_0"]` — só os modelos da aula. `veo3_1_lite` vira
+`EXTENSION_MODELS` `[extensão]`: entra apenas por `STUDIO_ANIMATE_MODELS`, e a regra de
+`duration: 8` com start+end (ressalva do CLI) fica marcada como extensão no código e aqui.
+Consequência: a ordem esgota em 6 falhas, e é exatamente aí que o guia manda adaptar a ideia (§12.6).
+
+#### 12.3 Nota dos modelos da aula (6.3)
+
+`LESSON_MODEL_NOTE`, publicada em `GET .../animate/shots` (`model_note`) e exibida na tela:
+"A aula 012 usa Kling 2.6 (cenas simples) e Kling 2.5 Turbo (start/end frame); o CLI da Higgsfield
+oferece o Kling 3.0 para os dois casos." É **nota de troca de ferramenta** (gate 3 do CLAUDE.md:
+trocar ferramenta não é desvio) registrada conforme o gate 4 — não abre ADR novo.
+`[auto-aceite: nota na etapa + FDD, sem ADR, como o prompt do lote determinou]`
+
+#### 12.4, 12.5 e 12.8 Orientações da aula que faltavam na tela
+
+`MODE_TIPS` (por modo) e `PARALLEL_HINT` saem do serviço em `GET .../animate/shots` e em
+`GET .../animate/prompt`:
+
+| Correção | Texto |
+| --- | --- |
+| 6.4 | modo elaborado: "ou gere o prompt no Abrahub Creative Engine e cole aqui" |
+| 6.8 | modo elaborado: "movimento complexo? A aula sugere o Seedance no lugar do Kling" |
+| 6.5 | painel de importação: "enquanto um take gera, dispare os outros shots em paralelo na UI da Higgsfield e importe os mp4 aqui depois" (a geração pelo CLI é serial, um job por projeto) |
+
+`[auto-aceite: os textos vivem no serviço, não no `view.js` — assim guia, API e tela dizem a mesma
+coisa e o teste sem navegador (ADR-008) consegue cobri-los]`
+
+#### 12.6 Parar de iterar e adaptar a ideia (6.6)
+
+`ADAPT_THRESHOLD = 6` (2 × `FAIL_THRESHOLD`). `GET .../animate/shots` devolve `adapt_idea` por shot
+e a tela mostra o chip "adapte a ideia: novo frame na etapa 5 ou corte para preto". A validação
+V6.7 do guia troca o `fix` de "gere o próximo modelo sugerido" para "adapte a ideia" a partir daí.
+
+#### 12.7 Proporção e modo do CLI marcados e com override (6.7)
+
+`aspect_ratio` e `mode` eram literais `16:9`/`pro` em `build_params`. Agora, ambos `[extensão]`
+(a aula 012 não fixa nenhum dos dois):
+
+- proporção: default do projeto (`project.aspect_ratio`, campo do núcleo, 16:9) → override por shot
+  (`aspect_ratio` em `takes.json`, `null` volta ao projeto); fora de `16:9|9:16|1:1` → 422.
+- modo do CLI: default `pro`, override do ambiente por `STUDIO_ANIMATE_CLI_MODE` e por shot
+  (`cli_mode`); fora de `pro|fast` → 422.
+  `[auto-aceite: "override por projeto" cumprido pelo campo do núcleo para a proporção; para o modo
+  do CLI, que não existe em `project.json` e cujo arquivo a frente não pode editar, o override
+  equivalente é env + shot (mesmo padrão de `STUDIO_ANIMATE_MODELS`, ADR-002)]`
+
+#### 12.9 Guia da etapa (`studio/etapas/animate/guide.py`)
+
+Hook do contrato transversal (`docs/domains/studio/waves/wave-2-api-transversal.md` §1), **puro**:
+lê `shots/storyboard.json` e `animate/takes.json` pelos leitores `storyboard_entries`/`stored_takes`
+— nunca `load_plan()`, que grava.
+
+- `what` e `checklist`: texto literal da auditoria §6.4.
+- entrada (bloqueia): `shots/storyboard.json` com os frames finais (etapa 5) → `step: "shots"`.
+- saídas (progresso): `animate/takes.json` · prompt de movimento em todo shot · `videos/cenaNN/shotMM_final.mp4`
+  (ou corte para preto) em todo shot.
+- validações (nunca bloqueiam), auditoria §6.5:
+
+| id | Regra | Estado quando falha |
+| --- | --- | --- |
+| `v6_1_frames` | todo shot tem frame da etapa 5 | `fail` |
+| `v6_2_ready` | take usável ou corte para preto em todo shot | `todo` |
+| `v6_3_two_takes` | ≥ 2 takes antes do like | `warn` |
+| `v6_4_start_end` | modo start/end com `end` gravado e existente | `fail` |
+| `v6_5_sound_off` | áudio do modelo OFF na geração | sempre `ok` (invariante de `build_params`) |
+| `v6_6_duration` | 5 s (10 s só para mudança lenta) | `warn` |
+| `v6_7_model_switch` | shot com 3+ falhas troca de modelo (6+ adapta a ideia) | `warn` |
+| `v6_8_naming` | `videos/cenaNN/shotMM_takeK.ext` | `warn` |
+| `v6_9_motion_verb` | prompt descreve movimento/câmera (heurística de radicais) | `warn` |
+| `v6_10_product` | cena do produto animada (aula 013) | `warn` |
+
+`[auto-aceite: "Higgsfield Image-to-Video", citada como entrada em §6.4, não vira `input` do guia —
+o hook é proibido de chamar `hf.status()` (recon §Atenção); o estado do CLI continua no chip da tela]`
+`[auto-aceite: V6.6 não consegue provar "10 s só quando a mudança é lenta" por leitura de arquivo;
+a validação conta os shots em 10 s e pede conferência]`
+
+#### 12.10 Tela (convenção da wave 2)
+
+`view.html` ganha `<section id="guide" class="guide"></section>` logo após o `stephead` (a string
+`Etapa 6 · aula 012` é fixada por teste e não mudou) e textos "o que fazer aqui / o que a aula manda
+/ o que falta" por painel. `view.js` passa a usar `Studio.ui` (`esc`, `chip`, `hfChip`, `drop`,
+`upload`, `confirmCost`, `poll`, `renderGuide`), chama `ctx.guide()` depois de cada ação que muda
+artefato e expõe `destroy()` parando o poll — critério cross-feature da wave.
+
+#### 12.11 Critérios de aceite desta fatia
+
+- `PUT .../shots/{scene}/{shot} {"mode": "start_end"}` devolve `start_end` preenchido com o frame do
+  próximo shot; `generate` nesse estado chama o CLI com `end_image` absoluto.
+- `GET .../shots` devolve `model_note`, `parallel_hint`, `mode_tips`, `last_frames`, `aspect_ratio`,
+  `cli_mode` e `adapt_threshold`; `model_order` não contém `veo3_1_lite`.
+- `aspect_ratio`/`cli_mode` inválidos → 422; `null` volta ao default; campo ausente não apaga.
+- `GET /api/projects/{pid}/guide/animate` devolve as 10 validações, `next_step: "music"` e nunca
+  `unknown`; chamar o guia não cria `animate/takes.json`.
+- `view.html` tem `#guide`; `view.js` tem `destroy()` e `Studio.ui`.
+- `make verify` verde (ruff + pytest) sem rede e sem navegador.
