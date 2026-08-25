@@ -1,8 +1,9 @@
 ### FDD: publish (Etapa 10, Publicar)
 
-Versão: 0.1.0
+Versão: 0.2.0
 Data: 2026-08-25
 Responsável: frente OS-010 (wave 1, `/dd-parallel`), gerado em modo batch com auto-aceites
+v0.2.0: aplicada a **decisão 1 do lote** — o portfólio conta vídeos distintos (`distinct_videos >= 4`).
 
 ---
 
@@ -23,7 +24,8 @@ Atores: o criador (único usuário local) e a etapa `prospect` (consumidora de `
 Provides e Consumes (copiados de `docs/domains/studio/waves/wave-1.md`):
 
 **Provides**
-- `publish/log.json`: `[{id, video, network, url, posted_at, note}]`; `publish/portfolio.md`
+- `publish/log.json`: `[{id, video, network, url, posted_at, note}]` + `feedback` (aditivo, ver
+  seção 5); `publish/portfolio.md`
 **Consumes**
 - `export/*.mp4` (vem de export)
 
@@ -32,10 +34,11 @@ prompt da wave pede "campo de feedback recebido por post" e `prospect` só conta
 
 Suposições e restrições:
 - ADR-001: sem auth, sem porta extra, sem integração externa; ADR-004: só o que a aula ensina.
-- O contador usa o número de entradas do log, não vídeos distintos: o mesmo `export/9x16.mp4`
-  publicado no Instagram e no TikTok vale 2 posts.
-  [auto-aceito: a aula fala em "4 vídeos publicados"; contar posts é a leitura mais simples e a que
-  `prospect` já assume ("bloqueia com < 4 entradas em publish/log.json")]
+- O gate do portfólio conta **vídeos distintos**, não posts: o mesmo `export/9x16.mp4` publicado no
+  Instagram e no TikTok vale 1 vídeo e 2 posts. `count` (posts) e `distinct_videos` são ambos
+  expostos; `ready = distinct_videos >= 4`.
+  [decisão 1 do lote (`docs/domains/studio/waves/wave-1.md`), prevalece sobre o auto-aceite original
+  desta seção: aula 015 "publicar esses 4 vídeos"; o gate de `prospect` usa `distinct_videos >= 4`]
 
 ---
 
@@ -45,8 +48,8 @@ Suposições e restrições:
   (invariante: `published == any(post.video == file)`).
 - Persistir cada publicação em `publish/log.json` de forma atômica (gravar em `.tmp` e renomear),
   com validação de vídeo existente, rede não vazia, URL `http(s)://` e data ISO `YYYY-MM-DD`.
-- Expor `count`, `goal = 4`, `ready = count >= 4` e `missing = max(0, 4 - count)` em uma rota de
-  status, sem efeitos colaterais.
+- Expor `count` (posts), `distinct_videos`, `goal = 4`, `ready = distinct_videos >= 4` e
+  `missing = max(0, 4 - distinct_videos)` em uma rota de status, sem efeitos colaterais.
 - Regravar `publish/portfolio.md` a cada mutação do log (adicionar, remover, feedback), nunca em GET.
 - Nenhuma dependência de rede, CLI ou ffmpeg: a etapa funciona só com a stdlib.
 
@@ -62,7 +65,7 @@ Suposições e restrições:
 - UI: cabeçalho da etapa com a instrução da aula ("publique, monte o portfólio de 4 vídeos e peça
   feedback"), lista de exports com miniatura (`export/thumb.jpg` quando existir), formulário de
   registro (vídeo, rede, URL, data, nota), lista de posts com campo de feedback e botão remover,
-  contador `N/4` e chip "portfólio pronto".
+  contador `N/4` (N = vídeos distintos) e chip "portfólio pronto".
 - Geração de `publish/portfolio.md`.
 - Testes `tests/test_publish_service.py` e `tests/test_publish_api.py`.
 
@@ -107,13 +110,18 @@ Suposições e restrições:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> vazio: count == 0
-    vazio --> em_andamento: POST log (count 1..3)
-    em_andamento --> em_andamento: POST log / DELETE log (count 1..3)
-    em_andamento --> pronto: POST log (count >= 4)
-    pronto --> em_andamento: DELETE log (count < 4)
-    pronto --> pronto: POST log / feedback
-    em_andamento --> vazio: DELETE log (count == 0)
+    note left of vazio
+        Estado pelo numero de VIDEOS DISTINTOS (decisao 1 do lote),
+        nao pelo numero de posts: o mesmo 9x16.mp4 no Instagram e
+        no TikTok mantem distinct_videos == 1.
+    end note
+    [*] --> vazio: distinct_videos == 0
+    vazio --> em_andamento: POST log (video novo, distinct 1..3)
+    em_andamento --> em_andamento: POST log / DELETE log (distinct 1..3)
+    em_andamento --> pronto: POST log (distinct_videos >= 4)
+    pronto --> em_andamento: DELETE log (distinct_videos < 4)
+    pronto --> pronto: POST log (video ja publicado) / feedback
+    em_andamento --> vazio: DELETE log (distinct_videos == 0)
 ```
 
 ---
@@ -159,9 +167,12 @@ independente de ffmpeg; `export/qa_report.md` já traz esses dados]
     {"id": "a1b2c3d4e5f6", "video": "export/9x16.mp4", "network": "instagram", "url": "https://www.instagram.com/reel/XYZ/", "posted_at": "2026-08-25", "note": "primeiro reel da campanha", "feedback": ""}
   ],
   "count": 1,
+  "distinct_videos": 1,
   "goal": 4
 }
 ```
+`distinct_videos` vem junto de `count` e `goal` de propósito: sem ele, quem lê só esta rota é
+induzido a avaliar `count >= goal`, que é exatamente a leitura proibida pela decisão 1 do lote.
 
 **Contrato 3: registrar publicação**
 - Tipo: endpoint
@@ -192,6 +203,7 @@ YouTube mas a 015 fala só em "redes sociais"]
 - Assinatura/Rota: `POST /api/projects/{pid}/publish/log/{post_id}/feedback`
 - Método: POST (JSON)
 - Semântica de status: 200 post atualizado; 404 projeto ou post inexistente.
+- `feedback` ausente ou `""` **limpa** o campo (200) — é assim que a tela apaga um texto errado.
 [auto-aceito: feedback como sub-rota POST do log, e não PATCH, para ficar dentro de "log GET/POST/DELETE"]
 
 **Exemplo de requisição**
@@ -218,10 +230,11 @@ YouTube mas a 015 fala só em "redes sociais"]
 
 **Exemplo de resposta**
 ```json
-{"count": 4, "distinct_videos": 2, "goal": 4, "ready": true, "missing": 0, "portfolio_md": "publish/portfolio.md"}
+{"count": 5, "distinct_videos": 4, "goal": 4, "ready": true, "missing": 0, "portfolio_md": "publish/portfolio.md"}
 ```
 `portfolio_md` é `null` quando o arquivo ainda não foi gerado (log nunca teve mutação).
-`distinct_videos` é informativo (vídeos de `export/` distintos no log); `ready` usa `count`.
+`ready` e `missing` usam `distinct_videos` (decisão 1 do lote); `count` é o total de posts e segue
+exposto para leitura do log.
 
 **Contrato 7: serviço (`studio/publish/service.py`)**
 - Tipo: function
@@ -243,13 +256,14 @@ YouTube mas a 015 fala só em "redes sociais"]
 ```markdown
 # Portfólio: <nome do projeto>
 
-Publicados: 4/4. Portfólio pronto: pode começar a prospecção (etapa 11).
+Publicados: 4/4 vídeos distintos (5 publicações). Portfólio pronto: pode começar a prospecção (etapa 11).
 
 | # | Vídeo | Rede | URL | Data | Nota | Feedback |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | export/9x16.mp4 | instagram | https://... | 2026-08-25 | primeiro reel | corte rápido no fim |
 ```
-Com menos de 4 posts a segunda linha vira "Publicados: N/4. Faltam X para o portfólio da aula 015."
+Com menos de 4 vídeos distintos a segunda linha vira
+"Publicados: N/4 vídeos distintos (M publicações). Falta(m) X para o portfólio da aula 015."
 
 ---
 
@@ -262,6 +276,7 @@ Com menos de 4 posts a segunda linha vira "Publicados: N/4. Faltam X para o port
 | `pid` inválido ou projeto ausente | `KeyError` no serviço, 404 pelo núcleo | padrão `project_dir` |
 | `export/` ausente | `list_exports` devolve `files: []` | tela orienta voltar à etapa 9 |
 | `video` não existe em `export/` ou não é `.mp4` | `FileNotFoundError`, 404 | também rejeita caminhos fora de `export/` (`..`) |
+| corpo JSON malformado (campo obrigatório ausente, tipo errado) | 422 do Pydantic | `detail` é **lista de objetos**, não string — só as validações de regra abaixo devolvem `detail` string |
 | `network` vazio após `strip()` | `ValueError`, 422 | |
 | `url` sem esquema `http(s)://` | `ValueError`, 422 | sem validação de domínio |
 | `posted_at` fora de `YYYY-MM-DD` | `ValueError`, 422 | `date.fromisoformat` |
@@ -274,7 +289,8 @@ Com menos de 4 posts a segunda linha vira "Publicados: N/4. Faltam X para o port
   breaker. Escrita atômica (`.tmp` + `os.replace`) protege `log.json` e `portfolio.md`.
 - Política de fallback: sem ffmpeg, sem CLI e sem rede a etapa funciona integralmente.
 - Invariantes:
-  - `count == len(log.json)` e `ready == (count >= 4)` em qualquer leitura.
+  - `count == len(log.json)`, `distinct_videos == |{post.video}|` e `ready == (distinct_videos >= 4)`
+    em qualquer leitura.
   - `portfolio.md` reflete o último estado do log após toda mutação bem sucedida.
   - Nenhuma entrada do log aponta para arquivo fora de `export/` no momento do registro
     (o arquivo pode ser apagado depois; a listagem então mostra o post sem export correspondente).
@@ -285,7 +301,8 @@ Com menos de 4 posts a segunda linha vira "Publicados: N/4. Faltam X para o port
 
 **Métricas**
 - Não há sistema de métricas no monólito local (ADR-001). Os contadores expostos são `count`,
-  `goal`, `missing` e `ready` na rota `portfolio`.
+  `distinct_videos` (o número que sustenta o gate), `goal`, `missing` e `ready` na rota
+  `portfolio`; `count`, `distinct_videos` e `goal` também na rota `log`.
 
 **Logs**
 - Logger `studio.publish` (stdlib `logging`), nível INFO: `publish.add pid=<pid> id=<id>
@@ -330,9 +347,10 @@ Com menos de 4 posts a segunda linha vira "Publicados: N/4. Faltam X para o port
   pela etapa 9 no projeto de integração.
 - `POST .../publish/log` válido devolve 201 com `id` de 12 caracteres, grava `publish/log.json` e
   cria `publish/portfolio.md`; o mesmo vídeo passa a `published: true` na listagem.
-- Após 4 posts, `GET .../publish/portfolio` devolve `{"count": 4, "ready": true, "missing": 0}`;
-  com 3, `ready: false` e `missing: 1`. `[cross-feature]` `publish/log.json` com 4 entradas é lido
-  por `prospect` sem adaptação e libera a etapa 11; com 3, `prospect` bloqueia.
+- Com 4 vídeos distintos, `GET .../publish/portfolio` devolve `{"ready": true, "missing": 0}`; com
+  3 distintos (mesmo que sejam 5 posts), `ready: false` e `missing: 1`. `[cross-feature]`
+  `publish/log.json` com 4 vídeos distintos é lido por `prospect` sem adaptação e libera a etapa 11;
+  com 3 distintos, `prospect` bloqueia.
 - `POST .../publish/log/{id}/feedback` persiste o texto e ele aparece em `portfolio.md`.
 - `DELETE .../publish/log/{id}` reduz `count`, regrava `portfolio.md` e devolve 404 na segunda chamada.
 - 404 para vídeo fora de `export/` e para `../` no caminho; 422 para rede vazia, URL sem esquema,
@@ -347,16 +365,15 @@ Com menos de 4 posts a segunda linha vira "Publicados: N/4. Faltam X para o port
 
 ### 10. Riscos e mitigação
 
-### Leitura "4 vídeos" versus "4 posts"
+### Leitura "4 vídeos" versus "4 posts" — RESOLVIDO pela decisão 1 do lote
 
-- **Probabilidade:** média
-- **Impacto:** o gate de `prospect` pode liberar cedo se o usuário registrar o mesmo vídeo em 4 redes.
+- **Probabilidade:** baixa (residual)
+- **Impacto:** o usuário registrar o mesmo vídeo em 4 redes e estranhar que o portfólio não fechou.
 - **Mitigação:**
-    - Contar entradas do log (leitura da wave) e expor também `distinct_videos` na rota `portfolio`
-      para o usuário enxergar a diferença.
-    - Pendência registrada no lote para o humano confirmar a leitura da aula 015.
-- **Plano de contingência:** trocar `count` por número de vídeos distintos é mudança de uma linha
-  no serviço, sem alterar contrato.
+    - `ready`/`missing` contam vídeos distintos; a rota e a tela mostram os dois números
+      (`count` de posts e `distinct_videos`), então a diferença fica explícita.
+    - `prospect` (OS-011) precisa usar `distinct_videos >= 4` — cobrado na integração W5.
+- **Plano de contingência:** nenhum; a decisão do lote é normativa.
 
 ### Divergência de schema com `prospect`
 
@@ -364,7 +381,8 @@ Com menos de 4 posts a segunda linha vira "Publicados: N/4. Faltam X para o port
 - **Impacto:** `prospect` não conseguir ler `log.json` na integração W5.
 - **Mitigação:**
     - Manter exatamente os campos da wave; `feedback` só aditivo.
-    - Fixture `publish/log.json` de exemplo em `tests/test_publish_service.py` reutilizável pela frente 11.
+    - Fixture `publish/log.json` de exemplo em `tests/test_publish_service.py` (4 vídeos distintos)
+      reutilizável pela frente 11.
 - **Plano de contingência:** ajuste na integração em série (publish integra antes de prospect).
 
 ### Export apagado após o registro

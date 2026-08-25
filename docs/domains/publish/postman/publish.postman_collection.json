@@ -1,0 +1,1086 @@
+{
+	"info": {
+		"_postman_id": "os-010-publish-collection",
+		"name": "publish — Etapa 10 (Publicar)",
+		"description": "Colecao executavel dos contratos HTTP da etapa 10 (publish) do Orquestrador Studio.\n\nOrigem: `docs/domains/publish/features/publish-fdd.md` (versao 0.2.0), secao 5 (Contratos publicos), com ordem de execucao da secao 4 e casos negativos da secao 6.\n\nDECISAO 1 DO LOTE (normativa): a rota `portfolio` conta VIDEOS DISTINTOS (`ready = distinct_videos >= 4`, `missing = max(0, 4 - distinct_videos)`), NAO o numero de posts. `goal` = 4.\n\nSem `auth`: o ADR-001 (FDD secao 3, linha 35) determina monolito local sem autenticacao, entao nenhuma rota envia token.\n\nPre-requisitos: servidor local no ar em `{{base_url}}` com o plugin `publish` carregado, e o projeto `{{pid}}` com o arquivo `{{video}}` em `export/`.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://127.0.0.1:8765",
+			"type": "string",
+			"description": "Base URL do Studio local."
+		},
+		{
+			"key": "pid",
+			"value": "",
+			"type": "string",
+			"description": "Id do projeto (ex.: 2026-08-gelo-zero). Preencha antes de rodar."
+		},
+		{
+			"key": "post_id",
+			"value": "",
+			"type": "string",
+			"description": "Encadeado: gravado pelo POST log, consumido pelo feedback e pelo DELETE."
+		},
+		{
+			"key": "video",
+			"value": "export/9x16.mp4",
+			"type": "string",
+			"description": "Video de export/ a registrar. O contrato aceita `export/9x16.mp4` ou so `9x16.mp4` (FDD s5, linha 186)."
+		},
+		{
+			"key": "network",
+			"value": "instagram",
+			"type": "string",
+			"description": "String livre; a UI sugere instagram, tiktok, youtube, outro (FDD s5, linha 187)."
+		},
+		{
+			"key": "url_post",
+			"value": "https://www.instagram.com/reel/XYZ/",
+			"type": "string",
+			"description": "URL da publicacao; precisa comecar com http:// ou https://."
+		},
+		{
+			"key": "posted_at",
+			"value": "2026-08-25",
+			"type": "string",
+			"description": "Opcional no contrato (default: hoje). Formato AAAA-MM-DD."
+		},
+		{
+			"key": "note",
+			"value": "primeiro reel da campanha",
+			"type": "string",
+			"description": "Opcional, default \"\". Texto livre."
+		},
+		{
+			"key": "feedback",
+			"value": "3 amigos acharam o corte rapido demais no final",
+			"type": "string",
+			"description": "Texto livre do feedback recebido."
+		},
+		{
+			"key": "pid_inexistente",
+			"value": "projeto-que-nao-existe",
+			"type": "string",
+			"description": "Usado nos casos 404 de projeto inexistente."
+		},
+		{
+			"key": "video_inexistente",
+			"value": "export/nao-existe-9x16.mp4",
+			"type": "string",
+			"description": "Usado no caso 404 de video ausente em export/."
+		},
+		{
+			"key": "post_id_inexistente",
+			"value": "ffffffffffff",
+			"type": "string",
+			"description": "12 hex que nao correspondem a nenhum post; usado nos 404 de feedback e DELETE."
+		},
+		{
+			"key": "dup_post_id",
+			"value": "",
+			"type": "string",
+			"description": "Encadeado: post base do caso de URL duplicada, removido na limpeza."
+		},
+		{
+			"key": "post_id_removido",
+			"value": "",
+			"type": "string",
+			"description": "Encadeado: ultimo id removido pelo DELETE (auditoria da rodada)."
+		},
+		{
+			"key": "url_duplicada",
+			"value": "https://www.tiktok.com/@studio/video/DUPLICADA",
+			"type": "string",
+			"description": "URL usada duas vezes para provocar o 422 \"URL ja registrada\"."
+		}
+	],
+	"item": [
+		{
+			"name": "Exports",
+			"description": "FDD secao 5, Contrato 1. Leitura de `export/*.mp4`.",
+			"item": [
+				{
+					"name": "GET exports — listar export/*.mp4",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/exports",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"exports"
+							]
+						},
+						"description": "FDD secao 5, Contrato 1 (linha 136). 200 = lista possivelmente vazia de `export/*.mp4`; 404 = projeto inexistente. `thumb` e null quando `export/thumb.jpg` nao existe."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 200 (FDD s5 C1)', function () { pm.response.to.have.status(200); });",
+									"pm.test('schema: {files: [], thumb: string|null}', function () {",
+									"    pm.expect(body).to.be.an('object');",
+									"    pm.expect(body.files, 'files').to.be.an('array');",
+									"    pm.expect(body).to.have.property('thumb');",
+									"    if (body.thumb !== null) { pm.expect(body.thumb).to.be.a('string'); }",
+									"});",
+									"pm.test('cada arquivo tem name/file/size/modified/published', function () {",
+									"    (body.files || []).forEach(function (f) {",
+									"        pm.expect(f.name, 'name').to.be.a('string');",
+									"        pm.expect(f.file, 'file').to.be.a('string').and.to.match(/^export\\//);",
+									"        pm.expect(f.size, 'size').to.be.a('number');",
+									"        pm.expect(f.modified, 'modified').to.be.a('string');",
+									"        pm.expect(f.published, 'published').to.be.a('boolean');",
+									"    });",
+									"});",
+									"pm.test('ordem alfabetica por name (FDD s9)', function () {",
+									"    const names = (body.files || []).map(function (f) { return f.name; });",
+									"    pm.expect(names).to.deep.equal(names.slice().sort());",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Log",
+			"description": "FDD secao 5, Contratos 2 a 5, na ordem dos fluxos da secao 4: ler, registrar (encadeia post_id), dar feedback, remover.",
+			"item": [
+				{
+					"name": "GET log — ler o log de publicacoes",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5, Contrato 2 (linha 158). 200 sempre que o projeto existe; log vazio devolve `posts: []`. Log corrompido tambem devolve `posts: []` (FDD s6, linha 279)."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 200 (FDD s5 C2)', function () { pm.response.to.have.status(200); });",
+									"pm.test('schema: {posts: [], count: int, goal: 4}', function () {",
+									"    pm.expect(body.posts, 'posts').to.be.an('array');",
+									"    pm.expect(body.count, 'count').to.be.a('number');",
+									"    pm.expect(body.goal, 'goal').to.eql(4);",
+									"});",
+									"pm.test('invariante count == len(posts) (FDD s6, linha 286)', function () {",
+									"    pm.expect(body.count).to.eql(body.posts.length);",
+									"});",
+									"pm.test('cada post tem os 7 campos do contrato', function () {",
+									"    (body.posts || []).forEach(function (p) {",
+									"        pm.expect(p.id, 'id').to.be.a('string').and.to.match(/^[0-9a-f]{12}$/);",
+									"        pm.expect(p.video, 'video').to.be.a('string');",
+									"        pm.expect(p.network, 'network').to.be.a('string');",
+									"        pm.expect(p.url, 'url').to.be.a('string').and.to.match(/^https?:\\/\\//);",
+									"        pm.expect(p.posted_at, 'posted_at').to.match(/^\\d{4}-\\d{2}-\\d{2}$/);",
+									"        pm.expect(p.note, 'note').to.be.a('string');",
+									"        pm.expect(p.feedback, 'feedback').to.be.a('string');",
+									"    });",
+									"});",
+									"",
+									"// DECISAO 1 DO LOTE: o GET log expoe distinct_videos para que ninguem",
+									"// avalie count >= goal, que e a leitura proibida pela decisao do lote.",
+									"pm.test('DECISAO 1 DO LOTE: log expoe distinct_videos ao lado de count e goal', () => {",
+									"    const b = pm.response.json();",
+									"    pm.expect(b).to.have.property('distinct_videos');",
+									"    pm.expect(b.distinct_videos).to.be.a('number');",
+									"    const distintos = new Set(b.posts.map(p => p.video).filter(Boolean)).size;",
+									"    pm.expect(b.distinct_videos).to.eql(distintos);",
+									"    pm.expect(b.distinct_videos).to.be.at.most(b.count);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "POST log — registrar publicacao (encadeia post_id)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5, Contrato 3 (linha 175). 201 = post criado (corpo e o post); 404 = projeto ou video inexistente em `export/`; 422 = rede vazia, URL invalida, data invalida ou URL duplicada.\n\nPre-requisito: o projeto `{{pid}}` precisa ter o arquivo `{{video}}` em `export/` (vem da etapa 9). `posted_at` e opcional (default: hoje) e `note` e opcional (default \"\").\n\nGrava `post_id` na colecao para o feedback e o DELETE.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"{{video}}\",\n  \"network\": \"{{network}}\",\n  \"url\": \"{{url_post}}\",\n  \"posted_at\": \"{{posted_at}}\",\n  \"note\": \"{{note}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 201 (FDD s5 C3)', function () { pm.response.to.have.status(201); });",
+									"pm.test('corpo e o post criado, com os 7 campos', function () {",
+									"    pm.expect(body.id, 'id').to.be.a('string');",
+									"    pm.expect(body.video, 'video').to.be.a('string');",
+									"    pm.expect(body.network, 'network').to.be.a('string');",
+									"    pm.expect(body.url, 'url').to.be.a('string');",
+									"    pm.expect(body.posted_at, 'posted_at').to.be.a('string');",
+									"    pm.expect(body.note, 'note').to.be.a('string');",
+									"    pm.expect(body.feedback, 'feedback').to.eql('');",
+									"});",
+									"pm.test('id = uuid4().hex[:12], 12 chars hex (FDD s5 C7, linha 247)', function () {",
+									"    pm.expect(body.id).to.match(/^[0-9a-f]{12}$/);",
+									"});",
+									"pm.test('video normalizado para export/<arquivo> (FDD s5, linha 131)', function () {",
+									"    pm.expect(body.video).to.match(/^export\\//);",
+									"});",
+									"pm.test('posted_at em AAAA-MM-DD', function () {",
+									"    pm.expect(body.posted_at).to.match(/^\\d{4}-\\d{2}-\\d{2}$/);",
+									"});",
+									"if (body && body.id) {",
+									"    pm.collectionVariables.set('post_id', body.id);",
+									"    pm.environment.set('post_id', body.id);",
+									"    console.log('post_id encadeado = ' + body.id);",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "POST log/{post_id}/feedback — registrar feedback recebido",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log/{{post_id}}/feedback",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log",
+								"{{post_id}}",
+								"feedback"
+							]
+						},
+						"description": "FDD secao 5, Contrato 4 (linha 199). 200 = post atualizado; 404 = projeto ou post inexistente.\n\nConsome o `post_id` gravado pelo POST log (FDD secao 4, fluxo de feedback, linha 91).",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"{{feedback}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 200 (FDD s5 C4)', function () { pm.response.to.have.status(200); });",
+									"pm.test('corpo e o post atualizado, com os 7 campos', function () {",
+									"    pm.expect(body.id, 'id').to.eql(pm.collectionVariables.get('post_id'));",
+									"    pm.expect(body.video, 'video').to.be.a('string');",
+									"    pm.expect(body.network, 'network').to.be.a('string');",
+									"    pm.expect(body.url, 'url').to.be.a('string');",
+									"    pm.expect(body.posted_at, 'posted_at').to.be.a('string');",
+									"    pm.expect(body.note, 'note').to.be.a('string');",
+									"    pm.expect(body.feedback, 'feedback').to.be.a('string');",
+									"});",
+									"pm.test('feedback persistido exatamente como enviado', function () {",
+									"    pm.expect(body.feedback).to.eql(pm.collectionVariables.get('feedback'));",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "DELETE log/{post_id} — remover publicacao",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log/{{post_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log",
+								"{{post_id}}"
+							]
+						},
+						"description": "FDD secao 5, Contrato 5 (linha 216). 200 `{\"removed\": \"<id>\", \"count\": n}`; 404 = projeto ou post inexistente. Consome o `post_id` do POST log (FDD secao 4, fluxo de remocao, linha 94)."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 200 (FDD s5 C5)', function () { pm.response.to.have.status(200); });",
+									"pm.test('schema: {removed: <id>, count: int}', function () {",
+									"    pm.expect(body.removed).to.eql(pm.collectionVariables.get('post_id'));",
+									"    pm.expect(body.count, 'count').to.be.a('number');",
+									"});",
+									"pm.collectionVariables.set('post_id_removido', pm.collectionVariables.get('post_id'));",
+									"pm.environment.set('post_id_removido', pm.collectionVariables.get('post_id'));"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Portfolio",
+			"description": "FDD secao 5, Contrato 6. Gate da decisao 1 do lote: distinct_videos >= 4.",
+			"item": [
+				{
+					"name": "GET portfolio — status do portfolio (gate de 4 videos distintos)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/portfolio",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"portfolio"
+							]
+						},
+						"description": "FDD secao 5, Contrato 6 (linha 222). 200 sempre que o projeto existe; nao grava nada.\n\nDECISAO 1 DO LOTE (normativa, FDD linhas 36-40 e 231-232): `ready` e `missing` contam VIDEOS DISTINTOS (`distinct_videos >= 4`), NAO o numero de posts. `goal` = 4.\n`portfolio_md` e null enquanto o log nunca sofreu mutacao."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 200 (FDD s5 C6)', function () { pm.response.to.have.status(200); });",
+									"pm.test('schema: count/distinct_videos/goal/ready/missing/portfolio_md', function () {",
+									"    pm.expect(body.count, 'count').to.be.a('number');",
+									"    pm.expect(body.distinct_videos, 'distinct_videos').to.be.a('number');",
+									"    pm.expect(body.goal, 'goal').to.eql(4);",
+									"    pm.expect(body.ready, 'ready').to.be.a('boolean');",
+									"    pm.expect(body.missing, 'missing').to.be.a('number');",
+									"    pm.expect(body).to.have.property('portfolio_md');",
+									"    if (body.portfolio_md !== null) {",
+									"        pm.expect(body.portfolio_md).to.eql('publish/portfolio.md');",
+									"    }",
+									"});",
+									"pm.test('DECISAO 1 DO LOTE: ready == (distinct_videos >= 4), nao count', function () {",
+									"    pm.expect(body.ready).to.eql(body.distinct_videos >= 4);",
+									"});",
+									"pm.test('DECISAO 1 DO LOTE: missing == max(0, 4 - distinct_videos)', function () {",
+									"    pm.expect(body.missing).to.eql(Math.max(0, 4 - body.distinct_videos));",
+									"});",
+									"pm.test('distinct_videos <= count (mesmo video em 2 redes = 1 video, 2 posts)', function () {",
+									"    pm.expect(body.distinct_videos).to.be.at.most(body.count);",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "erros",
+			"description": "Casos negativos da matriz de erros (FDD secao 6) que se expressam como status HTTP em rota concreta.",
+			"item": [
+				{
+					"name": "404 exports — projeto inexistente",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid_inexistente}}/publish/exports",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid_inexistente}}",
+								"publish",
+								"exports"
+							]
+						},
+						"description": "FDD secao 5 Contrato 1 (linha 140) e secao 6, linha 271: `pid` invalido levanta `KeyError` em `project_dir` e o nucleo responde 404."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 404 (404 exports)' , function () { pm.response.to.have.status(404); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "404 log — projeto inexistente",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid_inexistente}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid_inexistente}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5, linha 130 (todas as rotas exigem `pid` valido) e secao 6, linha 271."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 404 (404 log)' , function () { pm.response.to.have.status(404); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "404 portfolio — projeto inexistente",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid_inexistente}}/publish/portfolio",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid_inexistente}}",
+								"publish",
+								"portfolio"
+							]
+						},
+						"description": "FDD secao 5, linha 130 e secao 6, linha 271."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 404 (404 portfolio)' , function () { pm.response.to.have.status(404); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "404 POST log — video inexistente em export/",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5 Contrato 3 (linha 179) e secao 6, linha 273: `FileNotFoundError` -> 404 quando o video nao existe em `export/` ou nao e `.mp4`.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"{{video_inexistente}}\",\n  \"network\": \"instagram\",\n  \"url\": \"https://www.instagram.com/reel/NAO-EXISTE/\",\n  \"posted_at\": \"2026-08-25\",\n  \"note\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 404 (404 POST log)' , function () { pm.response.to.have.status(404); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "404 POST log — caminho fora de export/ (../)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 6, linha 273 e secao 9, linha 349: tambem rejeita caminhos fora de `export/` (`..`).",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"../secrets/roubado.mp4\",\n  \"network\": \"instagram\",\n  \"url\": \"https://www.instagram.com/reel/TRAVERSAL/\",\n  \"posted_at\": \"2026-08-25\",\n  \"note\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 404 (404 POST log)' , function () { pm.response.to.have.status(404); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "422 POST log — rede vazia",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5 Contrato 3 (linha 180) e secao 6, linha 274: `network` vazio apos `strip()` levanta `ValueError` -> 422.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"{{video}}\",\n  \"network\": \"   \",\n  \"url\": \"https://www.instagram.com/reel/SEM-REDE/\",\n  \"posted_at\": \"2026-08-25\",\n  \"note\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 422 (422 POST log)' , function () { pm.response.to.have.status(422); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "422 POST log — URL sem http(s)://",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5 Contrato 3 (linha 180) e secao 6, linha 275: URL sem esquema `http(s)://` -> `ValueError` -> 422. Sem validacao de dominio.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"{{video}}\",\n  \"network\": \"instagram\",\n  \"url\": \"instagram.com/reel/SEM-ESQUEMA/\",\n  \"posted_at\": \"2026-08-25\",\n  \"note\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 422 (422 POST log)' , function () { pm.response.to.have.status(422); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "422 POST log — data fora de AAAA-MM-DD",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5 Contrato 3 (linha 180) e secao 6, linha 276: `posted_at` fora de `YYYY-MM-DD` (`date.fromisoformat`) -> `ValueError` -> 422.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"{{video}}\",\n  \"network\": \"instagram\",\n  \"url\": \"https://www.instagram.com/reel/DATA-RUIM/\",\n  \"posted_at\": \"25/08/2026\",\n  \"note\": \"\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 422 (422 POST log)' , function () { pm.response.to.have.status(422); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "404 POST feedback — post_id inexistente",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log/{{post_id_inexistente}}/feedback",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log",
+								"{{post_id_inexistente}}",
+								"feedback"
+							]
+						},
+						"description": "FDD secao 5 Contrato 4 (linha 201) e secao 6, linha 278: `post_id` inexistente -> `KeyError` -> 404.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"post que nao existe\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 404 (404 POST feedback)' , function () { pm.response.to.have.status(404); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "404 DELETE log — post_id inexistente",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log/{{post_id_inexistente}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log",
+								"{{post_id_inexistente}}"
+							]
+						},
+						"description": "FDD secao 5 Contrato 5 (linha 218), secao 6 linha 278 e secao 9 linha 348: a segunda chamada do DELETE devolve 404."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 404 (404 DELETE log)' , function () { pm.response.to.have.status(404); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "422 URL duplicada [1/3] setup — registrar post base",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "Setup do caso de URL duplicada (FDD secao 6, linha 277). Cria um post com `{{url_duplicada}}` para que a proxima requisicao colida. Nao e o caso negativo em si.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"{{video}}\",\n  \"network\": \"tiktok\",\n  \"url\": \"{{url_duplicada}}\",\n  \"posted_at\": \"2026-08-25\",\n  \"note\": \"post base do caso de URL duplicada\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('setup criou o post base (201)', function () { pm.response.to.have.status(201); });",
+									"if (body && body.id) { pm.collectionVariables.set('dup_post_id', body.id); }",
+									"pm.environment.set('dup_post_id', body.id);"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "422 POST log — URL ja registrada [2/3]",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log"
+							]
+						},
+						"description": "FDD secao 5 Contrato 3 (linha 180) e secao 6, linha 277: `url` ja registrada levanta `ValueError` \"URL ja registrada\" -> 422. Comparacao exata apos `strip()`.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"video\": \"{{video}}\",\n  \"network\": \"youtube\",\n  \"url\": \"{{url_duplicada}}\",\n  \"posted_at\": \"2026-08-25\",\n  \"note\": \"mesma URL do post base\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 422 (422 POST log)' , function () { pm.response.to.have.status(422); });",
+									"pm.test('corpo tem detail (handler do nucleo)', function () {",
+									"    pm.expect(body).to.have.property('detail');",
+									"});",
+									"pm.test('mensagem menciona URL ja registrada', function () {",
+									"    pm.expect(String(body.detail).toLowerCase()).to.include('url');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "422 URL duplicada [3/3] limpeza — remover post base",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/log/{{dup_post_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"log",
+								"{{dup_post_id}}"
+							]
+						},
+						"description": "Limpeza do caso de URL duplicada: remove o post criado no passo 1/3 para a colecao poder rodar de novo sem sujar `publish/log.json`."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('limpeza removeu o post base (200)', function () { pm.response.to.have.status(200); });"
+								]
+							}
+						}
+					]
+				}
+			]
+		}
+	]
+}
