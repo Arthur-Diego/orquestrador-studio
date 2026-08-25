@@ -38,3 +38,16 @@ def test_search_job_idle_and_validation(client):
     pid = client.post("/api/projects", json={"name": "S"}).json()["id"]
     assert client.get(f"/api/projects/{pid}/refs/job").json() == {"state": "idle"}
     assert client.post("/api/projects/zzz/refs/search", json={"terms": ["a"]}).status_code == 404
+
+
+def test_unknown_project_is_404_everywhere(client):
+    for method, path, kw in [
+        ("post", "/api/projects/nope/refs/select", {"json": {"ids": []}}),
+        ("get", "/api/projects/nope/mood/candidates", {}),
+        ("post", "/api/projects/nope/mood/import/downloads", {"json": {}}),
+        ("post", "/api/projects/nope/mood/select", {"json": {"ids": []}}),
+        ("get", "/api/projects/nope/mood/prompts", {}),
+        ("post", "/api/projects/../x/mood/select", {"json": {"ids": []}}),
+    ]:
+        r = getattr(client, method)(path, **kw)
+        assert r.status_code == 404, (path, r.status_code, r.text)

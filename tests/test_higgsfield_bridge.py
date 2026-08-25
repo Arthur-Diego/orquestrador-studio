@@ -32,3 +32,53 @@ def test_status_not_logged_in(monkeypatch):
     monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (1, "", "Error: Not authenticated."))
     s = hf.status()
     assert s["installed"] and not s["logged_in"] and "Not authenticated" in s["error"]
+
+
+def _fake_run(payload, code=0):
+    import json
+    return lambda args, timeout=120: (code, json.dumps(payload), "")
+
+
+def test_history_images_extracts_urls_defensively(monkeypatch):
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    payload = {"items": [
+        {"id": "j1", "job_type": "nano_banana_2", "prompt": "vibe", "results": [{"url": "https://cdn.x/a.png"}, {"url": "https://cdn.x/b.jpg?x=1"}]},
+        {"id": "j2", "job_type": "kling3_0", "results": [{"url": "https://cdn.x/v.mp4"}]},   # sem imagem → ignorado
+        "lixo",
+    ]}
+    monkeypatch.setattr(hf, "_run", _fake_run(payload))
+    jobs = hf.history_images(10)
+    assert [j["id"] for j in jobs] == ["j1"]
+    assert jobs[0]["urls"] == ["https://cdn.x/a.png", "https://cdn.x/b.jpg?x=1"] and jobs[0]["model"] == "nano_banana_2"
+
+
+def test_cost_and_generate_parse_outputs(monkeypatch):
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", _fake_run({"estimate": {"credits": 4}}))
+    assert hf.cost("nano_banana_2", {"prompt": "x"})["credits"] == 4
+    monkeypatch.setattr(hf, "_run", _fake_run({"id": "job9", "outputs": [{"image_url": "https://cdn.x/out.png"}]}))
+    r = hf.generate("nano_banana_2", {"prompt": "x"})
+    assert r["id"] == "job9" and r["urls"] == ["https://cdn.x/out.png"]
+
+
+def test_generate_raises_on_cli_error(monkeypatch):
+    import pytest
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (1, "", "Error: insufficient credits"))
+    with pytest.raises(RuntimeError, match="insufficient credits"):
+        hf.generate("nano_banana_2", {"prompt": "x"})
+    assert hf.cost("nano_banana_2", {"prompt": "x"})["credits"] is None
+
+
+def test_run_handles_missing_binary_and_timeout(monkeypatch):
+    import subprocess
+    monkeypatch.setattr(hf, "BIN", "/definitely/not/here")
+    code, _, err = hf._run(["account", "status"], timeout=5)
+    assert code == 127 and "indisponível" in err
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired(cmd="hf", timeout=1)
+    monkeypatch.setattr(hf.subprocess, "run", boom)
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    code, _, err = hf._run(["generate", "create"], timeout=1)
+    assert code == 124 and "tempo esgotado" in err

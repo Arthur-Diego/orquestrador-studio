@@ -17,6 +17,13 @@ from .steps import STEPS
 app = FastAPI(title="Orquestrador Studio")
 
 
+@app.exception_handler(KeyError)
+async def _project_not_found(_request, exc: KeyError):
+    """`project_dir()` levanta KeyError para id inválido/inexistente: sempre 404, nunca 500."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=404, content={"detail": f"projeto não encontrado: {exc.args[0] if exc.args else ''}"})
+
+
 class NewProject(BaseModel):
     name: str
     product: str = ""
@@ -166,6 +173,18 @@ def mood_history(pid: str):
         return mood.import_history(pid)
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from e
+
+
+@app.post("/api/projects/{pid}/mood/cost")
+def mood_cost(pid: str, req: MoodGenReq):
+    """Estimativa de créditos (sem gastar) para o mesmo pedido de /mood/generate."""
+    if not hf.available():
+        raise HTTPException(409, "CLI da Higgsfield não instalado")
+    service.project_dir(pid)
+    per_prompt = [hf.cost(req.model, {"prompt": p, "aspect_ratio": req.aspect_ratio,
+                                      "resolution": req.resolution, "count": req.count}) for p in req.prompts]
+    known = [c["credits"] for c in per_prompt if isinstance(c.get("credits"), (int, float))]
+    return {"per_prompt": per_prompt, "total": sum(known) if known and len(known) == len(per_prompt) else None}
 
 
 @app.post("/api/projects/{pid}/mood/generate")

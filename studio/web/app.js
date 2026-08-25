@@ -8,13 +8,6 @@ const toast = (m) => { const t = $("#toast"); t.textContent = m; t.classList.rem
 
 let projects = [], pid = null, cands = [], selected = new Set(), pollTimer = null;
 
-// ---------- etapas ----------
-async function loadSteps() {
-  const steps = await api("/api/steps");
-  $("#steps").innerHTML = steps.map(s =>
-    `<li class="${s.status}" title="${s.desc}"><span class="n">${String(s.n).padStart(2, "0")}</span><span><span class="t">${s.title}</span><span class="a">aula ${s.aula}${s.status === "soon" ? " · em breve" : ""}</span></span></li>`).join("");
-}
-
 // ---------- projetos ----------
 async function loadProjects(selectId) {
   projects = await api("/api/projects");
@@ -173,7 +166,12 @@ $("#promptList").addEventListener("click", async e => {
 $("#btnCopyAll").onclick = async () => { const all = [...document.querySelectorAll("#promptList textarea")].map(t => t.value).join("\n\n"); await navigator.clipboard.writeText(all); toast("Todos os prompts copiados"); };
 $("#btnMoodGen").onclick = async () => {
   const prompts = [...document.querySelectorAll("#promptList textarea")].map(t => t.value.trim()).filter(Boolean);
-  if (!confirm(`Gerar ${prompts.length} prompts × ${$("#moodCount").value} variações via CLI? Isso gasta créditos.`)) return;
+  let est = "";
+  try {
+    const c = await api(`/api/projects/${pid}/mood/cost`, { method: "POST", body: JSON.stringify({ model: $("#moodModel").value, prompts, count: +$("#moodCount").value }) });
+    est = c.total != null ? `Estimativa: ${c.total} créditos.` : "Estimativa indisponível.";
+  } catch (e) { est = "Estimativa indisponível."; }
+  if (!confirm(`Gerar ${prompts.length} prompt(s) × ${$("#moodCount").value} variações via CLI? ${est} Isso gasta créditos.`)) return;
   try {
     await api(`/api/projects/${pid}/mood/generate`, { method: "POST", body: JSON.stringify({ model: $("#moodModel").value, prompts, count: +$("#moodCount").value, use_refs: $("#moodUseRefs").checked }) });
     $("#btnMoodGen").disabled = true; pollMood();
