@@ -151,6 +151,15 @@ def test_portfolio_pronto_com_quatro_videos_distintos(svc, studio_env, project):
     assert len([ln for ln in md.splitlines() if ln.startswith("| ") and not ln.startswith("| ---")]) == 5, "cabeçalho + 4 posts"
 
 
+def test_tres_videos_distintos_em_cinco_posts_nao_fecha(svc, project):
+    """Critério da seção 9: 3 distintos com MAIS posts que vídeos ainda é ready: false, missing: 1."""
+    for i, v in enumerate(("9x16.mp4", "16x9.mp4", "1x1.mp4", "9x16.mp4", "16x9.mp4")):
+        add(svc, project, video=v, network=f"rede{i}", url=f"https://x.test/m{i}")
+    st = svc.portfolio_status(project)
+    assert st["count"] == 5 and st["distinct_videos"] == 3
+    assert st["ready"] is False and st["missing"] == 1
+
+
 def test_remover_desfaz_o_portfolio_pronto(svc, studio_env, project):
     ids = [add(svc, project, video=v, url=f"https://x.test/d{i}")["id"]
            for i, v in enumerate(("9x16.mp4", "16x9.mp4", "1x1.mp4", "extra.mp4"))]

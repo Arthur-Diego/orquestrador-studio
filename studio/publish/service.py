@@ -25,8 +25,15 @@ from ..refs.service import project_dir
 log = logging.getLogger("studio.publish")
 # Endpoints síncronos do FastAPI rodam em threadpool: sem isto, dois POST simultâneos
 # fariam read-modify-write em cima do mesmo log.json e um dos posts se perderia.
-# RLock porque as mutações chamam write_portfolio() ainda dentro da seção crítica.
-_lock = threading.RLock()
+# Lock POR PROJETO (padrão do HLD do studio: "uma operação por vez por projeto"), e RLock
+# porque as mutações chamam write_portfolio() ainda dentro da seção crítica.
+_locks: dict[str, threading.RLock] = {}
+_locks_guard = threading.Lock()
+
+
+def _project_lock(pid: str) -> threading.RLock:
+    with _locks_guard:
+        return _locks.setdefault(pid, threading.RLock())
 
 PORTFOLIO_GOAL = 4                      # aula 015: "publicar esses 4 vídeos" antes de prospectar
 EXPORT_DIR = "export"                   # provides da etapa 9
@@ -151,7 +158,7 @@ def add_post(pid: str, video: str, network: str, url: str,
     root = project_dir(pid)
     rel = _resolve_video(root, video)
     net, link, when = _clean_fields(network, url, posted_at)
-    with _lock:
+    with _project_lock(pid):
         posts = load_log(pid)
         if any(p["url"] == link for p in posts):
             raise ValueError("URL já registrada")
@@ -167,7 +174,7 @@ def add_post(pid: str, video: str, network: str, url: str,
 def set_feedback(pid: str, post_id: str, feedback: str) -> dict:
     """Grava o feedback recebido sobre um post (aula 015: "peça feedback")."""
     root = project_dir(pid)
-    with _lock:
+    with _project_lock(pid):
         posts = load_log(pid)
         for post in posts:
             if post["id"] == post_id:
@@ -182,7 +189,7 @@ def set_feedback(pid: str, post_id: str, feedback: str) -> dict:
 def remove_post(pid: str, post_id: str) -> int:
     """Remove um registro e devolve o novo total de posts."""
     root = project_dir(pid)
-    with _lock:
+    with _project_lock(pid):
         posts = load_log(pid)
         keep = [p for p in posts if p["id"] != post_id]
         if len(keep) == len(posts):

@@ -1,9 +1,11 @@
 ### FDD: publish (Etapa 10, Publicar)
 
-Versão: 0.2.0
+Versão: 0.3.0
 Data: 2026-08-25
 Responsável: frente OS-010 (wave 1, `/dd-parallel`), gerado em modo batch com auto-aceites
 v0.2.0: aplicada a **decisão 1 do lote** — o portfólio conta vídeos distintos (`distinct_videos >= 4`).
+v0.3.0: spec alinhada ao código entregue (lock por projeto, schema fechado de `log.json`, eventos de
+warning, validação estrita de data, `strip()` nos textos livres, `portfolio.md` com log vazio).
 
 ---
 
@@ -190,6 +192,7 @@ induzido a avaliar `count >= goal`, que é exatamente a leitura proibida pela de
 Campos: `video` (obrigatório, aceita `export/9x16.mp4` ou só `9x16.mp4`), `network` (obrigatório,
 string livre; a UI sugere `instagram`, `tiktok`, `youtube`, `outro`), `url` (obrigatório,
 `http(s)://`), `posted_at` (opcional, default data de hoje), `note` (opcional, default "").
+`network`, `url` e `note` são gravados com `strip()`.
 [auto-aceito: rede como string livre com sugestões, porque a aula 007 cita Instagram, TikTok e
 YouTube mas a 015 fala só em "redes sociais"]
 
@@ -204,6 +207,7 @@ YouTube mas a 015 fala só em "redes sociais"]
 - Método: POST (JSON)
 - Semântica de status: 200 post atualizado; 404 projeto ou post inexistente.
 - `feedback` ausente ou `""` **limpa** o campo (200) — é assim que a tela apaga um texto errado.
+- O texto é gravado com `strip()`.
 [auto-aceito: feedback como sub-rota POST do log, e não PATCH, para ficar dentro de "log GET/POST/DELETE"]
 
 **Exemplo de requisição**
@@ -247,6 +251,9 @@ exposto para leitura do log.
   - `remove_post(pid: str, post_id: str) -> int` (devolve o novo `count`)
   - `portfolio_status(pid: str) -> dict`
   - `write_portfolio(pid: str) -> Path` (regrava `publish/portfolio.md`)
+- Constantes de caminho também públicas (é o que `prospect` tende a importar em vez de repetir
+  string): `EXPORT_DIR = "export"`, `PUBLISH_DIR = "publish"`, `LOG_REL = "publish/log.json"`,
+  `PORTFOLIO_REL = "publish/portfolio.md"`, `VIDEO_EXT = ".mp4"`.
 - Exceções: `KeyError` (projeto ou post inexistente), `FileNotFoundError` (vídeo não está em
   `export/`), `ValueError` (validação de campos).
 - `id` do post: `uuid4().hex[:12]`.
@@ -264,6 +271,8 @@ Publicados: 4/4 vídeos distintos (5 publicações). Portfólio pronto: pode com
 ```
 Com menos de 4 vídeos distintos a segunda linha vira
 "Publicados: N/4 vídeos distintos (M publicações). Falta(m) X para o portfólio da aula 015."
+Com o log vazio (todos os posts removidos) não há tabela: o arquivo fica com o título, a linha de
+resumo `0/4` e "Nenhuma publicação registrada ainda."
 
 ---
 
@@ -279,14 +288,22 @@ Com menos de 4 vídeos distintos a segunda linha vira
 | corpo JSON malformado (campo obrigatório ausente, tipo errado) | 422 do Pydantic | `detail` é **lista de objetos**, não string — só as validações de regra abaixo devolvem `detail` string |
 | `network` vazio após `strip()` | `ValueError`, 422 | |
 | `url` sem esquema `http(s)://` | `ValueError`, 422 | sem validação de domínio |
-| `posted_at` fora de `YYYY-MM-DD` | `ValueError`, 422 | `date.fromisoformat` |
+| `posted_at` fora de `YYYY-MM-DD` | `ValueError`, 422 | regex `^\d{4}-\d{2}-\d{2}$` **antes** de `date.fromisoformat`: em 3.12 o `fromisoformat` sozinho aceita `20260825` e `2026-08-25T10:00` |
 | `url` já registrada | `ValueError` "URL já registrada", 422 | comparação exata após `strip()` |
 | `post_id` inexistente | `KeyError`, 404 | feedback e delete |
-| `log.json` inválido | tratado como `[]`, `warning` no logger | próxima mutação sobrescreve |
+| `log.json` inválido (JSON quebrado) | tratado como `[]`, `warning` `publish.log_corrompido` | próxima mutação sobrescreve |
+| `log.json` com JSON válido que não é lista | tratado como `[]`, `warning` `publish.log_invalido` | idem |
+| entrada do log que não é objeto | descartada silenciosamente na leitura | não vale um warning por item |
 | falha de escrita em disco | `OSError` sobe como 500 | sem retry; arquivo `.tmp` nunca substitui o bom |
 
 - Estratégias de resiliência: não há chamadas externas, então não há timeout, retry nem circuit
   breaker. Escrita atômica (`.tmp` + `os.replace`) protege `log.json` e `portfolio.md`.
+- **Serialização das mutações:** endpoints síncronos do FastAPI rodam em threadpool, então dois
+  `POST` simultâneos fariam read-modify-write no mesmo `log.json` e um dos posts se perderia (na
+  prática a corrida estoura primeiro no `.tmp` da escrita atômica). As três mutações rodam sob um
+  `threading.RLock` **por projeto** — o padrão "uma operação por vez por projeto" do HLD do
+  `studio`. `RLock` porque a seção crítica chama `write_portfolio()`. Sem job em thread: nada aqui
+  é longo, então não há `JobRegistry` nem polling.
 - Política de fallback: sem ffmpeg, sem CLI e sem rede a etapa funciona integralmente.
 - Invariantes:
   - `count == len(log.json)`, `distinct_videos == |{post.video}|` e `ready == (distinct_videos >= 4)`
@@ -307,7 +324,8 @@ Com menos de 4 vídeos distintos a segunda linha vira
 **Logs**
 - Logger `studio.publish` (stdlib `logging`), nível INFO: `publish.add pid=<pid> id=<id>
   network=<rede> count=<n>`, `publish.remove pid=<pid> id=<id> count=<n>`,
-  `publish.feedback pid=<pid> id=<id>`; WARNING quando `log.json` está corrompido.
+  `publish.feedback pid=<pid> id=<id>`; WARNING `publish.log_corrompido` (JSON quebrado) e
+  `publish.log_invalido` (JSON válido que não é lista).
 - Nunca logar `note` ou `feedback` (texto livre do usuário).
 
 **Tracing**
@@ -322,7 +340,7 @@ Com menos de 4 vídeos distintos a segunda linha vira
 
 | Componente | Versão mínima | Observações |
 | --- | --- | --- |
-| Python | 3.12 | stdlib apenas (`json`, `uuid`, `datetime`, `pathlib`, `logging`) |
+| Python | 3.12 | stdlib apenas (`json`, `uuid`, `datetime`, `pathlib`, `logging`, `threading`, `re`, `os`) |
 | FastAPI / Pydantic | 0.141 / 2.13 | modelos de request declarados em `router.py` |
 | `studio.refs.service.project_dir` | atual | resolução da raiz e validação de `pid` |
 | `studio/etapas/discover()` | atual | `META` com `id="publish"`, `n=10` |
@@ -332,6 +350,15 @@ Com menos de 4 vídeos distintos a segunda linha vira
 **Garantias de compatibilidade**
 - `log.json` mantém os campos da wave (`id, video, network, url, posted_at, note`); `feedback` é
   aditivo e `prospect` deve ignorá-lo. Leitura tolera entradas sem `feedback`.
+- **`log.json` tem schema fechado na escrita:** a leitura normaliza para exatamente as 7 chaves e
+  toda mutação regrava o arquivo inteiro normalizado. Consequência para a integração: campo extra
+  que outra etapa grave no arquivo é **apagado** na próxima mutação de `publish`. O artefato é
+  aditivo só por `publish`; consumidores (`prospect`) leem, não escrevem.
+- **`publish/` não está em `PROJECT_LAYOUT`** (`studio/config.py`, arquivo único que esta frente
+  não pode editar): o serviço cria a pasta na primeira mutação (`mkdir(parents=True)`). Se a
+  integração acrescentar `"publish"` ao layout, o teste que afirma que `GET portfolio` não cria
+  artefato precisa ser ajustado junto.
+- `threading` (stdlib) entra como dependência do serviço por causa do lock por projeto.
 - Nenhum arquivo único do repositório é editado (`app.py`, `steps.py`, `conftest.py`, etc.).
 - `META.n = 10` bate com o catálogo `SOON`; o ajuste de `test_steps_and_config.py` é tarefa
   transversal do orquestrador, não desta frente.

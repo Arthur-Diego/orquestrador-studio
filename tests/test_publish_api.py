@@ -130,6 +130,15 @@ def test_portfolio_pronto_com_quatro_videos_distintos(client, pid):
                   "portfolio_md": "publish/portfolio.md"}
 
 
+def test_corpo_malformado_da_422_do_pydantic(client, pid):
+    """Matriz de erros: corpo malformado também é 422, mas com `detail` lista, não string."""
+    r = client.post(f"/api/projects/{pid}/publish/log", json={"video": "export/9x16.mp4"})
+    assert r.status_code == 422
+    assert isinstance(r.json()["detail"], list), "422 do Pydantic, não da regra de negócio"
+    regra = client.post(f"/api/projects/{pid}/publish/log", json=post_body(network=" "))
+    assert regra.status_code == 422 and isinstance(regra.json()["detail"], str)
+
+
 def test_projeto_inexistente_404_em_todas_as_rotas(client):
     p = "/api/projects/nao-existe/publish"
     assert client.get(f"{p}/exports").status_code == 404
