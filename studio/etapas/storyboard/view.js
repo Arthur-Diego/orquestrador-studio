@@ -3,7 +3,7 @@
 Studio.register("storyboard", (ctx) => {
   const { $, api, toast } = ctx;
   let meta = { kinds: [], presets: [], counts: { uncertain: 4, tweak: 1 } };
-  let ideas = [], sel = new Set(), scenes = [], hasBase = false;
+  let ideas = [], sel = new Set(), scenes = [], hasBase = false, lastCount = 4;
 
   const url = (p) => `/api/projects/${ctx.pid()}/storyboard${p || ""}`;
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -41,6 +41,7 @@ Studio.register("storyboard", (ctx) => {
       const r = await api(url("/instructions"), { method: "POST", body: JSON.stringify({ kind: $("#sbKind").value, text: $("#sbText").value, count }) });
       $("#sbInstruction").value = r.instruction;
       $("#sbHint").textContent = r.ui_hint;
+      lastCount = r.count;
       return r;
     } catch (err) { toast(err.message); return null; }
   }
@@ -124,7 +125,7 @@ Studio.register("storyboard", (ctx) => {
         $("#sbCopied").textContent = "copiado ✓"; setTimeout(() => ($("#sbCopied").textContent = ""), 1500);
       };
       $("#sbCliGen").onclick = async () => {
-        const built = await build(+($("#sbGen1").dataset.last || meta.counts.uncertain));
+        const built = await build(lastCount);
         if (!built) return;
         const body = { model: $("#sbModel").value, kind: built.kind, text: $("#sbText").value, count: built.count };
         let est = "Estimativa indisponível.";
