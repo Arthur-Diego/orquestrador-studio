@@ -13,6 +13,7 @@ import logging
 import re
 import shutil
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -97,7 +98,9 @@ def generate_cost(pid: str, prompt: str, duration: int = DEFAULT_DURATION, count
     c = hf.cost(MODEL, {"prompt": prompt, "duration": duration})
     per = c.get("credits")
     total = per * count if isinstance(per, (int, float)) else None
-    return {"per_track": per, "total": total, "raw": c.get("raw") or c.get("error")}
+    # `error` explícito: sem ele, um CLI que falhou vira um 200 com tudo nulo e o usuário não
+    # sabe se a faixa é grátis ou se a estimativa não foi feita.
+    return {"per_track": per, "total": total, "raw": c.get("raw"), "error": c.get("error")}
 
 
 def _audio_urls(res: dict) -> list[str]:
@@ -108,6 +111,11 @@ def _audio_urls(res: dict) -> list[str]:
     return sorted(set(AUDIO_URL_RE.findall(raw)))
 
 
+def _elapsed(started: float) -> str:
+    """Tempo da faixa no log do job — a seção 7 do FDD pede tempo por faixa."""
+    return f"{time.perf_counter() - started:.1f}s"
+
+
 def start_generate(pid: str, prompt: str, duration: int = DEFAULT_DURATION, count: int = DEFAULT_COUNT) -> dict:
     """Gera `count` faixas com `sonilo_music` e importa cada uma como candidata. Um job por projeto."""
     root = project_dir(pid)
@@ -116,11 +124,12 @@ def start_generate(pid: str, prompt: str, duration: int = DEFAULT_DURATION, coun
     def run(job: dict):
         last_error = None
         for i in range(count):
+            started = time.perf_counter()
             try:
                 res = hf.generate(MODEL, {"prompt": prompt, "duration": duration}, timeout_s=GENERATE_TIMEOUT)
             except Exception as e:  # noqa: BLE001  (uma faixa que falha não derruba as outras)
                 last_error = f"{type(e).__name__}: {e}"
-                job["log"].append(f"faixa {i + 1}/{count}: geração falhou: {e}")
+                job["log"].append(f"faixa {i + 1}/{count}: geração falhou em {_elapsed(started)}: {e}")
                 job["done"] = i + 1
                 continue
             urls = _audio_urls(res)
@@ -140,6 +149,7 @@ def start_generate(pid: str, prompt: str, duration: int = DEFAULT_DURATION, coun
             (root / "jobs").mkdir(parents=True, exist_ok=True)
             (root / "jobs" / f"music_{res.get('id') or i}.json").write_text(
                 json.dumps(res.get("raw"), ensure_ascii=False, indent=1, default=str))
+            job["log"].append(f"faixa {i + 1}/{count}: {len(urls)} áudio(s) em {_elapsed(started)}")
             job["done"] = i + 1
         if job["added"] == 0 and last_error:
             raise RuntimeError(last_error)
@@ -199,13 +209,23 @@ def select(pid: str, cand_id: str, license: str) -> dict:
         f"Declarado em: {datetime.now().isoformat(timespec='seconds')}\n")
     log.info("select pid=%s id=%s ext=%s license_len=%s", pid, cand_id, ext, len(declared))
 
+    # Invariante da seção 6 do FDD: `beats.json`, quando existe, é SEMPRE o da trilha atual.
+    # Por isso o arquivo antigo cai antes da detecção, e não só no caminho sem ffmpeg — se a
+    # análise falhar no meio, é melhor ficar sem batidas do que com as batidas da trilha anterior.
+    _beats_file(root).unlink(missing_ok=True)
     beats, warning = None, None
-    if ff.available():
-        beats = _write_beats(root, beats_mod.analyze(dst))
-    else:
-        _beats_file(root).unlink(missing_ok=True)   # beats.json nunca pode sobrar de outra trilha
+    if not ff.available():
         warning = "ffmpeg indisponível: batidas não detectadas"
         log.info("beats skipped reason=ffmpeg_unavailable pid=%s", pid)
+    else:
+        try:
+            beats = _write_beats(root, beats_mod.analyze(dst))
+            log.info("beats pid=%s bpm=%s beats=%d impacts=%d ms=%s", pid, beats["bpm"],
+                     len(beats["beats"]), len(beats["impacts"]), beats.get("analysis_ms"))
+        except Exception as e:  # noqa: BLE001  (a escolha da trilha não pode cair junto com a análise)
+            _beats_file(root).unlink(missing_ok=True)
+            warning = f"não foi possível detectar as batidas: {e}"
+            log.warning("beats failed pid=%s reason=%s", pid, e)
     return {"selected": chosen, "music": f"{STEP}/music{ext}", "beats": beats, "warning": warning}
 
 

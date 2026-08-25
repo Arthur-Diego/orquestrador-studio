@@ -99,7 +99,7 @@ Studio.register("music", (ctx) => {
       $("#btnMusGen").onclick = async () => {
         const body = { prompt: $("#musPrompt").value.trim(), duration: +$("#musDuration").value, count: +$("#musCount").value };
         let est = "Estimativa indisponível.";
-        try { const c = await api(`/api/projects/${ctx.pid()}/music/generate/cost`, { method: "POST", body: JSON.stringify(body) }); if (c.total != null) est = `Estimativa: ${c.total} créditos.`; } catch (e) { /* mantém indisponível */ }
+        try { const c = await api(`/api/projects/${ctx.pid()}/music/generate/cost`, { method: "POST", body: JSON.stringify(body) }); if (c.total != null) est = `Estimativa: ${c.total} créditos.`; else if (c.error) est = `Estimativa indisponível (${c.error.slice(0, 120)}).`; } catch (e) { /* mantém indisponível */ }
         if (!confirm(`Gerar ${body.count} faixa(s) de ${body.duration}s via CLI? ${est} Isso gasta créditos.`)) return;
         try { await api(`/api/projects/${ctx.pid()}/music/generate`, { method: "POST", body: JSON.stringify(body) }); $("#btnMusGen").disabled = true; pollGen(); }
         catch (err) { toast(err.message); }

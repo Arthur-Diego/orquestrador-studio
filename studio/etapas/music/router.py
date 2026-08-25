@@ -13,6 +13,16 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 NO_CLI = "CLI da Higgsfield não instalado/logado"
 
 
+def _require_cli() -> None:
+    """409 quando o CLI não está instalado OU não está logado (matriz de erros da seção 6 do FDD).
+
+    Checar só o binário não basta: sem login o CLI aceita o comando e falha depois, gastando o
+    tempo do usuário para dizer o que já dava para saber antes.
+    """
+    if not hf.available() or not hf.status().get("logged_in"):
+        raise HTTPException(409, NO_CLI)
+
+
 class DownloadsReq(BaseModel):
     folder: str | None = None
     since_minutes: int = 120
@@ -60,7 +70,8 @@ async def music_upload(pid: str, files: list[UploadFile] = File(...)):  # noqa: 
 
 
 @router.post("/api/projects/{pid}/music/import/downloads")
-def music_downloads(pid: str, req: DownloadsReq):
+def music_downloads(pid: str, req: DownloadsReq | None = None):
+    req = req or DownloadsReq()
     try:
         return music.import_downloads(pid, req.folder, req.since_minutes)
     except FileNotFoundError as e:
@@ -75,8 +86,7 @@ def downloads_folder():
 @router.post("/api/projects/{pid}/music/import/history")
 def music_history(pid: str, req: HistoryReq | None = None):
     refs.project_dir(pid)
-    if not hf.available():
-        raise HTTPException(409, NO_CLI)
+    _require_cli()
     try:
         return music.import_history(pid, req.size if req else 50)
     except RuntimeError as e:
@@ -85,15 +95,15 @@ def music_history(pid: str, req: HistoryReq | None = None):
 
 @router.post("/api/projects/{pid}/music/generate/cost")
 def music_cost(pid: str, req: GenerateReq):
-    if not hf.available():
-        raise HTTPException(409, NO_CLI)
+    refs.project_dir(pid)   # projeto inexistente é 404 ANTES de qualquer 409 de CLI
+    _require_cli()
     return music.generate_cost(pid, req.prompt, req.duration, req.count)
 
 
 @router.post("/api/projects/{pid}/music/generate", status_code=202)
 def music_generate(pid: str, req: GenerateReq):
-    if not hf.available():
-        raise HTTPException(409, NO_CLI)
+    refs.project_dir(pid)   # projeto inexistente é 404 ANTES de qualquer 409 de CLI
+    _require_cli()
     try:
         return music.start_generate(pid, req.prompt, req.duration, req.count)
     except RuntimeError as e:

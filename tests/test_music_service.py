@@ -167,6 +167,28 @@ def test_select_without_ffmpeg_keeps_the_choice_and_warns(ffmpeg, monkeypatch, s
         music.recompute_beats(project)
 
 
+def test_select_never_leaves_beats_of_the_previous_track(ffmpeg, monkeypatch, studio_env, music, project, tmp_path):
+    """Invariante da seção 6: se a análise falhar com o ffmpeg presente, é melhor ficar sem
+    beats.json do que com as batidas da trilha anterior — a etapa 8 cortaria no lugar errado."""
+    music.import_upload(project, [("a.wav", audio_bytes(tmp_path, "a.wav", seconds=10, bpm=120)),
+                                  ("b.mp3", audio_bytes(tmp_path, "b.mp3", seconds=8, bpm=100))])
+    ids = [c["id"] for c in music.list_candidates(project)]
+    primeiro = music.select(project, ids[0], "lib A")
+    root = studio_env["refs"].project_dir(project)
+    assert (root / "audio" / "beats.json").exists()
+
+    def falha(*a, **k):
+        raise RuntimeError("ffmpeg falhou: stream não decodificável")
+    monkeypatch.setattr(music.beats_mod, "analyze", falha)
+    r = music.select(project, ids[1], "lib B")
+
+    assert r["beats"] is None and "não foi possível detectar as batidas" in r["warning"]
+    assert r["music"] == "audio/music.mp3", "a escolha da trilha não cai junto com a análise"
+    assert "lib B" in (root / "audio" / "license.txt").read_text()
+    assert not (root / "audio" / "beats.json").exists(), "beats.json da trilha anterior não pode sobrar"
+    assert abs(primeiro["beats"]["duration"] - 10.0) < 0.2, "o beats.json apagado era mesmo o da faixa A"
+
+
 def test_recompute_and_read_beats_without_track(music, project):
     with pytest.raises(FileNotFoundError):
         music.read_beats(project)

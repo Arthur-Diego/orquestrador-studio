@@ -76,6 +76,18 @@ def test_downloads_folder_not_found_is_404(client, pid):
     assert client.post(f"/api/projects/{pid}/music/import/downloads", json={"folder": "/nao/existe"}).status_code == 404
 
 
+def test_downloads_accepts_empty_body(client, pid):
+    """A seção 5 declara os dois campos opcionais: POST sem corpo tem que usar os defaults."""
+    r = client.post(f"/api/projects/{pid}/music/import/downloads")
+    assert r.status_code == 200 and r.json()["added"] == 0
+
+
+def fake_cli(monkeypatch, hf, logged_in=True):
+    """CLI da Higgsfield instalado e logado, sem tocar em processo nenhum."""
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": logged_in})
+
+
 def test_cli_routes_are_409_without_cli(monkeypatch, client, pid):
     import studio.higgsfield as hf
     monkeypatch.setattr(hf, "available", lambda: False)
@@ -85,10 +97,29 @@ def test_cli_routes_are_409_without_cli(monkeypatch, client, pid):
     assert client.post(f"/api/projects/{pid}/music/generate", json=body).status_code == 409
 
 
+def test_cli_routes_are_409_when_installed_but_not_logged_in(monkeypatch, client, pid):
+    """A matriz de erros do FDD trata "sem login" igual a "sem CLI": 409, não deixar tentar."""
+    import studio.higgsfield as hf
+    fake_cli(monkeypatch, hf, logged_in=False)
+    body = {"prompt": "icy neon, strong beats"}
+    for path in ("import/history", "generate/cost", "generate"):
+        r = client.post(f"/api/projects/{pid}/music/{path}", json=body if path != "import/history" else {})
+        assert r.status_code == 409 and "logado" in r.json()["detail"], path
+
+
+def test_cost_reports_cli_failure_instead_of_silent_nulls(monkeypatch, client, pid):
+    import studio.higgsfield as hf
+    from studio.music import service as music
+    fake_cli(monkeypatch, hf)
+    monkeypatch.setattr(music.hf, "cost", lambda model, params: {"credits": None, "error": "No workspace selected"})
+    r = client.post(f"/api/projects/{pid}/music/generate/cost", json={"prompt": "x"}).json()
+    assert r["per_track"] is None and r["total"] is None and "workspace" in r["error"]
+
+
 def test_cost_and_generate_with_fake_cli(monkeypatch, client, pid):
     import studio.higgsfield as hf
     from studio.music import service as music
-    monkeypatch.setattr(hf, "available", lambda: True)
+    fake_cli(monkeypatch, hf)
     monkeypatch.setattr(music.hf, "cost", lambda model, params: {"credits": 4, "raw": {"credits": 4}})
     monkeypatch.setattr(music.hf, "generate", lambda *a, **k: {"raw": {}, "urls": [], "id": "j1"})
     body = {"prompt": "icy neon, strong beats", "duration": 35, "count": 3}
@@ -105,7 +136,7 @@ def test_generate_refuses_concurrent_job_over_http(monkeypatch, client, pid):
     import studio.higgsfield as hf
     from studio.music import service as music
     gate = threading.Event()
-    monkeypatch.setattr(hf, "available", lambda: True)
+    fake_cli(monkeypatch, hf)
     monkeypatch.setattr(music.hf, "generate", lambda *a, **k: (gate.wait(5), {"raw": {}, "urls": [], "id": "x"})[1])
     body = {"prompt": "icy neon", "count": 1}
     assert client.post(f"/api/projects/{pid}/music/generate", json=body).status_code == 202
@@ -125,14 +156,14 @@ def test_history_failure_is_502(monkeypatch, client, pid):
 
     def boom(*a, **k):
         raise RuntimeError("CLI sem login")
-    monkeypatch.setattr(hf, "available", lambda: True)
+    fake_cli(monkeypatch, hf)
     monkeypatch.setattr(music.hf, "history_media", boom)
     assert client.post(f"/api/projects/{pid}/music/import/history", json={}).status_code == 502
 
 
 def test_generate_body_validation(monkeypatch, client, pid):
     import studio.higgsfield as hf
-    monkeypatch.setattr(hf, "available", lambda: True)
+    fake_cli(monkeypatch, hf)
     for body in ({"prompt": ""}, {"prompt": "x", "count": 9}, {"prompt": "x", "duration": 5}, {"prompt": "x", "duration": 300}):
         assert client.post(f"/api/projects/{pid}/music/generate", json=body).status_code == 422, body
 
@@ -146,6 +177,9 @@ def test_unknown_project_is_404_everywhere(client):
         ("post", "/api/projects/nope/music/beats", {"json": {}}),
         ("post", "/api/projects/nope/music/import/downloads", {"json": {}}),
         ("post", "/api/projects/nope/music/select", {"json": {"id": "a", "license": "b"}}),
+        ("post", "/api/projects/nope/music/generate/cost", {"json": {"prompt": "x"}}),
+        ("post", "/api/projects/nope/music/generate", {"json": {"prompt": "x"}}),
+        ("post", "/api/projects/nope/music/import/history", {"json": {}}),
         ("post", "/api/projects/../x/music/select", {"json": {"id": "a", "license": "b"}}),
     ]:
         r = getattr(client, method)(path, **kw)
