@@ -522,6 +522,19 @@ vez de alterar as seções normativas):
 11. **Import do histórico** passa por `ingest.import_history` → `urlopen` (não por `hf.download`,
     que é usado só na geração). O teste fakeia `ingest.urlopen`, como diz a seção 9 no espírito.
 
+12. **Precisões do contrato levantadas ao gerar a coleção Postman**
+    (`docs/domains/base/postman/divergencias.md`, executada com newman: 23 requests, 32 asserts, 0 falhas):
+    - o campo do multipart é `files` (não `files[]`), igual ao do plugin `mood`;
+    - `cost` e `generate` checam o CLI **antes** do pré-requisito: sem CLI instalado (ou sem login,
+      em `generate`) a resposta é 409 e o 422 documentado só aparece com o CLI logado;
+    - `model` continua sobrescritível em qualquer `kind`, mas a **tela** só o envia em
+      `kind: "situation"` — em `label`/`upscale` mandar o modelo do seletor de prompts gastaria
+      créditos no modelo errado;
+    - `count` vale como número de variações em `situation` e como número de chamadas em `label`;
+      em `upscale` é sempre 1 item;
+    - o `openapi.json` gerado pelo FastAPI só declara 200 e 422 (comportamento do framework, igual
+      ao das etapas 1 e 2): a matriz da seção 6 continua sendo a fonte dos demais status.
+
 Pendências para a integração (W5):
 
 - `[cross-feature]` a etapa lê `mood/selected/` e `palette.json` reais e usa ≥1 referência de
