@@ -1,10 +1,11 @@
-// Etapa 10 — Publicar (aula 015): registro manual dos posts, contador de 4 vídeos e feedback.
-// Decisão 1 do lote: o portfólio conta VÍDEOS DISTINTOS (distinct_videos), não o total de posts.
+// Etapa 10 — Publicar (aula 015): registro manual dos posts, portfólio global e comunidade.
+// ADR-012: o portfólio conta PROJETOS distintos com post (distinct_videos), não arquivos nem posts.
 Studio.register("publish", (ctx) => {
   const { $, api, toast } = ctx;
-  let exports_ = [], thumb = null, posts = [], status = { count: 0, distinct_videos: 0, goal: 4, ready: false, missing: 4 };
+  let exports_ = [], thumb = null, posts = [],
+    status = { count: 0, videos: 0, published: false, distinct_videos: 0, goal: 4, ready: false, missing: 4, projects: [], community: { done: 0, total: 3 } };
 
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const esc = (s) => Studio.ui.esc(s);
   const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
   const mb = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B");
   const base = () => `/api/projects/${ctx.pid()}/publish`;
@@ -31,6 +32,25 @@ Studio.register("publish", (ctx) => {
       : `<div class="empty">Nenhum export ainda. Volte à etapa 9 e gere os formatos do vídeo.</div>`;
   }
 
+  function renderGlobal() {
+    const p = status.projects || [];
+    const este = status.published
+      ? `<strong>Este vídeo já está publicado</strong> (${status.videos} arquivo(s) registrado(s) neste projeto).`
+      : `Este vídeo ainda não está publicado.`;
+    const lista = p.length
+      ? `<ul>${p.map((x) => `<li>${esc(x.name)} — ${x.posts} publicação(ões)${x.first_posted ? ` · desde ${esc(x.first_posted)}` : ""}</li>`).join("")}</ul>`
+      : `<p>Nenhum projeto com post registrado ainda.</p>`;
+    $("#pubGlobal").innerHTML = `<p>${este} Portfólio <strong>${status.distinct_videos}/${status.goal} (global)</strong>:</p>${lista}`;
+  }
+
+  function renderCommunity() {
+    const c = status.community || { done: 0, total: 3 };
+    document.querySelectorAll("#pubCommunity input[data-com]").forEach((el) => { el.checked = !!c[el.dataset.com]; });
+    const chip = $("#pubComChip");
+    chip.textContent = `${c.done}/${c.total}`;
+    chip.className = "chip " + (c.done === c.total ? "ok" : c.done ? "warn" : "mode");
+  }
+
   function renderLog() {
     $("#pubLog").innerHTML = posts.length ? posts.map((p) => {
       const orfao = exports_.length && !exports_.some((f) => f.file === p.video);
@@ -43,7 +63,7 @@ Studio.register("publish", (ctx) => {
         <a class="fine" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>
         ${p.note ? `<div class="fine">${esc(p.note)}</div>` : ""}
         <div class="row">
-          <input class="fb" data-id="${esc(p.id)}" placeholder="Feedback recebido (aula 015: peça feedback)" value="${esc(p.feedback)}">
+          <input class="fb" data-id="${esc(p.id)}" placeholder="Feedback recebido (aula 014: compartilhar é o que permite feedback)" value="${esc(p.feedback)}">
           <button class="ghost save" data-id="${esc(p.id)}">Salvar</button>
         </div>
       </div>`;
@@ -51,7 +71,7 @@ Studio.register("publish", (ctx) => {
   }
 
   function render() {
-    renderExports(); renderLog();
+    renderExports(); renderLog(); renderGlobal(); renderCommunity();
     $("#pubCounter").textContent = `${status.distinct_videos}/${status.goal} vídeos`;
     $("#pubPosts").textContent = `${status.count} ${status.count === 1 ? "publicação" : "publicações"}`;
     const ready = $("#pubReady");
@@ -78,27 +98,35 @@ Studio.register("publish", (ctx) => {
         try {
           await api(`${base()}/log`, { method: "POST", body: JSON.stringify(body) });
           $("#pubUrl").value = ""; $("#pubNote").value = "";
-          toast("Publicação registrada"); load();
+          toast("Publicação registrada"); await load(); ctx.guide();
         } catch (err) { toast(err.message); }
       };
+      $("#pubCommunity").addEventListener("change", async (e) => {
+        const el = e.target.closest("input[data-com]"); if (!el) return;
+        try {
+          await api(`${base()}/community`, { method: "POST", body: JSON.stringify({ [el.dataset.com]: el.checked }) });
+          await load(); ctx.guide();
+        } catch (err) { toast(err.message); el.checked = !el.checked; }
+      });
       $("#pubLog").addEventListener("click", async (e) => {
         const del = e.target.closest("button.del"), save = e.target.closest("button.save");
         if (del) {
           if (!confirm("Remover este registro de publicação? O post continua no ar na rede.")) return;
-          try { await api(`${base()}/log/${del.dataset.id}`, { method: "DELETE" }); toast("Registro removido"); load(); }
+          try { await api(`${base()}/log/${del.dataset.id}`, { method: "DELETE" }); toast("Registro removido"); await load(); ctx.guide(); }
           catch (err) { toast(err.message); }
         } else if (save) {
           const input = $(`#pubLog input.fb[data-id="${save.dataset.id}"]`);
-          try { await api(`${base()}/log/${save.dataset.id}/feedback`, { method: "POST", body: JSON.stringify({ feedback: input.value }) }); toast("Feedback salvo"); load(); }
+          try { await api(`${base()}/log/${save.dataset.id}/feedback`, { method: "POST", body: JSON.stringify({ feedback: input.value }) }); toast("Feedback salvo"); await load(); ctx.guide(); }
           catch (err) { toast(err.message); }
         }
       });
       this.onProject();
     },
     async onProject() {
-      if (!ctx.pid()) return;
       $("#pubDate").value = today();
-      load();
+      await load();
+      Studio.ui.renderGuide("publish");
     },
+    destroy() { /* esta tela não usa polling: nada a parar */ },
   };
 });

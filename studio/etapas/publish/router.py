@@ -25,6 +25,23 @@ class FeedbackReq(BaseModel):
     feedback: str = ""     # ausente ou "" limpa o feedback (é como a tela apaga um texto errado)
 
 
+class CommunityReq(BaseModel):
+    """Checklist de comunidade da aula 015. Campo ausente (`None`) não muda o item."""
+    posted: bool | None = None
+    commented: bool | None = None
+    feedback: bool | None = None
+
+
+@router.get("/api/portfolio")
+def portfolio_global():
+    """Portfólio da aula 015 — **projetos distintos** com post registrado (ADR-012).
+
+    Rota sem `pid` de propósito: o dever de casa é ter quatro obras publicadas, e nenhuma delas
+    mora no projeto onde a prospecção acontece. `prospect.gate` consome exatamente isto.
+    """
+    return publish.global_portfolio()
+
+
 @router.get("/api/projects/{pid}/publish/exports")
 def publish_exports(pid: str):
     """Arquivos de `export/` prontos para postar, com flag `published`."""
@@ -62,5 +79,16 @@ def publish_remove(pid: str, post_id: str):
 
 @router.get("/api/projects/{pid}/publish/portfolio")
 def publish_portfolio(pid: str):
-    """Contadores do portfólio (decisão 1 do lote: `ready` conta vídeos distintos)."""
+    """Contadores deste projeto + do portfólio global (`ready` vem do global, ADR-012)."""
     return publish.portfolio_status(pid)
+
+
+@router.get("/api/projects/{pid}/publish/community")
+def publish_community(pid: str):
+    """Checklist de comunidade (aula 015). Nunca bloqueia — é lembrete de prática."""
+    return publish.load_community(pid)
+
+
+@router.post("/api/projects/{pid}/publish/community")
+def publish_set_community(pid: str, req: CommunityReq):
+    return publish.set_community(pid, **req.model_dump())

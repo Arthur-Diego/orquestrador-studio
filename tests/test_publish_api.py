@@ -17,6 +17,17 @@ def post_body(video="export/9x16.mp4", network="instagram", url="https://x.test/
     return {"video": video, "network": network, "url": url, **kw}
 
 
+def outra_obra(studio_env, slug):
+    """Projeto irmão com um post — o portfólio da aula 015 é global (ADR-012)."""
+    import json
+    other = studio_env["tmp"] / "projects" / slug
+    (other / "publish").mkdir(parents=True, exist_ok=True)
+    (other / "project.json").write_text(json.dumps({"id": slug, "name": slug.upper()}))
+    (other / "publish" / "log.json").write_text(json.dumps(
+        [{"id": "x", "video": "export/9x16.mp4", "network": "instagram",
+          "url": f"https://x.test/{slug}", "posted_at": "2026-08-20", "note": ""}]))
+
+
 def test_etapa_aparece_pronta_no_catalogo(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "publish")
     assert step["status"] == "ready" and step["n"] == 10 and step["aula"] == "015"
@@ -37,9 +48,10 @@ def test_get_exports(client, pid):
 def test_get_log_vazio_e_portfolio_vazio(client, pid):
     assert client.get(f"/api/projects/{pid}/publish/log").json() == {
         "posts": [], "count": 0, "distinct_videos": 0, "goal": 4}
-    assert client.get(f"/api/projects/{pid}/publish/portfolio").json() == {
-        "count": 0, "distinct_videos": 0, "goal": 4, "ready": False, "missing": 4, "portfolio_md": None,
-    }
+    st = client.get(f"/api/projects/{pid}/publish/portfolio").json()
+    assert st["count"] == 0 and st["videos"] == 0 and st["published"] is False
+    assert st["distinct_videos"] == 0 and st["goal"] == 4 and st["ready"] is False and st["missing"] == 4
+    assert st["projects"] == [] and st["portfolio_md"] is None and st["community"]["done"] == 0
 
 
 def test_post_log_201_e_efeitos(client, studio_env, pid):
@@ -55,6 +67,7 @@ def test_post_log_201_e_efeitos(client, studio_env, pid):
     assert log["count"] == 1 and log["posts"] == [post] and log["distinct_videos"] == 1
     st = client.get(f"/api/projects/{pid}/publish/portfolio").json()
     assert st["portfolio_md"] == "publish/portfolio.md" and st["distinct_videos"] == 1
+    assert st["published"] is True and st["videos"] == 1
     assert (studio_env["refs"].project_dir(pid) / "publish" / "portfolio.md").exists()
 
 
@@ -115,19 +128,56 @@ def test_delete_200_e_404_na_segunda_vez(client, pid):
     assert client.get(f"/api/projects/{pid}/publish/log").json()["count"] == 0
 
 
-def test_portfolio_pronto_com_quatro_videos_distintos(client, pid):
-    """Decisão 1 do lote: 4 posts do MESMO vídeo não fecham; 4 vídeos distintos fecham."""
-    for i, net in enumerate(("instagram", "tiktok", "youtube", "outro")):
+def test_portfolio_so_fecha_com_quatro_projetos_distintos(client, studio_env, pid):
+    """ADR-012: nem 4 posts nem 4 formatos do MESMO projeto fecham — a aula pede 4 obras."""
+    for i, v in enumerate(("9x16.mp4", "16x9.mp4", "1x1.mp4", "extra.mp4")):
         assert client.post(f"/api/projects/{pid}/publish/log",
-                           json=post_body(network=net, url=f"https://x.test/same{i}")).status_code == 201
+                           json=post_body(video=v, url=f"https://x.test/dist{i}")).status_code == 201
     st = client.get(f"/api/projects/{pid}/publish/portfolio").json()
-    assert st["count"] == 4 and st["distinct_videos"] == 1 and st["ready"] is False and st["missing"] == 3
+    assert st["count"] == 4 and st["videos"] == 4
+    assert st["distinct_videos"] == 1 and st["ready"] is False and st["missing"] == 3
 
-    for i, v in enumerate(("16x9.mp4", "1x1.mp4", "extra.mp4")):
-        client.post(f"/api/projects/{pid}/publish/log", json=post_body(video=v, url=f"https://x.test/dist{i}"))
+    for i in range(1, 4):
+        outra_obra(studio_env, f"2026-08-obra-{i}")
     st = client.get(f"/api/projects/{pid}/publish/portfolio").json()
-    assert st == {"count": 7, "distinct_videos": 4, "goal": 4, "ready": True, "missing": 0,
-                  "portfolio_md": "publish/portfolio.md"}
+    assert st["distinct_videos"] == 4 and st["ready"] is True and st["missing"] == 0
+
+
+def test_rota_global_do_portfolio(client, studio_env, pid):
+    """`GET /api/portfolio` — sem `pid`: é o portfólio do aluno, não o de um projeto."""
+    vazio = client.get("/api/portfolio").json()
+    assert vazio == {"projects": [], "distinct_videos": 0, "posts": 0, "goal": 4,
+                     "ready": False, "missing": 4}
+    client.post(f"/api/projects/{pid}/publish/log", json=post_body())
+    outra_obra(studio_env, "2026-08-obra-1")
+    body = client.get("/api/portfolio").json()
+    assert body["distinct_videos"] == 2 and body["posts"] == 2 and body["missing"] == 2
+    assert {p["project_id"] for p in body["projects"]} == {pid, "2026-08-obra-1"}
+    assert body["projects"][0]["first_posted"], "a data do primeiro post entra no contrato"
+
+
+def test_o_gate_da_prospeccao_le_o_portfolio_global(client, studio_env, pid):
+    """Critério cross-feature 11.2: a etapa 11 destrava com obras de OUTROS projetos."""
+    gate = f"/api/projects/{pid}/prospect/gate"
+    for i, v in enumerate(("9x16.mp4", "16x9.mp4", "1x1.mp4", "extra.mp4")):
+        client.post(f"/api/projects/{pid}/publish/log", json=post_body(video=v, url=f"https://x.test/f{i}"))
+    assert client.get(gate).json()["ok"] is False, "quatro formatos do mesmo projeto não destravam"
+    for i in range(1, 4):
+        outra_obra(studio_env, f"2026-08-obra-{i}")
+    g = client.get(gate).json()
+    assert g["ok"] is True and g["published"] == 4
+
+
+# ---------- comunidade (aula 015) ----------
+def test_community_get_post_e_nao_bloqueante(client, pid):
+    base = f"/api/projects/{pid}/publish/community"
+    assert client.get(base).json() == {"posted": False, "commented": False, "feedback": False,
+                                       "updated": "", "done": 0, "total": 3}
+    r = client.post(base, json={"posted": True, "feedback": True})
+    assert r.status_code == 200 and r.json()["done"] == 2 and r.json()["commented"] is False
+    assert client.post(base, json={"commented": True}).json()["done"] == 3
+    assert client.get(f"/api/projects/{pid}/publish/portfolio").json()["community"]["done"] == 3
+    assert client.get(f"/api/projects/{pid}/publish/log").status_code == 200, "checklist não bloqueia nada"
 
 
 def test_corpo_malformado_da_422_do_pydantic(client, pid):
@@ -169,3 +219,7 @@ def test_view_html_segue_a_aula_sem_copy_automatica(client):
         "sem campo de legenda, hashtag, agendamento ou métrica de alcance"
     js = client.get("/steps/publish/view.js").text
     assert "distinct_videos" in js, "o contador da tela usa vídeos distintos (decisão 1 do lote)"
+    assert 'id="guide"' in html, "convenção de tela da wave 2: o painel do guia mora aqui"
+    assert "comunidade ABRAhub" in html, "10.2: a comunidade entra nas redes sugeridas"
+    assert "prática, exposição e validação" in html and "perfil novo ou nas redes que você já tem" in html
+    assert "destroy()" in js
