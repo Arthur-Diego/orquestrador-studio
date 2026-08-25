@@ -1,0 +1,52 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 11 · aula 001</span>
+  <h2>Prospecção</h2>
+  <p class="lede">Os primeiros clientes vêm de DM em pequenos negócios: 10 por dia, com o script literal e sem nenhum link. Quem responde recebe um teaser de 5 a 10 s com música e o convite para uma call de 15 minutos. <strong>O Studio redige e registra; enviar é com você</strong> — não existe automação de envio aqui.</p>
+</header>
+
+<section class="panel" id="gatePanel">
+  <div class="panel-head">
+    <h3>Portfólio</h3>
+    <span id="gateChip" class="chip mode">—</span>
+  </div>
+  <p id="gateMsg" class="fine"></p>
+</section>
+
+<section class="panel hidden" id="newLeadPanel">
+  <div class="panel-head">
+    <h3>1. Novo lead</h3>
+    <span id="todayChip" class="chip mode">0/10 hoje</span>
+  </div>
+  <form id="leadForm" class="row wrap">
+    <input id="lfBusiness" placeholder="negócio (ex.: Padaria do Zé)" required>
+    <input id="lfHandle" placeholder="@perfil" required>
+    <input id="lfPostRef" placeholder="o post que ressoou (ex.: o pão das 6h)">
+    <input id="lfWhy" placeholder="por quê (anotação sua, não vai na DM)">
+    <select id="lfRole"><option value="fã">sou fã da marca</option><option value="consumidor">sou consumidor</option></select>
+    <button class="primary" type="submit">Cadastrar lead</button>
+  </form>
+  <p class="fine">A DM é gerada no script da aula, sem links (DM com link cai em spam). O contador de hoje é uma meta de disciplina — o Studio avisa acima de 10, nunca impede.</p>
+</section>
+
+<section class="panel hidden" id="leadsPanel">
+  <div class="panel-head">
+    <h3>2. Leads</h3>
+    <div class="row wrap">
+      <span id="statusChip" class="chip mode">0 leads</span>
+      <span id="jobChip" class="chip mode hidden">teaser</span>
+    </div>
+  </div>
+  <div id="leadList" class="prompts"></div>
+</section>
+
+<section class="panel" id="pitchPanel">
+  <div class="panel-head">
+    <h3>3. Pitch da call (15 minutos)</h3>
+    <div class="row wrap">
+      <button id="btnPitchCopy" class="ghost">Copiar</button>
+      <button id="btnPitchGen" class="ghost">Regerar do modelo</button>
+    </div>
+  </div>
+  <p class="fine">Tabela de etapas de produção para ancorar valor (sem preço na tabela) e os lembretes da aula: oferta só-agora com 50% no primeiro trabalho, 50% na entrada e 50% na entrega, faixa inicial de R$ 100 a R$ 500 por vídeo de 30 s a 1 min, e vender o resultado — não a IA. Salvo em <code>prospect/pitch.md</code>.</p>
+  <pre id="pitchBox" class="log mono"></pre>
+</section>
