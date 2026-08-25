@@ -48,14 +48,15 @@ def test_shared_ui_assets_are_served(client):
     assert js.status_code == 200
     for fn in ("esc", "chip", "hfChip", "drop", "upload", "confirmCost", "poll", "guide", "renderGuide"):
         assert fn in js.text, f"Studio.ui.{fn} ausente"
-    assert "crie um projeto" in js.text
+    assert "crie uma campanha" in js.text
     assert client.get("/static/ui.css").status_code == 200
 
 
 def test_shell_destroys_the_previous_view_and_exposes_go(client):
     app_js = client.get("/static/app.js").text
     assert "destroy" in app_js, "app.js precisa encerrar a tela anterior (polls órfãos)"
-    assert "go(stepId)" in app_js and "renderGuide" in app_js
+    assert "go(target)" in app_js and "renderGuide" in app_js, "Studio.go navega para etapa ou visão geral"
+    assert "destroyCurrent()" in app_js, "a troca de tela e a visão geral encerram a instância anterior"
 
 
 def test_plugins_serve_their_assets(client):
