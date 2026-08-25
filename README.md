@@ -51,9 +51,11 @@ pela pasta **Downloads do Windows** ou pelo **histórico do CLI**; escolha até 
 mesmo mood → `mood/selected/`, `mood/palette.json`, `mood/mood.md`.
 
 ### 3 · Imagem base (aula 009)
-Para cada referência escolhida, prompt "o produto na exata mesma situação da referência, com o
-mood"; troca de rótulo pela sua marca (campo `brand`, `[extensão]`); upscale importado →
-`base/base_final.png`.
+Para cada referência escolhida, o **bot da aula** (Claude CLI, `common/prompter.py`) escreve o
+prompt olhando a referência e as imagens do mood: "o produto na exata mesma situação da
+referência, com o mood"; "sessão nova sem viés" quando o prompt não entregou a ideia; troca de
+rótulo pela sua marca (campo `brand`, `[extensão]`, 3 variações); upscale 2x importado e
+conferido → `base/base_final.png` + `base/base.md` com a cadeia situação → rótulo → upscale.
 
 ### 4 · Storyboard (aula 010)
 Instruções de edição uma por vez (presets literais da aula, "gerar 4 / gerar 1"), Draw to Edit
@@ -118,6 +120,8 @@ Variáveis: `STUDIO_PROJECTS`, `STUDIO_STATE`, `STUDIO_DOWNLOADS`, `PORT`.
 - Gitflow: `docs/gitflow.md` — branch a partir de `develop`, PR para `develop`, trailer
   `Task-Id` (`OS-NNN` ou `ADH-OS-<data>-<seq>`), promoção `develop → main` por PR.
 - CI: `.github/workflows/ci.yml` (ruff + pytest) e `task-id-check.yml`.
+- Smoke visual fora do CI (ADR-008): `python scripts/smoke_ui.py http://127.0.0.1:8765 <pid> <pasta> [dark] [--timers]`
+  — prints das 11 telas, erros de JS e prova de que nenhum timer sobrevive à troca de tela.
 - Fidelidade ao curso: gates em `CLAUDE.md`. Melhorias fora do roteiro são sugeridas, não
   implementadas sem aprovação.
 

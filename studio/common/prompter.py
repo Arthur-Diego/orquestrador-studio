@@ -35,7 +35,7 @@ ROLES = {
     "base": (
         "You are a cinematic art director writing image-generation prompts. Task: write ONE prompt that places the "
         "product in EXACTLY the same situation/composition as the reference image, keeping the campaign mood "
-        "(light, palette, atmosphere). No people unless the reference has them. Photorealistic, camera body, lens, "
+        "(light, palette, atmosphere). Photorealistic, camera body, lens, "
         "aperture, lighting. 60–120 words, English."
     ),
     "motion": (
@@ -162,7 +162,7 @@ def fallback_template(kind: str, brief: dict, variation: int = 0, no_people: boo
     elif kind == "base":
         prompt = (f"The {product} placed in exactly the same situation and composition as the reference image, with the "
                   f"campaign mood ({vibe}): same light, palette and atmosphere. Photorealistic, shot on RED Komodo, "
-                  "50mm, T2.8. No people unless the reference has them. No text.")
+                  "50mm, T2.8. No text.")
     else:
         prompt = ("Subject performs one clear action; slow cinematic camera move; keep lighting, colors and character "
                   "identical to the input frame; realistic physics; no text.")
