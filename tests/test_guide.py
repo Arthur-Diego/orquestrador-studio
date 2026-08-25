@@ -142,6 +142,7 @@ def test_step_guide_route_uses_the_plugin_hook(studio_env, client, monkeypatch):
     g = client.get(f"/api/projects/{pid}/guide/refs").json()
     assert g["id"] == "refs" and g["status"] == "done" and g["progress"] == 1.0
     assert g["what"] == "guia de refs" and g["next_step"] == "mood"
+    monkeypatch.setitem(app_module.PLUGINS["mood"], "guide", None)   # simula etapa sem guide.py
     sem_hook = client.get(f"/api/projects/{pid}/guide/mood").json()
     assert sem_hook["status"] == "unknown", "etapa sem guide.py cai no guia genérico"
 

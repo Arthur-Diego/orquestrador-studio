@@ -21,11 +21,15 @@ MAX_IMAGES = 4
 
 # Papel do bot por tipo de prompt — o que a aula manda em cada caso.
 ROLES = {
+    # Aula 009: o mood é a VIBE (luz, cor, atmosfera). O instrutor NÃO proíbe o produto — o mood
+    # board dele tem a lata ("ele já me deu inclusive o Red Bull […] Essa é a vibe"). A única
+    # restrição que ele enuncia é "não tenho nenhum interesse em pessoas", e para aquela campanha:
+    # por isso "no people" é opção do usuário (`no_people`), não regra do papel.
     "mood": (
         "You are a cinematic art director writing image-generation prompts (Midjourney/Higgsfield style). "
         "Task: write ONE prompt for a MOOD FRAME — the visual identity of an ad campaign: light, color palette, "
-        "atmosphere, materials, textures, time of day, weather. Rules from the course: environment only — "
-        "NO product, NO people, NO text, NO logos; one single vibe; photorealistic cinematic still; include camera "
+        "atmosphere, materials, textures, time of day, weather. Rules from the course: one single vibe, chosen by "
+        "FEELING (it does not have to be about the product); photorealistic cinematic still; include camera "
         "body, lens (mm), aperture, film stock/grain and lighting setup. 60–120 words, English."
     ),
     "base": (
@@ -86,7 +90,9 @@ def _parse(text: str) -> dict:
 
 def _brief_text(brief: dict) -> str:
     keys = [("product", "Product"), ("vibe", "Vibe"), ("purpose", "Purpose"), ("tone", "Emotional tone"),
-            ("reference", "Aesthetic reference"), ("instruction", "Extra instruction from the user")]
+            ("reference", "Aesthetic reference"), ("instruction", "Extra instruction from the user"),
+            ("explore_prompt", "Base prompt copied by the user (preserve its subject, light and palette)"),
+            ("no_people", "Hard constraint")]
     lines = [f"- {label}: {brief[k]}" for k, label in keys if brief.get(k)]
     return "\n".join(lines) if lines else "- (no brief given; choose a strong cinematic vibe)"
 
@@ -118,25 +124,41 @@ def from_images(kind: str, images: list[Path], instruction: str = "", brief: dic
     return {**_parse(text), "source": "claude", "seconds": secs, "images": [str(p) for p in images]}
 
 
-_STYLE_VARIANTS = [
+#: Variações de "estilização" do prompt de vibe — equivalem a mexer no Stylization/Weirdness do
+#: Midjourney entre um grid e outro (aula 007/009): a MESMA vibe, outro tratamento. Fonte única —
+#: `studio/mood/service.py` importa daqui (antes havia uma cópia lá).
+STYLE_VARIANTS = [
     "atmosphere and light define the mood; balanced stylization",
     "stronger stylization: bolder color contrast, more dramatic light, same palette",
     "more literal and restrained: natural light, subtle color, documentary feel",
     "wider, emptier composition; the environment breathes; same palette and light",
 ]
+_STYLE_VARIANTS = STYLE_VARIANTS   # alias histórico
 
 
-def fallback_template(kind: str, brief: dict, variation: int = 0) -> dict:
-    """Template determinístico (sem Claude) — o que a etapa 2 usava antes desta feature."""
+def fallback_template(kind: str, brief: dict, variation: int = 0, no_people: bool = True) -> dict:
+    """Template determinístico (sem Claude) — o que a etapa 2 usava antes desta feature.
+
+    `no_people` reproduz a única restrição que a aula 009 enuncia ("não tenho nenhum interesse em
+    pessoas") e é escolha do usuário: desmarcado, o prompt não pede nada disso. Produto, texto e
+    logo **não** são proibidos — o mood board da aula tem a lata.
+    """
     product = brief.get("product") or "the product"
     vibe = brief.get("vibe") or "cinematic"
     hint = brief.get("hints") or ""
-    style = _STYLE_VARIANTS[variation % len(_STYLE_VARIANTS)]
+    style = STYLE_VARIANTS[variation % len(STYLE_VARIANTS)]
     if kind == "mood":
-        prompt = (f"Mood frame (vibe reference) for a {product} campaign. Vibe: {vibe}. "
-                  + (f"Inspired by real campaign references: {hint}. " if hint else "")
-                  + f"Wide establishing shot of the environment only — {style}. "
-                  "Photorealistic cinematic still, shot on RED Komodo, film grain. No product, no people, no text, no logos.")
+        base = (brief.get("explore_prompt") or "").strip()
+        if base:
+            # Aula 009: "copiar o prompt dessa pessoa" (Explore) é o ponto de partida do 1º grid.
+            prompt = f"{base.rstrip('. ')}. Same vibe — {style}."
+        else:
+            prompt = (f"Mood frame (vibe reference) for a {product} campaign. Vibe: {vibe}. "
+                      + (f"Inspired by real campaign references: {hint}. " if hint else "")
+                      + f"Wide establishing shot that carries the mood — {style}. "
+                      "Photorealistic cinematic still, shot on RED Komodo, film grain.")
+        if no_people:
+            prompt += " No people."
     elif kind == "base":
         prompt = (f"The {product} placed in exactly the same situation and composition as the reference image, with the "
                   f"campaign mood ({vibe}): same light, palette and atmosphere. Photorealistic, shot on RED Komodo, "
@@ -149,11 +171,20 @@ def fallback_template(kind: str, brief: dict, variation: int = 0) -> dict:
             "source": "template", "seconds": 0.0}
 
 
-MOOD_GUARDS = ("no product", "no people", "no text")
+#: O ÚNICO negativo que a aula 009 enuncia — e ainda assim como escolha da campanha ("não tenho
+#: nenhum interesse em pessoas"). "no product/no text/no logos" foi removido: o mood board da aula
+#: mostra o produto ("Gostei muito da noite, a lata aqui"). Nunca injete regra que a aula não ensina.
+MOOD_GUARDS = ("no people",)
 
 
-def enforce_mood_rules(result: dict) -> dict:
-    """Aula 009: mood é ambiente/luz/cor. Garante os negativos mesmo se o Claude esquecer."""
+def enforce_mood_rules(result: dict, no_people: bool = True) -> dict:
+    """Acrescenta "No people." quando o usuário pediu isso e o prompt esqueceu.
+
+    Com `no_people=False` o prompt volta intocado: nenhuma regra entra no prompt do usuário sem
+    ele ter marcado (auditoria da wave 2, item M1).
+    """
+    if not no_people:
+        return result
     p = result.get("prompt", "")
     low = p.lower()
     missing = [g for g in MOOD_GUARDS if g not in low]
