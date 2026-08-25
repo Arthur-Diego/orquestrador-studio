@@ -57,10 +57,11 @@ def test_full_flow_upload_select_and_beats(ffmpeg, client, pid, tmp_path):
 
 
 def test_select_validation(ffmpeg, client, pid, tmp_path):
+    """A origem é opcional [extensão] (auditoria 7.4): escolher sem declarar nada é 200."""
     upload(client, pid, "a.wav", tmp_path, seconds=5)
     cid = client.get(f"/api/projects/{pid}/music/candidates").json()[0]["id"]
-    assert client.post(f"/api/projects/{pid}/music/select", json={"id": cid, "license": ""}).status_code == 422
-    assert client.post(f"/api/projects/{pid}/music/select", json={"id": cid, "license": "   "}).status_code == 422
+    assert client.post(f"/api/projects/{pid}/music/select", json={"id": cid, "license": ""}).status_code == 200
+    assert client.post(f"/api/projects/{pid}/music/select", json={"id": cid}).status_code == 200
     assert client.post(f"/api/projects/{pid}/music/select", json={"id": "zzz", "license": "lib"}).status_code == 404
 
 
@@ -184,3 +185,78 @@ def test_unknown_project_is_404_everywhere(client):
     ]:
         r = getattr(client, method)(path, **kw)
         assert r.status_code == 404, (path, r.status_code, r.text)
+
+
+# ---------- passo 0: assistir a história inteira (auditoria 7.1) ----------
+def test_story_status_without_takes(client, pid):
+    r = client.get(f"/api/projects/{pid}/music/story")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["video"] is None and body["check"] is None and body["clips"] == 0
+    assert "etapa 6" in body["warning"] and body["product_scene"] is False
+    assert "a história fecha" in body["question"].lower()
+    assert client.get(f"/api/projects/{pid}/music/story/job").json() == {"state": "idle"}
+
+
+def test_story_render_without_takes_is_404(client, pid):
+    r = client.post(f"/api/projects/{pid}/music/story/render")
+    assert r.status_code == 404 and "etapa 6" in r.json()["detail"]
+
+
+def test_story_check_records_the_decision(client, pid):
+    r = client.post(f"/api/projects/{pid}/music/story/check",
+                    json={"closed": False, "note": "falta o encerramento com o produto"})
+    assert r.status_code == 200
+    assert r.json()["closed"] is False and "produto" in r.json()["note"] and r.json()["decided"]
+    assert client.get(f"/api/projects/{pid}/music/story").json()["check"]["closed"] is False
+    client.post(f"/api/projects/{pid}/music/story/check", json={"closed": True})
+    depois = client.get(f"/api/projects/{pid}/music/story").json()["check"]
+    assert depois["closed"] is True and depois["note"] == "", "a decisão nova substitui a anterior"
+    assert client.post("/api/projects/nao-existe/music/story/check", json={"closed": True}).status_code == 404
+
+
+def test_story_render_builds_the_raw_sequence(ffmpeg, client, studio_env):
+    """[cross-feature] takes com like da etapa 6 -> audio/rough_sequence.mp4, sem música."""
+    import threading
+
+    from tests.test_edit_service import seed
+    proj = studio_env["refs"].create_project("História", "energy drink", "snow neon")["id"]
+    root = studio_env["refs"].project_dir(proj)
+    seed(root, real=True, seconds=1)
+
+    status = client.get(f"/api/projects/{proj}/music/story").json()
+    assert status["clips"] == 3 and status["warning"] is None and status["video"] is None
+
+    started = client.post(f"/api/projects/{proj}/music/story/render")
+    assert started.status_code == 202 and started.json()["state"] == "running"
+    job = {}
+    for _ in range(600):
+        job = client.get(f"/api/projects/{proj}/music/story/job").json()
+        if job["state"] != "running":
+            break
+        threading.Event().wait(0.2)
+    assert job["state"] == "done", job.get("error")
+    assert job["output"] == "audio/rough_sequence.mp4"
+    assert (root / "audio" / "rough_sequence.mp4").exists()
+    assert not (root / "edit" / "timeline.json").exists(), "o passo 0 não edita — só mostra a história"
+    assert client.get(f"/files/{proj}/audio/rough_sequence.mp4").status_code == 200
+
+
+def test_step_screen_follows_the_lesson_and_the_wave_contract(client):
+    """Auditoria 7.3 e 7.7 + convenção de tela da wave 2."""
+    html = client.get("/steps/music/view.html").text
+    js = client.get("/steps/music/view.js").text
+    assert "Etapa 7 · aula 013" in html
+    assert '<section id="guide" class="guide"></section>' in html
+    assert "3 a 5" not in html, "a aula 013 não dá número de candidatas (auditoria 7.3)"
+    assert "Você não deve editar antes de escolher a trilha" in html
+    assert "0. Assistir a história inteira" in html
+    assert "[extensão]" in html, "o campo de origem/licença não é da aula (auditoria 7.4)"
+    assert "3 a 5" not in js
+    assert "Studio.ui" in js and "destroy()" in js and "ctx.guide()" in js
+
+
+def test_instructions_do_not_invent_a_number(client, pid):
+    instructions = client.get(f"/api/projects/{pid}/music/prompt").json()["instructions"]
+    assert "3 a 5" not in instructions and "várias músicas" in instructions
+    assert "Você não deve editar antes de escolher a trilha" in instructions

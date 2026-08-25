@@ -1,6 +1,8 @@
-"""Etapa 7 — a trilha da aula 013: reunir candidatas, escolher UMA com a origem declarada e marcar as batidas."""
+"""Etapa 7 — a aula 013 inteira: assistir a história, decidir se ela fecha, escolher a trilha e
+marcar as batidas. A origem/licença é campo opcional `[extensão]` (auditoria 7.4)."""
 import json
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -145,13 +147,28 @@ def test_select_switches_track_and_replaces_artifacts(ffmpeg, studio_env, music,
     assert json.loads((root / "audio" / "beats.json").read_text())["duration"] == r["beats"]["duration"]
 
 
-def test_select_requires_license_and_existing_candidate(ffmpeg, music, project, tmp_path):
+def test_select_accepts_track_without_declared_origin(ffmpeg, studio_env, music, project, tmp_path):
+    """Auditoria 7.4: nenhuma transcrição da aula 013 fala em licença — o campo é [extensão]."""
     music.import_upload(project, [("a.wav", audio_bytes(tmp_path, "a.wav", seconds=5))])
     cid = music.list_candidates(project)[0]["id"]
-    with pytest.raises(ValueError):
-        music.select(project, cid, "   ")
+    r = music.select(project, cid, "   ")
+    root = studio_env["refs"].project_dir(project)
+    assert r["music"] == "audio/music.wav" and r["license"] == ""
+    assert (root / "audio" / "music.wav").exists()
+    assert not (root / "audio" / "license.txt").exists(), "sem declaração, nenhum license.txt é inventado"
     with pytest.raises(FileNotFoundError):
         music.select(project, "naoexiste", "lib")
+
+
+def test_select_without_origin_clears_the_previous_declaration(ffmpeg, studio_env, music, project, tmp_path):
+    music.import_upload(project, [("a.wav", audio_bytes(tmp_path, "a.wav", seconds=6)),
+                                  ("b.mp3", audio_bytes(tmp_path, "b.mp3", seconds=6))])
+    ids = [c["id"] for c in music.list_candidates(project)]
+    music.select(project, ids[0], "lib A")
+    root = studio_env["refs"].project_dir(project)
+    assert (root / "audio" / "license.txt").exists()
+    music.select(project, ids[1], "")
+    assert not (root / "audio" / "license.txt").exists(), "a origem da faixa anterior não pode sobrar"
 
 
 def test_select_without_ffmpeg_keeps_the_choice_and_warns(ffmpeg, monkeypatch, studio_env, music, project, tmp_path):
@@ -246,3 +263,56 @@ def wait_job(music, pid, timeout=10.0):
             break
         threading.Event().wait(0.05)
     return music.job_status(pid)
+
+
+# ---------- passo 0: assistir a história inteira (aula 013, auditoria 7.1) ----------
+def test_story_check_round_trip(studio_env, music, project):
+    assert music.read_story_check(project) is None
+    r = music.set_story_check(project, closed=False, note="  falta a geladeira  ")
+    assert r["closed"] is False and r["note"] == "falta a geladeira" and r["decided"]
+    assert music.read_story_check(project) == r
+    root = studio_env["refs"].project_dir(project)
+    assert (root / "audio" / "story_check.json").exists()
+
+
+def test_story_status_reports_the_scenes_and_the_product_scene(studio_env, music, project):
+    import json as _json
+
+    from tests.test_edit_service import seed
+    root = studio_env["refs"].project_dir(project)
+    vazio = music.story_status(project)
+    assert vazio["clips"] == 0 and "etapa 6" in vazio["warning"] and vazio["product_scene"] is False
+
+    seed(root)
+    cheio = music.story_status(project)
+    assert cheio["clips"] == 3 and cheio["duration"] == 15.0 and cheio["warning"] is None
+    assert cheio["video"] is None and cheio["product_scene"] is False
+
+    data = _json.loads((root / "shots" / "storyboard.json").read_text())
+    data["product_scene"] = {"id": "produto", "shots": []}
+    (root / "shots" / "storyboard.json").write_text(_json.dumps(data))
+    assert music.story_status(project)["product_scene"] is True
+
+
+def test_story_render_never_writes_the_edit_timeline(ffmpeg, studio_env, music, project):
+    """A aula 013 é explícita: aqui ainda não se edita — a etapa 8 não pode ser tocada."""
+    from tests.test_edit_service import seed
+    root = studio_env["refs"].project_dir(project)
+    seed(root, real=True, seconds=1)
+    job = music.start_story_render(project)
+    for _ in range(600):
+        if job["state"] != "running":
+            break
+        threading.Event().wait(0.2)
+    assert job["state"] == "done", job.get("error")
+    assert (root / "audio" / "rough_sequence.mp4").exists()
+    assert not Path(f"{root / 'audio' / 'rough_sequence.mp4'}.part").exists()
+    assert not (root / "edit" / "timeline.json").exists()
+
+
+def test_story_render_without_ffmpeg_is_a_runtime_error(monkeypatch, studio_env, music, project):
+    from tests.test_edit_service import seed
+    seed(studio_env["refs"].project_dir(project))
+    monkeypatch.setattr(music.ff, "available", lambda: False)
+    with pytest.raises(RuntimeError, match="ffmpeg"):
+        music.start_story_render(project)

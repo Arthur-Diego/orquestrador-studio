@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a7c1f3d2-0e5b-4c8a-9f31-mus1c0007fdd",
     "name": "Studio — Etapa 7 · Trilha (music)",
-    "description": "Coleção executável derivada da seção 5 (tabela de endpoints) do FDD\n`docs/domains/music/features/music-fdd.md` (versão 1.0, 2026-08-25).\n\nCobre as 11 linhas da tabela de endpoints, a matriz de erros da seção 6 e os invariantes\nda seção 6 (linhas 265-268). Rotas do núcleo (`POST /api/projects`) entram apenas como\npré-requisito do `pid`, marcadas como fora da seção 5.\n\nSem autenticação por ADR-001 (Studio local, usuário único). A variável `accessToken` existe\nno environment só por convenção e não é enviada.\n\nPré-requisito: `bash fixtures/make-fixtures.sh` (gera as fixtures de áudio, incluindo a de 26 MB\nusada no caso 413, que não é versionada).\n\nOrdem importa: os requests encadeiam `pid`, `candidateId`, `candidateId2` e `beatsSnapshot`.",
+    "description": "Coleção executável derivada da seção 5 (tabela de endpoints) do FDD\n`docs/domains/music/features/music-fdd.md` (versão 1.0, 2026-08-25).\n\nCobre as 11 linhas da tabela de endpoints, a matriz de erros da seção 6 e os invariantes\nda seção 6 (linhas 265-268). Rotas do núcleo (`POST /api/projects`) entram apenas como\npré-requisito do `pid`, marcadas como fora da seção 5.\n\nSem autenticação por ADR-001 (Studio local, usuário único). A variável `accessToken` existe\nno environment só por convenção e não é enviada.\n\nPré-requisito: `bash fixtures/make-fixtures.sh` (gera as fixtures de áudio, incluindo a de 26 MB\nusada no caso 413, que não é versionada).\n\nOrdem importa: os requests encadeiam `pid`, `candidateId`, `candidateId2` e `beatsSnapshot`.\n\nWave 2 (OS-018): acrescenta o passo 0 da aula 013 (`/music/story*`) e o guia da etapa (`/api/projects/{pid}/guide/music`), e troca os casos 422 de licença — a origem passou a ser opcional `[extensão]` (auditoria 7.4).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -1144,14 +1144,16 @@
           }
         },
         {
-          "name": "422 — select com license vazia",
+          "name": "200 — select sem origem declarada (origem é [extensão], auditoria 7.4)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('422', () => pm.response.to.have.status(422));"
+                  "pm.test('200 — a aula 013 não exige licença', () => pm.response.to.have.status(200));",
+                  "pm.test('a trilha foi escolhida mesmo assim', () => pm.expect(pm.response.json().music).to.match(/^audio\\/music\\./));",
+                  "pm.test('license devolvido vazio', () => pm.expect(pm.response.json().license).to.eql(''));"
                 ]
               }
             }
@@ -1181,53 +1183,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"id\": \"{{candidateId}}\",\n  \"license\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "422 — select com license só de espaços",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('422', () => pm.response.to.have.status(422));",
-                  "pm.test('detail é a mensagem do serviço', () => pm.expect(String(pm.response.json().detail)).to.include('licen'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/select",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "projects",
-                "{{pid}}",
-                "music",
-                "select"
-              ]
-            },
-            "description": "Mesma linha da seção 6 (252), mas caindo na regra de negócio do serviço (`ValueError` → 422), não no Pydantic.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"id\": \"{{candidateId}}\",\n  \"license\": \"   \"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1593,6 +1548,291 @@
               }
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "06 passo 0 — assistir a história inteira (aula 013)",
+      "description": "Auditoria 7.1: todas as cenas em ordem, sem cortar nada, e a decisão \"a história fecha?\". Precisa dos artefatos das etapas 5 e 6 no projeto.",
+      "item": [
+        {
+          "name": "GET story — estado do passo 0",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/story",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "story"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('contrato do passo 0', () => pm.expect(b).to.have.all.keys('video','check','question','product_scene','ffmpeg','clips','duration','warning'));",
+                  "pm.test('pergunta da aula presente', () => pm.expect(b.question.toLowerCase()).to.include('a história fecha'));",
+                  "pm.collectionVariables.set('storyClips', String(b.clips));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST story/render — sequência bruta sem música (202)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/story/render",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "story",
+                "render"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const clips = Number(pm.collectionVariables.get('storyClips') || 0);",
+                  "if (clips > 0) {",
+                  "  pm.test('202 — job iniciado', () => pm.response.to.have.status(202));",
+                  "  pm.test('saída é audio/rough_sequence.mp4', () => pm.expect(pm.response.json().output).to.eql('audio/rough_sequence.mp4'));",
+                  "} else {",
+                  "  pm.test('sem takes com like: 404/422 nomeando a etapa que falta', () => pm.expect([404, 422]).to.include(pm.response.code));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET story/job — polling do render",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/story/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "story",
+                "job"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('estado conhecido', () => pm.expect(['idle','running','done','error']).to.include(pm.response.json().state));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST story/check — a história não fecha (falta encerramento)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"closed\": false,\n  \"note\": \"falta um encerramento mais comercial com o produto\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/story/check",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "story",
+                "check"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('decisão gravada', () => { pm.expect(b.closed).to.eql(false); pm.expect(b.note).to.include('produto'); pm.expect(b.decided).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST story/check — a história fecha",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"closed\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/music/story/check",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "music",
+                "story",
+                "check"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('a decisão nova substitui a anterior', () => { const b = pm.response.json(); pm.expect(b.closed).to.eql(true); pm.expect(b.note).to.eql(''); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 — story/check em projeto inexistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"closed\": true}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/pid-que-nao-existe-999/music/story/check",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "pid-que-nao-existe-999",
+                "music",
+                "story",
+                "check"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 guia da etapa (rota do núcleo, ADR-010)",
+      "item": [
+        {
+          "name": "GET guide/music — o que a aula manda fazer aqui",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/guide/music",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "guide",
+                "music"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const g = pm.response.json();",
+                  "pm.test('é a etapa 7 da aula 013', () => { pm.expect(g.id).to.eql('music'); pm.expect(g.n).to.eql(7); pm.expect(g.aula).to.eql('013'); });",
+                  "pm.test('texto vem da aula', () => pm.expect(g.what).to.include('Não edite antes de escolher a trilha'));",
+                  "pm.test('saídas na ordem da aula', () => pm.expect(g.outputs.map(o => o.id)).to.eql(['story_check','music','beats']));",
+                  "pm.test('status conhecido', () => pm.expect(['todo','blocked','in_progress','done']).to.include(g.status));"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

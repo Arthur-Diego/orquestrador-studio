@@ -21,16 +21,18 @@ flowchart TD
     H --> I["POST edit/propose-cuts"]
     I --> J{"audio/beats.json existe?"}
     J -- "não" --> J4["404 · timeline segue editável na mão"]
-    J -- "sim" --> K["Impactos deslocados pelo offset<br/>o fim de cada clipe cai num impacto<br/>quadro preto em cada corte usado"]
+    J -- "sim" --> K["Impactos deslocados pelo offset<br/>o fim de cada clipe cai num impacto<br/>corte seco: black_dur=0 por padrão<br/>o preto é escolha por corte"]
     K --> L{"apply?"}
     L -- "false" --> M["Proposta devolvida para conferência"]
     L -- "true" --> N["Grava edit/timeline.json"]
 
     M --> O["Ajustes humanos: in e out, speed, blend<br/>ordem, pretos, fade_out, SFX"]
     N --> O
-    O --> P["PUT edit/timeline · valida e grava"]
+    O --> P["PUT edit/timeline · valida e grava<br/>zoom 1,0–1,3 por clipe · loudnorm opcional [extensão]"]
     P --> Q["POST edit/render · target rough ou master"]
-    Q --> R["Job em thread e polling em GET edit/render/job"]
+    Q --> Q2{"target=master<br/>e audio/music.* existe?"}
+    Q2 -- "não" --> Q4["409 · escolha a trilha na etapa 7 (aula 013)"]
+    Q2 -- "sim" --> R["Job em thread e polling em GET edit/render/job"]
     R --> S["edit/rough_cut.mp4 e edit/master.mp4<br/>1920x1080 · 30 fps · H.264 e AAC"]
 
     O --> T["POST edit/last-frame"]
@@ -52,6 +54,7 @@ sequenceDiagram
 
     UI->>R: POST edit/render com target
     R->>R: ffmpeg disponível? senão 409
+    R->>R: target=master sem audio/music.*? então 409 (aula 013)
     R->>J: registry.start(pid, total, run)
     J-->>R: state running, done 0, total N+3
     R-->>UI: 200 com o status do job
@@ -89,7 +92,10 @@ sequenceDiagram
 flowchart LR
     subgraph V["vídeo"]
         C1["clipe k · -ss in · -t out menos in"] --> N1["scale 1920x1080, pad e setsar=1"]
-        N1 --> SP{"speed diferente de 1?"}
+        N1 --> ZM{"zoom maior que 1?"}
+        ZM -- "sim" --> ZS["scale=iw*z:ih*z e crop 1920x1080<br/>o pequeno zoom da aula"]
+        ZM -- "não" --> SP{"speed diferente de 1?"}
+        ZS --> SP
         SP -- "sim" --> ST["setpts=PTS/speed"]
         ST --> BL{"blend?"}
         BL -- "sim" --> MI["minterpolate=fps=30:mi_mode=blend"]
@@ -108,7 +114,9 @@ flowchart LR
         SFX["SFX k"] --> VOL["volume em dB e adelay em at"]
         AT --> MIX["amix inputs=N normalize=0"]
         VOL --> MIX
-        MIX --> LN["loudnorm=I=-14:TP=-1.5"]
+        MIX --> LNQ{"loudnorm ligado?<br/>[extensão], padrão sim"}
+        LNQ -- "sim" --> LN["loudnorm=I=-14:TP=-1.5"]
+        LNQ -- "não" --> AF
         LN --> AF["afade=t=out e apad"]
     end
     FADE --> ENC["libx264 crf 18 ou 23 · yuv420p · aac 192k · -t D"]

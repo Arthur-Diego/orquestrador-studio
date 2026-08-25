@@ -462,3 +462,19 @@ Novidades do módulo **STUDIO** nesta wave:
 **ADR nova: ADR-010** (STUDIO) — guia por etapa calculado por leitura pura de artefatos; núcleo
 (`app.py`, `steps.py`, `config.py`, `higgsfield.py`, `etapas/__init__.py`, `web/*`) editável
 somente pelas frentes de preparo/shell de uma wave.
+
+## Atualização 2026-08-25 (wave 2, frente music+edit · OS-018)
+
+Correções de fidelidade das etapas 7 e 8 (auditoria `wave-2-auditoria-etapas-7-11.md`):
+
+- **MUSIC** ganhou o passo 0 da aula 013 — `audio/rough_sequence.mp4` (sequência bruta, sem
+  música) e `audio/story_check.json` (a decisão "a história fecha?") — e a origem/licença da
+  trilha virou campo opcional `[extensão]` (`audio/license.txt` só nasce quando declarada).
+- **EDIT** passou a exigir a trilha para o `master` (409), a propor cortes secos (quadro preto
+  vira ação por corte), a aceitar `zoom` por clipe (1,0–1,3) e a tratar `loudnorm` como
+  `[extensão]` desligável; `service.py` ganhou `music_path`, `clip_length`, `cut_positions` e
+  `cuts_on_beats` (leitura pura, usados pelo guia).
+- Guias das duas etapas em `studio/etapas/{music,edit}/guide.py` (contrato do ADR-010).
+
+**ADR nova: ADR-011** (MUSIC) — a cena do produto permanece na etapa 5, mas a decisão sobre ela
+acontece na etapa 7, onde a aula 013 a coloca.

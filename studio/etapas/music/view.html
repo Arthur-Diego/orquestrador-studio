@@ -1,8 +1,38 @@
 <header class="stephead">
   <span class="eyebrow">Etapa 7 · aula 013</span>
   <h2>Trilha</h2>
-  <p class="lede">A trilha vem <strong>antes</strong> da montagem: reúna de 3 a 5 candidatas, ouça até sentir a certa e escolha uma. As batidas fortes viram as marcações de "aqui acontece alguma coisa" que a etapa 8 usa para cortar.</p>
+  <p class="lede">Primeiro assista a história inteira, na ordem, sem cortar nada — é assim que se enxerga se a narrativa fecha ou se falta uma cena. Só então ouça várias músicas e escolha uma sentindo a energia. <strong>Você não deve editar antes de escolher a trilha</strong>: a música é o que define ritmo, emoção e impacto. As batidas fortes viram as marcações de "aqui acontece alguma coisa" que a etapa 8 usa para cortar.</p>
 </header>
+
+<section id="guide" class="guide"></section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>0. Assistir a história inteira</h3>
+    <div class="row wrap">
+      <span id="musStoryChip" class="chip mode">—</span>
+      <button id="btnMusStory" class="primary">Montar sequência bruta</button>
+    </div>
+  </div>
+  <p class="fine">A aula 013 começa aqui: todas as cenas em ordem, sem corte nenhum. O Studio junta os takes com <em>like</em> da etapa 6 na ordem do storyboard e gera <code>audio/rough_sequence.mp4</code> — sem música, sem transição, sem efeito. O objetivo não é editar, é enxergar a história como um todo.</p>
+  <span id="musStoryLog" class="mono fine"></span>
+  <video id="musStoryVideo" class="hidden" controls preload="metadata" style="max-width:100%;border-radius:8px"></video>
+  <div class="prompt">
+    <p id="musStoryQuestion" class="fine"></p>
+    <div class="row wrap">
+      <label class="inline"><input type="radio" name="musClosed" value="1"> A história fecha</label>
+      <label class="inline"><input type="radio" name="musClosed" value="0"> Falta cena / encerramento mais forte</label>
+      <button id="btnMusStoryCheck" class="ghost">Salvar decisão</button>
+    </div>
+    <textarea id="musStoryNote" rows="2" placeholder="O que ficou faltando? (opcional)"></textarea>
+    <p class="fine">Se faltar um encerramento mais comercial, a saída é a <strong>cena do produto</strong>: ela é criada na etapa 5 (mesmo artefato de sempre — ver ADR-011) e animada na etapa 6.</p>
+    <div class="row wrap">
+      <span id="musProductChip" class="chip mode">cena do produto: —</span>
+      <button id="btnMusGoShots" class="ghost">Ir para a cena do produto (etapa 5)</button>
+      <button id="btnMusGoAnimate" class="ghost">Animar a cena (etapa 6)</button>
+    </div>
+  </div>
+</section>
 
 <section class="panel">
   <div class="panel-head">
@@ -39,16 +69,19 @@
       <span class="fine">via <code>higgsfield generate list --audio</code> (precisa de login no CLI)</span>
     </div>
   </div>
-  <p class="fine">Aceita wav, mp3, m4a e ogg (até 25 MB por arquivo). Arquivo repetido não entra duas vezes.</p>
+  <p class="fine">Traga <strong>várias</strong> músicas da biblioteca (YouTube Audio Library, Artlist, Epidemic) — a aula não fixa quantidade. Aceita wav, mp3, m4a e ogg (até 25 MB por arquivo). Arquivo repetido não entra duas vezes.</p>
 </section>
 
 <section class="panel">
   <div class="panel-head">
     <h3>3. Ouvir e escolher</h3>
-    <span id="musCounts" class="chip mode">0 candidatas</span>
+    <div class="row wrap">
+      <span id="musCounts" class="chip mode">0 candidatas</span>
+      <label class="inline">origem (opcional) <input id="musOrigin" type="text" placeholder="ex.: YouTube Audio Library, 'Frost Rider'"></label>
+    </div>
   </div>
   <div id="musList" class="prompts"></div>
-  <p class="fine">Ao escolher: cópia em <code>audio/music.&lt;ext&gt;</code>, a origem declarada em <code>audio/license.txt</code> e as batidas em <code>audio/beats.json</code>.</p>
+  <p class="fine">Ouça cada faixa inteira e escolha <strong>sentindo a energia</strong>, não pelo número de bpm. Ao escolher: cópia em <code>audio/music.&lt;ext&gt;</code> e batidas em <code>audio/beats.json</code>. O campo <em>origem</em> é uma <strong>[extensão]</strong> do Studio (grava <code>audio/license.txt</code>) — a aula 013 não fala em licença e não bloqueia a escolha.</p>
 </section>
 
 <section class="panel">

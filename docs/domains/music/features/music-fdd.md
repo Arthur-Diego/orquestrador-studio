@@ -443,3 +443,72 @@ observabilidade; e a exceção do trabalho síncrono no `select` frente à ADR-0
 
 **`[cross-feature]`**: `edit` lendo `audio/beats.json` real continua **não verificado** — por
 desenho, é cobrado na W5 com o projeto de teste da wave.
+
+---
+
+## Wave 2 — fidelidade e guia (frente OS-018, modo batch)
+
+Versão: 1.1 · Data: 2026-08-25 · Task-Id `OS-018` · Gate 1 pré-aprovado em lote pelo dono do
+produto. Fonte normativa: `docs/domains/studio/waves/wave-2.md` (Feature music+edit) e
+`wave-2-auditoria-etapas-7-11.md` (Etapa 7, itens 7.1–7.4 e 7.7, textos §4, validações §5).
+Contrato transversal do guia: `wave-2-api-transversal.md` (ADR-010).
+
+### O que mudou (e por que)
+
+| Item | Divergência apontada | Mudança |
+| --- | --- | --- |
+| 7.1 | Nenhuma tela reproduzia o passo mais importante da aula 013: pôr tudo em ordem, **sem cortar nada**, e decidir se a história fecha | Passo 0 na etapa 7: `POST /music/story/render` gera `audio/rough_sequence.mp4` (concat dos takes com *like* na ordem do storyboard, sem música, job em thread) e `POST /music/story/check` grava `audio/story_check.json` `{closed, note, decided}`, com atalhos para as etapas 5 e 6 |
+| 7.2 | Cena do produto fora da etapa em que a aula a decide, sem ADR | **ADR-011** registra a decisão; a tela e o guia mostram "cena do produto: existe / não existe" com atalho para a etapa 5 |
+| 7.3 | "Baixe de 3 a 5 músicas" — número que a aula não dá | Texto passou a "várias músicas (a aula não fixa número)" em `INSTRUCTIONS`, `view.html` e `view.js` |
+| 7.4 | Licença obrigatória atribuída à aula 013, que nunca fala nisso | Campo **origem** opcional, marcado `[extensão]` no código, na tela e aqui; `audio/license.txt` só é gravado quando há origem declarada (e some quando a nova escolha não declara nada) |
+| 7.7 | A regra proibitiva da aula não aparecia na tela | Frase literal "Você não deve editar antes de escolher a trilha" no lede, nas instruções e no `what` do guia |
+
+### Contratos novos (complemento da seção 5)
+
+| Método | Rota | Corpo | Resposta | Erros |
+| --- | --- | --- | --- | --- |
+| GET | `/api/projects/{pid}/music/story` | — | `{video, check, question, product_scene, ffmpeg, clips, duration, warning}` | 404 projeto |
+| POST | `/api/projects/{pid}/music/story/render` | — | 202 job (`{state, done, total, output, duration}`) | 404 sem takes/storyboard · 422 sem take com *like* · 409 sem ffmpeg ou job em andamento |
+| GET | `/api/projects/{pid}/music/story/job` | — | job (`{state: idle\|running\|done\|error, …}`) | 404 projeto |
+| POST | `/api/projects/{pid}/music/story/check` | `{closed: bool, note?: str}` | `{closed, note, decided}` | 404 projeto |
+| POST | `/api/projects/{pid}/music/select` | `{id, license?}` | inclui `license` (o que foi declarado) | 404 candidata · **não é mais 422 sem licença** |
+
+`GET /api/projects/{pid}/guide/music` (rota do núcleo) devolve o guia da etapa a partir de
+`studio/etapas/music/guide.py`:
+
+- **Entradas (bloqueiam):** `shots/storyboard.json` com a ordem das cenas (etapa 5); ≥ 1 take com
+  *like* por cena (etapa 6) — o `detail` nomeia as cenas sem take.
+- **Saídas (progresso):** `audio/story_check.json` → `audio/music.*` → `audio/beats.json`, nessa
+  ordem, que é a da aula.
+- **Validações (nunca bloqueiam):** sequência bruta montada; cena do produto no fim (`warn` quando
+  `product_scene` é nulo); trilha cobre a história inteira (duração de `beats.json` ≥ soma dos
+  takes com *like*); origem declarada `[extensão]`.
+
+### Invariantes acrescentadas
+
+- O passo 0 **não grava** `edit/timeline.json` (usa `edit.initial_timeline` em leitura e
+  `render.build_filtergraph(target="rough", out=…)`): a aula 013 proíbe editar antes da trilha.
+- O guia é puro (ADR-010): nenhuma chamada a CLI, `ffprobe` ou rede, e nenhum artefato criado.
+- `audio/license.txt`, quando existe, descreve **a trilha atual** — nunca a anterior.
+
+### Auto-aceites desta frente (rotulados, regra do lote)
+
+1. `[auto-aceito: o passo 0 reusa a etapa 8 em modo leitura (`edit.initial_timeline` +
+   `render.build_filtergraph`, com destino alternativo `out=`) em vez de duplicar concat em
+   `music`; a alternativa seria um segundo montador para manter o mesmo resultado]`
+2. `[auto-aceito: a decisão da aula virou artefato `audio/story_check.json` e **saída** da etapa
+   (entra no progresso), porque sem isso "assistir e decidir" não teria como ser verificado]`
+3. `[auto-aceito: sem origem declarada o Studio não grava `license.txt` (em vez de gravar "não
+   declarada"), para que a validação `[extensão]` do guia signifique alguma coisa]`
+4. `[auto-aceito: `story_status` devolve `warning` (texto do erro da etapa 6/5) em vez de 404 —
+   a tela precisa abrir e explicar o que falta, não falhar]`
+5. `[auto-aceito: um `JobRegistry` próprio para o render da sequência bruta, separado do job de
+   geração de trilha por CLI, para que os dois possam coexistir no mesmo projeto]`
+
+### Pendências para a integração (W5)
+
+- `[cross-feature]` O guia agregado (`GET /api/projects/{pid}/guide`) só pode ser conferido com
+  os 11 hooks mergeados; aqui foram verificados `music` e `edit`.
+- `[cross-feature]` Smoke visual das telas (Playwright) depende da shell (OS-013).
+- A pendência 3 da wave 1 (numpy+ffmpeg sem ADR) foi resolvida antes desta frente pela ADR-009;
+  as pendências 1, 2, 4, 5 e 6 da seção 12 continuam abertas — nenhuma delas foi tocada aqui.
