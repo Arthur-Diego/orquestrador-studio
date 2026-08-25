@@ -1,6 +1,7 @@
 """Fixtures compartilhadas: projetos isolados em diretório temporário e cliente HTTP."""
 from __future__ import annotations
 
+import importlib
 import io
 import sys
 from pathlib import Path
@@ -22,7 +23,10 @@ def studio_env(tmp_path, monkeypatch):
     from studio import app as app_module
     from studio.mood import service as mood_service
     from studio.refs import service as refs_service
-    return {"tmp": tmp_path, "app": app_module.app, "refs": refs_service, "mood": mood_service}
+    def svc(name: str):
+        return importlib.import_module(f"studio.{name}.service")
+
+    return {"tmp": tmp_path, "app": app_module.app, "refs": refs_service, "mood": mood_service, "svc": svc}
 
 
 @pytest.fixture()
@@ -41,3 +45,22 @@ def image_bytes(color=(200, 40, 40), size=(48, 48)) -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", size, color).save(buf, "PNG")
     return buf.getvalue()
+
+
+def make_video(path: Path, seconds: float = 2, size: str = "320x240") -> Path:
+    """Vídeo sintético (testsrc + tom) via ffmpeg — para fixtures de animate/edit/export."""
+    from studio.common import ffmpeg as ff
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ff.run(["-f", "lavfi", "-i", f"testsrc=size={size}:rate=30", "-f", "lavfi", "-i", "sine=frequency=440",
+            "-t", str(seconds), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(path)])
+    return path
+
+
+def make_audio(path: Path, seconds: float = 3, bpm: int = 120) -> Path:
+    """Áudio sintético com batidas (tom pulsado) via ffmpeg — para fixtures de music/edit."""
+    from studio.common import ffmpeg as ff
+    path.parent.mkdir(parents=True, exist_ok=True)
+    period = 60 / bpm
+    ff.run(["-f", "lavfi", "-i", f"sine=frequency=220:duration={seconds}",
+            "-af", f"volume='if(lt(mod(t,{period}),0.08),1,0.05)':eval=frame", str(path)])
+    return path
