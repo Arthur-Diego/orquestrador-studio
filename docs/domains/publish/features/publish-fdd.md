@@ -580,9 +580,11 @@ de etapa: são arquivos compartilhados da wave.
    a escolha por destino vem do plano §1.4.
 5. **Lista de ADRs associados** não inclui o ADR-012 (PUBLISH).
 
-**Conflito de merge previsto:** `docs/adrs/mapping.md` recebeu um bloco no fim tanto desta frente
-(ADR-012) quanto da frente OS-018 (ADR-011, commit `ec1fcbc`). A numeração das ADRs não colide;
-o conflito é textual, no fim do arquivo, e resolve-se mantendo os dois blocos.
+**Conflito de merge — RESOLVIDO na W5.** `docs/adrs/mapping.md` recebeu um bloco no fim tanto
+desta frente (ADR-012) quanto da frente OS-018 (ADR-011). No rebase desta branch sobre `develop`
+já integrada (`a4891ea`) o conflito foi resolvido mantendo os **dois** blocos, na ordem de
+integração. A numeração das ADRs não colidiu. Nenhum outro arquivo conflitou: as seis frentes da
+sub-wave 1 tocaram conjuntos disjuntos.
 
 **Não verificável antes da integração:** o smoke visual das 11 telas (Playwright), a contagem de
 requisições após troca de tela (timers órfãos) e o consumo do `edit/master.mp4` real da frente
