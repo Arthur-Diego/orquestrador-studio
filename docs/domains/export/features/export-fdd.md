@@ -139,8 +139,9 @@ def qa_report(pid: str) -> dict                                  # grava export/
 def list_outputs(pid: str) -> list[dict]
 def reframe_cost(pid: str, aspect_ratio: str) -> dict            # hf.cost, nunca lança
 def start_reframe(pid: str, aspect_ratio: str) -> dict           # RuntimeError se não logado ou job running
-def _filter_for(fmt: str, width: int, height: int) -> list[str]  # args ffmpeg do formato
+def _filter_for(fmt: str, width: int, height: int, vcodec: str = "") -> list[str]  # args ffmpeg do formato
 def _probe_full(path: Path) -> dict                              # probe + codec_name (v/a) + size
+def _safe_probe(path: Path) -> dict                              # _probe_full que devolve {} em arquivo ilegível
 ```
 
 **Contrato 1: status**
@@ -299,7 +300,7 @@ Checagens (todas objetivas): `exists`; `resolution == FORMATS[fmt]`; `abs(durati
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/export/reframe/cost`
 - Método: POST
-- Semântica de status: 200 `{credits|null, raw|error}` (nunca falha por CLI); 409 CLI não instalado.
+- Semântica de status: 200 `{credits|null, raw|error}` (erro do CLI vira corpo, não status); 404 master ausente; 409 CLI não instalado; 422 `aspect_ratio` fora de `{"9:16", "1:1"}`. A ordem de validação é projeto (404) → corpo (422) → CLI (409).
 
 **Exemplo de requisição**
 ```json
@@ -315,7 +316,7 @@ Checagens (todas objetivas): `exists`; `resolution == FORMATS[fmt]`; `abs(durati
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/export/reframe`
 - Método: POST
-- Semântica de status: 200 job iniciado; 404 master ausente; 409 CLI não instalado, não logado ou job em andamento; 422 `aspect_ratio` fora de `{"9:16", "1:1"}`; 502 falha do CLI ao iniciar.
+- Semântica de status: 200 job iniciado; 404 master ausente; 409 CLI não instalado, não logado ou job em andamento; 422 `aspect_ratio` fora de `{"9:16", "1:1"}`. Ordem de validação: projeto (404) → corpo (422) → CLI instalado (409) → login e job (409). **Não existe 502 nesta rota**: o `hf.generate` só roda depois que o 200 do job foi devolvido, então falha do CLI aparece como `state=error` no `GET /export/job`, nunca como status HTTP (ver seção 6 e as notas de implementação).
 - Limites: `timeout_s=600` no `hf.generate`; um job por projeto (mesma `registry` do render).
 
 **Exemplo de requisição**
@@ -336,7 +337,7 @@ Versionamento: contratos internos da instância local; sem versionamento de rota
 
 ### 6. Erros, exceções e fallback
 
-Matriz de erros previstos e tratamentos (padrão do recon: `RuntimeError`→409, `ValueError`→422, `FileNotFoundError`→404, CLI→502):
+Matriz de erros previstos e tratamentos (`RuntimeError`→409, `ValueError`→422, `FileNotFoundError`→404). O padrão `CLI→502` do recon **não se aplica** a esta etapa: nenhuma rota chama o CLI de forma síncrona — `cost` devolve o erro no corpo com 200 e `generate` roda dentro do job:
 
 | Condição | Tratamento | Notas |
 | --- | --- | --- |

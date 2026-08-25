@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "os009-export-collection",
     "name": "Export e QA (etapa 9 · OS-009)",
-    "description": "Coleção executável dos 9 contratos públicos da etapa 9 (Export e QA).\n\nFonte: `docs/domains/export/features/export-fdd.md` — seção 5 \"Contratos públicos\" (linhas 124-333), ordem dos fluxos pela seção 4 (linhas 67-95) e casos negativos pela matriz de erros da seção 6 (linhas 341-355).\n\nPré-condições: serviço FastAPI local no ar em `{{base_url}}`, um projeto existente em `{{pid}}` com `edit/master.mp4` produzido pela etapa 8, e ffmpeg/ffprobe em `~/.local/bin`.\n\nSem autenticação: a API é local e não tem auth (FDD seção 5, linha 126 — \"Sem headers próprios\").\n\nDivergências entre o FDD e `studio/etapas/export/router.py`: ver `divergencias.md` nesta pasta.",
+    "description": "Coleção executável dos 9 contratos públicos da etapa 9 (Export e QA).\n\nFonte: `docs/domains/export/features/export-fdd.md` — seção 5 \"Contratos públicos\" (linhas 124-333), ordem dos fluxos pela seção 4 (linhas 67-95) e casos negativos pela matriz de erros da seção 6 (linhas 341-355).\n\nPré-condições: serviço FastAPI local no ar em `{{base_url}}`, um projeto existente em `{{pid}}` com `edit/master.mp4` produzido pela etapa 8, e ffmpeg/ffprobe em `~/.local/bin`.\n\nSem autenticação: a API é local e não tem auth (FDD seção 5, linha 126 — \"Sem headers próprios\").\n\nDivergências entre o FDD e `studio/etapas/export/router.py`: ver `divergencias.md` nesta pasta.\n\nAuditoria feita sobre o commit `f049d45`. Duas divergências apontadas na primeira rodada (500 em `status`/`list` com arquivo ilegível; 409 antes do 422 nas rotas de reframe) já foram corrigidas nesse commit e as asserções desta coleção refletem o comportamento novo.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -576,11 +576,16 @@
                   "pm.test('nomes de arquivo do schema da wave, quando presentes (FDD s8, linha 401)', () => {",
                   "  nomes.forEach(n => pm.expect(n).to.not.include(' '));",
                   "});",
-                  "pm.test('videos renderizados expoem width/height/duration (FDD linhas 291-292)', () => {",
-                  "  j.files.filter(f => f.kind === 'video').forEach(f => {",
+                  "pm.test('videos legiveis expoem width/height/duration numericos (FDD linhas 291-292)', () => {",
+                  "  j.files.filter(f => f.kind === 'video' && f.width !== undefined).forEach(f => {",
                   "    pm.expect(f.width).to.be.a('number');",
                   "    pm.expect(f.height).to.be.a('number');",
                   "    pm.expect(f.duration).to.be.a('number');",
+                  "  });",
+                  "});",
+                  "pm.test('arquivo ilegivel nao derruba a rota: entrada volta so com name/file/kind/size (FDD linha 286)', () => {",
+                  "  j.files.filter(f => f.width === undefined).forEach(f => {",
+                  "    ['name','file','kind','size'].forEach(k => pm.expect(f).to.have.property(k));",
                   "  });",
                   "});"
                 ]
@@ -603,7 +608,7 @@
                 "list"
               ]
             },
-            "description": "Contrato 7 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 284) revalidado depois do render; confere os nomes fixos garantidos na secao 8 (linha 401)."
+            "description": "Contrato 7 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 284) revalidado depois do render; confere os nomes fixos garantidos na secao 8 (linha 401). Desde f049d45, um arquivo ilegivel volta sem os campos de midia em vez de derrubar a rota, entao width/height/duration sao conferidos apenas quando presentes."
           },
           "response": []
         }
@@ -1582,21 +1587,19 @@
           "response": []
         },
         {
-          "name": "POST reframe — aspect_ratio invalido (422, ou 409 sem CLI)",
+          "name": "POST reframe — aspect_ratio invalido (422)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const cliInstalado = String(pm.collectionVariables.get('hf_installed')) === 'true';",
-                  "if (cliInstalado) {",
-                  "  pm.test('422 aspect_ratio invalido (FDD s5 contrato 9, linha 318)', () => pm.response.to.have.status(422));",
-                  "} else {",
-                  "  pm.test('[DIVERGENCIA MEDIA] sem CLI o router responde 409 antes de validar o corpo (FDD linha 318 pede 422)', () => {",
-                  "    pm.expect(pm.response.code).to.eql(409);",
-                  "  });",
-                  "}"
+                  "pm.test('422 aspect_ratio invalido, com ou sem CLI instalado (FDD s5 contrato 9, linha 318)', () => {",
+                  "  pm.response.to.have.status(422);",
+                  "});",
+                  "pm.test('detalhe cita a proporcao invalida (router._reframe_preflight)', () => {",
+                  "  pm.expect(String(pm.response.json().detail).toLowerCase()).to.include('propor');",
+                  "});"
                 ]
               }
             }
@@ -1622,7 +1625,7 @@
                 "reframe"
               ]
             },
-            "description": "Secao 5 do FDD (docs/domains/export/features/export-fdd.md, linha 318) declara 422 para aspect_ratio fora de {'9:16','1:1'}. O router checa hf.available() ANTES de validar o corpo, entao sem CLI instalado a resposta e 409 — divergencia MEDIA registrada em divergencias.md.",
+            "description": "Contrato 9 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 318): aspect_ratio fora de {'9:16','1:1'} responde 422. Ate o commit 5df89a7 o router checava hf.available() antes do corpo e devolvia 409 em maquina sem CLI; o commit f049d45 inverteu a ordem (projeto -> corpo -> CLI) e o 422 agora vale sempre.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"aspect_ratio\": \"4:5\"\n}",
@@ -1636,21 +1639,16 @@
           "response": []
         },
         {
-          "name": "POST reframe/cost — aspect_ratio invalido (422, ou 409 sem CLI)",
+          "name": "POST reframe/cost — aspect_ratio invalido (422, nao declarado no FDD)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const cliInstalado = String(pm.collectionVariables.get('hf_installed')) === 'true';",
-                  "if (cliInstalado) {",
-                  "  pm.test('[DIVERGENCIA MEDIA] 422 nao declarado no contrato 8 do FDD (linha 302)', () => {",
-                  "    pm.expect([422, 404]).to.include(pm.response.code);",
-                  "  });",
-                  "} else {",
-                  "  pm.test('409 CLI nao instalado (FDD s5 contrato 8, linha 302)', () => pm.response.to.have.status(409));",
-                  "}"
+                  "pm.test('[DIVERGENCIA MEDIA] 422 aspect_ratio invalido — status nao declarado no contrato 8 (FDD linha 302)', () => {",
+                  "  pm.response.to.have.status(422);",
+                  "});"
                 ]
               }
             }
@@ -1677,7 +1675,7 @@
                 "cost"
               ]
             },
-            "description": "O contrato 8 do FDD (docs/domains/export/features/export-fdd.md, linha 302) so declara 200 e 409, mas o servico valida aspect_ratio e exige o master, podendo responder 422 e 404 — divergencia MEDIA registrada em divergencias.md.",
+            "description": "O contrato 8 do FDD (docs/domains/export/features/export-fdd.md, linha 302) declara apenas 200 e 409, mas a rota valida aspect_ratio (422) e exige o master (404). Divergencia MEDIA #2 do divergencias.md: o comportamento esta reconhecido nas notas de implementacao (linha 555), o texto do contrato nao.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"aspect_ratio\": \"4:5\"\n}",
@@ -1732,7 +1730,7 @@
                 "reframe"
               ]
             },
-            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 352): CLI instalado mas nao logado vira 409. Sem CLI instalado o 409 vem da linha 351 (mensagem diferente).",
+            "description": "Secao 6 do FDD (docs/domains/export/features/export-fdd.md, linha 352): CLI instalado mas nao logado vira 409. Sem CLI instalado o 409 vem da linha 351, com outra mensagem. O corpo aqui e valido, entao a checagem de CLI (409) e alcancada em ambos os casos.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"aspect_ratio\": \"1:1\"\n}",

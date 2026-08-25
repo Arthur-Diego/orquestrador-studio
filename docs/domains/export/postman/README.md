@@ -2,11 +2,11 @@
 
 Coleção executável dos 9 contratos públicos do FDD
 `docs/domains/export/features/export-fdd.md` (seção 5, linhas 124-333).
-Gerada em 2026-08-25, commit `b7e1052`.
+Gerada em 2026-08-25, commit `f049d45`.
 
 | Arquivo | O que é |
 | --- | --- |
-| `export.postman_collection.json` | Collection Format v2.1.0 — 32 requests, 102 blocos de asserção. |
+| `export.postman_collection.json` | Collection Format v2.1.0 — 32 requests em 5 pastas, 102 blocos de asserção. |
 | `export.postman_environment.json` | Ambiente local (`base_url`, `pid`, `pid_sem_master`, ...). |
 | `divergencias.md` | Onde o FDD e o `router.py`/`service.py` implementados discordam. |
 
@@ -79,8 +79,10 @@ Três casos não são determinísticos e o teste declara isso em vez de fingir:
   `[409, 200]` e registra qual ocorreu.
 - **409 sem ffmpeg** — só é observável em máquina sem ffmpeg/ffprobe em `~/.local/bin`. O
   teste lê a flag `ffmpeg` do `GET /status` e só exige 409 quando ela é `false`.
-- **reframe e reframe/cost** — dependem do CLI instalado e logado. As asserções ramificam por
-  `hf_installed` / `hf_logged_in` e uma delas documenta a divergência #3 do `divergencias.md`.
+- **reframe e reframe/cost** (os requests da pasta 4 e o "409 sem login") — dependem do CLI
+  instalado e logado, então as asserções ramificam por `hf_installed` / `hf_logged_in`. Os dois
+  requests de `aspect_ratio` inválido **não** ramificam mais: desde `f049d45` a ordem é projeto →
+  corpo → CLI, e o 422 vale com ou sem CLI.
 
 ## Não coberto por HTTP
 
@@ -104,6 +106,21 @@ coleção testa isso:
   `divergencias.md`.
 - **Escrita atômica (`.tmp` + `rename`) e "o arquivo final nunca fica parcial"** (invariante da
   linha 363): verificável só no sistema de arquivos durante o render, não por resposta HTTP.
+
+## Nota sobre os commits
+
+A geração desta coleção correu em paralelo com a própria frente de implementação, e isso aparece
+no histórico:
+
+- `5df89a7` recolheu os dois `.json` desta pasta e acrescentou ao FDD a seção
+  "Notas de implementação";
+- `f049d45` corrigiu duas divergências que esta auditoria apontou (500 em `status`/`list` com
+  arquivo ilegível; 409 antes do 422 nas rotas de reframe) e acrescentou as notas correspondentes
+  ao FDD.
+
+Os dois blocos foram **acrescentados ao fim do FDD** (hoje linhas 514-566), então todas as
+citações de linha desta coleção (seções 4, 5, 6, 8 e 9) continuam válidas. As asserções já
+refletem o comportamento pós-`f049d45`.
 
 ## Contrato publicado
 
