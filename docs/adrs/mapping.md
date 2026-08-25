@@ -435,3 +435,30 @@ refletido em `MOOD::suggest_prompts` (comentário explícito no código sobre a 
 ## Atualização 2026-08-25 (wave 1)
 
 Novos módulos/domínios após a wave 1 (todos plugins em `studio/etapas/<id>/` + `studio/<id>/service.py`): BASE, STORYBOARD, SHOTS, ANIMATE, MUSIC, EDIT, EXPORT, PUBLISH, PROSPECT; e o transversal COMMON (`studio/common/`). As rotas deixaram `app.py` e vivem nos routers dos plugins. ADR nova: ADR-009 (MUSIC).
+
+## Atualização 2026-08-25 (wave 2, preparo)
+
+Correções ao "Project Overview" acima, que descrevia o estado do repositório antes da wave 1:
+o projeto está em **v0.3.0** e as **11 etapas** estão implementadas como plugins (não só as duas
+primeiras); `studio/app.py` não concentra mais as rotas de etapa — cada plugin traz o seu
+`router.py`.
+
+Novidades do módulo **STUDIO** nesta wave:
+
+- `studio/common/guide.py` — contrato transversal do **guia por etapa**: `Guide(META)` com
+  `.text/.input/.output/.check/.build`, helpers de leitura pura (`exists`, `read_json`,
+  `count_files`), derivação de `status`/`progress`/`missing` e `generic_guide` (fallback
+  `unknown`). Cada plugin pode exportar `studio/etapas/<id>/guide.py::guide(pid)`, descoberto por
+  `etapas.discover()` na chave `guide` (opcional).
+- Rotas novas no núcleo: `GET|PATCH /api/projects/{pid}`, `GET /api/projects/{pid}/guide` e
+  `GET /api/projects/{pid}/guide/{step}`; `GET /api/higgsfield/status` passou a ser cacheada
+  (60 s, `?refresh=1` força).
+- `studio/web/ui.js` + `ui.css` — `Studio.ui`, camada de componentes compartilhados do frontend
+  (`esc`, `chip`, `hfChip`, `drop`, `upload`, `confirmCost`, `poll`, `guide`, `renderGuide`),
+  substituindo o código duplicado nas 11 views. `app.js` ganhou `Studio.go(step)`, `destroy()` na
+  troca de tela e tratamento de erro em `showView`.
+- `PROJECT_LAYOUT` passou a cobrir as pastas de todas as etapas.
+
+**ADR nova: ADR-010** (STUDIO) — guia por etapa calculado por leitura pura de artefatos; núcleo
+(`app.py`, `steps.py`, `config.py`, `higgsfield.py`, `etapas/__init__.py`, `web/*`) editável
+somente pelas frentes de preparo/shell de uma wave.
