@@ -1,11 +1,11 @@
 %% Etapa 11 (prospect, aula 001) — job do teaser: 5 a 10 s de um take da etapa 6 com a
 %% trilha da etapa 7, em três passos de ffmpeg, com polling da tela.
-%%
+%% ---
 %% Fonte de verdade: studio/etapas/prospect/view.js (polling a cada 3 s),
 %% studio/etapas/prospect/router.py (POST .../teaser e GET /prospect/job),
 %% studio/prospect/service.py (start_teaser, pick_take, find_music),
-%% studio/common/jobs.py (JobRegistry: um job por projeto, thread daemon) e
-%% studio/common/ffmpeg.py (run/probe).
+%% studio/common/jobs.py (JobRegistry, um job por projeto, thread daemon) e
+%% studio/common/ffmpeg.py (run e probe).
 sequenceDiagram
     autonumber
     participant UI as view.js (tela da etapa 11)
@@ -13,41 +13,38 @@ sequenceDiagram
     participant S as service.py (studio/prospect)
     participant J as JobRegistry (studio/common/jobs.py)
     participant F as common/ffmpeg
-
     UI->>R: POST /api/projects/{pid}/prospect/leads/{lid}/teaser
-    Note over UI,R: corpo opcional: take, duration=8, take_offset, music_offset
+    Note over UI,R: corpo opcional com take, duration=8, take_offset e music_offset
     R->>S: start_teaser(root, pid, lid, take, duration, offsets)
-    S->>S: require_gate — 4 vídeos distintos publicados, senão 409
-    S->>S: get_lead(lid) — 404 se não existir
-    S->>F: available() — 409 "ffmpeg não disponível" se faltar
+    S->>S: require_gate — 4 vídeos DISTINTOS publicados, senão 409
+    S->>S: get_lead(lid) — 404 se o lead não existir
+    S->>F: available() — 409 "ffmpeg não disponível" quando falta
     S->>S: pick_take(animate/takes.json) e find_music(audio/music.*) — 404 se faltar etapa 6 ou 7
-    S->>S: valida duração entre 5 e 10 s (ajusta ao tamanho do take) — senão 422
+    S->>S: valida duração entre 5 e 10 s e ajusta ao tamanho do take — senão 422
     S->>J: registry.start(pid, total=3, fn, lead=lid) — 409 se já houver job rodando
-    J-->>S: job {state: running, done: 0, total: 3}
+    J-->>S: job com state running, done 0 de 3
     S-->>R: job
     R-->>UI: 200 job
-
     par Job na thread daemon
-        J->>F: 1) corta o take: -ss take_offset -t duração -an -c:v libx264 -crf 20
-        F-->>J: .lid.v.mp4 pronto — job.done = 1
-        J->>F: 2) corta a música: -stream_loop -1 -ss music_offset -t duração -af afade=t=out:d=0.5 -c:a aac
-        F-->>J: .lid.a.m4a pronto — job.done = 2
-        J->>F: 3) mux: -map 0:v -map 1:a -c:v libx264 -c:a aac -shortest
-        F-->>J: prospect/teasers/{lid}.mp4
-        J->>F: probe do resultado — exige faixa de áudio e 5 a 10 s (±0,25 s)
-        J->>S: grava teaser e status "teaser_ready" em leads.json — job.done = 3, state = done
+        J->>F: passo 1, corta o take — -ss take_offset -t duração -an -c:v libx264 -crf 20
+        F-->>J: vídeo temporário pronto, job.done = 1
+        J->>F: passo 2, corta a música — -stream_loop -1 -ss music_offset -t duração -af afade=t=out:d=0.5 -c:a aac
+        F-->>J: áudio temporário pronto com fade de saída, job.done = 2
+        J->>F: passo 3, mux — -map 0:v -map 1:a -c:v libx264 -c:a aac -shortest
+        F-->>J: prospect/teasers/{lid}.mp4 gravado
+        J->>F: probe do resultado — exige faixa de áudio e duração de 5 a 10 s
+        J->>S: grava teaser e status teaser_ready em leads.json, job.done = 3 e state done
     and Polling da tela
-        loop a cada 3 s, até state = done ou error
+        loop a cada 3 s, até state done ou error
             UI->>R: GET /api/projects/{pid}/prospect/job
             R->>J: registry.status(pid)
-            J-->>R: {state, done, total, log, lead, teaser}
+            J-->>R: state, done, total, log, lead e teaser
             R-->>UI: 200 job
         end
     end
-
     alt job concluído
-        UI->>UI: exibe o vídeo em ctx.files(lead.teaser) e libera o follow-up
+        UI->>UI: exibe o vídeo em ctx.files(lead.teaser) e libera o texto de follow-up
     else job com erro
-        J->>J: apaga o arquivo parcial e os temporários; state = error, error = stderr truncado
-        UI->>UI: mostra o erro; leads.json fica intocado
+        J->>J: apaga o arquivo parcial e os temporários, state error com o stderr truncado
+        UI->>UI: mostra o erro e leads.json fica intocado
     end

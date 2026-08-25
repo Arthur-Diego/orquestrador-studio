@@ -1,12 +1,12 @@
 %% Etapa 11 (prospect, aula 001) — gate do portfólio: a aula manda publicar 4 vídeos
 %% criativos antes de prospectar.
-%%
+%% ---
 %% Fonte de verdade: studio/prospect/service.py (_published_videos, gate, require_gate,
 %% REQUIRED_VIDEOS = 4) e studio/etapas/prospect/router.py (tradução de GateClosed em 409).
-%%
-%% ATENÇÃO: o gate conta VÍDEOS DISTINTOS — os valores distintos do campo `video` em
+%% ---
+%% ATENÇÃO: o gate conta VÍDEOS DISTINTOS — os valores distintos do campo video em
 %% publish/log.json — e não o número de entradas do log. Republicar o mesmo vídeo em vários
-%% canais não abre o gate — decisão 1 do lote da wave 1, já refletida na seção 2 do FDD.
+%% canais não abre o gate. É a decisão 1 do lote da wave 1, já refletida na seção 2 do FDD.
 flowchart TD
     A["Requisição em /api/projects/{pid}/prospect/..."] --> B{"Método é GET?"}
     B -->|"sim"| GET["Segue normalmente: GET nunca é bloqueado.<br/>GET /prospect/gate responde 200 sempre, com<br/>published, posts, required, ok e message"]
@@ -14,13 +14,13 @@ flowchart TD
 
     C --> D["Ler projects/&lt;pid&gt;/publish/log.json"]
     D --> E{"Arquivo existe, é JSON e é uma lista?"}
-    E -->|"não: ausente, ilegível ou inválido"| Z["publicados = 0<br/>nunca levanta exceção; só registra warning"]
-    E -->|"sim"| F["Coletar o campo video de cada entrada<br/>(strings não vazias)"]
+    E -->|"não: ausente, ilegível ou inválido"| Z["publicados = 0<br/>nunca levanta exceção, só registra warning"]
+    E -->|"sim"| F["Coletar o campo video de cada entrada<br/>(apenas strings não vazias)"]
     F --> H["publicados = quantidade de valores DISTINTOS de video<br/>4 VÍDEOS distintos, não 4 entradas de log"]
 
     Z --> I{"publicados &gt;= 4?"}
     H --> I
-    I -->|"sim"| OK["gate.ok = true<br/>message: Portfólio pronto: N vídeos publicados. Pode prospectar.<br/>a escrita segue (cadastro, DM, teaser, call, pitch)"]
+    I -->|"sim"| OK["gate.ok = true<br/>message: Portfólio pronto, N vídeos publicados. Pode prospectar.<br/>a escrita segue: cadastro, DM, teaser, call e pitch"]
     I -->|"não"| NOK["GateClosed → HTTP 409<br/>detail: A aula manda publicar 4 vídeos criativos antes de<br/>prospectar. Você tem N/4.<br/>nada é escrito em prospect/"]
 
     classDef passa fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#10331a
