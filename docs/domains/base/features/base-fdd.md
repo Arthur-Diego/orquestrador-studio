@@ -629,8 +629,10 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
  "no_bias": false, "no_people": false, "model": "nano_banana_2"}
 ```
 
-- `mode`: `images` (default; o bot lê a referência + até 3 imagens do mood), `brief` (só texto) ou
-  `template` (determinístico, sem Claude).
+- `ref_id` **omitido** usa a primeira referência escolhida na etapa 1.
+- `mode`: `images` (default; o bot lê a referência + até 3 imagens do mood — o `prompter` corta em
+  **4 imagens no total**, e é esse total que a rota `prompter` publica em `max_images`), `brief`
+  (só texto) ou `template` (determinístico, sem Claude).
 - `no_bias: true` (aula 009, "sessão nova sem viés"): roda `prompter.from_images` **só com a
   referência**, sem o brief do projeto e sem o mood — é o equivalente local da aba nova do bot.
 - `no_people: true` acrescenta `"No people unless they appear in the reference image."` ao prompt.
@@ -642,7 +644,8 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
   · 409 Claude CLI indisponível nos modos `images`/`brief` · 502 falha do Claude (JSON inválido, timeout).
 
 **Contrato 9 (novo): `GET /api/projects/{pid}/base/prompts/history`** — lista (mais recente primeiro)
-das entradas de `base/prompts.json`. 200 sempre (lista vazia quando não há histórico).
+das entradas de `base/prompts.json`. 200 sempre (lista vazia quando não há histórico); sem paginação
+e sem filtro por `ref_id` — devolve o histórico inteiro (≤ 50).
 
 **Contrato 9b (novo): `GET /api/projects/{pid}/base/prompter`** — `{available_claude, modes,
 max_images}`. É o que a tela usa para desabilitar os modos que dependem do Claude antes de o usuário
