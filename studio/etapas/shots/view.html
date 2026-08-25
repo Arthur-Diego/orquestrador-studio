@@ -1,0 +1,108 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 5 · aula 011 (+ cena do produto, aula 013)</span>
+  <h2>Ângulos por cena</h2>
+  <p class="lede">Cada cena do storyboard vira vários ângulos da mesma imagem: prepare a base da cena, peça "outro ponto de vista" (Multi Shot na interface da Higgsfield, onde o ilimitado vale), importe, escolha, faça upscale e ordene. No fim a etapa grava <code>shots/storyboard.json</code> — é o que a etapa 6 anima.</p>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>1. Cenas do storyboard</h3>
+    <div class="row wrap">
+      <span id="shotsWarn" class="chip warn"></span>
+      <button id="btnShotsReload" class="ghost">Recarregar</button>
+    </div>
+  </div>
+  <p class="fine">Paleta do mood board (etapa 2) — acerte cores e luz na base <b>antes</b> do multishot: toda variação herda o que a base tiver.</p>
+  <div id="shotsPalette" class="palette"></div>
+  <div id="sceneList" class="gallery"></div>
+</section>
+
+<section class="panel" id="scenePanel">
+  <div class="panel-head">
+    <h3 id="sceneTitle">2. Cena</h3>
+    <div class="row wrap">
+      <span id="sceneStatus" class="chip mode">nenhuma cena aberta</span>
+      <button id="btnPrepBase" class="ghost">Preparar base (imagem da cena)</button>
+      <button id="btnPrepBaseCampaign" class="ghost">Usar a imagem base da campanha</button>
+      <label class="drop" id="baseDrop">outra imagem<input id="baseUpload" type="file" accept="image/*" hidden></label>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="col">
+      <div class="row wrap">
+        <select id="promptKind" style="flex:0 0 auto;min-width:230px">
+          <option value="angle">Outro ponto de vista (Multi Shot)</option>
+          <option value="edit">Edição numerada (uma rodada por vez)</option>
+        </select>
+        <input id="promptSubject" placeholder="foco (ex.: the astronaut)" style="flex:1;min-width:180px">
+        <select id="promptScale" style="flex:0 0 auto;min-width:110px"><option value="close">close</option><option value="medium">médio</option><option value="wide">aberto</option></select>
+        <select id="promptAngle" style="flex:0 0 auto;min-width:150px"><option value="eye-level">altura dos olhos</option><option value="low">contra-plongée</option><option value="high">plongée</option></select>
+        <label class="inline"><input id="promptRealism" type="checkbox" checked> bloco de câmera</label>
+        <label class="inline">lente <input id="promptLens" type="number" value="35" min="12" max="200"></label>
+        <label class="inline">f/ <input id="promptAperture" type="number" value="2.8" min="1" max="22" step="0.1"></label>
+        <button id="btnPrompts" class="ghost">Gerar prompt</button>
+      </div>
+      <div id="editsBox" class="row wrap hidden">
+        <textarea id="promptEdits" rows="3" placeholder="uma modificação por linha, em inglês (ex.: Make the helmet visor tinted) — a aula manda numerar e fazer uma rodada por vez"></textarea>
+      </div>
+      <p id="shotsHint" class="fine"></p>
+      <div id="shotsPrompts" class="prompts"></div>
+      <div class="row wrap cli">
+        <span id="shotsHf" class="chip mode">CLI: ?</span>
+        <label class="inline">imagens <input id="shotsCount" type="number" value="4" min="1" max="8"></label>
+        <button id="btnShotsGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
+        <span id="shotsGenLog" class="mono fine"></span>
+      </div>
+      <div id="shotsProgress" class="progress"><div class="bar"></div></div>
+      <div id="shotsLog" class="log mono"></div>
+    </div>
+    <div class="col">
+      <p class="fine">Gere na interface da Higgsfield (Multi Shot, Cinema Studio, Upscale 2x High Fidelity) e traga os resultados:</p>
+      <label class="drop" id="shotsDrop">Arraste imagens aqui ou <input id="shotsUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
+      <button id="btnShotsDownloads">Importar da pasta Downloads</button>
+      <span id="shotsDlFolder" class="fine mono"></span>
+      <label class="inline">últimos <input id="shotsDlMinutes" type="number" value="120" min="5"> min</label>
+      <button id="btnShotsHistory">Importar do histórico Higgsfield</button>
+      <img id="baseThumb" class="hidden" alt="base da cena" style="max-width:100%;max-height:200px;object-fit:cover;border-radius:8px">
+    </div>
+  </div>
+  <div class="panel-head">
+    <h3>Escolher e ordenar</h3>
+    <div class="row wrap">
+      <span id="shotsCounts" class="chip mode">0 candidatos · 0 escolhidos</span>
+      <button id="btnShotsUpscale" class="ghost" disabled>Upscale do último escolhido (CLI)</button>
+      <label class="inline"><input id="shotsUpscaled" type="checkbox"> já upscalei na UI</label>
+      <button id="btnShotsSave" class="primary">Salvar ordem da cena</button>
+    </div>
+  </div>
+  <p class="fine">Clique nos candidatos na ordem em que os frames entram na cena — o número no card é a ordem (<code>shot01_final.png</code>, <code>shot02_final.png</code>…).</p>
+  <div id="shotsGallery" class="gallery"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>3. Cena do produto (aula 013)</h3>
+    <div class="row wrap">
+      <span id="prodStatus" class="chip mode">sem imagem de referência</span>
+      <label class="drop" id="prodRefDrop">imagem 1 (a cena, ex.: geladeira)<input id="prodRefUpload" type="file" accept="image/*" hidden></label>
+      <button id="btnProdPrompts" class="ghost">Ver as duas instruções</button>
+    </div>
+  </div>
+  <p class="fine">A imagem 2 é sempre <code>base/base_final.png</code> (a lata com o rótulo próprio da etapa 3). Rode a instrução 1; depois rode a instrução 2 sobre o resultado da primeira.</p>
+  <div id="prodPrompts" class="prompts"></div>
+  <div class="row wrap">
+    <label class="drop" id="prodDrop">Arraste o resultado aqui ou <input id="prodUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
+    <button id="btnProdDownloads">Importar da pasta Downloads</button>
+    <button id="btnProdClear" class="ghost">Remover a cena do produto</button>
+  </div>
+  <div id="prodGallery" class="gallery"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>4. Storyboard da etapa</h3>
+    <button id="btnBoard" class="ghost">Conferir shots/storyboard.json</button>
+  </div>
+  <p class="fine">É o arquivo que a etapa 6 (animação) lê sem adaptação: toda cena na ordem, com os frames escolhidos.</p>
+  <div id="boardOut" class="log mono"></div>
+</section>
