@@ -2,6 +2,7 @@
 
 **Status:** Aceito
 **Data:** 25-08-2026
+**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-002](../HIGGSFIELD/ADR-002-integracao-higgsfield-somente-via-cli-oficial.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-005](../REFS/ADR-005-scraping-pinterest-via-playwright.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-007](../MOOD/ADR-007-mood-board-vibe-unica-teto-de-8-grid-de-4-como-orientacao-de-ui.md)
 
 ## Contexto e Problema
 
@@ -30,10 +31,7 @@ de CI e do mesmo padrão de trailer, mas o repositório é recente (todo o hist�
 em um único dia), então ainda não há evidência de estabilidade de longo prazo — apenas de adoção
 consistente nos commits analisados até aqui.
 
-[NECESSITA INPUT: definir se esta decisão deve ser formalmente separada em duas ADRs distintas —
-(a) estratégia de testes sem rede/navegador e CI, e (b) gitflow com rastreabilidade Task-Id —
-já que as duas só coincidem por terem nascido no mesmo commit e tratam de preocupações diferentes
-(qualidade de código vs. processo de gestão de trabalho)]
+Decisão registrada na adoção (2026-08-25): uma ADR só. Testes/CI e gitflow/Task-Id formam juntos o gate de entrega (o CI é o que impõe o trailer); dividir só quando um dos dois evoluir de forma independente.
 
 ## Motivadores da Decisão
 
@@ -94,8 +92,7 @@ registro comparativo entre as três opções não existe no histórico do projet
   com timeout de 10 minutos.
 - Mau, porque dependeria de credenciais/sessão real em ambiente de CI, aumentando a superfície de
   segredo a gerenciar.
-- [NECESSITA INPUT: não há evidência escrita de que esta opção foi avaliada e descartada
-  formalmente — apenas inferência de coerência com a necessidade de CI rápido]
+- Decisão registrada na adoção (2026-08-25): testes E2E reais (Playwright contra o servidor local, Pinterest e CLI logado) foram considerados e adiados: dependem de rede, sessão do usuário e créditos, e por isso não cabem no CI. Ficam como verificação manual documentada no PR (smoke via Playwright headless) e como candidato a job opcional fora do gate.
 
 ### Gitflow sem exigência de rastreabilidade de Task-Id
 

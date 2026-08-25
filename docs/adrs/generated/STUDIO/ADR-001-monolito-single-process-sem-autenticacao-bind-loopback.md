@@ -2,6 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-08-25
+**ADRs relacionados:** [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md)
 
 ## Contexto e Problema
 

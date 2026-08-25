@@ -1,6 +1,7 @@
 # ADR-007: Mood board de vibe única — um prompt, teto de 8 imagens selecionadas, grid de 4 como orientação de UI
 **Status:** Aceito
 **Data:** 2026-08-25
+**ADRs relacionados:** [ADR-002](../HIGGSFIELD/ADR-002-integracao-higgsfield-somente-via-cli-oficial.md), [ADR-004](../STUDIO/ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-008](../STUDIO/ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md)
 
 ## Contexto e Problema
 

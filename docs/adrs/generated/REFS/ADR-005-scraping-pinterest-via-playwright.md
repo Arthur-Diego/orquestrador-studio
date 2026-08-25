@@ -2,6 +2,7 @@
 
 **Status:** Aceito
 **Data:** 25-08-2026
+**ADRs relacionados:** [ADR-004](../STUDIO/ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006](../STUDIO/ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008](../STUDIO/ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md)
 
 ## Contexto e Problema
 

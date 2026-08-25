@@ -2,7 +2,7 @@
 
 **Status:** Aceita
 **Data:** 2026-08-25
-**Related ADRs:** ADR-001, ADR-003
+**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-002](../HIGGSFIELD/ADR-002-integracao-higgsfield-somente-via-cli-oficial.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-005](../REFS/ADR-005-scraping-pinterest-via-playwright.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md)
 
 ## Contexto e Problema
 
