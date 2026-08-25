@@ -86,9 +86,14 @@ def guide(pid: str) -> dict:
     final = base.most_advanced(cands)
     g.output("base_final", "base/base_final.png", final_ok,
              detail=f"passo mais avançado: {base.KIND_LABEL.get(ch['final'] or '', '—')}" if final_ok else None)
-    md_ok = bool(md) and bool(ch["situation"]) and "Prompts e instruções usados" in md
+    # A cadeia da aula termina no upscale 2x; o rótulo só é exigido quando há marca (`[extensão]`).
+    # Sem isso a etapa ficaria `done` já na primeira situação escolhida e o `current` do núcleo
+    # pularia a etapa 3 antes do rótulo e do upscale.
+    feita = [base.KIND_LABEL[k] for k in base.KINDS if ch[k]]
+    cadeia_ok = bool(ch["situation"]) and bool(ch["upscale"]) and (bool(ch["label"]) or not brand.get("name"))
+    md_ok = bool(md) and cadeia_ok and "Prompts e instruções usados" in md
     g.output("base_md", "base/base.md com a cadeia situação → rótulo → upscale e os prompts", md_ok,
-             detail="cadeia: " + " → ".join(base.KIND_LABEL[k] for k in base.KINDS if ch[k]) if md_ok else None)
+             detail="cadeia: " + " → ".join(feita) if feita else None)
 
     # ---- validações da §3.5 (nunca bloqueiam) ----
     n_sit = sum(1 for c in cands if c.get("kind") == "situation")
@@ -102,8 +107,9 @@ def guide(pid: str) -> dict:
                 detail="falta o upscale 2x — é ele que fecha a imagem base",
                 fix="Open in → Upscale → 2x → High Fidelity V2 e importe como “upscale”")
     elif ratio is None:
-        g.check("upscale_2x", "Upscale 2x (preset High Fidelity V2)", "ok",
-                detail="dimensões indisponíveis para conferir a proporção")
+        g.check("upscale_2x", "Upscale 2x (preset High Fidelity V2)", "warn",
+                detail="não deu para conferir a proporção (dimensões indisponíveis)",
+                fix="Confirme que o upscale foi 2x, com o preset High Fidelity V2")
     else:
         ok = base.UPSCALE_MIN <= ratio <= base.UPSCALE_MAX
         g.check("upscale_2x", "Upscale 2x (preset High Fidelity V2)", "ok" if ok else "warn",

@@ -172,7 +172,7 @@ confirmados no catálogo (login pendente), conforme recon]`
 ```json
 {
   "model": "nano_banana_2",
-  "ui_hint": "Abra uma aba nova na Higgsfield (sem historico), anexe a referencia e 1 a 3 imagens do mood, cole o prompt.",
+  "ui_hint": "(REESCRITO na wave 2 — a aba nova e do BOT, nao da Higgsfield; ver §13.2)",
   "aspect_ratio": "16:9",
   "product": "energetico Gelo Zero",
   "palette": {"colors": ["#0ff0ff", "#1a1a2e"], "note": "neon frio"},
@@ -182,7 +182,7 @@ confirmados no catálogo (login pendente), conforme recon]`
       "ref_id": "9f8e7d6c5b4a",
       "file": "refs/brainstorming/9f8e7d6c5b4a.jpg",
       "prompt": "The product (energetico Gelo Zero) in the exact same situation as the reference image, with the campaign mood: neon frio, palette #0ff0ff #1a1a2e. No people unless they appear in the reference image. Photorealistic.",
-      "prompt_no_bias": "Write the prompt for an image identical to this one, but the giant energetico Gelo Zero can is the subject."
+      "prompt_no_bias": "(REMOVIDO na wave 2 — virou refs[].bot_instruction; ver §13.2)"
     }
   ],
   "label_prompt": "Replace the can label with the brand: Gelo Zero, lightning bolt logo with neon effect. Keep the can colors and everything else identical, realistic.",
@@ -577,17 +577,23 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
 
 | # da auditoria | Mudança | Impacto no contrato |
 | --- | --- | --- |
-| **B1** | O prompt de situação passa a nascer do **bot olhando a referência + o mood** (`prompter.from_images("base", [ref] + mood/selected[:4], instruction)`), com os mesmos 3 modos da etapa 2 (`images`, `brief`, `template`). O template de duas frases da v1.0 vira **fallback** (modo `template` e caminho sem Claude) | novo contrato 8 (`POST .../base/prompts/generate`) e 9 (`GET .../base/prompts/history`); `refs[].prompt_source` no contrato 1 |
+| **B1** | O prompt de situação passa a nascer do **bot olhando a referência + o mood** (`prompter.from_images("base", [ref] + mood/selected[:4], instruction)`), com os mesmos 3 modos da etapa 2 (`images`, `brief`, `template`). O template de duas frases da v1.0 vira **fallback** (modo `template` e caminho sem Claude) | contratos novos **W2-A** (`POST .../base/prompts/generate`) e **W2-B** (`GET .../base/prompts/history`); `refs[].prompt_source` no contrato 1 |
 | **B2** | Separação explícita entre **"instrução para o bot" (sessão nova, sem viés)** e **"prompt para gerar"** (saída do bot). O campo `prompt_no_bias` da v1.0 era instrução ao GPT rotulada como prompt de imagem e o `ui_hint` mandava abrir "aba nova na Higgsfield" — a aba nova é **do bot** | `refs[].prompt_no_bias` → `refs[].bot_instruction`; `ui_hint` reescrito; novo campo `bot_hint` |
 | **B3** | `mood/selected/` com ≥ 1 imagem vira **pré-requisito** dos prompts (a aula mostra o print do mood ao bot); os hex de `mood/palette.json` passam a ser **opcionais** | 422 "Volte à etapa 2 e salve o mood…" quando `mood/selected/` está vazio; `palette.json` vazio deixa de ser 422 |
 | **B4** | Prompts **editáveis** na tela (o import já herda o texto editado); `count` default **3** no rótulo (a aula gera 3 variações); a instrução usada fica gravada em `base.md` | `count` vira opcional em `cost`/`generate` (default por passo); `base.md` ganha a seção "Prompts e instruções usados" |
 | **B5, B10** | Textos da aula ("ignore marca/texto", "é ter paciência", dever de casa na comunidade) no checklist do guia | `guide.checklist` |
 | **B6** | Import com `kind=upscale` compara a largura com a candidata de origem e **avisa** fora de 1,8×–2,2× | `warnings: []` na resposta dos 3 imports; validação `upscale_2x` no guia |
-| **B11** | `"No people unless they appear in the reference image."` deixa de ser fixo e vira **checkbox opcional** (`no_people`) — na base a aula até imagina "um mini ser humano em perspectiva" | `no_people` no **contrato 8** (é onde o prompt é escrito); o fallback do contrato 1 nunca leva a frase |
+| **B11** | `"No people unless they appear in the reference image."` deixa de ser fixo e vira **checkbox opcional** (`no_people`) — na base a aula até imagina "um mini ser humano em perspectiva" | `no_people` no **contrato W2-A** (é onde o prompt é escrito); o fallback do contrato 1 nunca leva a frase |
 | **G3** | Os parâmetros do CLI e o hint usam `project.aspect_ratio` (default `16:9`), gravado pelo núcleo via `PATCH /api/projects/{pid}` | `aspect_ratio` deixa de ser constante `"16:9"` no contrato 1 e vira opcional nos contratos 5 e 6 |
-| **wave 2** | Novo hook `studio/etapas/base/guide.py` (leitura pura) publicado pelo núcleo em `GET /api/projects/{pid}/guide[/base]` | contrato 10 |
+| **wave 2** | Novo hook `studio/etapas/base/guide.py` (leitura pura) publicado pelo núcleo em `GET /api/projects/{pid}/guide[/base]` | contrato W2-D |
 
 #### 13.2 Contratos novos e alterados
+
+> **Numeração:** os contratos novos desta seção usam o prefixo **W2-** porque os números 8, 9 e 10 já
+> estão ocupados na §5 (`generate`, `job`, `select`). Os alterados são referenciados pela **rota**.
+> Os textos de `bot_hint`, `ui_hint` e `upscale_hint` nos exemplos abaixo são **ilustrativos**: a
+> fonte de verdade é `studio/base/service.py` (os testes fixam apenas as substrings normativas —
+> "aba nova" no `bot_hint` e ausência dela no `ui_hint`).
 
 **Contrato 1 (alterado): `GET /api/projects/{pid}/base/prompts?model=<id>`**
 
@@ -622,7 +628,7 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
   `mood/selected/` vazio (mensagem da etapa 2). `palette.json` ausente/vazio **não** é mais erro.
 - `claude` diz se o CLI do Claude está no PATH (a tela desabilita os modos `images`/`brief` sem ele).
 
-**Contrato 8 (novo): `POST /api/projects/{pid}/base/prompts/generate`**
+**Contrato W2-A (novo): `POST /api/projects/{pid}/base/prompts/generate`**
 
 ```json
 {"ref_id": "9f8e7d6c5b4a", "mode": "images", "instruction": "a lata está gigante em uma montanha coberta de neve",
@@ -643,42 +649,47 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
 - 404 projeto inexistente · 422 `ref_id` desconhecido, `mode` inválido, sem ref/mood
   · 409 Claude CLI indisponível nos modos `images`/`brief` · 502 falha do Claude (JSON inválido, timeout).
 
-**Contrato 9 (novo): `GET /api/projects/{pid}/base/prompts/history`** — lista (mais recente primeiro)
+**Contrato W2-B (novo): `GET /api/projects/{pid}/base/prompts/history`** — lista (mais recente primeiro)
 das entradas de `base/prompts.json`. 200 sempre (lista vazia quando não há histórico); sem paginação
 e sem filtro por `ref_id` — devolve o histórico inteiro (≤ 50).
 
-**Contrato 9b (novo): `GET /api/projects/{pid}/base/prompter`** — `{available_claude, modes,
+**Contrato W2-C (novo): `GET /api/projects/{pid}/base/prompter`** — `{available_claude, modes,
 max_images}`. É o que a tela usa para desabilitar os modos que dependem do Claude antes de o usuário
 clicar. 200 · 404 (projeto inexistente).
 
-**Contratos 3/4/5 (alterados): imports** devolvem `warnings: [str]` além de `added`/`scanned`/`jobs`.
+**Alterados — os três imports** (`POST …/base/import/{upload,downloads,history}`) devolvem `warnings: [str]` além de `added`/`scanned`/`jobs`.
 Em `kind=upscale` a largura de cada candidata nova é comparada à da candidata de origem (a
 selecionada mais avançada entre situação e rótulo): fora de **1,8×–2,2×** entra um aviso
 `"a aula pede upscale 2x (…)"`. Aviso **nunca** falha o import.
 
-**Contratos 6/7 (alterados): `cost` e `generate`** — `count` e `aspect_ratio` viram opcionais e há um
+**Alterados — `POST …/base/cost` e `POST …/base/generate`** — `count` e `aspect_ratio` viram opcionais e há um
 campo novo `prompt`. `count` ausente usa o default do passo (`situation` 1, `label` **3**,
 `upscale` 1); `aspect_ratio` ausente usa `project.aspect_ratio` (default `16:9`); `prompt` não vazio é
 o **texto editado na tela** (B4) e vence o histórico/template. Em `kind=situation` o `prompt`
 sobrescreveria o prompt de **todas** as referências do job — por isso a tela só o manda em
 `kind=label`, onde a instrução é única.
 
-**Contrato 10 (novo): `studio/etapas/base/guide.py::guide(pid) -> dict`** — hook de leitura pura
+**Contrato W2-D (novo): `studio/etapas/base/guide.py::guide(pid) -> dict`** — hook de leitura pura
 consumido por `GET /api/projects/{pid}/guide` e `…/guide/base` (contrato do preparo). Conteúdo:
 
 - `what`/`checklist`: texto literal da §3.4 da auditoria (inclui B5 "ignore marca/texto",
   "é ter paciência" e B10 dever de casa).
 - `inputs` (bloqueiam): ≥ 1 referência escolhida com arquivo em `refs/brainstorming/` (`step: refs`),
   ≥ 1 imagem em `mood/selected/` (`step: mood`), `product` preenchido em `project.json`.
-- `outputs`: `base/base_final.png` e `base/base.md` (com a cadeia situação → rótulo → upscale).
+- `outputs`: `base/base_final.png` e `base/base.md` **com a cadeia da aula fechada** — situação
+  **e** upscale escolhidos, mais o rótulo quando `brand.name` existe (o rótulo é `[extensão]`: sem
+  marca, a cadeia da aula termina no upscale). Escolher só a situação deixa a etapa `in_progress`;
+  se `done` saísse já aí, o `current` do núcleo pularia a etapa 3 antes do rótulo e do upscale.
 - `validations` (§3.5, nunca bloqueiam): `situation_chosen`, `upscale_2x` (largura ≈ 2× a da origem,
-  ±10 %), `label_applied` (quando `brand.name` existe), `prompt_en` (prompt de situação em inglês com
+  ±10 %; sem dimensões para conferir o status é `warn`, nunca `ok` — não se afirma o que não se
+  mediu), `label_applied` (quando `brand.name` existe), `prompt_en` (prompt de situação em inglês com
   ≥ 40 palavras), `ref_id_valid`, `final_2048` (lado maior ≥ 2048 px, aviso), `md_prompts`.
 - `next_action`: frase da aula quando há passo pendente na cadeia (escolher situação → trocar rótulo
   → upscale 2x), senão a derivada do builder.
 
 O hook lê `project.json`, `refs/candidates/candidates.json`, `base/candidates.json`,
-`base/brand.json`, `mood/selected/` e `base/base.md`. As dimensões saem de `width`/`height` já
+`base/brand.json`, `mood/selected/`, `base/base.md` e `base/prompts.json` (para avaliar `prompt_en`
+antes de haver situação escolhida). As dimensões saem de `width`/`height` já
 gravados pelo `ingest`; só quando faltarem (candidata antiga) o guia abre o arquivo com Pillow —
 leitura pura de arquivo do projeto, sem escrita, sem CLI e sem rede.
 
@@ -707,6 +718,7 @@ Sem Claude no PATH, "Gerar prompt" cai no modo `template` (determinístico) e a 
 | `mode` fora de `images|brief|template` | 422 |
 | Claude CLI ausente em `mode=images|brief` | 409 "Claude CLI indisponível — use o modo template…" |
 | Claude devolve JSON inválido / estoura o timeout | 502 |
+| (como o router decide entre os dois) | pela **causa**: `prompter.available()` falso → 409, verdadeiro → 502. Nunca pelo texto da mensagem — o stderr do Claude é ecoado no erro e poderia conter a palavra "indisponível" |
 | Upscale importado fora de 1,8×–2,2× | 200 com `warnings` (nunca bloqueia) |
 | `guide.py` levantando | núcleo devolve `generic_guide` com `status: "unknown"` (bug da frente, não caminho aceitável); leituras de JSON do projeto passam por wrapper que devolve o default |
 | `mode` fora do `Literal` do router | 422 do **Pydantic**, com `detail` em formato de **lista** (os demais 422 da etapa usam `detail` string) |
@@ -717,7 +729,10 @@ Sem Claude no PATH, "Gerar prompt" cai no modo `template` (determinístico) e a 
 
 - `prompts/generate` em `mode=images` chama o Claude com a referência **e** as imagens de
   `mood/selected/` e grava a entrada no histórico; com `no_bias=true` chama **só com a referência** e
-  sem nenhum campo do brief (produto/vibe) no comando.
+  sem nenhum campo do **contexto da campanha** no comando — vibe, nota e paleta do mood, resumo das
+  referências. O **produto** continua indo, na instrução: é o que a aula pede ao bot da aba nova
+  ("o energético gigante está em uma montanha coberta de neve"); o que tira o viés é o bot não saber
+  nada da *campanha*, não desconhecer o objeto.
 - Sem Claude no PATH: `mode=images` → 409; `mode=template` → 200 determinístico (o mesmo insumo dá o
   mesmo prompt — o critério de determinismo da v1.0 vale para o **fallback**, não para o modo bot).
 - `GET prompts` devolve `prompt_source: "claude"` e o texto gerado depois de um
@@ -731,7 +746,8 @@ Sem Claude no PATH, "Gerar prompt" cai no modo `template` (determinístico) e a 
 - `base.md` traz a seção "Prompts e instruções usados" com o prompt de situação e a instrução de
   rótulo **inteiros** (não truncados).
 - `GET /api/projects/{pid}/guide/base` devolve `status: "blocked"` sem refs/mood, `in_progress`
-  com `base_final.png` e sem `base.md` da cadeia completa, `done` com as duas saídas; nunca `unknown`.
+  com `base_final.png` e sem a cadeia da aula fechada (ex.: só a situação escolhida — `progress 0.5`),
+  `done` quando o upscale fecha a cadeia (e o rótulo, se há marca); nunca `unknown`.
 - `view.html` tem `<section id="guide" class="guide">` logo após o `<header class="stephead">`, o
   `view.js` usa `Studio.ui.*` e expõe `destroy()` parando o poll; as strings
   `"Etapa 3 · aula 009"` e `Studio.register("base"` continuam presentes.
@@ -764,6 +780,10 @@ Sem Claude no PATH, "Gerar prompt" cai no modo `template` (determinístico) e a 
   papel do bot. Com B11 tornando a frase **opcional** no prompt final, o papel ficou mais restritivo
   que a etapa. Ajuste é de outra frente (`prompter.py` é da frente `refs+mood` nesta wave):
   **pendência para a integração (W5)**, não alterada aqui.
+- `Studio.ui.upload(url, files, field)` não aceita campos extras de formulário, e o import desta
+  etapa manda `kind`, `ref_id` e `prompt` no mesmo multipart — por isso `view.js` monta esse
+  `FormData` à mão (os demais helpers do `Studio.ui` são usados). **Pendência para a integração:**
+  aceitar um `extra` no helper (arquivo da frente shell) e trocar aqui.
 - `[cross-feature]` guia da etapa 3 com `refs`/`mood` reais no projeto de integração.
 - `[cross-feature]` `Studio.ui` e `#guide` renderizados no navegador (smoke Playwright da W5).
 - IDs de modelo (`nano_banana_2`, `bytedance_image_upscale`) continuam não confirmados no catálogo.

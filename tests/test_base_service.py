@@ -134,6 +134,9 @@ def test_generate_prompt_without_bias_sends_only_the_reference(studio_env, svc, 
     assert str(root / "refs" / "brainstorming" / "0f8e7d6c5b4a.jpg") in cmd
     assert "mood/selected" not in cmd, "sem mood: o bot não pode saber da campanha"
     assert "snow neon" not in cmd, "sem a vibe do projeto (brief) — é isso que tira o viés"
+    assert "neon frio" not in cmd and "#0ff0ff" not in cmd, "sem a nota e a paleta do mood"
+    assert "Vibe:" not in cmd and "Aesthetic reference" not in cmd, "nenhum campo do brief"
+    assert "energetico Gelo Zero" in cmd, "o PRODUTO vai: a aula pede 'o energético gigante está…'"
     assert "identical to this one" in cmd and "montanha de neve" in cmd
 
 
@@ -379,7 +382,7 @@ def test_generate_total_failure_is_an_error_job(studio_env, svc, project, monkey
 
 def test_generate_label_requires_situation_and_brand(studio_env, svc, project, monkeypatch):
     prepare(studio_env, project)
-    calls = _fake_cli(svc, monkeypatch, [["http://x/l.png"]])
+    calls = _fake_cli(svc, monkeypatch, [["http://x/l1.png"], ["http://x/l2.png"], ["http://x/l3.png"]])
     with pytest.raises(ValueError, match="situação"):
         svc.start_generate(project, "label")
     s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
@@ -387,13 +390,14 @@ def test_generate_label_requires_situation_and_brand(studio_env, svc, project, m
     with pytest.raises(ValueError, match="marca"):
         svc.start_generate(project, "label")
     svc.brand_set(project, "Gelo Zero", "raio neon")
-    svc.start_generate(project, "label")
+    j = svc.start_generate(project, "label")
+    assert j["total"] == 3, "B4: a aula gera 3 variações do rótulo por vez"
     job = _wait(svc, project)
-    assert job["state"] == "done" and job["added"] == 1
+    assert job["state"] == "done" and job["added"] == 3 and len(calls) == 3
     assert calls[0]["params"]["image_references"] == [str(studio_env["refs"].project_dir(project)
                                                          / [c for c in svc.load(project) if c["id"] == s][0]["file"])]
     assert "Gelo Zero" in calls[0]["params"]["prompt"] and "raio neon" in calls[0]["params"]["prompt"]
-    assert [c["kind"] for c in svc.load(project) if c["source"] == "cli"] == ["label"]
+    assert [c["kind"] for c in svc.load(project) if c["source"] == "cli"] == ["label"] * 3
 
 
 def test_generate_upscale_uses_the_most_advanced_selection(studio_env, svc, project, monkeypatch):
@@ -496,3 +500,29 @@ def test_generate_situation_uses_the_prompt_the_bot_wrote(studio_env, svc, proje
     prompts = {c["params"]["prompt"] for c in calls}
     assert "Bot written prompt for ref zero" in prompts, "a referência com prompt do bot usa o do bot"
     assert any("exact same situation" in p for p in prompts), "a outra continua no fallback"
+
+
+def test_generate_sends_the_project_aspect_ratio_to_the_cli(studio_env, svc, project, monkeypatch):
+    """G3 no caminho pago: `start_generate` sem aspect_ratio usa o formato da campanha."""
+    root = prepare(studio_env, project)
+    meta = json.loads((root / "project.json").read_text())
+    meta["aspect_ratio"] = "9:16"
+    (root / "project.json").write_text(json.dumps(meta))
+    calls = _fake_cli(svc, monkeypatch, [["http://x/1.png"], ["http://x/2.png"]])
+    svc.start_generate(project, "situation")
+    _wait(svc, project)
+    assert {c["params"]["aspect_ratio"] for c in calls} == {"9:16"}
+
+
+def test_base_md_keeps_the_label_instruction_in_full(studio_env, svc, project):
+    """§13.5: a instrução de rótulo usada aparece inteira em base.md (o dever de casa pede o prompt)."""
+    root = prepare(studio_env, project)
+    svc.brand_set(project, "Gelo Zero", "raio neon")
+    instrucao = ("Replace the product label. Keep the can colors, but add a lightning bolt logo with a "
+                 "neon effect, exactly like the sketch, keeping every other element identical.")
+    s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+    svc.import_upload(project, [("l.png", image_bytes(color=(40, 200, 40)))], "label", None, instrucao)
+    svc.select(project, s)
+    svc.select(project, [c for c in svc.load(project) if c["kind"] == "label"][-1]["id"])
+    md = (root / "base" / "base.md").read_text()
+    assert "### Rótulo" in md and instrucao in md, "instrução de rótulo inteira, não truncada"

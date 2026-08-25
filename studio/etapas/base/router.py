@@ -83,7 +83,9 @@ def base_prompt_generate(pid: str, req: PromptGenReq):
     except FileNotFoundError as e:
         raise HTTPException(422, f"imagem indisponível: {e}") from e
     except RuntimeError as e:
-        raise HTTPException(409 if "indisponível" in str(e) else 502, str(e)) from e
+        # 409 × 502 pela CAUSA (bot ausente × bot falhou), não pelo texto da mensagem: o stderr do
+        # Claude é ecoado no erro e poderia conter a palavra "indisponível".
+        raise HTTPException(409 if not prompter.available() else 502, str(e)) from e
 
 
 @router.get("/api/projects/{pid}/base/prompts/history")

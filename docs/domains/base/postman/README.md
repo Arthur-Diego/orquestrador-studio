@@ -13,7 +13,11 @@ FastAPI.
 
 > As citações de linha do FDD desta coleção apontam para o arquivo **no commit `02034da`**. O FDD
 > ganhou 12 linhas durante a geração (commit `3004f70`, que aponta as seções 5, 6 e 9 para os deltas
-> da wave 2) e todas as citações foram reancoradas.
+> da wave 2) e todas as citações foram reancoradas. **Depois disso** a auditoria de doc-sync
+> gerou mais um commit no FDD (contratos novos renumerados para `W2-A…W2-D`, semântica do
+> `done` do guia e critério real do 409×502): as citações por **número de linha** ficaram
+> defasadas de novo; as por **rota** e por **seção** continuam válidas. A coleção foi
+> reexecutada nesse estado — 40 requests, 83 asserções, 0 falhas.
 
 ## O que mudou nesta versão (delta wave 1 → wave 2)
 

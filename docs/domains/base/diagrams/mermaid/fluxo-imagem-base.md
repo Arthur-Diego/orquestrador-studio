@@ -16,7 +16,8 @@ sequenceDiagram
 
     U->>V: abre a Etapa 3
     V->>R: GET /api/higgsfield/status (chip do CLI) e GET /api/mood/downloads-folder (pasta padrão)
-    V->>R: GET base/prompts, base/brand, base/candidates, guide/base
+    V->>R: GET base/prompter (o bot está disponível?), base/prompts, base/prompts/history
+    V->>R: GET base/brand, base/candidates, guide/base
     R->>S: prompts(pid)
     S->>FS: lê project.json, refs/candidates.json + brainstorming/, mood/selected/, base/prompts.json
     S-->>V: por referência: instrução para o BOT (sessão sem viés) + prompt para gerar (editável)

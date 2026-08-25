@@ -114,17 +114,35 @@ def test_guide_is_todo_with_inputs_and_no_output(client, pid):
 
 
 # ---------- validações da §3.5 ----------
-def test_guide_done_after_choosing_the_base_image(client, pid):
+def test_guide_is_in_progress_until_the_chain_of_the_lesson_ends(client, pid):
+    """A cadeia da aula é situação → rótulo → upscale: escolher só a situação NÃO fecha a etapa
+    (senão o `current` do núcleo pularia a etapa 3 antes do rótulo e do upscale)."""
     upload(client, pid, "s.png", png(2048, 1152), kind="situation", ref_id="0f8e7d6c5b4a", prompt=LONG_EN)
     client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "situation")})
     g = guide_of(client, pid)
     c = checks(g)
-    assert g["status"] == "done" and g["progress"] == 1.0
-    assert [o["status"] for o in g["outputs"]] == ["ok", "ok"]
-    assert c["situation_chosen"]["status"] == "ok" and c["md_prompts"]["status"] == "ok"
+    assert g["status"] == "in_progress" and g["progress"] == 0.5
+    assert [o["status"] for o in g["outputs"]] == ["ok", "todo"]
+    assert "base/base.md com a cadeia situação → rótulo → upscale e os prompts" in g["missing"]
+    assert c["situation_chosen"]["status"] == "ok" and c["md_prompts"]["status"] == "todo"
     assert c["prompt_en"]["status"] == "ok" and "palavras" in c["prompt_en"]["detail"]
     assert c["final_2048"]["status"] == "ok" and c["ref_id_valid"]["status"] == "ok"
     assert "upscale" in g["next_action"].lower(), "a cadeia da aula ainda pede o upscale 2x"
+
+
+def test_guide_done_only_when_the_upscale_closes_the_chain(client, pid):
+    upload(client, pid, "s.png", png(1024, 576), kind="situation", ref_id="0f8e7d6c5b4a", prompt=LONG_EN)
+    client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "situation")})
+    upload(client, pid, "u.png", png(2048, 1152, (9, 9, 9)), kind="upscale")
+    client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "upscale")})
+    g = guide_of(client, pid)
+    assert g["status"] == "done" and g["progress"] == 1.0 and not g["missing"]
+    assert "concluída" in g["next_action"]
+    # com marca, a cadeia da aula também exige o rótulo — a etapa volta a ficar incompleta
+    client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero", "description": "raio neon"})
+    g = guide_of(client, pid)
+    assert g["status"] == "in_progress" and checks(g)["label_applied"]["status"] == "warn"
+    assert "rótulo" in g["next_action"]
 
 
 def test_guide_warns_on_short_or_portuguese_prompt(client, pid):
@@ -143,6 +161,7 @@ def test_guide_upscale_ratio_ok_and_warn(client, pid):
     client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "upscale")})
     c = checks(guide_of(client, pid))
     assert c["upscale_2x"]["status"] == "ok" and c["upscale_2x"]["detail"] == "1024px → 2048px (2.0x)"
+    assert guide_of(client, pid)["status"] == "done", "a cadeia da aula fechou"
 
     r = upload(client, pid, "u2.png", png(1130, 640, (3, 3, 3)), kind="upscale")
     assert r["warnings"] and "2x" in r["warnings"][0], "B6: aviso já no import"
