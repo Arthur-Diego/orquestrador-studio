@@ -1,0 +1,4 @@
+interface:
+  display_name: "FT PR"
+  short_description: "Cria PRs profissionais com gate de evidencias"
+  default_prompt: "Preparar PR profissional a partir do diff atual"

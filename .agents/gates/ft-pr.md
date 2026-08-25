@@ -4,8 +4,8 @@ Este gate e obrigatorio antes de qualquer push, abertura ou atualizacao de Pull 
 
 ## Regra irrevogavel
 
-Carregar `.agents/skills/ft-pr/SKILL.md` e cumprir o template
-`.agents/skills/ft-pr/references/pr-description-template.md` antes de criar ou atualizar PR.
+Carregar `.claude/skills/ft-pr/SKILL.md` e cumprir o template
+`.claude/skills/ft-pr/references/pr-description-template.md` antes de criar ou atualizar PR.
 
 ## Bloqueios
 
