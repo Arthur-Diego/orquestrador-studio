@@ -7,12 +7,8 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json
-import os
 import shutil
-import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -20,27 +16,13 @@ from urllib.request import Request, urlopen
 from PIL import Image
 
 from .. import higgsfield as hf
+from ..common import ingest
+from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
-
-def _default_downloads() -> Path:
-    """Pasta Downloads do usuário real do Windows (WSL) ou ~/Downloads. Override: STUDIO_DOWNLOADS."""
-    if os.environ.get("STUDIO_DOWNLOADS"):
-        return Path(os.environ["STUDIO_DOWNLOADS"])
-    users = Path("/mnt/c/Users")
-    skip = ("default", "public", "padrão", "codexsandbox", "all users")
-    if users.exists():
-        cands = [u / "Downloads" for u in users.iterdir()
-                 if (u / "Downloads").exists() and not any(s in u.name.lower() for s in skip)]
-        if cands:
-            return max(cands, key=lambda p: p.stat().st_mtime)
-    return Path.home() / "Downloads"
-
-
-DOWNLOADS_DEFAULT = _default_downloads()
-IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
-_jobs: dict[str, dict] = {}
-_lock = threading.Lock()
+DOWNLOADS_DEFAULT = ingest.DOWNLOADS_DEFAULT
+IMG_EXT = ingest.MEDIA_EXT["image"]
+_registry = JobRegistry()
 
 
 # ---------- prompts ----------
@@ -92,127 +74,61 @@ def suggest_prompts(pid: str, model: str = "nano_banana_2", variation: int = 0) 
             "prompts": [{"label": "Vibe da campanha", "text": text}]}
 
 
-# ---------- importação ----------
-def _cands_file(root: Path) -> Path:
-    return root / "mood" / "candidates.json"
-
-
+# ---------- importação (delegada a studio/common/ingest.py) ----------
 def load(pid: str) -> list[dict]:
-    f = _cands_file(project_dir(pid))
-    return json.loads(f.read_text()) if f.exists() else []
+    return ingest.load_candidates(project_dir(pid), "mood")
 
 
 def _save(root: Path, cands: list[dict]) -> None:
-    _cands_file(root).write_text(json.dumps(cands, ensure_ascii=False, indent=1))
+    ingest.save_candidates(root, "mood", cands)
 
 
 def _ingest_bytes(root: Path, data: bytes, source: str, name: str, prompt: str = "", meta: dict | None = None) -> dict | None:
-    cands = load(root.name)
-    h = hashlib.sha1(data).hexdigest()
-    if any(c["id"] == h[:12] for c in cands):
-        return None
-    cid = h[:12]
-    cdir = root / "mood" / "candidates"
-    (cdir / "thumbs").mkdir(parents=True, exist_ok=True)
-    ext = Path(name).suffix.lower() if Path(name).suffix.lower() in IMG_EXT else ".png"
-    fpath = cdir / f"{cid}{ext}"
-    fpath.write_bytes(data)
-    w = hgt = 0
-    try:
-        with Image.open(fpath) as im:
-            w, hgt = im.size
-            th = im.convert("RGB")
-            th.thumbnail((520, 520))
-            th.save(cdir / "thumbs" / f"{cid}.jpg", "JPEG", quality=84)
-    except Exception:
-        fpath.unlink(missing_ok=True)
-        return None
-    c = {"id": cid, "source": source, "name": name, "prompt": prompt, "file": fpath.name,
-         "thumb": f"thumbs/{cid}.jpg", "width": w, "height": hgt, "selected": False,
-         "imported": datetime.now().isoformat(timespec="seconds"), **(meta or {})}
-    cands.append(c)
-    _save(root, cands)
-    return c
+    return ingest.ingest_bytes(root, "mood", data, source, name, prompt, meta, kind="image")
 
 
 def import_upload(pid: str, files: list[tuple[str, bytes]], prompt: str = "") -> dict:
-    root = project_dir(pid)
-    added = [c for name, data in files if (c := _ingest_bytes(root, data, "upload", name, prompt))]
-    return {"added": len(added)}
+    return ingest.import_upload(project_dir(pid), "mood", files, prompt)
 
 
 def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 120, limit: int = 40) -> dict:
-    """Importa imagens recentes da pasta Downloads (onde a UI da Higgsfield salva)."""
-    root = project_dir(pid)
-    folder_p = Path(folder) if folder else DOWNLOADS_DEFAULT
-    if not folder_p.exists():
-        raise FileNotFoundError(f"pasta não encontrada: {folder_p}")
-    cutoff = time.time() - since_minutes * 60
-    files = sorted((p for p in folder_p.iterdir() if p.suffix.lower() in IMG_EXT and p.stat().st_mtime >= cutoff),
-                   key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
-    added = 0
-    for p in files:
-        if _ingest_bytes(root, p.read_bytes(), "downloads", p.name, meta={"origin_path": str(p)}):
-            added += 1
-    return {"added": added, "scanned": len(files), "folder": str(folder_p)}
+    return ingest.import_downloads(project_dir(pid), "mood", folder, since_minutes, limit)
 
 
 def import_history(pid: str, size: int = 50) -> dict:
-    """Importa imagens do histórico de jobs do CLI (`higgsfield generate list --image`)."""
-    root = project_dir(pid)
-    jobs = hf.history_images(size)
-    added = 0
-    for j in jobs:
-        for url in j["urls"]:
-            try:
-                req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                data = urlopen(req, timeout=30).read()
-            except Exception:
-                continue
-            if _ingest_bytes(root, data, "higgsfield", url.split("?")[0].rsplit("/", 1)[-1], j.get("prompt", ""),
-                             {"job_id": j.get("id"), "model": j.get("model")}):
-                added += 1
-    return {"added": added, "jobs": len(jobs)}
+    return ingest.import_history(project_dir(pid), "mood", "image", size)
 
 
 # ---------- geração via CLI (paga créditos) ----------
 def start_generate(pid: str, model: str, prompts: list[str], aspect_ratio: str = "16:9", resolution: str = "2k",
                    count: int = 2, refs: list[str] | None = None) -> dict:
     root = project_dir(pid)
-    with _lock:
-        if _jobs.get(pid, {}).get("state") == "running":
-            raise RuntimeError("Já existe uma geração em andamento para este projeto.")
-        job = {"state": "running", "done": 0, "total": len(prompts), "added": 0, "error": None, "log": []}
-        _jobs[pid] = job
 
-    def run():
-        try:
-            for i, prompt in enumerate(prompts):
-                params = {"prompt": prompt, "aspect_ratio": aspect_ratio, "resolution": resolution, "count": count}
-                if refs:
-                    params["image_references"] = refs
-                res = hf.generate(model, params)
-                for url in res["urls"]:
-                    try:
-                        data = urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=60).read()
-                        if _ingest_bytes(root, data, "cli", url.split("?")[0].rsplit("/", 1)[-1], prompt, {"job_id": res.get("id"), "model": model}):
-                            job["added"] += 1
-                    except Exception as e:  # noqa: BLE001
-                        job["log"].append(f"download falhou: {e}")
-                (root / "jobs").mkdir(exist_ok=True)
-                (root / "jobs" / f"mood_{res.get('id') or i}.json").write_text(json.dumps(res["raw"], ensure_ascii=False, indent=1))
-                job["done"] = i + 1
-            job["state"] = "done"
-        except Exception as e:  # noqa: BLE001
-            job["state"] = "error"
-            job["error"] = f"{type(e).__name__}: {e}"
+    def run(job: dict):
+        for i, prompt in enumerate(prompts):
+            params = {"prompt": prompt, "aspect_ratio": aspect_ratio, "resolution": resolution, "count": count}
+            if refs:
+                params["image_references"] = refs
+            res = hf.generate(model, params)
+            for url in res["urls"]:
+                try:
+                    data = urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=60).read()
+                    if _ingest_bytes(root, data, "cli", url.split("?")[0].rsplit("/", 1)[-1], prompt, {"job_id": res.get("id"), "model": model}):
+                        job["added"] += 1
+                except Exception as e:  # noqa: BLE001
+                    job["log"].append(f"download falhou: {e}")
+            (root / "jobs").mkdir(exist_ok=True)
+            (root / "jobs" / f"mood_{res.get('id') or i}.json").write_text(json.dumps(res["raw"], ensure_ascii=False, indent=1))
+            job["done"] = i + 1
 
-    threading.Thread(target=run, daemon=True).start()
-    return job
+    try:
+        return _registry.start(pid, len(prompts), run)
+    except RuntimeError as e:
+        raise RuntimeError("Já existe uma geração em andamento para este projeto.") from e
 
 
 def job_status(pid: str) -> dict:
-    return _jobs.get(pid, {"state": "idle"})
+    return _registry.status(pid)
 
 
 # ---------- seleção e paleta ----------

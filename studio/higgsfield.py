@@ -8,10 +8,15 @@ import json
 import re
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 BIN = shutil.which("higgsfield") or shutil.which("hf")
 IMG_URL_RE = re.compile(r"https?://[^\s\"']+\.(?:png|jpe?g|webp)(?:\?[^\s\"']*)?", re.I)
+MEDIA_URL_RE = re.compile(r"https?://[^\s\"']+\.(?:png|jpe?g|webp|mp4|mov|webm|wav|mp3|m4a)(?:\?[^\s\"']*)?", re.I)
+KIND_RE = {"image": IMG_URL_RE,
+           "video": re.compile(r"https?://[^\s\"']+\.(?:mp4|mov|webm)(?:\?[^\s\"']*)?", re.I),
+           "audio": re.compile(r"https?://[^\s\"']+\.(?:wav|mp3|m4a)(?:\?[^\s\"']*)?", re.I)}
 
 
 def available() -> bool:
@@ -64,10 +69,12 @@ def status() -> dict:
     }
 
 
-def history_images(size: int = 50) -> list[dict]:
-    """Jobs de imagem recentes (inclui o que foi gerado na UI, se o backend listar tudo).
-    Retorna [{id, prompt, model, created, urls[]}] — formato defensivo: procura URLs de imagem em qualquer campo."""
-    code, out, err = _run(["generate", "list", "--image", "--size", str(size)], timeout=60)
+def history_media(kind: str = "image", size: int = 50) -> list[dict]:
+    """Jobs recentes de `kind` (image|video|audio) — inclui o que foi gerado na UI, se o backend listar tudo.
+    Retorna [{id, prompt, model, created, urls[]}] — formato defensivo: procura URLs de mídia em qualquer campo."""
+    if kind not in KIND_RE:
+        raise ValueError(f"kind inválido: {kind}")
+    code, out, err = _run(["generate", "list", f"--{kind}", "--size", str(size)], timeout=60)
     if code != 0:
         raise RuntimeError((err or out).strip()[:300])
     data = _json(out)
@@ -77,7 +84,7 @@ def history_images(size: int = 50) -> list[dict]:
         if not isinstance(j, dict):
             continue
         flat = _flatten(j)
-        urls = sorted({u for v in flat.values() if isinstance(v, str) for u in IMG_URL_RE.findall(v)})
+        urls = sorted({u for v in flat.values() if isinstance(v, str) for u in KIND_RE[kind].findall(v)})
         if not urls:
             continue
         result.append({
@@ -86,6 +93,20 @@ def history_images(size: int = 50) -> list[dict]:
             "urls": urls,
         })
     return result
+
+
+def history_images(size: int = 50) -> list[dict]:
+    return history_media("image", size)
+
+
+def download(url: str, dest: Path) -> Path:
+    """Baixa uma URL de resultado (links expiram: baixar na hora)."""
+    from urllib.request import Request, urlopen
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    data = urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=120).read()
+    dest.write_bytes(data)
+    return dest
 
 
 def cost(model: str, params: dict) -> dict:
@@ -106,7 +127,7 @@ def generate(model: str, params: dict, timeout_s: int = 600) -> dict:
         raise RuntimeError((err or out).strip()[:400])
     data = _json(out)
     flat = _flatten(data if isinstance(data, dict) else {"d": data})
-    urls = sorted({u for v in flat.values() if isinstance(v, str) for u in IMG_URL_RE.findall(v)})
+    urls = sorted({u for v in flat.values() if isinstance(v, str) for u in MEDIA_URL_RE.findall(v)})
     return {"raw": data, "urls": urls, "id": _pick(flat, "id", "job_id")}
 
 
