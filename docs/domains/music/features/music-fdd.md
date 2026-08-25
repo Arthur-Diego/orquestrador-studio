@@ -383,3 +383,63 @@ não mudam sem novo acordo na wave. `candidates.json` segue o schema do `ingest`
 | 6 | Router e matriz de erros | 3, 4, 5 | `studio/etapas/music/router.py`, `tests/test_music_api.py` | status 404/409/413/422/502; contratos da seção 5 |
 | 7 | UI (player, escolha, régua de batidas, job) | 6 | `studio/etapas/music/view.html`, `view.js` | ouvir, escolher com licença, ver bpm/impactos, polling |
 | 8 | Integração cross-feature | 4 | fixture real no projeto de teste da W5 | `[cross-feature]` edit lê `beats.json` |
+
+---
+
+### 12. Pendências levantadas na implementação (frente OS-007) — para o gate da integração (W5)
+
+Registro exigido pelo fluxo: o FDD foi **aprovado em lote** no gate 1 da wave, então a frente
+não reescreve o contrato por conta própria. O que a implementação e a revisão cruzada (fiscal de
+FDD + coleção Postman executada com newman) encontraram de divergente fica listado aqui, com a
+decisão tomada e o que precisa ser confirmado por quem integra.
+
+**Já corrigido no código (o FDD estava certo, a implementação é que estava errada)** — commit `c0b2e5e`:
+
+| # | Achado | Correção |
+| --- | --- | --- |
+| 1 | `beats.json` da trilha anterior sobrevivia se `analyze()` falhasse com ffmpeg presente (viola o invariante da seção 6) | o arquivo cai antes da análise; a falha vira `warning` sem derrubar a escolha |
+| 2 | `generate/cost` e `generate` devolviam 409 (CLI) para `pid` inexistente, em vez do 404 da seção 5 | projeto é validado antes do CLI nas três rotas |
+| 3 | 409 valia só para "binário ausente", mas a seção 6 diz "CLI ausente **ou não logado**" | `_require_cli()` checa `hf.status()['logged_in']` |
+| 4 | `POST import/downloads` exigia corpo, embora a seção 5 declare os dois campos opcionais | corpo opcional, como nas rotas irmãs |
+
+**Decisões automáticas da frente (dentro do previsto pela seção 10 ou pelos auto-aceites)** — não
+mudam contrato, mas precisam ficar visíveis:
+
+- `estimate_bpm` acrescenta três passos que a seção 4 não descrevia: suavização do envelope
+  (~116 ms) antes da autocorrelação, prior log-normal centrado em 120 bpm e interpolação
+  parabólica do lag. Motivo medido: sem a suavização, um período que não cai em número inteiro
+  de janelas casa melhor com o **dobro** do período e 120 bpm sai como 60 bpm. A seção 10 já
+  previa "escolha do pico com maior proeminência, não só o máximo"; a assinatura de `analyze()`
+  não muda. **Candidato a ADR** (o Studio passa a "preferir" 120 bpm — é escolha musical, não
+  detalhe de implementação).
+- `decode_pcm` escreve um `.f32le` temporário e lê com `np.fromfile`, em vez de ler o stdout do
+  ffmpeg como diz a seção 4: `common/ffmpeg.run` roda em modo texto e corromperia PCM binário —
+  e a frente não pode editar `common/ffmpeg.py`. Contrato da função inalterado.
+- `mood_prompt` usa a linha `**Vibe em palavras:**` de `mood/mood.md` (a vibe que o usuário
+  escreveu) e não a "Paleta dominante": cores hexadecimais não descrevem música. O prompt
+  resultante é exatamente o do exemplo da seção 4 (`"icy neon energy drink, cinematic, strong
+  beats, no vocals"`).
+- Faixa `0..6` para o `k` de `POST .../music/beats` (a seção 5 declara `{k?}` sem faixa).
+- `generate/cost` passou a devolver também `error` quando o CLI falha (superconjunto).
+
+**Pendências de decisão — a frente PAROU e não escolheu sozinha:**
+
+| # | Pendência | Por que não foi decidida aqui |
+| --- | --- | --- |
+| 1 | `GET /api/music/downloads-folder` existe no router (espelha a rota irmã do mood, é o que a UI usa para mostrar a pasta) mas **não está na tabela da seção 5**, e foge do prefixo `/api/projects/{pid}/<id>/` exigido pela `wave-1.md` | criar rota nova é mudar contrato publicado; o precedente do mood sugere lacuna de escopo do FDD, mas quem decide é o gate |
+| 2 | `analysis_ms` no `beats.json`: a seção 7 **exige** o campo, a seção 1/5 não o lista e a seção 9 pede "JSON idêntico entre execuções" — o FDD se contradiz | qualquer saída (tirar o campo, tirá-lo só do arquivo, ou reescrever o critério de determinismo) muda um contrato consumido por `edit` |
+| 3 | `wave-1.md` manda "librosa; adicionar a requirements.txt"; o FDD auto-aceitou numpy+ffmpeg e é o que está implementado. A troca **não** está nas "Decisões do lote", que prevalecem, e não há ADR | regra 4 do CLAUDE.md pede registro formal (ADR) para desvio; `docs/adrs/` está fora da fatia desta frente |
+| 4 | Detecção roda **síncrona** dentro do `select` (auto-aceito da seção 5), enquanto o HLD e a ADR-006 dizem que trabalho longo vai para thread com polling | é exceção a uma ADR vigente: precisa de nota no HLD ou ADR de exceção |
+| 5 | Metas de tempo (seção 2: detecção ≤ 10 s para 60 s; seção 5: `select` ≤ 15 s para 3 min) não têm teste automatizado | medido na mão (~40 ms para 30 s de trilha, `select` em 39 ms para 12 s pelo newman), mas sem evidência de regressão |
+| 6 | Texto da seção 4/5 desatualizado em detalhes: assinaturas de `estimate_bpm`/`track_beats`/`pick_impacts`, exemplo do campo `file` do `select` (vem só o basename), regex de fallback (cobre também m4a/ogg), `limit` de `import_downloads` não exposto na API, e o `k` ajustável que a seção 3 diz ser fixo | correção de texto do FDD aprovado |
+
+**Pendências para o HLD `docs/domains/studio/hld.md`** (arquivo compartilhado, proibido nesta
+frente — entregar na integração): domínio `music` e binário ffmpeg nas dependências; `numpy` nas
+tecnologias; linhas de componente para `studio/music/` e para os transversais
+`studio/common/{ingest,jobs,ffmpeg}.py`; interfaces `/api/projects/{pid}/music/*`; artefato de
+etapa `audio/` no modelo de dados (com `beats.json` como handoff para `edit`); correção do texto
+de segurança que ainda diz "só imagens são aceitas na importação"; logger `studio.music` na
+observabilidade; e a exceção do trabalho síncrono no `select` frente à ADR-006.
+
+**`[cross-feature]`**: `edit` lendo `audio/beats.json` real continua **não verificado** — por
+desenho, é cobrado na W5 com o projeto de teste da wave.
