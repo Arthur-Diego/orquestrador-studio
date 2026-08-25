@@ -42,6 +42,16 @@ def _wait(client, pid, timeout=180) -> dict:
     raise AssertionError("job não terminou a tempo")
 
 
+def test_status_and_list_survive_a_corrupted_output_file(client, svc, studio_env, pid):
+    _need_ffmpeg(svc)
+    _master(studio_env, pid)
+    (studio_env["refs"].project_dir(pid) / "export" / "1x1.mp4").write_bytes(b"lixo")
+    st = client.get(f"/api/projects/{pid}/export/status")
+    assert st.status_code == 200 and st.json()["outputs"]["1x1"] == {"file": "export/1x1.mp4"}
+    lst = client.get(f"/api/projects/{pid}/export/list")
+    assert lst.status_code == 200 and [f["name"] for f in lst.json()["files"]] == ["1x1.mp4"]
+
+
 def test_status_and_list_work_without_master(client, svc, pid):
     st = client.get(f"/api/projects/{pid}/export/status")
     assert st.status_code == 200
@@ -99,7 +109,8 @@ def test_validation_errors_are_422(client, svc, studio_env, pid):
     assert client.post(f"/api/projects/{pid}/export/preview", json={"format": "4x5"}).status_code == 422
     assert client.post(f"/api/projects/{pid}/export/thumb", json={"t": 99}).status_code == 422
     assert client.post(f"/api/projects/{pid}/export/thumb", json={"t": -1}).status_code == 422
-    assert client.post(f"/api/projects/{pid}/export/reframe", json={"aspect_ratio": "4:5"}).status_code in (409, 422)
+    assert client.post(f"/api/projects/{pid}/export/reframe", json={"aspect_ratio": "4:5"}).status_code == 422
+    assert client.post(f"/api/projects/{pid}/export/reframe/cost", json={"aspect_ratio": "4:5"}).status_code == 422
 
 
 def test_second_render_while_running_is_409(client, svc, studio_env, pid, monkeypatch):

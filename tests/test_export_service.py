@@ -270,6 +270,17 @@ def test_list_outputs_only_lists_deliverables(svc, studio_env, project):
     assert files["qa_report.md"]["kind"] == "doc"
 
 
+def test_status_and_list_survive_a_corrupted_file(svc, studio_env, project):
+    """Um arquivo ilegível em export/ não pode derrubar as duas rotas que prometem 200 sempre."""
+    _need_ffmpeg(svc)
+    _master(studio_env, project)
+    (_root(studio_env, project) / "export" / "9x16.mp4").write_bytes(b"isto nao e um video")
+    st = svc.status(project)
+    assert st["outputs"]["9x16"] == {"file": "export/9x16.mp4"}, "sem metadados, mas sem explodir"
+    files = {f["name"]: f for f in svc.list_outputs(project)}
+    assert files["9x16.mp4"]["kind"] == "video" and "width" not in files["9x16.mp4"]
+
+
 # ---------- reframe (alternativa opcional paga) ----------
 def test_reframe_requires_login(svc, studio_env, project, monkeypatch):
     _need_ffmpeg(svc)

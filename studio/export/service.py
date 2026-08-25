@@ -97,6 +97,16 @@ def _codecs(path: Path) -> tuple[str | None, str | None]:
     return vcodec, acodec
 
 
+def _safe_probe(path: Path) -> dict:
+    """`_probe_full` que engole falha do ffprobe: um arquivo corrompido em `export/` não pode
+    derrubar `GET /status` nem `GET /list` (ambos prometem 200 sempre que o projeto existe)."""
+    try:
+        return _probe_full(path)
+    except (RuntimeError, OSError, ValueError):
+        log.warning("export probe falhou em %s (arquivo ignorado nos metadados)", path.name)
+        return {}
+
+
 def _probe_full(path: Path) -> dict:
     """`probe` do módulo comum + codecs + tamanho em bytes."""
     info = dict(ff.probe(path))
@@ -176,12 +186,12 @@ def status(pid: str) -> dict:
     mpath = _master_path(root)
     master: dict = {"exists": mpath.exists(), "file": MASTER}
     if master["exists"] and avail:
-        master.update(_probe_full(mpath))
+        master.update(_safe_probe(mpath))
     edir = root / "export"
     outputs: dict = {}
     for fmt in FORMATS:
         f = edir / f"{fmt}.mp4"
-        outputs[fmt] = {"file": f"export/{fmt}.mp4", **(_probe_full(f) if avail else {})} if f.exists() else None
+        outputs[fmt] = {"file": f"export/{fmt}.mp4", **(_safe_probe(f) if avail else {})} if f.exists() else None
     thumb = edir / "thumb.jpg"
     outputs["thumb"] = {"file": THUMB, "t": _state(root).get("thumb_t"), "size": thumb.stat().st_size} if thumb.exists() else None
     qa = edir / "qa_report.md"
@@ -213,8 +223,8 @@ def list_outputs(pid: str) -> list[dict]:
             item["kind"] = "video"
             if f.stem in FORMATS:
                 item["format"] = f.stem
-            if avail:
-                p = ff.probe(f)
+            p = _safe_probe(f) if avail else {}
+            if p:
                 item.update({"width": p["width"], "height": p["height"], "duration": p["duration"]})
         elif ext in IMAGE_EXT:
             item["kind"] = "image"

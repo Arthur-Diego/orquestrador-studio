@@ -27,6 +27,15 @@ class ReframeReq(BaseModel):
     aspect_ratio: str
 
 
+def _reframe_preflight(pid: str, aspect_ratio: str) -> None:
+    """Projeto → corpo → CLI: um `aspect_ratio` inválido responde 422 mesmo sem o CLI instalado."""
+    export.project_dir(pid)          # projeto inexistente vira 404 antes de qualquer checagem
+    if aspect_ratio not in export.REFRAME_ASPECT:
+        raise HTTPException(422, f"proporção inválida: use {' ou '.join(export.REFRAME_ASPECT)}")
+    if not hf.available():
+        raise HTTPException(409, "CLI da Higgsfield não instalado")
+
+
 def _call(fn, *args, **kwargs):
     """Matriz de erros da etapa: 404 arquivo ausente · 422 entrada inválida · 409 estado impeditivo."""
     try:
@@ -76,15 +85,11 @@ def export_qa(pid: str):
 
 @router.post("/api/projects/{pid}/export/reframe/cost")
 def export_reframe_cost(pid: str, req: ReframeReq):
-    export.project_dir(pid)          # projeto inexistente vira 404 antes de qualquer checagem de CLI
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
+    _reframe_preflight(pid, req.aspect_ratio)
     return _call(export.reframe_cost, pid, req.aspect_ratio)
 
 
 @router.post("/api/projects/{pid}/export/reframe")
 def export_reframe(pid: str, req: ReframeReq):
-    export.project_dir(pid)
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
+    _reframe_preflight(pid, req.aspect_ratio)
     return _call(export.start_reframe, pid, req.aspect_ratio)

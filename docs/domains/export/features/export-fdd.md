@@ -553,6 +553,14 @@ muda contrato publicado; são detalhes que o revisor do lote (W5) precisa ver.
   continuar respondendo 200 nesse estado.
 - **`reframe_cost` blinda o CLI, não a entrada.** Erro do CLI vira `{"credits": null, "error": ...}`,
   mas `aspect_ratio` inválido continua 422 e master ausente continua 404.
+- **`GET /export/status` e `GET /export/list` nunca dependem de um arquivo íntegro.** As duas rotas
+  prometem 200 sempre que o projeto existe, mas o ffprobe sai com código não zero em arquivo
+  corrompido ou de 0 byte. `_safe_probe` captura essa falha e a entrada volta só com `file`
+  (ou sem os campos de mídia, no `list`), com aviso no log. Coberto por teste de regressão.
+- **Ordem de validação do reframe: projeto → corpo → CLI.** `aspect_ratio` inválido responde 422
+  mesmo em máquina sem o CLI instalado; o 409 "CLI da Higgsfield não instalado" só aparece com o
+  corpo válido.
+
 - **Critérios `[cross-feature]` pendentes.** O master usado na verificação foi fixture
   (`make_video`, 1920x1080/30 fps e 320x240), nunca o `edit/master.mp4` real da frente `edit`;
   o consumo por `publish` também não foi exercido. Ambos ficam para a integração.
