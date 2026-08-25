@@ -24,6 +24,7 @@ class ClipReq(BaseModel):
     out: float
     speed: float = 1.0
     blend: bool = True
+    zoom: float = 1.0          # aula 014: "pequenos zooms" (1.0–1.3)
 
 
 class BlackReq(BaseModel):
@@ -48,11 +49,12 @@ class TimelineReq(BaseModel):
     music: MusicReq = MusicReq()
     sfx: list[SfxReq] = []
     fade_out: float = edit.DEFAULT_FADE_OUT
+    loudnorm: bool = True      # [extensão]: a aula 014 não fala de loudness (auditoria 8.4)
 
 
 class ProposeReq(BaseModel):
     offset: float | None = None
-    black_dur: float = edit.DEFAULT_BLACK_DUR
+    black_dur: float = edit.PROPOSE_BLACK_DUR    # 0 = corte seco; o preto é escolha por corte
     apply: bool = False
 
 
@@ -109,7 +111,7 @@ def reset_timeline(pid: str):
 
 @router.post("/api/projects/{pid}/edit/propose-cuts")
 def propose_cuts(pid: str, req: ProposeReq):
-    """Aula 014: cada corte cai num impacto da trilha e ganha um quadro preto."""
+    """Aula 014: cada corte cai num impacto da trilha (corte seco; o preto é opcional, por corte)."""
     try:
         return edit.propose_cuts(pid, req.offset, req.black_dur, req.apply)
     except (FileNotFoundError, ValueError) as e:
@@ -152,6 +154,7 @@ async def upload_sfx(pid: str, files: list[UploadFile] = File(...), prompt: str 
 
 @router.post("/api/projects/{pid}/edit/render")
 def start_render(pid: str, req: RenderReq):
+    """`rough` é a prévia de ritmo (sai sem música, com aviso); `master` exige a trilha da etapa 7."""
     refs.project_dir(pid)
     if not ff.available():
         raise HTTPException(409, NO_FFMPEG)

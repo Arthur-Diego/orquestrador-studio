@@ -200,14 +200,27 @@ def test_propose_cuts_aligns_clips_to_impacts(studio_env, project, root):
 
 
 def test_propose_cuts_applies_and_persists(studio_env, project, root):
+    """Sem `black_dur`, a proposta corta seco: o quadro preto é escolha por corte (auditoria 8.1)."""
     edit = studio_env["svc"]("edit")
     seed(root, impacts=[1.0, 2.5, 4.0])
     edit.get_timeline(project)
     r = edit.propose_cuts(project, offset=0.0, apply=True)
     assert r["applied"] is True
     stored = edit.load_timeline(project)
-    assert round(stored["clips"][0]["out"], 3) == 1.0 and len(stored["blacks"]) == 2
-    assert r["duration"] == pytest.approx(4.0 + 0.4, abs=0.05)
+    assert round(stored["clips"][0]["out"], 3) == 1.0
+    assert stored["blacks"] == [], "o padrão da aula 014 é corte seco no impacto, não tela preta"
+    assert r["duration"] == pytest.approx(4.0, abs=0.05)
+
+
+def test_propose_cuts_only_adds_blacks_when_asked(studio_env, project, root):
+    """A tela preta é UM dos recursos da aula, não regra de todo corte: só entra com black_dur > 0."""
+    edit = studio_env["svc"]("edit")
+    seed(root, impacts=[1.0, 2.5, 4.0])
+    edit.get_timeline(project)
+    assert edit.PROPOSE_BLACK_DUR == 0.0
+    assert edit.propose_cuts(project)["timeline"]["blacks"] == []
+    com_preto = edit.propose_cuts(project, offset=0.0, black_dur=0.2)
+    assert [b["at"] for b in com_preto["timeline"]["blacks"]] == [1.0, 2.5]
 
 
 def test_propose_cuts_with_offset_discards_earlier_impacts(studio_env, project, root):
@@ -427,3 +440,100 @@ def _wait(render, pid: str, timeout: float = 120) -> dict:
             return job
         threading.Event().wait(0.2)
     return render.render_status(pid)
+
+
+# ---------- recursos da aula 014 acrescentados na wave 2 ----------
+def test_small_zoom_per_clip(studio_env, project, root):
+    """Auditoria 8.3: "pequenos zooms" é recurso da aula — 1.0 a 1.3, por clipe."""
+    from studio.edit import render
+    edit = studio_env["svc"]("edit")
+    seed(root)
+    tl = edit.validate_timeline(root, _timeline(root))
+    assert all(c["zoom"] == 1.0 for c in tl["clips"]), "sem zoom por padrão"
+    graph = render.build_filtergraph(root, tl, "master")[0]
+    assert "scale=iw*" not in graph[graph.index("-filter_complex") + 1]
+
+    tl["clips"][0]["zoom"] = 1.2
+    graph = render.build_filtergraph(root, tl, "master")[0]
+    chain = graph[graph.index("-filter_complex") + 1]
+    assert "scale=iw*1.2:ih*1.2" in chain and "crop=1920:1080" in chain
+
+    with pytest.raises(ValueError, match="zoom"):
+        edit.validate_timeline(root, _timeline(root, clips=[{**tl["clips"][0], "zoom": 2.0}]))
+
+
+def test_loudnorm_is_optional(studio_env, project, root):
+    """Auditoria 8.4: a aula não fala de loudness — a normalização vira [extensão] desligável."""
+    from studio.edit import render
+    edit = studio_env["svc"]("edit")
+    seed(root)
+    tl = edit.validate_timeline(root, _timeline(root))
+    assert tl["loudnorm"] is True
+    graph = render.build_filtergraph(root, tl, "master")[0]
+    assert "loudnorm=I=-14:TP=-1.5" in graph[graph.index("-filter_complex") + 1]
+
+    tl["loudnorm"] = False
+    graph = render.build_filtergraph(root, tl, "master")[0]
+    chain = graph[graph.index("-filter_complex") + 1]
+    assert "loudnorm" not in chain and "amix=inputs=" in chain, "o mix continua, só a normalização sai"
+
+
+def test_master_requires_the_track(studio_env, project, root):
+    """Auditoria 8.2 (aula 013): "você não deve editar antes de escolher a trilha sonora"."""
+    from studio.edit import render
+    edit = studio_env["svc"]("edit")
+    seed(root, music=False)
+    edit.get_timeline(project)
+    with pytest.raises(RuntimeError, match="etapa 7"):
+        render.start_render(project, "master")
+    assert edit.music_path(root) is None
+    assert not (root / "edit" / "master.mp4").exists()
+
+
+def test_rough_still_renders_without_the_track(studio_env, project, root):
+    """A prévia de ritmo continua liberada — só o master exige a trilha."""
+    if not has_ffmpeg():
+        pytest.skip("ffmpeg não disponível")
+    from studio.edit import render
+    edit = studio_env["svc"]("edit")
+    seed(root, real=True, seconds=1, music=False)
+    edit.get_timeline(project)
+    render.start_render(project, "rough")
+    job = _wait(render, project, timeout=240)
+    assert job["state"] == "done", job.get("error")
+    assert (root / "edit" / "rough_cut.mp4").exists()
+    assert any("escolha a música na etapa 7" in line for line in job["log"])
+
+
+def test_build_filtergraph_writes_where_asked(studio_env, project, root):
+    """A etapa 7 reusa o grafo em modo rough para gerar audio/rough_sequence.mp4."""
+    from studio.edit import render
+    edit = studio_env["svc"]("edit")
+    seed(root)
+    tl = edit.validate_timeline(root, _timeline(root))
+    args, _ = render.build_filtergraph(root, tl, "rough", out=root / "audio" / "rough_sequence.mp4")
+    assert args[-1].endswith("audio/rough_sequence.mp4.part")
+
+
+def test_cuts_on_beats_counts_what_falls_on_the_music(studio_env, project, root):
+    edit = studio_env["svc"]("edit")
+    seed(root, impacts=[1.0, 2.5, 4.0])
+    edit.get_timeline(project)
+    beats = json.loads((root / "audio" / "beats.json").read_text())
+
+    solto = edit.cuts_on_beats(edit.load_timeline(project), beats)
+    assert solto == {"total": 2, "on_beat": 0, "off": [5.0, 10.0]}
+
+    edit.propose_cuts(project, offset=0.0, apply=True)
+    alinhado = edit.cuts_on_beats(edit.load_timeline(project), beats)
+    assert alinhado["total"] == 2 and alinhado["on_beat"] == 2 and alinhado["off"] == []
+
+
+def test_cut_positions_account_for_black_frames(studio_env, project, root):
+    edit = studio_env["svc"]("edit")
+    seed(root)
+    edit.get_timeline(project)                       # 3 clipes de 5 s
+    tl = edit.load_timeline(project)
+    assert edit.cut_positions(tl) == [5.0, 10.0]
+    tl["blacks"] = [{"at": 5.0, "dur": 0.2}]
+    assert edit.cut_positions(tl) == [5.2, 10.2], "o preto empurra tudo que vem depois"
