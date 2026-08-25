@@ -15,6 +15,7 @@ organizadas por módulo, e mostra o grafo de relacionamentos entre elas.
 | ADR-006 | Jobs Assíncronos em Threads com Estado em Memória e Polling                                                 | STUDIO     | Aceita  | [generated/STUDIO/ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md](./generated/STUDIO/ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md) |
 | ADR-007 | Mood board de vibe única — um prompt, teto de 8 imagens selecionadas, grid de 4 como orientação de UI       | MOOD       | Aceito  | [generated/MOOD/ADR-007-mood-board-vibe-unica-teto-de-8-grid-de-4-como-orientacao-de-ui.md](./generated/MOOD/ADR-007-mood-board-vibe-unica-teto-de-8-grid-de-4-como-orientacao-de-ui.md) |
 | ADR-008 | Estratégia de Testes sem Rede/Navegador, CI com Ruff+Pytest e Gitflow com Rastreabilidade Task-Id           | STUDIO     | Aceito  | [generated/STUDIO/ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md](./generated/STUDIO/ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md) |
+| ADR-009 | Detecção de batidas com numpy + ffmpeg (sem librosa) | MUSIC | Aceito | [ADR-009](generated/MUSIC/ADR-009-deteccao-de-batidas-com-numpy-e-ffmpeg.md) |
 
 ## Grafo de relacionamentos
 
