@@ -189,3 +189,5 @@ frentes e prevalecem sobre o texto dos FDDs quando houver conflito:
 | 12 | prospect: auto-aceites 2 a 7 (role, call_note, teaser só de take+trilha, 10/dia como aviso, substituições do script, defaults) | Aprovados. |
 | 13 | IDs de modelo do CLI não confirmados (sem login) | Frentes usam defaults do plano, sempre sobrescritíveis; validação com catálogo vivo é tarefa da integração/retro. |
 | 14 | Projeto de teste com etapas 1–2 reais para os `[cross-feature]` | Orquestrador cria `projects/2026-08-wave-teste` com fixtures na W5. |
+| 15 | Caminho de implementação (Passo 6 do dd-parallel-feature) | **Direta** em todas as frentes: cada feature é um plugin isolado (≤ 8 arquivos, 1 fluxo principal); as rotas extras são CRUD do mesmo fluxo. Override da wave registrado para a retro. |
+| 16 | Cards do Trello | Board inexistente (MCP não cria boards): frentes registram tudo no final report e no PR. |
