@@ -77,11 +77,13 @@ def test_analyze_on_silence_and_short_track_has_no_beats(ffmpeg, tmp_path):
 
 # ---------- importação ----------
 def test_import_upload_dedupes_by_content(ffmpeg, music, project, tmp_path):
-    a = audio_bytes(tmp_path, "a.wav", seconds=5)
-    assert music.import_upload(project, [("a.wav", a), ("copia.wav", a)])["added"] == 1
+    a = audio_bytes(tmp_path, "a.wav", seconds=3)
+    assert music.import_upload(project, [("a.wav", a), ("copia.wav", a)])["added"] == 1, "mesmo conteúdo, uma candidata"
     assert music.import_upload(project, [("b.wav", audio_bytes(tmp_path, "b.wav", seconds=6))])["added"] == 1
+    assert music.import_upload(project, [("a.wav", a)])["added"] == 0, "reenviar a mesma música não duplica"
     cands = music.list_candidates(project)
-    assert len(cands) == 2 and all(c["kind"] == "audio" and c["duration"] > 0 for c in cands)
+    assert len(cands) == 2 and all(c["kind"] == "audio" for c in cands)
+    assert abs(cands[0]["duration"] - 3.0) < 0.2 and abs(cands[1]["duration"] - 6.0) < 0.2
 
 
 def test_import_upload_ignores_non_audio(ffmpeg, music, project):
