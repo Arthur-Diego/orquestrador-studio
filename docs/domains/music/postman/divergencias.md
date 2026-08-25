@@ -30,8 +30,7 @@ Cada linha foi confirmada com execução real contra `http://127.0.0.1:8771`.
 
 - 11/11 linhas da tabela de endpoints da seção 5 existem no router, com método e caminho iguais.
 - 413 acima de 25 MB, 422 de upload sem arquivo, 404 de pasta de Downloads inexistente,
-  422 de `license` vazia (Pydantic) **e** de `license` só com espaços (regra de serviço, seção 6,
-  linha 252), 404 de `select` com id inexistente, 422 de `generate` para `prompt`/`count`/`duration`,
+  404 de `select` com id inexistente, 422 de `generate` para `prompt`/`count`/`duration`,
   404 dos dois `beats` sem trilha, 404 de `pid` inexistente, 202 de `generate`.
 - Dedupe por sha12 e extensão não suportada não geram erro HTTP (seção 6, linha 242).
 - `bpm` medido na fixture de 120 bpm: **119.9** — dentro do erro ≤ 3 bpm da seção 9, linha 321.
@@ -73,3 +72,15 @@ As divergências 3, 5, 6, 7, 8 e 9 são **texto do FDD desatualizado**, não def
 implementação. Como o FDD foi aprovado em lote no gate da wave, esta frente não o reescreve:
 elas estão registradas no apêndice de pendências do próprio FDD e no final report da frente,
 para o gate da integração (W5) decidir.
+
+## Atualização da wave 2 (OS-018, 2026-08-25)
+
+- Os dois casos de **422 por `license` vazia** deixaram de existir: a auditoria 7.4 mostrou que
+  nenhuma transcrição da aula 013 fala em licença, e a origem virou campo opcional `[extensão]`.
+  A coleção agora afirma o contrário (200 sem origem declarada, `license: ""` na resposta).
+- Divergência nova, **resolvida na mesma frente**: o passo mais importante da aula 013 (assistir a
+  história inteira, sem cortar nada, e decidir se ela fecha) não tinha rota nenhuma. Passou a ter:
+  `GET /music/story`, `POST /music/story/render`, `GET /music/story/job` e `POST /music/story/check`
+  (pasta `06` da coleção). Essas rotas **não** estão na tabela da seção 5 do FDD 1.0 — estão na
+  seção "Wave 2 — fidelidade e guia" do mesmo arquivo.
+- `GET /api/projects/{pid}/guide/music` é rota do núcleo (ADR-010), coberta na pasta `07`.

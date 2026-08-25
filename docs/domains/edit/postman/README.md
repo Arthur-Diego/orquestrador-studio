@@ -31,3 +31,12 @@ Execução de referência (2026-08-25, ffmpeg 7.0.2, projeto com fixtures de 3 t
 `POST /edit/sfx/upload` é multipart e precisa de um arquivo real anexado; a coleção só verifica
 que a rota existe e valida a entrada. O caminho feliz (import, dedupe por conteúdo e recusa de
 extensão) está em `tests/test_edit_api.py::test_sfx_upload_dedupe_and_extension`.
+
+## Wave 2 (OS-018)
+
+Requests novos: `PUT timeline` com `zoom` (1,0–1,3) e `loudnorm` (`[extensão]`), o 422 de zoom
+fora da faixa, `POST render {target:"master"}` (409 quando `audio/music.*` não existe — auditoria
+8.2) e `GET /api/projects/{pid}/guide/edit` (guia da etapa, ADR-010). O `POST propose-cuts` sem
+`black_dur` agora devolve `blacks: []`: o corte é seco e o quadro preto virou escolha por corte
+(auditoria 8.1) — os asserts existentes continuam válidos porque só cobram que todo preto caia
+num impacto usado.

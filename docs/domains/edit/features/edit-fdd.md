@@ -408,3 +408,67 @@ Limites: upload 25 MB por arquivo; render com `timeout=1800` s no `ffmpeg.run` [
 Pendências para a revisão em lote (não auto-aceitáveis, regra 5 dos gates):
 - Contrato com a etapa 6 para a transição colada: a etapa 6 lê `edit/last_frames/` e sugere o PNG como start frame, ou o usuário escolhe o arquivo manualmente? Este FDD assume escolha manual e registra a lacuna.
 - Resolução de saída fixa em 1920x1080/30 fps: confirmar com a etapa 9 (`export` deriva 9:16 e 1:1 daí).
+
+---
+
+## Wave 2 — fidelidade e guia (frente OS-018, modo batch)
+
+Versão: 1.1 · Data: 2026-08-25 · Task-Id `OS-018` · Gate 1 pré-aprovado em lote. Fonte normativa:
+`docs/domains/studio/waves/wave-2.md` (Feature music+edit) e `wave-2-auditoria-etapas-7-11.md`
+(Etapa 8, itens 8.1–8.5, 8.9, 8.10, textos §4, validações §5).
+
+### O que mudou (e por que)
+
+| Item | Divergência apontada | Mudança |
+| --- | --- | --- |
+| 8.1 | Quadro preto entrava em **todo** corte proposto; na aula é um dos recursos para quando a mudança de movimento quebra a fluidez | `propose_cuts` nasce com `black_dur=0` (`PROPOSE_BLACK_DUR`) — corte seco. Na tela, a caixa "preto nos impactos" nasce desmarcada e cada clipe ganha a ação "preto aqui" |
+| 8.2 | `master` renderizava sem trilha, só com aviso, contra a regra central da aula 013 | `POST /edit/render {target:"master"}` sem `audio/music.*` → **409** "escolha a trilha na etapa 7 antes de montar". O `rough` continua liberado, com aviso no log do job |
+| 8.3 | "Pequenos zooms" da aula não existiam | Campo `zoom` por clipe (1,0–1,3, default 1,0) → `scale=iw*z:ih*z,crop=1920:1080` no filtergraph; fora da faixa é 422 |
+| 8.4 | `loudnorm` fixo, sem marca de extensão (a aula não fala de loudness) | `loudnorm` virou campo da timeline (default `true`), marcado `[extensão]` no código, na tela e aqui; desligá-lo mantém o `amix` e tira só a normalização |
+| 8.5 | Os impactos não apareciam sobre a timeline da etapa 8 | Régua de `beats.json` (com `music.offset`) acima da lista de clipes, com um marcador ▾ por corte e o chip "N/M cortes no ritmo" |
+| 8.9 | Texto dos SFX não trazia a lista literal da aula | "gelo, ambiência, respiração e impacto" no painel de SFX e no `what` do guia |
+| 8.10 | Dever de casa da aula ausente na etapa 8 | "publique o seu trabalho, mesmo imperfeito. O primeiro projeto sempre será o pior." no rodapé do painel de render e no checklist do guia |
+
+### Contratos alterados (complemento da seção 5)
+
+| Rota | Mudança |
+| --- | --- |
+| `GET/PUT /api/projects/{pid}/edit/timeline` | clipe ganha `zoom` (float 1.0–1.3); timeline ganha `loudnorm` (bool, default `true`). Campos ausentes assumem o default — payloads antigos continuam válidos |
+| `POST /api/projects/{pid}/edit/propose-cuts` | `black_dur` default passou de `0.2` para `0.0` |
+| `POST /api/projects/{pid}/edit/render` | `target=master` sem `audio/music.*` → 409 (`render.NO_MUSIC`) |
+
+Funções novas de leitura pura em `studio/edit/service.py`, usadas pelo guia (e pela etapa 7):
+`music_path(root)`, `clip_length(clip)`, `cut_positions(timeline)` e
+`cuts_on_beats(timeline, beats, tol=BEAT_TOL)` (`BEAT_TOL = 0.067` s = 2 frames a 30 fps).
+`render.build_filtergraph(..., out=)` permite escrever o mesmo grafo em outro destino — é o que a
+etapa 7 usa para `audio/rough_sequence.mp4`.
+
+`GET /api/projects/{pid}/guide/edit` (`studio/etapas/edit/guide.py`):
+
+- **Entradas (bloqueiam):** takes com *like* na etapa 6; `audio/music.*` da etapa 7 — o mesmo gate
+  do 409, agora visível antes de o usuário tentar renderizar.
+- **Saídas (progresso):** `edit/rough_cut.mp4` (o ritmo) → `edit/master.mp4` (o refinamento).
+- **Validações:** batidas detectadas (`warn` sem `beats.json` — decisão 6 do lote da wave 1);
+  "N/M cortes no ritmo"; cena do produto encerra o vídeo; camadas sonoras no master; a trilha
+  cobre o vídeo inteiro depois do offset.
+
+### Auto-aceites desta frente (rotulados)
+
+1. `[auto-aceito: `loudnorm` continua ligado por padrão (o vídeo vai para redes que normalizam) e
+   fica desligável, em vez de ser removido — a auditoria admitia as duas saídas]`
+2. `[auto-aceito: `zoom` é aplicado depois do `scale`/`pad` e antes do `setpts`, com `crop` de
+   volta para 1920x1080; assim o enquadramento final não depende da resolução do take]`
+3. `[auto-aceito: `DEFAULT_BLACK_DUR` (0,2 s) continua sendo a duração de UM preto inserido à mão;
+   quem mudou para 0 foi só o default da proposta (`PROPOSE_BLACK_DUR`)]`
+4. `[auto-aceito: o 409 do master olha `audio/music.*` (o artefato da etapa 7), não o campo
+   `music.file` da timeline — é o artefato que a aula manda existir antes do corte]`
+5. `[auto-aceito: `cuts_on_beats` aceita batida OU impacto dentro de 2 frames, como a auditoria
+   escreveu; a régua da tela usa a mesma tolerância]`
+
+### Pendências para a integração (W5)
+
+- `[cross-feature]` guia agregado das 11 etapas e smoke visual (dependem das outras frentes).
+- A validação §5 "se um `last_frames/*.png` foi exportado, existe take start/end correspondente"
+  **não** entrou: depende do contrato `start_end` da etapa 6 (frente OS-017, em voo na mesma
+  sub-wave) — pendência 1 da seção 11 deste FDD, ainda aberta.
+- Resolução fixa 1920×1080/30 fps segue como pendência com a etapa 9 (inalterada por esta frente).

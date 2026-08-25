@@ -102,9 +102,17 @@ testa, não conte com ela para isso:
 | upload > 25 MB (linha 241) | **é** coberto (`erros / 413`), mas só depois de rodar `make-fixtures.sh`. |
 | `502` de `import/history` (linha 245) | coberto de forma condicional: o request aceita 200, 409 ou 502 porque o resultado depende do estado do CLI na máquina. Antes da correção de `c0b2e5e` esta máquina dava **502**; agora dá **409** (CLI instalado e sem login), e o 502 só aparece com o CLI logado e falhando. |
 
-Também ficam de fora, por não serem HTTP: a régua de batidas sobre o player, o `prompt()` de
-licença na UI, o polling de 3 s do job e o aviso "a montagem (etapa 8) precisa ser refeita"
+Também ficam de fora, por não serem HTTP: a régua de batidas sobre o player, o campo opcional de
+origem na UI, o polling de 3 s do job e o aviso "a montagem (etapa 8) precisa ser refeita"
 (seção 4, linhas 97, 92, 107 e 129).
+
+## Wave 2 (OS-018)
+
+Pastas novas: `06 passo 0 — assistir a história inteira` (as quatro rotas `/music/story*` da
+auditoria 7.1) e `07 guia da etapa` (`GET /api/projects/{pid}/guide/music`, contrato do ADR-010).
+Os casos de 422 por licença vazia viraram um caso de **200**: a origem é `[extensão]`, não regra
+da aula (auditoria 7.4). O `POST /music/story/render` só é exercitado de verdade num projeto com
+takes com *like* da etapa 6 — sem eles o request afirma o 404/422 que nomeia a etapa faltante.
 
 ## Geração
 
