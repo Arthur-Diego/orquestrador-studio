@@ -474,3 +474,42 @@ título "Imagem base", produto, `Marca [extensão]: <name>: <description>`, tabe
 | 5 | Custo e geração via CLI (job) para os 3 `kind` | 4 | `studio/base/service.py`, `studio/etapas/base/router.py`, `tests/test_base_service.py`, `tests/test_base_api.py` | cost; generate situation/label/upscale; 409 concorrente; falha parcial |
 | 6 | UI completa (prompts, brand, import, galeria por kind, select, CLI com cost/confirm) | 5 | `studio/etapas/base/view.html`, `studio/etapas/base/view.js` | view com seções da aula; botão CLI desabilitado sem login |
 | 7 | Lint/testes finais e final report com auto-aceites | 6 | `tests/test_base_service.py`, `tests/test_base_api.py` | ruff + pytest verdes; `[cross-feature]` registrados como limite |
+
+---
+
+### 12. Notas de implementação (frente OS-003, 2026-08-25)
+
+Implementação **direta** (decisão 15 do lote da wave 1 — sem pipeline SDD), na ordem do Build Order
+da seção 11. Entregues: `studio/etapas/base/{__init__,router,view.html,view.js}.py|html|js`,
+`studio/base/{__init__,service}.py`, `tests/test_base_service.py` (16 testes),
+`tests/test_base_api.py` (10 testes), `docs/domains/base/hld.md` e
+`docs/domains/base/diagrams/mermaid/fluxo-imagem-base.md`. Nenhum arquivo único foi tocado.
+
+Decisões tomadas na implementação (nenhuma contraria a spec; registradas para a revisão):
+
+1. **Paleta vazia conta como "sem mood".** A seção 6 manda 422 quando falta `mood/palette.json`.
+   Um `palette.json` com `colors: []` e `note` vazia (estado do projeto de exemplo
+   `2026-08-gelo-zero`) não carrega mood nenhum, então também responde 422 orientando a etapa 2.
+2. **A cadeia cai inteira para a frente.** A seção 5 fixa que reselecionar a situação limpa
+   `label` e `upscale`. Pela mesma regra, reselecionar o rótulo limpa o `upscale` (a ampliação
+   veio do rótulo anterior).
+3. **O import herda o prompt de origem.** `base.md` precisa registrar o "prompt de origem"
+   (provides da wave 1); a UI manda o prompt de situação da referência escolhida (ou o de rótulo)
+   junto do upload e do import de Downloads.
+4. **`file`/`thumb` gravados relativos ao projeto** (`base/candidates/<id>.png`), como a seção 5
+   descreve, em vez do nome puro que o `ingest` grava. A normalização acontece no serviço, depois
+   do import — `studio/common/ingest.py` não foi alterado.
+5. **`brand.json` fora do `candidates.json`**, como previa o auto-aceite do contrato 2, e espelhado
+   em `base.md` a cada `select`/`brand`.
+6. **Modelos default por passo**: situação `nano_banana_2` (mesmo default do mood), rótulo
+   `nano_banana_2`, upscale `bytedance_image_upscale`. Todos sobrescritíveis por `model` no corpo.
+   IDs ainda **não confirmados** no catálogo (CLI sem login) — decisão 13 do lote.
+
+Pendências para a integração (W5):
+
+- `[cross-feature]` a etapa lê `mood/selected/` e `palette.json` reais e usa ≥1 referência de
+  `refs/brainstorming/` no prompt: coberto por fixture nos testes e verificado à mão num projeto
+  semeado; falta o projeto de integração com etapas 1 e 2 reais (decisão 14 do lote).
+- `[cross-feature]` `storyboard` abrindo o `base/base_final.png` real: só verificável no estado
+  integrado.
+- Validar os IDs de modelo com `model list` depois do login do CLI.
