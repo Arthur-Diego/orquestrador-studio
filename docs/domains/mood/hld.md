@@ -1,6 +1,6 @@
 ### HLD: mood (etapa 2 — mood board, aula 009)
 
-Versão: 1.1 (prompter, OS-012)
+Versão: 1.2 (guia da etapa + fidelidade à aula 009, OS-014)
 Data: 2026-08-25
 Responsável: Arthur Diego (pré-preenchido pelo raio-X; aprovado em lote no brownfield)
 
@@ -8,8 +8,14 @@ Responsável: Arthur Diego (pré-preenchido pelo raio-X; aprovado em lote no bro
 
 ### Objetivo técnico
 Reproduzir o mood board da aula 009: **uma vibe** para a campanha inteira, obtida com um único
-prompt de ambiente/luz/cor (sem produto, sem pessoas), gerado em grid de 4, com regeração quando
-"não pegou a vibe". Em "modo UI", o Studio entrega o prompt, o usuário gera na interface da
+prompt de ambiente/luz/cor, gerado em grid de 4, com regeração quando "não pegou a vibe".
+
+> **Correção de fidelidade (wave 2, OS-014).** Até a v1.1 este HLD dizia "sem produto, sem pessoas,
+> sem texto" como regra da aula. **Não é.** O mood board do instrutor mostra o produto ("ele já me
+> deu inclusive o Red Bull […] essa é a vibe"; "gostei muito da noite, a lata aqui"). A única
+> restrição que ele enuncia é "não tenho nenhum interesse em pessoas" — e para aquela campanha. Por
+> isso "sem pessoas" virou opção marcada por padrão na tela (`no_people`) e "no product/no text/no
+> logos" foi removido do papel do bot, do template e dos guards. Em "modo UI", o Studio entrega o prompt, o usuário gera na interface da
 Higgsfield (onde o ilimitado do plano vale) e o resultado é importado; alternativamente o CLI
 gera pagando créditos. Produto na cena, escala e rótulo pertencem à etapa 3.
 
@@ -42,11 +48,13 @@ Padrões adotados
 ### Componentes e responsabilidades
 | Componente | Responsabilidades | Dependências |
 | ----------- | ----------------- | ------------ |
-| `suggest_prompts` | template fixo de prompt de vibe (fallback sem Claude); `variation` troca a estilização | `refs/candidates.json` |
+| `suggest_prompts` | template fixo de prompt de vibe (fallback sem Claude); `variation` troca a estilização; `explore_prompt` (prompt copiado do Explore) vira a base; `no_people` opcional | `common/prompter` |
+| `style_reference_files` | referência de estilo do CLI: imagens de vibe escolhidas + a "melhor do grid" (2ª rodada da aula) | `mood/vibe/`, `mood/candidates/` |
+| `etapas/mood/guide.py` | guia da etapa 2 (leitura pura): entradas, saídas e validações da auditoria §2.5 | `common/guide.py` |
 | `vibe_*` / `generate_prompt` / `prompt_history` | imagens de vibe em `mood/vibe/` (≤ 4 escolhidas); o "bot" da aula via `common/prompter.py` (Claude CLI): modo `images` (imagens + instrução) ou `brief`; regras da aula 009 impostas (`enforce_mood_rules`); histórico em `mood/prompts.json` | `common/prompter`, `common/ingest` |
 | `import_upload` / `import_downloads` / `import_history` | ingestão com dedupe, thumbnails, metadados de origem | Pillow, `higgsfield.history_images` |
 | `start_generate` / `job_status` | geração paga via CLI em thread, download das URLs, registro em `jobs/mood_<id>.json` | `higgsfield.generate` |
-| `select` | copia escolhidas, limita a 8, gera paleta e `mood.md` | Pillow |
+| `select` | copia escolhidas, limita a 8, gera `mood.md`, `palette.json` `[extensão]` (com `by_file` por imagem) e grava `project.vibe` — a aula encontra a vibe **aqui** | Pillow |
 
 ---
 
@@ -63,7 +71,7 @@ Padrões adotados
 ### Modelo de dados (alto nível)
 Entidades principais
 - `MoodCandidate` (id, source ∈ {upload, downloads, higgsfield, cli}, name, prompt, file, thumb, width, height, selected, imported, job_id?, model?, origin_path?).
-- `Palette` (colors[6], note).
+- `Palette` `[extensão]` (colors[6], note, by_file{arquivo: 3 tons}) — derivado técnico do Studio: a aula usa as próprias imagens do mood como filtro e nunca extrai cores.
 
 Relações
 - `Project` 1 — N `MoodCandidate`; `selected` ⇔ cópia em `mood/selected/`.
@@ -76,12 +84,14 @@ Fonte de verdade
 ### Interfaces públicas
 | Nome | Tipo | Protocolo | Exposição | SLAs/Limites |
 | ---- | ---- | ---------- | --------- | ------------- |
-| `GET /api/projects/{pid}/mood/prompts` | API | REST/JSON | Interna | — |
+| `GET /api/projects/{pid}/mood/prompts` | API | REST/JSON | Interna | `no_people` (default true), `explore_prompt` |
+| `POST …/mood/prompts/generate` | API | REST/JSON | Interna | `no_people`, `explore_prompt`; 422/409/502 |
+| `GET /api/projects/{pid}/guide/mood` | API | REST/JSON | Interna | guia da etapa (leitura pura) |
 | `POST …/mood/import/upload` | API | multipart | Interna | ≤ 25 MB por arquivo; só imagens |
 | `POST …/mood/import/downloads` | API | REST/JSON | Interna | últimos N minutos, ≤ 40 arquivos |
 | `POST …/mood/import/history` | API | REST/JSON | Interna | exige CLI logado; 502 se falhar |
-| `POST …/mood/generate`, `GET …/mood/job` | API | REST/JSON | Interna | gasta créditos; confirmação na UI |
-| `POST …/mood/select` | API | REST/JSON | Interna | ≤ 8 ids (422 acima) |
+| `POST …/mood/generate`, `GET …/mood/job` | API | REST/JSON | Interna | gasta créditos; confirmação na UI; `image_references` = imagens de vibe + "melhor do grid" (`use_style_refs`, `vibe_ids`, `best_id`; `use_refs` = alias depreciado) |
+| `POST …/mood/select` | API | REST/JSON | Interna | ≤ 8 ids (422 acima); grava `project.vibe` a partir de `note` |
 
 ---
 
@@ -133,7 +143,8 @@ Dashboards e alertas
 | ----- | ------------- | ------- | --------- |
 | Formato JSON do `generate list` desconhecido (não validado logado) | Alta | Médio | Parser defensivo (varre URLs de imagem); validar na primeira sessão logada |
 | Ilimitado da UI não vale no CLI — usuário gasta créditos sem querer | Média | Médio | Botão pago pede confirmação; `generate cost` antes de gerar (próximo passo) |
-| Desvio do roteiro (voltar a múltiplos prompts) | Baixa | Alto | Teste `test_mood_prompt_is_single_vibe_without_product` + gate no CLAUDE.md |
+| Desvio do roteiro (voltar a múltiplos prompts) | Baixa | Alto | Teste `test_mood_prompt_is_single_vibe_and_does_not_forbid_the_product` + gate no CLAUDE.md |
+| Reintroduzir regra que a aula não ensina (ex.: "no product") | Média | Alto | `MOOD_GUARDS = ("no people",)` + validação `no_forced_negatives` no guia da etapa |
 
 ---
 
