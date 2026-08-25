@@ -6,6 +6,7 @@ agregado `GET /api/projects/{pid}/guide`.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -47,15 +48,24 @@ def _looks_english(text: str) -> bool:
     return bool(text) and not _PT.search(text)
 
 
+def _safe(fn, default):
+    """O hook não pode explodir por causa de um JSON corrompido no projeto: o contrato do núcleo
+    trata exceção aqui como bug da frente (a etapa cairia para o guia genérico `unknown`)."""
+    try:
+        return fn()
+    except (json.JSONDecodeError, OSError, ValueError, KeyError):
+        return default
+
+
 def guide(pid: str) -> dict:
     root = project_dir(pid)
     meta = read_json(pid, "project.json", default={}) or {}
-    refs = base.selected_refs(root)
-    mood = base.mood_files(root)
+    refs = _safe(lambda: base.selected_refs(root), [])
+    mood = _safe(lambda: base.mood_files(root), [])
     product = (meta.get("product") or "").strip()
-    cands = base.load(pid)
+    cands = _safe(lambda: base.load(pid), [])
     ch = base.chain(cands)
-    brand = base.brand_get(pid)
+    brand = _safe(lambda: base.brand_get(pid), {"name": "", "description": ""})
     md = _read_md(root)
 
     g = Guide(META).text(WHAT, CHECKLIST)
@@ -113,7 +123,7 @@ def guide(pid: str) -> dict:
     sit = next((c for c in cands if c.get("selected") and c.get("kind") == "situation"), None)
     prompt = (sit.get("prompt") if sit else "") or ""
     if not prompt:
-        hist = base.prompt_history(pid)
+        hist = _safe(lambda: base.prompt_history(pid), [])
         prompt = hist[0].get("prompt", "") if hist else ""
     words = len(prompt.split())
     if not prompt:

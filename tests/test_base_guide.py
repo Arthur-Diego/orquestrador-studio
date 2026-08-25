@@ -208,3 +208,15 @@ def test_guide_never_unknown_in_the_aggregate(client, pid):
     step = next(s for s in body["steps"] if s["id"] == "base")
     assert step["status"] != "unknown" and step["what"] and step["checklist"]
     assert body["total"] == len(body["steps"])
+
+
+def test_guide_survives_corrupted_json(client, pid, studio_env):
+    """O núcleo trata exceção do hook como bug da frente: JSON corrompido não pode virar `unknown`."""
+    root = studio_env["refs"].project_dir(pid)
+    (root / "base").mkdir(parents=True, exist_ok=True)
+    (root / "base" / "candidates.json").write_text("{isto não é json")
+    (root / "base" / "brand.json").write_text("{tampouco")
+    (root / "refs" / "candidates" / "candidates.json").write_text("[quebrado")
+    g = guide_of(client, pid)
+    assert g["status"] in {"blocked", "todo"} and "detail" not in g
+    assert g["what"] and g["validations"]
