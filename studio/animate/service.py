@@ -6,7 +6,12 @@
    pasta Downloads ou histórico do CLI) — ou gera via CLI, pagando créditos;
 4. atribui o candidato ao shot como take K, dá "like" no usável e o Studio grava `_final.mp4`;
 5. após 3 falhas no shot, o serviço SUGERE o próximo modelo da ordem (nunca troca sozinho:
-   gasta créditos); esgotada a ordem, sugere `fallback_black` (corte para preto na montagem).
+   gasta créditos); esgotada a ordem (6 falhas), sugere adaptar a ideia — novo frame na etapa 5 —
+   ou `fallback_black` (corte para preto na montagem).
+
+No modo start/end (Kling 2.5 Turbo da aula), o par de frames é **gravado e enviado ao CLI**: ao
+escolher o modo, o par nasce `{start: frame deste shot, end: frame do próximo shot da cena}`; o
+usuário pode trocar o `end` por outro frame — inclusive um `edit/last_frames/*.png` da etapa 8.
 
 Saída para a etapa 8 (montagem): `animate/takes.json` + `videos/cenaNN/shotMM_takeK.mp4`.
 """
@@ -27,12 +32,44 @@ from ..refs.service import project_dir
 log = logging.getLogger("studio.animate")
 
 STEP = "animate"
-MODEL_ORDER = ["kling3_0", "seedance_2_0", "veo3_1_lite"]   # ordem de troca da aula 012 (Kling → Seedance)
+#: Modelos da aula 012: Kling (cenas simples e start/end) e Seedance (movimentos complexos).
+#: `veo3_1_lite` NÃO está na ordem padrão — é `[extensão]`, só entra por `STUDIO_ANIMATE_MODELS`.
+MODEL_ORDER = ["kling3_0", "seedance_2_0"]
+#: `[extensão]` — modelos fora do que a aula ensina, disponíveis só por env. `veo3_1_lite` com
+#: start+end exige `--duration 8` (ressalva do CLI), regra aplicada em `build_params`.
+EXTENSION_MODELS = ("veo3_1_lite",)
+#: Desvio registrado (gate 4 do CLAUDE.md): a aula usa Kling 2.6 e Kling 2.5 Turbo; o catálogo do
+#: CLI oferece Kling 3.0 para os dois casos — mesmo processo, ferramenta mais nova.
+LESSON_MODEL_NOTE = ("A aula 012 usa Kling 2.6 (cenas simples) e Kling 2.5 Turbo (start/end frame); "
+                     "o CLI da Higgsfield oferece o Kling 3.0 para os dois casos.")
 FAIL_THRESHOLD = 3          # a aula fala em "3 a 4 falhas"; 3 é o conservador em créditos
+ADAPT_THRESHOLD = FAIL_THRESHOLD * 2   # "saber quando parar de iterar; adaptar a ideia" (aula 012)
 DURATIONS = (5, 10)         # 5 s padrão, 10 s para mudanças lentas (aula 012)
 DEFAULT_TAKES = 2           # "gere 2 e escolha o usável"
 GENERATE_TIMEOUT_S = 900    # vídeo em série é lento; acima dos 600 s padrão do CLI
 MODES = ("simple", "elaborate", "start_end")
+#: `[extensão]` — a aula 012 não fixa proporção nem modo do CLI. O default de proporção vem do
+#: projeto (`project.aspect_ratio`, núcleo) e cada shot pode sobrescrever; o modo do CLI tem
+#: default `pro` (env `STUDIO_ANIMATE_CLI_MODE`) e também aceita override por shot.
+ASPECT_RATIOS = ("16:9", "9:16", "1:1")
+DEFAULT_ASPECT_RATIO = "16:9"
+CLI_MODES = ("pro", "fast")
+DEFAULT_CLI_MODE = "pro"
+#: Orientações da aula 012 por modo de prompt — texto de tela, não regra de execução.
+MODE_TIPS = {
+    "simple": ["Prompt simples para cena simples: diga o movimento em uma frase clara "
+               "(\"quanto mais claro o comando, melhor\")."],
+    "elaborate": ["Movimento de câmera + ação: \"Dolly dramático focando no reflexo de seu capacete\".",
+                  "Ou gere o prompt no Abrahub Creative Engine e cole aqui.",
+                  "Movimento complexo? A aula sugere o Seedance no lugar do Kling."],
+    "start_end": ["Dois frames seguidos da mesma cena: start = este shot, end = o próximo "
+                  "(ou um último frame da etapa 8, em edit/last_frames/).",
+                  "A aula usa start/end para transições — câmera lenta e dramática, 10 s quando a "
+                  "mudança é lenta."],
+}
+#: Dica de paralelismo (aula 012: \"gerar cenas em paralelo\") — a geração pelo CLI é serial.
+PARALLEL_HINT = ("Enquanto um take gera, dispare os outros shots em paralelo na UI da Higgsfield "
+                 "e importe os mp4 aqui depois.")
 VIDEO_EXT = ingest.MEDIA_EXT["video"]
 DOWNLOADS_DEFAULT = ingest.DOWNLOADS_DEFAULT
 
@@ -115,6 +152,7 @@ def _save_data(root: Path, data: dict) -> None:
 def _blank(scene: str, shot: str, order: int = 999, image: str | None = None, scene_prompt: str = "") -> dict:
     return {"scene": scene, "shot": shot, "order": order, "image": image, "scene_prompt": scene_prompt,
             "prompt": "", "mode": "simple", "duration": DURATIONS[0], "start_end": None,
+            "aspect_ratio": None, "cli_mode": None,   # [extensão] None = herda projeto/default
             "fallback_black": False, "cli_failures": 0, "orphan": False, "takes": []}
 
 
@@ -146,12 +184,44 @@ def _find(data: dict, scene: str, shot: str) -> dict:
     raise FileNotFoundError(f"shot não encontrado no plano: {scene}/{shot}")
 
 
-def _next_in_scene(data: dict, scene: str, shot: str) -> str | None:
+def _next_entry_in_scene(data: dict, scene: str, shot: str) -> dict | None:
+    """Shot seguinte da mesma cena — o `end frame` natural do modo start/end (aula 012)."""
     seq = [s for s in data["shots"] if s["scene"] == scene and not s.get("orphan")]
     for i, s in enumerate(seq):
         if s["shot"] == shot:
-            return seq[i + 1]["shot"] if i + 1 < len(seq) else None
+            return seq[i + 1] if i + 1 < len(seq) else None
     return None
+
+
+def _next_in_scene(data: dict, scene: str, shot: str) -> str | None:
+    nxt = _next_entry_in_scene(data, scene, shot)
+    return nxt["shot"] if nxt else None
+
+
+# ---------- proporção e modo do CLI ([extensão]) ----------
+def project_aspect_ratio(root: Path) -> str:
+    """Proporção padrão do projeto (`project.json`, núcleo). Ausente/invalida → 16:9."""
+    try:
+        meta = json.loads((root / "project.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return DEFAULT_ASPECT_RATIO
+    value = meta.get("aspect_ratio") if isinstance(meta, dict) else None
+    return value if value in ASPECT_RATIOS else DEFAULT_ASPECT_RATIO
+
+
+def default_cli_mode() -> str:
+    """Modo do CLI `[extensão]` (a aula não fixa). Override: STUDIO_ANIMATE_CLI_MODE."""
+    mode = os.environ.get("STUDIO_ANIMATE_CLI_MODE", "").strip()
+    return mode if mode in CLI_MODES else DEFAULT_CLI_MODE
+
+
+def last_frames(root: Path) -> list[str]:
+    """Últimos frames exportados pela etapa 8 (`edit/last_frames/*.png`) — ends alternativos."""
+    d = root / "edit" / "last_frames"
+    if not d.is_dir():
+        return []
+    return sorted(f"edit/last_frames/{f.name}" for f in d.iterdir()
+                  if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"))
 
 
 # ---------- estado derivado ----------
@@ -174,11 +244,26 @@ def _is_ready(shot: dict) -> bool:
 def _public(data: dict, shot: dict) -> dict:
     fails = failures_of(shot)
     model = suggested_model(fails)
+    nxt = _next_entry_in_scene(data, shot["scene"], shot["shot"])
     return {**{k: shot.get(k) for k in ("scene", "shot", "order", "image", "scene_prompt", "prompt", "mode",
-                                        "duration", "start_end", "fallback_black", "orphan")},
-            "next_in_scene": _next_in_scene(data, shot["scene"], shot["shot"]),
+                                        "duration", "start_end", "aspect_ratio", "cli_mode",
+                                        "fallback_black", "orphan")},
+            "next_in_scene": nxt["shot"] if nxt else None,
+            "next_image": (nxt or {}).get("image"),
             "failures": fails, "suggested_model": model, "suggest_fallback_black": model is None,
+            "adapt_idea": fails >= ADAPT_THRESHOLD,
             "ready": _is_ready(shot), "takes": shot.get("takes", [])}
+
+
+# ---------- leitura pura (usada pelo guia da etapa) ----------
+def storyboard_entries(pid: str) -> tuple[list[dict], list[str]]:
+    """Plano da etapa 5 SEM efeito colateral (`load_plan` grava `takes.json`; o guia não pode)."""
+    return _read_storyboard(project_dir(pid))
+
+
+def stored_takes(pid: str) -> dict:
+    """`animate/takes.json` como está no disco — leitura pura, sem merge nem gravação."""
+    return _load_data(project_dir(pid))
 
 
 # ---------- plano ----------
@@ -191,11 +276,16 @@ def load_plan(pid: str) -> dict:
     _save_data(root, data)
     shots = [_public(data, s) for s in data["shots"]]
     return {"shots": shots, "ready": sum(1 for s in shots if s["ready"]), "total": len(shots),
-            "model_order": model_order(), "warnings": warnings}
+            "model_order": model_order(), "warnings": warnings,
+            "model_note": LESSON_MODEL_NOTE, "mode_tips": MODE_TIPS, "parallel_hint": PARALLEL_HINT,
+            "last_frames": last_frames(root), "aspect_ratio": project_aspect_ratio(root),
+            "cli_mode": default_cli_mode(), "aspect_ratios": list(ASPECT_RATIOS),
+            "cli_modes": list(CLI_MODES), "adapt_threshold": ADAPT_THRESHOLD}
 
 
 def update_shot(pid: str, scene: str, shot: str, *, prompt: str | None = None, mode: str | None = None,
-                duration: int | None = None, start_end=_UNSET, fallback_black: bool | None = None) -> dict:
+                duration: int | None = None, start_end=_UNSET, fallback_black: bool | None = None,
+                aspect_ratio=_UNSET, cli_mode=_UNSET) -> dict:
     root = project_dir(pid)
     data, _ = _merge(root)
     entry = _find(data, scene, shot)
@@ -211,10 +301,41 @@ def update_shot(pid: str, scene: str, shot: str, *, prompt: str | None = None, m
         entry["duration"] = duration
     if start_end is not _UNSET:
         entry["start_end"] = _validate_start_end(root, entry, start_end)
+    elif mode is not None:
+        # O par acompanha o modo: escolher start/end grava o par (aula 012, Kling 2.5 Turbo);
+        # sair do modo limpa o par para não mandar `end_image` numa cena que não é de transição.
+        entry["start_end"] = _auto_start_end(data, entry, root) if mode == "start_end" else None
     if fallback_black is not None:
         entry["fallback_black"] = bool(fallback_black)
+    if aspect_ratio is not _UNSET:
+        entry["aspect_ratio"] = _validated_choice(aspect_ratio, ASPECT_RATIOS, "proporção")
+    if cli_mode is not _UNSET:
+        entry["cli_mode"] = _validated_choice(cli_mode, CLI_MODES, "modo do CLI")
     _save_data(root, data)
     return _public(data, entry)
+
+
+def _validated_choice(value, allowed: tuple[str, ...], label: str) -> str | None:
+    """`[extensão]`: `None`/"" volta ao default (projeto/env); fora da lista é 422."""
+    if value in (None, ""):
+        return None
+    if value not in allowed:
+        raise ValueError(f"{label} inválida: {value} (use {', '.join(allowed)})")
+    return value
+
+
+def _auto_start_end(data: dict, entry: dict, root: Path) -> dict | None:
+    """Par padrão do modo start/end: este frame → frame do próximo shot da mesma cena.
+
+    Sem próximo shot (ou sem frame), devolve `None`: a tela pede um `end` manual — pode ser um
+    `edit/last_frames/*.png` da etapa 8. Nunca levanta: escolher o modo não pode falhar.
+    """
+    start = entry.get("image")
+    nxt = _next_entry_in_scene(data, entry["scene"], entry["shot"])
+    end = (nxt or {}).get("image")
+    if not start or not end or not (root / end).exists():
+        return None
+    return {"start": start, "end": end}
 
 
 def _validate_start_end(root: Path, entry: dict, value) -> dict | None:
@@ -271,7 +392,8 @@ def suggest_prompt(pid: str, scene: str, shot: str, mode: str = "simple", camera
         text = (f"This is a start frame and end frame scene. {act or 'The scene changes between the two frames'}. "
                 "The camera movement must be slow and dramatic.")
     return {"prompt": text, "mode": mode, "duration": DURATIONS[1] if slow else DURATIONS[0],
-            "ui_hint": _UI_HINT_SE if mode == "start_end" else _UI_HINT, "example_pt": _EXAMPLE_PT[mode]}
+            "ui_hint": _UI_HINT_SE if mode == "start_end" else _UI_HINT, "example_pt": _EXAMPLE_PT[mode],
+            "tips": list(MODE_TIPS[mode]), "parallel_hint": PARALLEL_HINT, "model_note": LESSON_MODEL_NOTE}
 
 
 # ---------- importação (delegada a studio/common/ingest.py) ----------
@@ -331,6 +453,8 @@ def attach_take(pid: str, scene: str, shot: str, candidate_id: str, model: str |
     take = {"id": f"take{k}", "file": rel, "liked": None, "model": model,
             "prompt": (prompt if prompt is not None else entry.get("prompt")) or "",
             "duration": entry.get("duration") or DURATIONS[0], "start_end": entry.get("start_end"),
+            "prompt_mode": entry.get("mode") or "simple",
+            "aspect_ratio": entry.get("aspect_ratio") or project_aspect_ratio(root),
             "source": cand.get("source"), "thumb": cand.get("thumb"), "candidate_id": candidate_id}
     entry["takes"].append(take)
     _save_data(root, data)
@@ -378,8 +502,14 @@ def _sync_final(root: Path, entry: dict) -> None:
 
 # ---------- geração paga pelo CLI ----------
 def build_params(shot_entry: dict, model: str, prompt: str | None = None, duration: int | None = None,
-                 root: Path | None = None) -> dict:
-    """Params do `generate create`. Áudio do modelo SEMPRE OFF (aula 012)."""
+                 root: Path | None = None, aspect_ratio: str | None = None) -> dict:
+    """Params do `generate create`. Áudio do modelo SEMPRE OFF (aula 012).
+
+    `aspect_ratio` e `mode` são `[extensão]` (a aula não os fixa): a proporção vem do shot, senão
+    do projeto (parâmetro), senão 16:9; o modo do CLI vem do shot, senão de `STUDIO_ANIMATE_CLI_MODE`.
+    Com `start_end` preenchido, o par vira `start_image` + `end_image` — é isso que faz a transição
+    start/end da aula sair do CLI de verdade.
+    """
     def _p(rel: str | None) -> str | None:
         if not rel:
             return None
@@ -387,13 +517,15 @@ def build_params(shot_entry: dict, model: str, prompt: str | None = None, durati
 
     se = shot_entry.get("start_end") or None
     dur = duration or shot_entry.get("duration") or DURATIONS[0]
+    aspect = shot_entry.get("aspect_ratio") or aspect_ratio or DEFAULT_ASPECT_RATIO
     params = {"prompt": (prompt if prompt is not None else shot_entry.get("prompt")) or "",
               "start_image": _p((se or {}).get("start") or shot_entry.get("image")),
-              "duration": dur, "aspect_ratio": "16:9", "mode": "pro", "sound": False}
+              "duration": dur, "aspect_ratio": aspect,
+              "mode": shot_entry.get("cli_mode") or default_cli_mode(), "sound": False}
     if se:
         params["end_image"] = _p(se.get("end"))
-        if model == "veo3_1_lite":
-            params["duration"] = 8      # ressalva do CLI: veo3_1_lite com start+end exige 8 s
+        if model in EXTENSION_MODELS:
+            params["duration"] = 8      # [extensão] ressalva do CLI: veo3_1_lite start+end exige 8 s
     return params
 
 
@@ -411,7 +543,7 @@ def _validated(pid: str, scene: str, shot: str, model: str, count: int) -> tuple
 
 def cost(pid: str, scene: str, shot: str, model: str, count: int = DEFAULT_TAKES) -> dict:
     root, _, entry = _validated(pid, scene, shot, model, count)
-    res = hf.cost(model, build_params(entry, model, root=root))
+    res = hf.cost(model, build_params(entry, model, root=root, aspect_ratio=project_aspect_ratio(root)))
     credits = res.get("credits")
     known = isinstance(credits, (int, float))
     return {"per_take": credits if known else None, "total": credits * count if known else None,
@@ -426,7 +558,8 @@ def start_generate(pid: str, scene: str, shot: str, model: str, count: int = DEF
         raise ValueError("escreva (ou peça a sugestão de) o prompt do shot antes de gerar")
     if duration is not None and duration not in DURATIONS:
         raise ValueError(f"duração inválida: {duration} (a aula 012 usa {DURATIONS[0]} s ou {DURATIONS[1]} s)")
-    params = build_params(entry, model, text, duration, root=root)
+    params = build_params(entry, model, text, duration, root=root,
+                          aspect_ratio=project_aspect_ratio(root))
 
     def run(job: dict) -> None:
         for k in range(count):
