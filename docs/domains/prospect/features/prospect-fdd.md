@@ -503,3 +503,123 @@ Registradas no fechamento da frente; todas aditivas e cobertas por teste.
 - Sugestão não implementada (fora da aula 001): o `plano-higgsfield` §2 propõe gerar o teaser por CLI
   (`kling3_0 5s` + `sonilo_music 8s`). A wave fixou "take de animate + trilha da etapa 7", que não gasta
   crédito nem exige login. Fica como sugestão, nunca como implementação silenciosa.
+
+---
+
+### Wave 2 — fidelidade e guia (frente OS-019)
+
+Correções desta wave (auditoria `docs/domains/studio/waves/wave-2-auditoria-etapas-7-11.md`,
+itens 11.1 a 11.5, 11.8 e 11.9) e o guia por etapa (contrato em `studio/common/guide.py`,
+ADR-010).
+
+#### 11.1 — o teaser só existe depois da resposta
+
+*"Você só cria de verdade se a empresa responder."* `start_teaser` passou a exigir
+`lead["replied"]`:
+
+```
+POST /api/projects/{pid}/prospect/leads/{lid}/teaser
+422  {"detail": "a aula manda criar só depois que a empresa responder"}
+```
+
+A checagem vem **antes** de ffmpeg, duração, take e trilha: DM enviada ainda não é resposta. Na
+tela, o botão "Gerar teaser" não é renderizado até `replied` — no lugar dele aparece a frase que
+explica por quê. Máquina de estados: `new → dm_sent → replied → teaser_ready → call_scheduled →
+call_done`.
+
+#### 11.2 — o gate lê o portfólio GLOBAL (ADR-012)
+
+`gate(root)` deixou de contar vídeos do `publish/log.json` **deste** projeto e passou a consumir
+`publish.global_portfolio()`: `published` = **projetos distintos** com post registrado. Sem isso
+a etapa era inutilizável no uso real — o projeto criado para o negócio do lead nunca teria quatro
+vídeos publicados. Campos novos na resposta: `projects` (as obras que contam) e
+`this_project_published`. O guia diz explicitamente para criar um projeto para o negócio do lead
+(etapas 1 a 6 em versão curta, uma cena) e gerar o teaser a partir dele.
+
+`studio/prospect/service.py` passou a importar `studio/publish/service.py` — primeira dependência
+direta entre serviços de etapa; a direção (11 → 10) segue a ordem do curso e não cria ciclo.
+
+#### 11.3 — `post_ref` obrigatório
+
+*"Não é spam, porque você personaliza: mostra que olhou o perfil e menciona um post específico."*
+`create_lead` e `update_lead` recusam `post_ref` vazio, e `dm_text()` também — nenhuma DM sai com
+o buraco `"O seu post a respeito de  realmente ressoou"`.
+
+```
+POST /api/projects/{pid}/prospect/leads   {"post_ref": " ", ...}
+422  {"detail": "cite um post específico do perfil: é isso que a aula manda mostrar
+                 (\"olhou o perfil e menciona um post\") e é o que faz a DM não ser spam"}
+```
+
+#### 11.4 e 11.5 — pitch com valores por etapa e lembretes literais
+
+*"Ancoragem: revela valores por etapa até chegar no total que você quer cobrar."* A tabela ganhou
+a coluna **Valor (R$)**, a linha **Total** e a linha **Total com 50 % off no 1º trabalho**. Os
+valores vivem em `prospect/pitch.json` (`{values: {etapa: número}, total, updated}`):
+
+```
+GET  /api/projects/{pid}/prospect/pitch
+200  {"file": "prospect/pitch.md", "markdown": "...", "values": {...}, "total": 300.0,
+      "sum": 300.0, "matches": true, "priced": true, "in_range": true, "discount": 150.0,
+      "steps": [...], "min_price": 100.0, "max_price": 500.0}
+
+POST /api/projects/{pid}/prospect/pitch   {"values"?: {"Conceito": 80}, "total"?: 400}
+200  o mesmo schema     # grava pitch.json e regrava pitch.md; 409 com o gate fechado
+422  etapa desconhecida, valor negativo ou total inválido
+```
+
+`total` ausente = soma das etapas. `total` explícito diferente da soma é aceito (é "o que você
+quer cobrar") mas o markdown e o guia avisam — a ancoragem só funciona se as contas fecharem.
+Corpo vazio continua apenas regerando o `pitch.md` (compatível com a wave 1).
+
+Lembretes agora literais: *"Condição especial na hora, ou válida por 24h"* e *"50 % off no
+primeiro trabalho, deixando claro o valor cheio para os próximos"*, além de 50/50 na entrada e na
+entrega, faixa R$ 100–500 e "vender o resultado, não a IA".
+
+#### 11.8 — `music_offset` sugerido pelo primeiro impacto
+
+*"5 a 10 segundos, com música e impacto."* `suggest_music_offset(root)` lê `audio/beats.json` e
+devolve `primeiro impacto − 0,5 s` (nunca negativo), para o impacto cair logo no início do
+teaser. É **sugestão, não imposição**: `music_offset` explícito manda; `music_offset` ausente
+(`None`) usa a sugestão; sem `beats.json` (ou sem impactos) vale `0.0`. Exposto em
+`GET /prospect/leads` como `teaser_hint: {music_offset, impact, source}` para a tela mostrar a
+dica, e devolvido no job (`music_offset`).
+
+#### 11.9 — os segmentos da aula
+
+`SEGMENTS = ("clínicas", "academias", "advogados", "estética", "dentistas", "comércios")` —
+o mar azul que o instrutor cita. Aparece no lede da tela, no `what` do guia, no estado vazio da
+lista de leads e em `GET /prospect/leads` (`segments`).
+
+#### Guia da etapa (`studio/etapas/prospect/guide.py`)
+
+| Categoria | Item | Regra |
+| --- | --- | --- |
+| Entrada | Portfólio global de 4 vídeos | `fail` → **bloqueia**; `step: "publish"` |
+| Saída | `prospect/leads.json` com leads | ≥ 1 lead |
+| Saída | DMs marcadas como enviadas | ≥ 1 `sent_at` |
+| Saída | Teaser para quem respondeu | ≥ 1 teaser **e** nenhum respondido pendente |
+| Saída | `prospect/pitch.md` | arquivo existe |
+| Validação | `dms_hoje` | 10/dia — `ok` a partir de 10, `warn` abaixo; nunca trava |
+| Validação | `dm_personalizada` | `fail` se algum lead está sem `post_ref` ou com link na DM |
+| Validação | `teaser_apos_resposta` | `fail` se existe teaser sem `replied` |
+| Validação | `pitch_valores` | `warn` quando a soma das etapas ≠ total |
+| Validação | `pitch_faixa` | `warn` fora de R$ 100–500 (aula 016) |
+| Validação | `followup` | `[extensão]` — `warn` quando respondeu há mais de 7 dias sem call |
+
+`leads.json` corrompido vira lista vazia dentro do guia (a tela nunca cai por causa dele).
+
+#### Auto-aceites desta wave (para a retro)
+
+- O 422 do teaser vem antes de qualquer checagem de artefato: a ordem da aula é anterior à
+  disponibilidade técnica.
+- Desfazer a resposta (`replied=false`) volta o status para `dm_sent` só quando ele era
+  `replied`; um lead que já tem teaser mantém o arquivo (apagar seria destruir trabalho por causa
+  de um clique).
+- `total` explícito diferente da soma é permitido com aviso, em vez de recusado: a aula fala em
+  "o total que você quer cobrar", que é uma decisão comercial, não uma soma.
+- Faixa R$ 100–500 é **aviso**, nunca trava — é orientação de começo de carreira (aula 016).
+- Valores em `prospect/pitch.json` e não dentro do `pitch.md`: o markdown é editável à mão e
+  continua sendo preservado; os números precisam ser legíveis pelo guia.
+- Leads continuam **por projeto**. O arquivo global de leads com `project_id` que a auditoria
+  sugeriu como `[extensão]` ficou de fora desta wave (registrado no ADR-012).

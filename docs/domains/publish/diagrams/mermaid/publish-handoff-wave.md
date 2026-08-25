@@ -100,3 +100,54 @@ sequenceDiagram
 
     Note over publicar,prospect: publish NÃO bloqueia a etapa 11: só informa.<br/>O bloqueio é aplicado por prospect ao ler o log.
 ```
+
+
+---
+
+## Atualização da wave 2 (OS-019) — o portfólio virou global (ADR-012)
+
+O handoff acima continua correto no que é **troca de artefatos por arquivo**, mas a contagem do
+gate mudou de lugar. A auditoria 10.1/11.2 mostrou que contar arquivos **dentro do projeto**
+fechava o portfólio com um comercial só (16x9 + 9x16 + 1x1 + extra) e, pior, tornava a etapa 11
+inutilizável: o projeto criado para o negócio do lead nunca teria quatro vídeos publicados.
+
+Agora:
+
+- `publish.global_portfolio()` varre `PROJECTS_DIR` e conta **projetos distintos** com pelo menos
+  um post em `publish/log.json` — quatro **obras**, como a aula 015 pede.
+- `GET /api/portfolio` (sem `pid`) expõe isso; `GET .../publish/portfolio` devolve as duas
+  leituras (`count`/`videos`/`published` do projeto, `distinct_videos`/`ready`/`missing` globais).
+- `prospect.gate()` consome `global_portfolio()` em vez de ler o `publish/log.json` do projeto.
+  É a primeira dependência direta entre serviços de etapa (11 → 10); continua sem HTTP entre elas.
+
+```mermaid
+flowchart LR
+    subgraph PROJECTS["PROJECTS_DIR — o portfólio é do aluno, não do projeto"]
+        P1["2026-08-gelo-zero<br/>publish/log.json: 3 posts, 1 obra"]
+        P2["2026-08-cafe-do-ponto<br/>publish/log.json: 1 post, 1 obra"]
+        P3["2026-08-academia-x<br/>publish/log.json: 2 posts, 1 obra"]
+        P4["2026-08-clinica-y<br/>publish/log.json: 1 post, 1 obra"]
+        P5["2026-08-padaria-do-ze<br/>projeto DO LEAD, sem post"]
+    end
+
+    P1 --> G["publish.global_portfolio()<br/>leitura pura, sem escrita"]
+    P2 --> G
+    P3 --> G
+    P4 --> G
+    P5 -. "não conta: nenhum post" .-> G
+
+    G --> API["GET /api/portfolio<br/>distinct_videos = 4, ready = true"]
+    G --> ST["GET .../publish/portfolio<br/>deste projeto: count, videos, published<br/>global: distinct_videos, ready, missing, projects"]
+    API --> GATE["prospect.gate(root)<br/>published = 4 → gate ABERTO"]
+    GATE --> LEAD["Etapa 11 no projeto do lead:<br/>teaser sai de um take DESTE projeto,<br/>portfólio vem dos outros quatro"]
+
+    classDef obra fill:#e8f5e9,stroke:#2e7d32,color:#10331a
+    classDef lead fill:#fff3e0,stroke:#e65100,color:#3e2000
+    classDef rota fill:#e3f2fd,stroke:#1565c0,color:#0d2b45
+    class P1,P2,P3,P4 obra
+    class P5,LEAD lead
+    class API,ST,GATE,G rota
+```
+
+O aviso "os formatos deste mesmo comercial contam como **1 vídeo** do portfólio" entra no
+`publish/portfolio.md` e no guia da etapa 10 sempre que `videos > 1`.

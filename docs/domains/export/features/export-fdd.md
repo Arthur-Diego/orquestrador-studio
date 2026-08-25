@@ -508,7 +508,7 @@ Arquivos da entrega: `studio/etapas/export/{__init__.py, router.py, view.html, v
 ### Pendências (não auto-aceitáveis)
 
 - Confirmar que `reframe` pode ficar como opcional apesar de ADR-004 listá-lo como [INFERÊNCIA]; se não, remover contratos 8 e 9 e o painel correspondente.
-- Confirmar leitura da aula 007 para o formato 1:1 (a aula cita vertical e 16:9; o 1:1 vem do catálogo `SOON` da etapa 9 e do plano §3.3).
+- ~~Confirmar leitura da aula 007 para o formato 1:1~~ — **FECHADA na wave 2 (OS-019).** A auditoria 9.2 leu a aula 007 inteira: ela fala de *formato de imagem no Midjourney* ("vertical, quadrado, widescreen"), **não** de export de vídeo. A escolha 16:9 / 9:16 pelo destino vem do plano §1.4; o **1:1 é `[extensão]`** e está rotulado como tal na tela, no guia e nesta seção. A etapa deixou de citar a aula 007.
 - `MEDIA_URL_RE`/`hf.generate` devolvendo URLs de mp4 depende da extensão transversal já mergeada; confirmar no bootstrap da worktree.
 
 ---
@@ -565,3 +565,67 @@ muda contrato publicado; são detalhes que o revisor do lote (W5) precisa ver.
 - **Critérios `[cross-feature]` pendentes.** O master usado na verificação foi fixture
   (`make_video`, 1920x1080/30 fps e 320x240), nunca o `edit/master.mp4` real da frente `edit`;
   o consumo por `publish` também não foi exercido. Ambos ficam para a integração.
+
+
+---
+
+### Wave 2 — fidelidade e guia (frente OS-019)
+
+Correções desta wave (auditoria `docs/domains/studio/waves/wave-2-auditoria-etapas-7-11.md`,
+itens 9.1, 9.2 e 9.5) e o guia por etapa (contrato em `studio/common/guide.py`, ADR-010).
+
+#### 9.1 e 9.2 — o que é da aula e o que é `[extensão]`
+
+A aula 014 termina em *"publique o seu trabalho, mesmo imperfeito"*. Ela **não** ensina export,
+QA nem thumb. O que existe é a escolha do formato pelo destino, e isso vem do plano §1.4 — não da
+aula 007. Passam a ficar explicitamente marcados `[extensão]` no código, na tela e no guia:
+
+| Item | Marca | Onde |
+| --- | --- | --- |
+| Formato 1:1 (feed) | `[extensão]` | `view.html` §2, `guide.py` (`formato_1x1`), `FORMATS` |
+| Thumb (`export/thumb.jpg`) | `[extensão]` | `view.html` §3, `guide.py` (`thumb`) |
+| QA técnico (`export/qa_report.md`) | `[extensão]` | `view.html` §4, `guide.py` (`qa`) |
+| Reframe pelo CLI | `[extensão]` (já era opcional) | `view.html` §5 |
+
+O `eyebrow` da tela passou de `Etapa 9 · aulas 007 e 014` para `Etapa 9 · aula 014` (coerente com
+`META["aula"]`), e o lede diz "formato por rede (plano 1.4) — a aula só manda publicar".
+
+#### 9.5 — áudio ausente é bloqueio, não atenção
+
+A trilha é obrigatória desde a etapa 7 e o master da etapa 8 passou a exigi-la (frente OS-018).
+Para não haver duas verdades, o QA ganhou o conceito de **checagem bloqueante**:
+
+- `_check(name, ok, blocking=False, **extra)` — a chave `blocking: true` só aparece quando a
+  checagem é bloqueante (o schema das demais não mudou).
+- `_verdict(checks)` devolve `"BLOQUEIO"` quando falha uma checagem bloqueante, `"ATENCAO"` para
+  as demais falhas, `"OK"` quando tudo passa.
+- Hoje só a checagem `audio` é bloqueante (no master e em cada formato). Arquivo ainda não
+  renderizado continua `ATENCAO`.
+- `POST /export/qa` passou a devolver `blocking: bool` no topo da resposta, além de `items`.
+
+#### Guia da etapa (`studio/etapas/export/guide.py`)
+
+| Categoria | Item | Regra |
+| --- | --- | --- |
+| Entrada | `edit/master.mp4 (etapa 8)` | `fail` → **bloqueia**; `step: "edit"` |
+| Saída | `export/<fmt>.mp4` do formato da rede-alvo | `fmt` vem de `project.aspect_ratio` (`[extensão]`, default `16:9`) |
+| Validação | `formato_16x9`/`formato_9x16` (o outro formato) | opcional — `ok`/`todo` |
+| Validação | `formato_1x1` | opcional `[extensão]` |
+| Validação | `preview` | preview do corte central conferido (`export/previews/<fmt>.jpg`) |
+| Validação | `thumb`, `qa` | `[extensão]` |
+| Validação | `duracao` | 30 s a 1 min (aula 016); `warn` fora da faixa |
+
+A duração é calculada **sem ffprobe**: o hook soma os clipes de `edit/timeline.json`
+(`(out - in) / speed` + quadros pretos), porque o guia é puro por contrato (ADR-010). Sem
+timeline, a validação fica `todo` em vez de mentir.
+
+#### Auto-aceites desta wave (para a retro)
+
+- `blocking` como campo aditivo do item de checagem, em vez de uma lista separada de bloqueios:
+  mantém o schema de `checks` compatível com quem já lia `{name, ok}`.
+- Veredito novo `BLOQUEIO` em vez de reaproveitar `ATENCAO` com uma flag: quem lê o markdown vê
+  a diferença sem precisar interpretar.
+- A duração do comercial é lida da timeline da etapa 8, e não do arquivo exportado: é a única
+  fonte disponível para um hook puro. Divergência entre timeline e arquivo final é assunto do QA.
+- O formato cobrado como **saída** é só o da rede-alvo. Os demais são validações opcionais — a
+  aula manda publicar, não manda publicar em toda rede.

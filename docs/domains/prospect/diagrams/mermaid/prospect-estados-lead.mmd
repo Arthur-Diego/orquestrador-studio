@@ -5,9 +5,12 @@
 %% Os identificadores dos estados são exatamente os valores gravados no campo status;
 %% o rótulo entre aspas é a leitura em português que a tela mostra.
 %% ---
-%% Regra que vale para TODA transição: elas só acontecem com o gate aberto, ou seja, 4 VÍDEOS
-%% DISTINTOS publicados em publish/log.json (ver prospect-gate.mmd). Com o gate fechado, todo
-%% POST, PUT e DELETE responde 409 e o lead não sai do lugar.
+%% Regra que vale para TODA transição: elas só acontecem com o gate aberto, ou seja, 4 OBRAS
+%% publicadas no portfólio GLOBAL (projetos distintos com post — ADR-012, ver prospect-gate.mmd).
+%% Com o gate fechado, todo POST, PUT e DELETE responde 409 e o lead não sai do lugar.
+%% ---
+%% WAVE 2 (auditoria 11.1): não existe mais caminho de new ou dm_sent direto para teaser_ready.
+%% "Você só cria de verdade se a empresa responder" — POST .../teaser antes de replied é 422.
 stateDiagram-v2
     direction LR
 
@@ -22,7 +25,7 @@ stateDiagram-v2
     new --> dm_sent: POST .../leads/lid/sent
     dm_sent --> replied: POST .../leads/lid/replied com replied=true
     replied --> dm_sent: POST .../leads/lid/replied com replied=false, desfaz o respondeu
-    replied --> teaser_ready: job do teaser concluído, state done
+    replied --> teaser_ready: POST .../leads/lid/teaser (422 antes daqui) e job concluído, state done
     teaser_ready --> call_scheduled: POST .../leads/lid/call com done=false
     teaser_ready --> call_done: POST .../leads/lid/call com done=true
     call_scheduled --> call_done: POST .../leads/lid/call com done=true
@@ -38,6 +41,13 @@ stateDiagram-v2
 
     note left of teaser_ready
         Regerar o teaser sobrescreve o arquivo do lead e o mantém em
-        teaser_ready. Se o job falhar, o status não muda e o arquivo
-        parcial é removido (job.state = error).
+        teaser_ready. Se o job falhar, o status não muda (fica em
+        replied) e o arquivo parcial é removido (job.state = error).
+        O teaser só pode ser pedido a partir de replied: em new ou
+        dm_sent a rota responde 422 com "a aula manda criar só depois
+        que a empresa responder", antes de checar ffmpeg, duração,
+        take (etapa 6) e trilha (etapa 7). Na tela, o botão nem
+        aparece antes da resposta.
+        music_offset ausente usa a sugestão do primeiro impacto de
+        audio/beats.json menos 0,5 s — sugestão, não imposição.
     end note

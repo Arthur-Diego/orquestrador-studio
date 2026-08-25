@@ -432,3 +432,99 @@ resumo `0/4` e "Nenhuma publicação registrada ainda."
 | 3 | Plugin e rotas | 1, 2 | `studio/etapas/publish/__init__.py` (`META`), `studio/etapas/publish/router.py`, `tests/test_publish_api.py` | todos os contratos HTTP, status codes, `/api/steps` ready |
 | 4 | UI da etapa | 3 | `studio/etapas/publish/view.html`, `studio/etapas/publish/view.js` | contador, chip, feedback por post, sem campo de copy |
 | 5 | Handoff com prospect | 1 | fixture `log.json` com 4 entradas em `tests/test_publish_service.py` | `[cross-feature]` prospect lê `log.json` |
+
+---
+
+### Wave 2 — fidelidade e guia (frente OS-019)
+
+Correções desta wave (auditoria `docs/domains/studio/waves/wave-2-auditoria-etapas-7-11.md`,
+itens 10.1 a 10.4) e o guia por etapa (contrato em `studio/common/guide.py`, ADR-010).
+
+#### 10.1 — o portfólio da aula é GLOBAL (ADR-012)
+
+A decisão 1 do lote da wave 1 ("vídeos distintos, não posts") estava certa e continua valendo,
+mas parava dentro do projeto: os três formatos do mesmo comercial fechavam 3/4 do portfólio. A
+aula pede **quatro obras** (*"prática, exposição e validação"*, *"evolução vem da repetição"*).
+
+**ADR-012**: `distinct_videos` passa a contar **projetos distintos** do `PROJECTS_DIR` com pelo
+menos um post em `publish/log.json`. Contrato novo:
+
+```
+GET /api/portfolio        (sem pid — é o portfólio do aluno, não o de um projeto)
+200 {
+  "projects": [{"project_id": "2026-08-gelo-zero", "name": "Gelo Zero",
+                "posts": 2, "videos": 1, "first_posted": "2026-08-25"}],
+  "distinct_videos": 1, "posts": 2, "goal": 4, "ready": false, "missing": 3
+}
+```
+
+`GET /api/projects/{pid}/publish/portfolio` cresceu e mudou de semântica:
+
+| Campo | Antes | Agora |
+| --- | --- | --- |
+| `count` | posts do projeto | (igual) |
+| `videos` | — | arquivos distintos publicados **neste** projeto |
+| `published` | — | `true` se este projeto já tem post ("este vídeo já está publicado") |
+| `distinct_videos` | arquivos distintos do projeto | **projetos distintos** com post (global) |
+| `ready` / `missing` | do projeto | do portfólio global |
+| `projects` | — | a lista do `GET /api/portfolio` |
+| `community` | — | checklist da aula 015 (abaixo) |
+
+`GET /api/projects/{pid}/publish/log` **não mudou**: ali `distinct_videos` continua sendo
+arquivos distintos deste projeto, porque é a listagem do log local.
+
+`publish/portfolio.md` passou a trazer as duas contagens, o aviso "os formatos deste mesmo
+comercial contam como 1 vídeo" (quando `videos > 1`), a seção "Comunidade (aula 015)" e a tabela
+"Portfólio global (todos os projetos)".
+
+#### 10.2 — comunidade ABRAhub
+
+*"Interagir, postar, comentar e dar feedback é como você aprende padrões, melhora mais rápido e…
+passa a ser notado"*; *"a própria comunidade já pode gerar oportunidades"*.
+
+- `comunidade ABRAhub` entrou no `datalist` de redes sugeridas da tela.
+- Checklist **não bloqueante** persistido em `publish/community.json`:
+
+```
+GET  /api/projects/{pid}/publish/community
+200  {"posted": false, "commented": false, "feedback": false, "updated": "", "done": 0, "total": 3}
+
+POST /api/projects/{pid}/publish/community   {"posted"?: bool, "commented"?: bool, "feedback"?: bool}
+200  o mesmo schema     # campo ausente NÃO muda o item; regrava portfolio.md
+```
+
+Arquivo ausente ou corrompido = tudo por fazer (nunca levanta).
+
+#### 10.3 e 10.4 — textos
+
+- "peça feedback (aula 015)" virou: **"Compartilhar é o que permite feedback (aula 014); na
+  comunidade, interaja e dê feedback (aula 015)"**.
+- O lede passou a dizer *"num perfil novo ou nas redes que você já tem"* e *"não são para
+  perfeição, são para prática, exposição e validação"*, além de *"o primeiro trabalho tende a ser
+  o pior — evolução vem da repetição, não da espera"*.
+
+#### Guia da etapa (`studio/etapas/publish/guide.py`)
+
+| Categoria | Item | Regra |
+| --- | --- | --- |
+| Entrada | `export/*.mp4 (etapa 9)` | `fail` → **bloqueia**; `step: "export"` |
+| Saída | Este vídeo publicado e registrado | ≥ 1 post neste projeto |
+| Saída | Portfólio global N/4 vídeos | `ready` do portfólio global |
+| Validação | `mesmo_projeto` | `warn` quando `videos > 1`: "contam como 1 vídeo do portfólio" |
+| Validação | `comunidade` | `ok` (3/3), `warn` (parcial), `todo` (nada) — nunca bloqueia |
+| Validação | `feedback` | `warn` para posts sem nota nem feedback |
+| Validação | `arquivos` | `warn` quando um post aponta para arquivo que saiu de `export/` |
+
+#### Auto-aceites desta wave (para a retro)
+
+- Manter o **nome** `distinct_videos` no contrato, mesmo com a semântica mudando de arquivos para
+  obras: renomear quebraria a tela e a rota do gate sem ganho de clareza (o rótulo da UI e o
+  `portfolio.md` explicam o que está sendo contado).
+- "Um projeto = uma obra" é a convenção da contagem. Dois comerciais feitos no mesmo projeto
+  contam 1 — o lado seguro do erro (subestima, nunca superestima).
+- Checklist de comunidade em arquivo próprio (`publish/community.json`) e não dentro de
+  `log.json`: o log é uma lista de posts, e enfiar um objeto de estado ali quebraria o schema.
+- `POST community` regrava `portfolio.md` (é mutação), mas `GET` continua sem escrever nada.
+- Os checkboxes da comunidade **não têm `id`** no HTML, de propósito: o teste de fidelidade da
+  tela fixa o conjunto exato de campos com `id` (`pubVideo`, `pubNetwork`, `pubDate`, `pubUrl`,
+  `pubNote`) para provar que a etapa não pede legenda, hashtag nem métrica de alcance.
