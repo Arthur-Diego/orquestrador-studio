@@ -583,7 +583,7 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
 | **B4** | Prompts **editáveis** na tela (o import já herda o texto editado); `count` default **3** no rótulo (a aula gera 3 variações); a instrução usada fica gravada em `base.md` | `count` vira opcional em `cost`/`generate` (default por passo); `base.md` ganha a seção "Prompts e instruções usados" |
 | **B5, B10** | Textos da aula ("ignore marca/texto", "é ter paciência", dever de casa na comunidade) no checklist do guia | `guide.checklist` |
 | **B6** | Import com `kind=upscale` compara a largura com a candidata de origem e **avisa** fora de 1,8×–2,2× | `warnings: []` na resposta dos 3 imports; validação `upscale_2x` no guia |
-| **B11** | `"No people unless they appear in the reference image."` deixa de ser fixo e vira **checkbox opcional** (`no_people`) — na base a aula até imagina "um mini ser humano em perspectiva" | `no_people` nos contratos 1 e 8; prompt de situação sem a frase por default |
+| **B11** | `"No people unless they appear in the reference image."` deixa de ser fixo e vira **checkbox opcional** (`no_people`) — na base a aula até imagina "um mini ser humano em perspectiva" | `no_people` no **contrato 8** (é onde o prompt é escrito); o fallback do contrato 1 nunca leva a frase |
 | **G3** | Os parâmetros do CLI e o hint usam `project.aspect_ratio` (default `16:9`), gravado pelo núcleo via `PATCH /api/projects/{pid}` | `aspect_ratio` deixa de ser constante `"16:9"` no contrato 1 e vira opcional nos contratos 5 e 6 |
 | **wave 2** | Novo hook `studio/etapas/base/guide.py` (leitura pura) publicado pelo núcleo em `GET /api/projects/{pid}/guide[/base]` | contrato 10 |
 
@@ -601,11 +601,14 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
   "palette": {"colors": ["#0ff0ff", "#1a1a2e"], "note": "neon frio"},
   "mood_files": ["mood/selected/ab12cd34ef56.png"],
   "claude": true,
+  "modes": ["images", "brief", "template"],
+  "label_count": 3,
   "refs": [{
     "ref_id": "9f8e7d6c5b4a",
     "file": "refs/brainstorming/9f8e7d6c5b4a.jpg",
     "prompt": "…",
     "prompt_source": "claude",
+    "prompt_mode": "images",
     "bot_instruction": "I will show you an image. Write the prompt for an image identical to this one, but the subject is energetico Gelo Zero. …"
   }],
   "label_prompt": null, "label_prompt_ready": false,
@@ -632,21 +635,30 @@ e `tests/test_base_*`. `studio/common/prompter.py` é **consumido**, nunca alter
   referência**, sem o brief do projeto e sem o mood — é o equivalente local da aba nova do bot.
 - `no_people: true` acrescenta `"No people unless they appear in the reference image."` ao prompt.
 - 200: entrada gravada no topo de `base/prompts.json` (histórico de 50) e devolvida com
-  `{ref_id, mode, instruction, no_bias, no_people, prompt, negative, camera, notes_pt, source, seconds, images, created}`.
+  `{ref_id, ref_file, mode, instruction, no_bias, no_people, model, aspect_ratio, prompt, negative,
+  camera, notes_pt, source, seconds, images, created}` — `ref_file`, `model` e `aspect_ratio` são o
+  contexto em que o prompt foi escrito, para o histórico ser lido sozinho.
 - 404 projeto inexistente · 422 `ref_id` desconhecido, `mode` inválido, sem ref/mood
   · 409 Claude CLI indisponível nos modos `images`/`brief` · 502 falha do Claude (JSON inválido, timeout).
 
 **Contrato 9 (novo): `GET /api/projects/{pid}/base/prompts/history`** — lista (mais recente primeiro)
 das entradas de `base/prompts.json`. 200 sempre (lista vazia quando não há histórico).
 
+**Contrato 9b (novo): `GET /api/projects/{pid}/base/prompter`** — `{available_claude, modes,
+max_images}`. É o que a tela usa para desabilitar os modos que dependem do Claude antes de o usuário
+clicar. 200 · 404 (projeto inexistente).
+
 **Contratos 3/4/5 (alterados): imports** devolvem `warnings: [str]` além de `added`/`scanned`/`jobs`.
 Em `kind=upscale` a largura de cada candidata nova é comparada à da candidata de origem (a
 selecionada mais avançada entre situação e rótulo): fora de **1,8×–2,2×** entra um aviso
 `"a aula pede upscale 2x (…)"`. Aviso **nunca** falha o import.
 
-**Contratos 6/7 (alterados): `cost` e `generate`** — `count` e `aspect_ratio` viram opcionais.
-`count` ausente usa o default do passo (`situation` 1, `label` **3**, `upscale` 1);
-`aspect_ratio` ausente usa `project.aspect_ratio` (default `16:9`).
+**Contratos 6/7 (alterados): `cost` e `generate`** — `count` e `aspect_ratio` viram opcionais e há um
+campo novo `prompt`. `count` ausente usa o default do passo (`situation` 1, `label` **3**,
+`upscale` 1); `aspect_ratio` ausente usa `project.aspect_ratio` (default `16:9`); `prompt` não vazio é
+o **texto editado na tela** (B4) e vence o histórico/template. Em `kind=situation` o `prompt`
+sobrescreveria o prompt de **todas** as referências do job — por isso a tela só o manda em
+`kind=label`, onde a instrução é única.
 
 **Contrato 10 (novo): `studio/etapas/base/guide.py::guide(pid) -> dict`** — hook de leitura pura
 consumido por `GET /api/projects/{pid}/guide` e `…/guide/base` (contrato do preparo). Conteúdo:
@@ -693,7 +705,10 @@ Sem Claude no PATH, "Gerar prompt" cai no modo `template` (determinístico) e a 
 | Claude CLI ausente em `mode=images|brief` | 409 "Claude CLI indisponível — use o modo template…" |
 | Claude devolve JSON inválido / estoura o timeout | 502 |
 | Upscale importado fora de 1,8×–2,2× | 200 com `warnings` (nunca bloqueia) |
-| `guide.py` levantando | núcleo devolve `generic_guide` com `status: "unknown"` (bug da frente, não caminho aceitável) |
+| `guide.py` levantando | núcleo devolve `generic_guide` com `status: "unknown"` (bug da frente, não caminho aceitável); leituras de JSON do projeto passam por wrapper que devolve o default |
+| `mode` fora do `Literal` do router | 422 do **Pydantic**, com `detail` em formato de **lista** (os demais 422 da etapa usam `detail` string) |
+| Imagem da referência sumiu entre o `GET` e o `POST` | 422 "imagem indisponível: …" (`FileNotFoundError` do `prompter`) |
+| `cost`/`generate` sem CLI instalado (ou sem login, em `generate`) | **409 antes** do 422 do pré-requisito — o router checa o CLI primeiro (comportamento da wave 1, §12 item 12). Na prática, o 422 de `mood/selected/` vazio em `generate(situation)` só aparece com o CLI logado |
 
 #### 13.5 Critérios de aceite (delta da seção 9)
 
