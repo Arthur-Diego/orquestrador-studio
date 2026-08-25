@@ -1,0 +1,86 @@
+<header class="stephead">
+  <span class="eyebrow">Etapa 4 · aula 010</span>
+  <h2>Storyboard</h2>
+  <p class="lede">A imagem base vira história. Use a base para ter ideias na interface da Higgsfield — desenhe por cima (Draw to Edit), edite <b>uma instrução por vez</b>, peça outro ângulo (Multi Shot) — importe o que gostou e escreva a história em ~5 cenas. Escreva as instruções em inglês (aula 007).</p>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>1. Ideias a partir da imagem base</h3>
+    <div class="row wrap">
+      <span id="sbBaseChip" class="chip">base: ?</span>
+      <span id="sbCounts" class="chip">0 ideias · 0 escolhidas</span>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="col">
+      <img id="sbBase" class="hidden" alt="imagem base da campanha" style="max-width:100%;border-radius:8px">
+      <p id="sbBaseWarn" class="fine hidden">Sem <code>base/base_final.png</code>: conclua a etapa 3 para liberar as instruções. Importar ideias e escrever cenas continua funcionando.</p>
+    </div>
+    <div class="col">
+      <div class="row wrap">
+        <select id="sbKind"></select>
+        <select id="sbPreset"><option value="">— fórmulas da aula —</option></select>
+      </div>
+      <div class="prompt">
+        <div class="row"><span class="eyebrow">Instrução (inglês)</span><span id="sbKindHint" class="fine"></span></div>
+        <textarea id="sbText" rows="3" placeholder="Make the climber even smaller and more realistic"></textarea>
+      </div>
+      <div class="row wrap">
+        <button id="sbGen4" class="primary">Gerar 4 (estou incerto)</button>
+        <button id="sbGen1">Gerar 1 (é só um tweak)</button>
+      </div>
+      <div class="prompt">
+        <div class="row"><span class="eyebrow">Cole isto na Higgsfield</span><button id="sbCopy" class="ghost">Copiar</button><span id="sbCopied" class="ok"></span></div>
+        <textarea id="sbInstruction" rows="3" readonly placeholder="a instrução montada aparece aqui"></textarea>
+        <p id="sbHint" class="fine"></p>
+      </div>
+    </div>
+  </div>
+  <div class="row wrap cli">
+    <span id="sbHfState" class="chip">CLI: ?</span>
+    <select id="sbModel"><option value="nano_banana_2">Nano Banana Pro</option><option value="gpt_image_2">GPT Image 2</option></select>
+    <button id="sbCliGen" disabled>Gerar via CLI (gasta créditos)</button>
+    <span id="sbJobLog" class="mono fine"></span>
+    <span class="fine">Draw to Edit só existe na interface (o desenho é seu).</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h3>2. Importar as ideias que você gerou</h3></div>
+  <div class="row wrap">
+    <label class="drop" id="sbDrop">Arraste imagens aqui ou <input id="sbUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
+    <div class="col">
+      <button id="sbBtnDownloads">Importar da pasta Downloads</button>
+      <label class="inline">últimos <input id="sbMinutes" type="number" value="120" min="5"> min</label>
+    </div>
+    <div class="col">
+      <button id="sbBtnHistory">Importar do histórico Higgsfield</button>
+      <span class="fine">precisa de login no CLI</span>
+    </div>
+  </div>
+  <p class="fine">A instrução em uso é gravada junto com cada ideia importada (rastreabilidade).</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>3. Escolher as ideias do storyboard</h3>
+    <button id="sbUse" class="primary">Usar no storyboard</button>
+  </div>
+  <div id="sbGallery" class="gallery"></div>
+  <p class="fine">As escolhidas são copiadas para <code>storyboard/ideas/</code> e ficam disponíveis para anexar às cenas.</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>4. A história em cenas</h3>
+    <div class="row wrap">
+      <button id="sbAdd" class="ghost">+ cena</button>
+      <button id="sbSave" class="primary">Salvar cenas</button>
+      <button id="sbRender">Gerar storyboard.md</button>
+      <a id="sbMd" class="hidden" target="_blank" rel="noopener">abrir storyboard.md</a>
+    </div>
+  </div>
+  <div id="sbScenes" class="col"></div>
+  <p class="fine">A aula 010 escreve ~5 cenas em texto ("cena 1: close no astronauta…"). Salvar grava <code>storyboard/scenes.json</code> e regrava <code>storyboard/storyboard.md</code>.</p>
+</section>
