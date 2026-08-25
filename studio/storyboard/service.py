@@ -125,15 +125,22 @@ def presets() -> dict:
             "presets": PRESETS, "suffix": SUFFIX, "counts": dict(COUNTS)}
 
 
+def _sentences(text: str) -> list[str]:
+    """Frases da instrução. O ponto separa instruções; o ponto-e-vírgula NÃO — ele liga
+    oração de contexto e pedido dentro de uma única instrução, como no preset de inpaint da
+    aula 010 ("há uma corda pendurada...; deixe ela mais fina")."""
+    return [s.strip(" .") for s in re.split(r"\.", _NUMBERED.sub(".", text)) if s.strip(" .")]
+
+
 def _first_instruction(text: str) -> str:
     """A primeira instrução de um texto que trouxe várias — vira sugestão na mensagem de erro."""
-    parts = [p.strip(" .;") for p in re.split(r"[.;]", _NUMBERED.sub("|", text).replace("|", ".")) if p.strip(" .;")]
+    parts = _sentences(text)
     return parts[0] if parts else text.strip()
 
 
 def _check_single_instruction(text: str) -> None:
     """Aula 010: uma instrução por vez. Lista numerada com 2+ itens ou 2+ frases é recusada."""
-    if len(_NUMBERED.findall(text)) >= 2 or len([s for s in re.split(r"[.;]", text) if s.strip()]) >= 2:
+    if len(_NUMBERED.findall(text)) >= 2 or len(_sentences(text)) >= 2:
         raise Invalid(f"Uma instrução por vez (aula 010): envie apenas '{_first_instruction(text)}'")
 
 
@@ -409,4 +416,5 @@ def start_generate(pid: str, model: str, kind: str, text: str, count: int = 4, s
 
 
 def job_status(pid: str) -> dict:
-    return _registry.status(pid)
+    """Estado do job sempre no formato do contrato — o registry devolve só `state` quando idle."""
+    return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], **_registry.status(pid)}

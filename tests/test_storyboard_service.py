@@ -71,6 +71,22 @@ def test_instruction_requires_base_image_from_step_three(sb, project):
     assert sb.status(project)["has_base"] is False
 
 
+def test_every_published_preset_is_accepted_by_the_validator(sb, project, base):
+    """Contrato 2 x contrato 3: a fórmula que a etapa publica não pode ser recusada por ela mesma.
+    O preset de inpaint da aula usa ponto-e-vírgula ligando contexto e pedido — é UMA instrução."""
+    for preset in sb.presets()["presets"]:
+        r = sb.build_instruction(project, preset["kind"], preset["text"], 4)
+        assert r["instruction"], preset["label"]
+
+
+def test_semicolon_joins_one_instruction_but_period_separates(sb, project, base):
+    ok = "There is a rope hanging from the top of the can; make it thinner and realistic"
+    assert sb.build_instruction(project, "edit", ok, 1)["instruction"].startswith("There is a rope")
+    for two in ("Make it smaller. Remove the rope.", "Make it smaller. Remove the rope"):
+        with pytest.raises(sb.Invalid):
+            sb.build_instruction(project, "edit", two, 1)
+
+
 def test_presets_are_in_english_with_ptbr_labels(sb):
     p = sb.presets()
     assert p["counts"] == {"uncertain": 4, "tweak": 1}

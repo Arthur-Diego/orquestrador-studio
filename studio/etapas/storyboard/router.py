@@ -87,8 +87,6 @@ async def storyboard_upload(pid: str, files: list[UploadFile] = File(...), promp
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, f"{f.filename}: arquivo acima de 25 MB")
         payload.append((f.filename or "upload.png", data))
-    if not payload:
-        raise HTTPException(422, "Envie pelo menos uma imagem.")
     return sb.import_upload(pid, payload, prompt)
 
 
