@@ -193,7 +193,10 @@ def mood_generate(pid: str, req: MoodGenReq):
         raise HTTPException(409, "CLI da Higgsfield não instalado")
     root = service.project_dir(pid)
     refs = [str(p) for p in sorted((root / "refs" / "brainstorming").glob("*.jpg"))[:6]] if req.use_refs else None
-    return mood.start_generate(pid, req.model, req.prompts, req.aspect_ratio, req.resolution, req.count, refs)
+    try:
+        return mood.start_generate(pid, req.model, req.prompts, req.aspect_ratio, req.resolution, req.count, refs)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @app.get("/api/projects/{pid}/mood/job")

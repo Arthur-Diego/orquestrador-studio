@@ -40,6 +40,7 @@ def _default_downloads() -> Path:
 DOWNLOADS_DEFAULT = _default_downloads()
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 _jobs: dict[str, dict] = {}
+_lock = threading.Lock()
 
 
 # ---------- prompts ----------
@@ -178,8 +179,11 @@ def import_history(pid: str, size: int = 50) -> dict:
 def start_generate(pid: str, model: str, prompts: list[str], aspect_ratio: str = "16:9", resolution: str = "2k",
                    count: int = 2, refs: list[str] | None = None) -> dict:
     root = project_dir(pid)
-    job = {"state": "running", "done": 0, "total": len(prompts), "added": 0, "error": None, "log": []}
-    _jobs[pid] = job
+    with _lock:
+        if _jobs.get(pid, {}).get("state") == "running":
+            raise RuntimeError("Já existe uma geração em andamento para este projeto.")
+        job = {"state": "running", "done": 0, "total": len(prompts), "added": 0, "error": None, "log": []}
+        _jobs[pid] = job
 
     def run():
         try:
@@ -233,6 +237,8 @@ def select(pid: str, ids: list[str], note: str = "") -> dict:
     root = project_dir(pid)
     cands = load(pid)
     chosen = set(ids)
+    if len(chosen) > 8:
+        raise ValueError("Mood board é uma vibe só: escolha até 8 imagens no mesmo mood (aula 009).")
     sdir = root / "mood" / "selected"
     sdir.mkdir(parents=True, exist_ok=True)
     for old in sdir.iterdir():
@@ -241,8 +247,6 @@ def select(pid: str, ids: list[str], note: str = "") -> dict:
     lines = ["# Mood board", "", f"Escolhido em {datetime.now():%Y-%m-%d %H:%M}.", ""]
     if note:
         lines += [f"**Vibe em palavras:** {note}", ""]
-    if len(chosen) > 8:
-        raise ValueError("Mood board é uma vibe só: escolha até 8 imagens no mesmo mood (aula 009).")
     for c in cands:
         c["selected"] = c["id"] in chosen
         if c["selected"]:

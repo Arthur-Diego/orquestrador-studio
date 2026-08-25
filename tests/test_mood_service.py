@@ -78,3 +78,31 @@ def test_select_writes_palette_and_md_and_caps_at_eight(studio_env, project):
     assert "Mood board" in (root / "mood" / "mood.md").read_text()
     with pytest.raises(ValueError):
         mood.select(project, ids[:9])
+
+
+def test_select_over_cap_keeps_previous_selection(studio_env, project):
+    mood = studio_env["mood"]
+    mood.import_upload(project, [(f"{i}.png", image_bytes(color=(20 * i, 50, 90))) for i in range(10)])
+    ids = [c["id"] for c in mood.load(project)]
+    mood.select(project, ids[:2])
+    with pytest.raises(ValueError):
+        mood.select(project, ids[:9])
+    root = studio_env["refs"].project_dir(project)
+    assert len(list((root / "mood" / "selected").iterdir())) == 2, "seleção válida anterior não pode ser destruída"
+    assert sum(c["selected"] for c in mood.load(project)) == 2
+
+
+def test_start_generate_refuses_concurrent_job(studio_env, project, monkeypatch):
+    import threading
+    mood = studio_env["mood"]
+    gate = threading.Event()
+    monkeypatch.setattr(mood.hf, "generate", lambda *a, **k: (gate.wait(5), {"urls": [], "id": "x", "raw": {}})[1])
+    mood.start_generate(project, "nano_banana_2", ["p"])
+    with pytest.raises(RuntimeError):
+        mood.start_generate(project, "nano_banana_2", ["p"])
+    gate.set()
+    for _ in range(50):
+        if mood.job_status(project)["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    assert mood.job_status(project)["state"] == "done"

@@ -932,3 +932,496 @@ python -m timeit -s "from studio.mood.service import grid_columns" "grid_columns
 ```
 
 Regras: mesma máquina, sem outros processos pesados, mínimo de 5 rounds, comparar média e desvio.
+
+## 17. Otimização
+
+### 17.1 Princípios
+
+- Meça antes (seção 15); nunca otimize por intuição.
+- Ataque as frutas baixas: algoritmo O(n²) -> O(n), I/O repetido, conversões desnecessárias.
+- Documente o trade-off no código quando a versão rápida for menos legível.
+- Objetivo é o suficiente: um endpoint local não precisa de microssegundos.
+
+### 17.2 Otimizações Comuns
+
+```python
+from functools import lru_cache
+from pathlib import Path
+
+
+@lru_cache(maxsize=256)                       # cache para leituras puras e repetidas
+def read_step_definition(step: int) -> dict[str, object]:
+    return json.loads((ROOT / "steps" / f"{step}.json").read_text(encoding="utf-8"))
+
+
+def iter_candidates(folder: Path):            # generator: não materializa a lista inteira
+    yield from (p for p in folder.iterdir() if p.suffix.lower() in {".jpg", ".png"})
+
+
+existing = {p.name for p in folder.iterdir()} # set para pertencimento O(1)
+missing = [n for n in wanted if n not in existing]
+```
+
+- Lazy loading de módulos pesados dentro da função que os usa (Pillow, Playwright) reduz o tempo de start.
+- Reaproveite objetos caros (sessão de navegador, pool de threads) durante a vida do processo.
+- Batch de I/O: leia o JSON uma vez por requisição, não uma vez por item.
+
+### 17.3 Otimização de Memória
+
+- `__slots__` / `dataclass(slots=True)` em objetos criados aos milhares.
+- Generators e `itertools` em vez de listas intermediárias.
+- Processe imagens em streaming (`Image.thumbnail` in-place) e feche-as com `with Image.open(...)`.
+- `array`/`memoryview` para buffers binários; `bytes` imutável para constantes.
+
+### 17.4 Performance Básica
+
+- Concatenação de strings em loop: `"".join(parts)`; nunca `s += x`.
+- f-strings são mais rápidas e legíveis que `%` e `.format()`.
+- Prefira compreensões a `map`/`filter` com lambda; prefira `for` a compreensão quando há efeito colateral.
+- Variáveis locais são mais rápidas que globais em loops quentes; atribua `append = out.append`.
+- Interpretador 3.12 com `PYTHONOPTIMIZE` não é ganho real; ganhos vêm de algoritmo e I/O.
+
+## 18. Segurança
+
+### 18.1 Práticas Essenciais
+
+- Segredos em variáveis de ambiente ou `.env` fora do git; nunca no código nem em `projects/`.
+- Valide toda entrada externa (HTTP, arquivos JSON, argumentos de CLI) na fronteira.
+- Comunicações externas apenas via HTTPS; verifique certificados (não use `verify=False`).
+- Rate limiting em endpoints que disparam jobs pesados ou automação de navegador.
+- Dependências atualizadas e auditadas (`pip-audit`); fixe versões no lockfile.
+- Princípio do menor privilégio: processo sem root no container, tokens com escopo mínimo.
+
+```python
+import os
+import secrets
+
+API_TOKEN = os.environ.get("STUDIO_API_TOKEN") or secrets.token_urlsafe(32)
+
+
+def safe_project_dir(project_id: str) -> Path:
+    """Reject path traversal such as '../../etc' before touching the filesystem."""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,63}", project_id):
+        raise ValueError(f"invalid project id: {project_id!r}")
+    resolved = (PROJECTS_DIR / project_id).resolve()
+    if not resolved.is_relative_to(PROJECTS_DIR.resolve()):
+        raise ValueError("project id escapes the projects directory")
+    return resolved
+```
+
+### 18.2 Ferramentas
+
+```bash
+pip install pip-audit bandit
+pip-audit -r requirements.txt            # CVEs conhecidos nas dependências
+bandit -r studio -ll                     # análise estática de padrões inseguros
+ruff check --select S studio             # regras flake8-bandit embutidas no ruff
+```
+
+### 18.3 Segurança nas Fronteiras da API
+
+- Cópia defensiva: devolva `list(self._items)`/`dict(...)`, não a coleção interna.
+- Sanitize nomes de arquivo recebidos (`Path(name).name`, sem separadores) antes de gravar.
+- `subprocess.run([...], shell=False)` sempre com lista de argumentos; nunca `shell=True` com entrada do usuário.
+- `json.loads` em vez de `eval`/`pickle` para dados externos; `yaml.safe_load` se usar YAML.
+- Limite tamanho de upload e tempo de execução de jobs (timeouts) para evitar exaustão de recursos.
+
+## 19. Padrões de Código
+
+### 19.1 Early Return
+
+```python
+# Ruim: aninhamento profundo
+def next_step_bad(state):
+    if state:
+        if state["status"] == "done":
+            if state["step"] < 8:
+                return state["step"] + 1
+    return None
+
+
+# Bom: guardas primeiro, caminho feliz no fim
+def next_step(state: dict[str, object] | None) -> int | None:
+    if not state:
+        return None
+    if state["status"] != "done":
+        return None
+    if state["step"] >= 8:
+        return None
+    return state["step"] + 1
+```
+
+### 19.2 Separação de Responsabilidades
+
+Lógica pura (decide) separada de I/O (lê/grava). Facilita testes sem filesystem ou rede.
+
+```python
+def choose_grid_layout(count: int) -> tuple[int, int]:      # puro: testável sem disco
+    cols = math.ceil(math.sqrt(count))
+    return cols, math.ceil(count / cols)
+
+
+def write_grid(images: list[Path], output: Path) -> Path:   # I/O: fino, delega o cálculo
+    cols, rows = choose_grid_layout(len(images))
+    return compose(images, cols, rows, output)
+```
+
+### 19.3 DRY
+
+- Extraia quando a duplicação aparecer pela terceira vez e tiver o mesmo motivo para mudar.
+- Duplicação acidental (dois códigos parecidos com razões diferentes) não deve ser unificada.
+- Prefira funções pequenas a classes utilitárias genéricas; evite `utils.py` que cresce sem limite.
+
+### 19.4 Escopo de Variáveis
+
+- Declare a variável o mais perto possível do uso; não reutilize o mesmo nome para valores diferentes.
+- Evite estado global mutável; se inevitável (registro de jobs), encapsule em módulo com lock (seção 9).
+- Variáveis de loop não devem vazar significado para fora do loop; extraia para função se precisar.
+- Use `match` (3.10+) para despacho por estrutura em vez de cadeias de `if isinstance`.
+
+## 20. Gerenciamento de Dependências
+
+### 20.1 Princípios
+
+- Biblioteca padrão primeiro: `pathlib`, `json`, `logging`, `dataclasses`, `concurrent.futures`, `sqlite3`.
+- Só adicione dependência mantida ativamente, com release nos últimos 12 meses e licença compatível.
+- Minimalismo: cada dependência é superfície de ataque e custo de atualização.
+- Versionamento explícito: `pacote>=X.Y,<X+1` em `requirements.txt`; versões exatas no lockfile.
+- Dependências de dev separadas (`requirements-dev.txt`) das de runtime.
+
+### 20.2 Comandos
+
+```bash
+pip list --outdated                        # o que pode ser atualizado
+pip-audit -r requirements.txt              # vulnerabilidades conhecidas
+pip install --upgrade -r requirements.txt  # atualizar respeitando os ranges
+pip freeze > requirements.lock             # congelar o ambiente testado
+pip check                                  # conflitos de dependências instaladas
+pip uninstall -y pacote-nao-usado          # limpeza
+```
+
+Rotina mensal: `pip list --outdated` + `pip-audit`, atualizar em branch própria e rodar `make verify`.
+
+## 21. Comentários e Documentação
+
+### 21.1 Comentários no Código
+
+Comente o "porquê" (decisão, restrição, referência à aula do curso), nunca o "o quê".
+
+```python
+# Ruim: repete o código
+# incrementa o passo
+step += 1
+
+# Bom: explica a razão
+# A aula 009 ensina 1 prompt de vibe x grid de 4; por isso o limite fixo, e não 6 tipos de prompt.
+MOOD_GRID_SIZE = 4
+```
+
+- Marque extensões que o curso não ensina com `# [extensão]` (regra do repositório).
+- Remova código comentado; o git guarda o histórico.
+
+### 21.2 Documentação de API
+
+Docstrings no estilo Google (PEP 257): resumo imperativo em uma linha, linha em branco, seções
+`Args`, `Returns`, `Raises`. Tipos ficam nas anotações, não no docstring.
+
+```python
+def compose_grid(images: list[Path], output: Path, *, cols: int | None = None) -> Path:
+    """Compose the given images into a single grid image.
+
+    Args:
+        images: Source images, in reading order (left-to-right, top-to-bottom).
+        output: Destination file; parent directory must exist.
+        cols: Number of columns; computed from ``len(images)`` when omitted.
+
+    Returns:
+        The path to the written grid image (same as ``output``).
+
+    Raises:
+        ValueError: If ``images`` is empty.
+        OSError: If ``output`` cannot be written.
+    """
+```
+
+Ferramentas: `ruff check --select D` (pydocstyle), `pdoc` ou `mkdocs` para gerar HTML.
+
+### 21.3 Documentação de Pacotes
+
+- Docstring de módulo na primeira linha do arquivo descrevendo o papel do módulo (uma ou duas frases).
+- `__init__.py` do domínio lista a API pública em `__all__` e explica a etapa do curso que implementa.
+- `README.md` na raiz: como instalar, rodar e testar; documentos de design em `docs/` (HLD, FDD, ADR).
+- Decisões de desvio da aula viram ADR em `docs/adrs/`, nunca comentário solto.
+
+## 22. Banco de Dados
+
+### 22.1 Abordagem
+
+| Abordagem | Prós | Contras |
+|-----------|------|---------|
+| SQL puro (`sqlite3`, psycopg) | controle total, zero dependências | repetição, mapeamento manual |
+| Query builder (SQLAlchemy Core) | composição segura de queries | camada extra a aprender |
+| ORM (SQLAlchemy ORM, SQLModel) | produtividade, migrações integradas | consultas implícitas (N+1), abstração vaza |
+
+> **Nota do projeto**: o `orquestrador-studio` não usa banco de dados. A persistência é em
+> arquivos JSON sob `projects/<id>/` (estado, jobs, manifestos), gravados atomicamente
+> (`write_text` em arquivo temporário + `os.replace`). Os exemplos abaixo com `sqlite3` (stdlib)
+> servem de referência caso o projeto precise de consultas estruturadas no futuro.
+
+### 22.2 Conexão e Driver
+
+```python
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+
+
+@contextmanager
+def open_db(path: Path, *, timeout_s: float = 5.0):
+    """Open a SQLite connection with sane defaults and guaranteed cleanup."""
+    conn = sqlite3.connect(path, timeout=timeout_s, isolation_level=None)  # autocommit; transações explícitas
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield conn
+    finally:
+        conn.close()
+```
+
+Consultas parametrizadas, iteração e transação explícita:
+
+```python
+def insert_job(conn: sqlite3.Connection, job_id: str, project_id: str, status: str) -> None:
+    with conn:                                   # BEGIN ... COMMIT (ROLLBACK em exceção)
+        conn.execute(
+            "INSERT INTO jobs (job_id, project_id, status) VALUES (?, ?, ?)",
+            (job_id, project_id, status),        # binding seguro: nunca f-string no SQL
+        )
+
+
+def list_jobs(conn: sqlite3.Connection, project_id: str) -> list[dict[str, object]]:
+    cursor = conn.execute(
+        "SELECT job_id, status, created_at FROM jobs WHERE project_id = :pid ORDER BY created_at",
+        {"pid": project_id},
+    )
+    return [dict(row) for row in cursor]        # itera sem carregar tudo antes da conversão
+```
+
+Pool: para SQLite, uma conexão por thread (`threading.local`); para PostgreSQL, `psycopg_pool.ConnectionPool(min_size=1, max_size=10)`.
+
+### 22.3 Migrações
+
+- Migrações são scripts versionados e idempotentes (`migrations/0001_create_jobs.sql`) aplicados em ordem.
+- Registre a versão aplicada em uma tabela `schema_version`; o app verifica no start.
+- Ecossistema: `alembic` (SQLAlchemy) ou `yoyo-migrations` para SQL puro.
+- No modelo JSON deste projeto, migração é uma função `migrate_state(state: dict) -> dict` guiada por `state["schema_version"]`.
+
+```python
+def apply_migrations(conn: sqlite3.Connection, folder: Path) -> None:
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)")
+    current = conn.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version").fetchone()[0]
+    for script in sorted(folder.glob("*.sql")):
+        version = int(script.name.split("_", 1)[0])
+        if version > current:
+            with conn:
+                conn.executescript(script.read_text(encoding="utf-8"))
+                conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+```
+
+### 22.4 Boas Práticas
+
+- Sempre parâmetros (`?` ou `:nome`); concatenação de strings em SQL é proibida.
+- Índices para colunas filtradas com frequência (`CREATE INDEX idx_jobs_project ON jobs(project_id)`).
+- Reutilize conexões (pool ou `threading.local`); abrir conexão por query é caro.
+- Transações explícitas (`with conn:`) envolvendo todas as escritas relacionadas.
+- Trate `sqlite3.OperationalError: database is locked` com `timeout` e retry com backoff curto.
+- Feche cursores e conexões com `with`/`finally`; nunca dependa do garbage collector.
+
+## 23. Logs e Observabilidade
+
+### 23.1 Níveis de Log
+
+| Nível | Uso |
+|-------|-----|
+| `DEBUG` | detalhes de fluxo para diagnóstico (caminhos, contagens, payloads truncados) |
+| `INFO` | eventos normais de negócio (job iniciado, etapa concluída) |
+| `WARNING` | situação inesperada mas recuperada (retry, fallback, arquivo ausente opcional) |
+| `ERROR` | falha em uma operação; a aplicação continua |
+| `CRITICAL` | falha que impede o processo de continuar |
+
+Python não tem `FATAL` separado (`FATAL == CRITICAL`). Use `logger.exception()` dentro de `except` para incluir o traceback.
+
+### 23.2 Logs Estruturados
+
+Logs estruturados (JSON, chave-valor) são consultáveis por máquina. Implementação com stdlib:
+
+```python
+import json
+import logging
+import os
+import sys
+from datetime import UTC, datetime
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+            "thread": record.threadName,
+        }
+        for key in ("project_id", "job_id", "request_id", "step"):
+            if hasattr(record, key):
+                payload[key] = getattr(record, key)
+        if record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def configure_logging(level: str | None = None) -> None:
+    handler = logging.StreamHandler(sys.stdout)           # stdout: Docker/uvicorn capturam
+    handler.setFormatter(JsonFormatter())
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(level or os.environ.get("LOG_LEVEL", "INFO"))
+    logging.getLogger("urllib3").setLevel(logging.WARNING)  # silencia bibliotecas verbosas
+```
+
+Para arquivo com rotação: `logging.handlers.RotatingFileHandler(STATE_DIR / "studio.log", maxBytes=5_000_000, backupCount=3)`.
+
+### 23.3 Implementação de Logging
+
+Um logger por módulo (`logging.getLogger(__name__)`), contexto via `extra=` ou `contextvars`
+(funciona em threads e asyncio) injetado por um `Filter`:
+
+```python
+import contextvars
+import logging
+import uuid
+
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+logger = logging.getLogger(__name__)
+
+
+class ContextFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
+
+
+logging.getLogger().addFilter(ContextFilter())
+
+
+def handle_run_step(project_id: str, step: int) -> str:
+    request_id_var.set(uuid.uuid4().hex[:12])
+    job_id = uuid.uuid4().hex[:8]
+    logger.info("job started", extra={"project_id": project_id, "job_id": job_id, "step": step})
+    try:
+        run_step(project_id, step)
+    except StudioError:
+        logger.exception("job failed", extra={"project_id": project_id, "job_id": job_id})
+        raise
+    logger.info("job finished", extra={"job_id": job_id})
+    return job_id
+```
+
+Saída (uma linha por evento):
+
+```json
+{"ts": "2026-08-25T03:10:42.118+00:00", "level": "INFO", "logger": "studio.mood.service", "msg": "job started", "thread": "job-a1b2c3d4", "project_id": "2026-08-gelo-zero", "job_id": "a1b2c3d4", "step": 2}
+```
+
+### 23.4 Métricas e Observabilidade
+
+- Instrumente fronteiras: latência por rota, duração de job, contagem de erros por etapa, uso de disco em `projects/`.
+- Exponha `GET /health` (processo vivo), `GET /ready` (Chromium e diretórios disponíveis) e `GET /metrics`.
+- Formato Prometheus é texto simples; com stdlib basta montar as linhas em um `dict` de contadores protegido por lock.
+- Controle a cardinalidade de labels: `step` e `status` sim; `project_id` e `job_id` não (vão para o log).
+- Meça com `time.perf_counter()` ao redor de I/O e registre `duration_ms` no log estruturado.
+
+## 24. Regras de Ouro
+
+1. **Simplicidade**: código idiomático e direto; `ruff format` decide o estilo, o PEP 20 decide o desenho.
+2. **Erros explícitos**: exceções de domínio com contexto, `raise ... from exc`, nunca `except: pass`.
+3. **Testes**: todo comportamento tem teste em `tests/`; `pytest -m "not integration"` roda em segundos.
+4. **Documentação**: docstrings Google em toda API pública; decisões de desvio viram ADR.
+5. **Performance medida**: perfil antes, benchmark depois; nenhuma otimização sem número.
+6. **Tipos em tudo**: anotações PEP 484 verificadas por `mypy`; `Any` só na fronteira.
+7. **Fidelidade ao método**: a aula do curso é a fonte de verdade; extensões ficam marcadas `[extensão]`.
+
+## 25. Checklist Pré-Commit
+
+### Código
+- [ ] `ruff format studio tests` aplicado
+- [ ] `ruff check studio tests` sem erros
+- [ ] `mypy studio` sem erros novos
+- [ ] Aplicação sobe (`make run`) e responde em `/health`
+
+### Testes
+- [ ] `pytest` verde
+- [ ] Cobertura >= 70% no código de domínio (`pytest --cov=studio`)
+- [ ] Testes de integração executados quando a mudança toca rotas ou filesystem
+- [ ] Benchmarks comparados quando a mudança toca composição de imagens ou jobs
+
+### Qualidade
+- [ ] Erros tratados explicitamente, com contexto
+- [ ] Recursos fechados (`with` para arquivos, navegador, conexões)
+- [ ] Nenhum segredo ou caminho absoluto pessoal no código
+- [ ] `pip-audit` sem vulnerabilidades críticas
+
+### Documentação
+- [ ] Funções e classes públicas com docstring
+- [ ] `README.md` e HLD/FDD atualizados se o comportamento mudou
+- [ ] Comentários explicam o "porquê"; extensões marcadas `[extensão]`
+
+### Docker (se aplicável)
+- [ ] `docker compose build` sem erros
+- [ ] `docker compose up -d` sobe e o healthcheck fica saudável
+- [ ] Testes passam dentro do container (`docker compose exec studio pytest`)
+
+## 26. Referências
+
+### Documentação Oficial
+- Python 3.12 - What's New: https://docs.python.org/3/whatsnew/3.12.html
+- PEP 8 - Style Guide for Python Code: https://peps.python.org/pep-0008/
+- PEP 257 - Docstring Conventions: https://peps.python.org/pep-0257/
+- PEP 484 - Type Hints: https://peps.python.org/pep-0484/
+- PEP 695 - Type Parameter Syntax: https://peps.python.org/pep-0695/
+- typing module: https://docs.python.org/3/library/typing.html
+- logging HOWTO e Cookbook: https://docs.python.org/3/howto/logging-cookbook.html
+- sqlite3: https://docs.python.org/3/library/sqlite3.html
+- asyncio e threading: https://docs.python.org/3/library/asyncio.html, https://docs.python.org/3/library/threading.html
+- Google Python Style Guide: https://google.github.io/styleguide/pyguide.html
+
+### Ferramentas Essenciais
+- pip: https://pip.pypa.io
+- ruff (formatter + linter): https://docs.astral.sh/ruff/
+- black (alternativa de formatador): https://black.readthedocs.io
+- mypy: https://mypy.readthedocs.io
+- pytest: https://docs.pytest.org/en/stable/
+- pip-audit: https://github.com/pypa/pip-audit
+- bandit: https://bandit.readthedocs.io
+
+### Testes e Performance
+- pytest-cov: https://pytest-cov.readthedocs.io
+- pytest-benchmark: https://pytest-benchmark.readthedocs.io
+- locust: https://docs.locust.io
+- py-spy: https://github.com/benfred/py-spy
+- testcontainers-python: https://testcontainers-python.readthedocs.io
+- cProfile e tracemalloc: https://docs.python.org/3/library/profile.html, https://docs.python.org/3/library/tracemalloc.html
+
+### Stack do Projeto
+- FastAPI: https://fastapi.tiangolo.com/release-notes/
+- Pydantic: https://docs.pydantic.dev
+- Playwright for Python: https://playwright.dev/python/
+- Pillow: https://pillow.readthedocs.io
+
+### Comunidade
+- Python Discourse: https://discuss.python.org
+- Python Packaging User Guide: https://packaging.python.org
+- Awesome Python: https://github.com/vinta/awesome-python
+- Real Python: https://realpython.com
