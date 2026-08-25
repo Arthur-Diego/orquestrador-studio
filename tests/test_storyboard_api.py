@@ -63,6 +63,14 @@ def test_upload_import_counts_skipped_and_dedupes(client, pid):
     assert all(i["thumb"].startswith("storyboard/candidates/thumbs/") for i in ideas)
 
 
+def test_upload_above_the_limit_is_rejected(client, pid, monkeypatch):
+    from studio.etapas.storyboard import router as sb_router
+    monkeypatch.setattr(sb_router, "MAX_UPLOAD_BYTES", 10)
+    r = client.post(f"/api/projects/{pid}/storyboard/import/upload",
+                    files=[("files", ("grande.png", image_bytes(), "image/png"))])
+    assert r.status_code == 413 and "25 MB" in r.json()["detail"]
+
+
 def test_downloads_import_over_http(client, pid, studio_env):
     make_image(studio_env["tmp"] / "downloads" / "idea.png")
     r = client.post(f"/api/projects/{pid}/storyboard/import/downloads",
