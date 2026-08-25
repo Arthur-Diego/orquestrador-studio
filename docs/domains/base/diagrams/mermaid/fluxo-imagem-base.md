@@ -14,6 +14,7 @@ sequenceDiagram
     participant HF as UI da Higgsfield (fora do Studio)
 
     U->>V: abre a Etapa 3
+    V->>R: GET /api/higgsfield/status (chip do CLI) e GET /api/mood/downloads-folder (pasta padrão)
     V->>R: GET base/prompts, base/brand, base/candidates
     R->>S: prompts(pid)
     S->>FS: lê project.json, refs/candidates.json + brainstorming/, mood/palette.json, mood/selected/

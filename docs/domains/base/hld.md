@@ -23,7 +23,10 @@ via CLI existe como atalho pago, sempre com estimativa de créditos e confirmaç
 Dependências com outros domínios
 - `refs` (etapa 1): `refs/candidates/candidates.json` (`selected`) + `refs/brainstorming/<id>.jpg`.
 - `mood` (etapa 2): `mood/palette.json` (`colors`, `note`) e `mood/selected/*`.
-- núcleo: `project.json` (`product`) e `refs.service.project_dir` (valida o `pid`; `KeyError` → 404).
+- núcleo: `project.json` (`product`), `refs.service.project_dir` (valida o `pid`; `KeyError` → 404) e
+  `GET /api/higgsfield/status`, consumido pela tela para o chip de status do CLI.
+- `mood` também pela rota `GET /api/mood/downloads-folder`, que a tela reusa para exibir a pasta
+  padrão de Downloads (decisão registrada no contrato 5 do FDD: nenhuma rota duplicada).
 - `higgsfield`: `generate`, `download`, `history_media`, `cost`, `status`, `available`.
 - API transversal da wave 1: `studio/common/ingest.py` e `studio/common/jobs.py`.
 
@@ -56,7 +59,7 @@ Padrões adotados
 | `import_upload` / `import_downloads` / `import_history` | ingestão nas três fontes e marcação de `kind` + `ref_id` | `studio/common/ingest.py` |
 | `select()` | seleção exclusiva por passo, cadeia situação → rótulo → upscale, `base_final.png` e `base.md` | Pillow |
 | `estimate_cost` / `start_generate` / `job_status` | caminho pago: estimativa, job em thread (um por projeto), log por item, JSON bruto em `jobs/base_<id>.json` | `higgsfield`, `JobRegistry` |
-| `view.html` / `view.js` | quatro passos da aula na tela + bloco do CLI (chip de status, `confirm()` com a estimativa, progresso e log) | `studio/web/style.css`, `Studio.register` |
+| `view.html` / `view.js` | quatro passos da aula na tela + bloco do CLI (chip de status, `confirm()` com a estimativa, progresso e log) | `studio/web/style.css`, `Studio.register`, `GET /api/higgsfield/status`, `GET /api/mood/downloads-folder` |
 
 ---
 
@@ -114,7 +117,7 @@ Padrões adotados
 ### Observabilidade
 - `job["log"]`: uma linha por item (`[situation] ref=… model=… urls=… added=…`) e `erro: <stderr>`.
 - `jobs/base_<jobid>.json` com o JSON bruto do CLI, para diagnóstico do formato real.
-- Logger `studio.base` (INFO) em `select` e no fim de cada job.
+- Logger `studio.base` (INFO) no início e no fim de cada job e em `select`.
 - Sem métricas nem tracing (ferramenta local, ADR-001).
 
 ---

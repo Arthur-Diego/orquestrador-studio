@@ -383,9 +383,11 @@ def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[s
     items, text = _plan(root, kind, ref_ids, count)
     n = len(items) * (count if kind == "situation" else 1)
     model = model or DEFAULT_MODELS[kind]
-    params = {"aspect_ratio": aspect_ratio, "resolution": resolution}
+    params: dict = {}
     if text:
         params["prompt"] = text
+    if kind == "situation":     # mesmo corpo que start_generate manda ao CLI
+        params.update({"aspect_ratio": aspect_ratio, "resolution": resolution, "count": count})
     raw = hf.cost(model, params)
     per = raw.get("credits")
     total = per * n if isinstance(per, (int, float)) else None
@@ -399,6 +401,8 @@ def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[
     items, _ = _plan(root, kind, ref_ids, count)
     model = model or DEFAULT_MODELS[kind]
 
+    log.info("base: job início pid=%s kind=%s itens=%s model=%s", pid, kind, len(items), model)
+
     def run(job: dict) -> None:
         failures = 0
         last = ""
@@ -410,7 +414,7 @@ def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[
                 if kind == "situation":
                     params.update({"aspect_ratio": aspect_ratio, "resolution": resolution, "count": count})
                 res = hf.generate(model, params)
-                added = _ingest_job(root, res, kind, item, model)
+                added = _ingest_job(root, res, kind, item, model, job)
                 job["added"] += added
                 job["log"].append(f"[{kind}] ref={item.get('ref_id') or '—'} model={model} "
                                   f"urls={len(res.get('urls') or [])} added={added}")
@@ -429,7 +433,7 @@ def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[
         raise RuntimeError("Já existe uma geração em andamento para este projeto.") from e
 
 
-def _ingest_job(root: Path, res: dict, kind: str, item: dict, model: str) -> int:
+def _ingest_job(root: Path, res: dict, kind: str, item: dict, model: str, job: dict | None = None) -> int:
     """Baixa as URLs do job e registra como candidatas do `kind`. Link expirado é pulado."""
     (root / "jobs").mkdir(parents=True, exist_ok=True)
     jid = res.get("id") or f"{datetime.now():%Y%m%d%H%M%S}"
@@ -443,7 +447,9 @@ def _ingest_job(root: Path, res: dict, kind: str, item: dict, model: str) -> int
         try:
             hf.download(url, tmp)
             data = tmp.read_bytes()
-        except Exception:  # noqa: BLE001  — links da Higgsfield expiram
+        except Exception as e:  # noqa: BLE001  — links da Higgsfield expiram
+            if job is not None:
+                job["log"].append(f"download pulado ({name}): {e}"[:400])
             continue
         finally:
             tmp.unlink(missing_ok=True)

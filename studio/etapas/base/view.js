@@ -155,7 +155,10 @@ Studio.register("base", (ctx) => {
       };
       $("#btnBaseGen").onclick = async () => {
         const kind = $("#genKind").value, count = +$("#genCount").value;
-        const body = { kind, model: $("#baseModel").value, count };
+        // O seletor de modelo é o dos prompts de situação; rótulo e upscale usam o default
+        // do serviço (bytedance_image_upscale no upscale) — mandar o modelo daqui gastaria
+        // créditos no modelo errado.
+        const body = kind === "situation" ? { kind, model: $("#baseModel").value, count } : { kind, count };
         let est = "Estimativa indisponível.";
         try {
           const c = await api(url("cost"), { method: "POST", body: JSON.stringify(body) });

@@ -505,6 +505,23 @@ Decisões tomadas na implementação (nenhuma contraria a spec; registradas para
    `nano_banana_2`, upscale `bytedance_image_upscale`. Todos sobrescritíveis por `model` no corpo.
    IDs ainda **não confirmados** no catálogo (CLI sem login) — decisão 13 do lote.
 
+Divergências pequenas entre o texto do FDD e o código, resolvidas pelo código (registradas aqui em
+vez de alterar as seções normativas):
+
+7. **Textos dos exemplos do contrato 1.** O prompt de rótulo fala em `product label` /
+   `product colors` (não `can`), porque nem todo produto é uma lata; `prompt_no_bias` também leva o
+   "No people…"; o `ui_hint` termina orientando a importar como "situação".
+8. **Campos extras no `candidates.json`.** Além dos listados no auto-aceite da seção 1, o `ingest`
+   também grava `duration` (sempre 0.0 em imagem) e `origin_path` (import da pasta Downloads).
+   Continuam sendo superconjunto do schema mínimo da wave 1.
+9. **O job devolve `kind` e `model`** além de `{state, done, total, added, error, log}` — extras do
+   `JobRegistry`, usados pela tela.
+10. **Falha parcial.** A matriz da seção 6 e o auto-aceite da seção 9 se contradizem; vale a seção 9:
+    erro por item vai para o `log` e o job termina `done`; só falha em **todos** os itens vira
+    `state=error`.
+11. **Import do histórico** passa por `ingest.import_history` → `urlopen` (não por `hf.download`,
+    que é usado só na geração). O teste fakeia `ingest.urlopen`, como diz a seção 9 no espírito.
+
 Pendências para a integração (W5):
 
 - `[cross-feature]` a etapa lê `mood/selected/` e `palette.json` reais e usa ≥1 referência de
@@ -513,3 +530,8 @@ Pendências para a integração (W5):
 - `[cross-feature]` `storyboard` abrindo o `base/base_final.png` real: só verificável no estado
   integrado.
 - Validar os IDs de modelo com `model list` depois do login do CLI.
+- Sobrescrever o `kind` do `ingest` (mídia) pela semântica da etapa (passo da aula) e normalizar
+  `file`/`thumb` para caminho relativo ao projeto são decisões que as etapas 4 a 11 vão repetir:
+  candidatas a ADR transversal ou a ajuste em `studio/common/ingest.py` pelo orquestrador.
+- A política "falha parcial mantém `state=done`" muda a leitura do `JobRegistry` compartilhado;
+  vale alinhar entre as frentes na integração.

@@ -180,6 +180,20 @@ def test_cost_multiplies_per_item_and_propagates_unknown(studio_env, svc, projec
     assert svc.estimate_cost(project, "situation")["total"] is None
 
 
+def test_cost_sends_the_same_params_the_generation_will_send(studio_env, svc, project, monkeypatch):
+    prepare(studio_env, project)
+    seen = []
+    monkeypatch.setattr(svc.hf, "cost", lambda model, params: seen.append((model, params)) or {"credits": 1})
+    svc.estimate_cost(project, "situation", count=2)
+    assert seen[0][1] == {"prompt": svc.prompts(project)["refs"][0]["prompt"],
+                          "aspect_ratio": "16:9", "resolution": "2k", "count": 2}
+    s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+    svc.select(project, s)
+    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.estimate_cost(project, "label")
+    assert seen[1][0] == svc.DEFAULT_MODEL_LABEL and "aspect_ratio" not in seen[1][1]
+
+
 def _fake_cli(svc, monkeypatch, urls_by_call, fail_on=()):
     calls = []
     payloads = {}
@@ -227,6 +241,16 @@ def test_generate_situation_imports_one_call_per_ref(studio_env, svc, project, m
     assert all(c["source"] == "cli" and c["kind"] == "situation" and c["model"] == "nano_banana_2" for c in cands)
     assert {c["ref_id"] for c in cands} == {"0f8e7d6c5b4a", "1f8e7d6c5b4a"}
     assert (root / "jobs" / "base_job0.json").exists() and not (root / "jobs" / "_tmp").exists()
+
+
+def test_generate_situation_multiplies_by_count_and_records_the_job(studio_env, svc, project, monkeypatch):
+    prepare(studio_env, project)
+    calls = _fake_cli(svc, monkeypatch, [["http://x/1.png", "http://x/2.png"], ["http://x/3.png", "http://x/4.png"]])
+    svc.start_generate(project, "situation", count=2)
+    job = _wait(svc, project)
+    assert job["state"] == "done" and job["added"] == 4, "duas referências × duas variações"
+    assert all(c["params"]["count"] == 2 for c in calls)
+    assert {c["job_id"] for c in svc.load(project)} == {"job0", "job1"}
 
 
 def test_generate_refuses_concurrent_job(studio_env, svc, project, monkeypatch):
