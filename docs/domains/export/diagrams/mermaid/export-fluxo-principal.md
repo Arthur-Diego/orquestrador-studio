@@ -260,3 +260,35 @@ sequenceDiagram
   concretos) e não pela expressão `crop=ih*9/16:ih:...` da tabela do FDD. A diferença importa
   quando o master é mais estreito que a proporção alvo (o código corta pela largura; a
   expressão do FDD assume master mais largo).
+
+---
+
+## Atualização da wave 2 (OS-019) — veredito do QA
+
+A auditoria 9.5 tornou **áudio ausente** um bloqueio, para o QA não discordar da etapa 8 (o master
+passou a exigir trilha). O restante continua sendo atenção: a aula 014 manda publicar mesmo
+imperfeito, e o checklist técnico não julga gosto.
+
+```mermaid
+flowchart TD
+    QA["POST /api/projects/{pid}/export/qa"] --> ITENS["Para cada arquivo: master, 16x9, 9x16, 1x1 e thumb"]
+    ITENS --> CHK["Checagens: exists, resolution, duration, vcodec, audio, size<br/>só `audio` carrega blocking: true"]
+    CHK --> V{"Alguma checagem falhou?"}
+    V -->|"não"| OK["verdict = OK"]
+    V -->|"sim, e alguma falha é bloqueante"| BLOQ["verdict = BLOQUEIO<br/>áudio ausente — a trilha da etapa 7 é obrigatória<br/>resposta traz blocking: true no topo"]
+    V -->|"sim, mas nenhuma é bloqueante"| AT["verdict = ATENCAO<br/>arquivo ainda não renderizado, resolução, duração, codec, tamanho"]
+
+    OK --> MD["export/qa_report.md com a tabela e a seção Atenções"]
+    BLOQ --> MD
+    AT --> MD
+
+    classDef ok fill:#e8f5e9,stroke:#2e7d32,color:#10331a
+    classDef warn fill:#fff3e0,stroke:#e65100,color:#3e2000
+    classDef bloq fill:#ffebee,stroke:#c62828,color:#3e1010
+    class OK ok
+    class AT warn
+    class BLOQ bloq
+```
+
+O QA e a thumb são `[extensão]` (a aula 014 não os ensina), e a escolha do formato pelo destino
+vem do plano §1.4 — não da aula 007, que fala de formato de **imagem** no Midjourney.

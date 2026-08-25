@@ -1,8 +1,10 @@
 <header class="stephead">
-  <span class="eyebrow">Etapa 9 · aulas 007 e 014</span>
+  <span class="eyebrow">Etapa 9 · aula 014</span>
   <h2>Export e QA</h2>
-  <p class="lede">O master da etapa 8 vira os formatos de cada rede: 16:9 para o YouTube, 9:16 para Instagram e TikTok, 1:1 para o feed (aula 007). O corte é central — veja o enquadramento antes de renderizar. No fim, um checklist <strong>técnico</strong> (duração, resolução, codec, áudio): ele não julga gosto. Aula 014: publique mesmo que o primeiro fique fraco.</p>
+  <p class="lede">A aula 014 termina em <strong>"publique o seu trabalho, mesmo imperfeito"</strong> — ela não ensina export nem QA. O que muda por rede é o formato: 9:16 para Reels e TikTok, 16:9 para o YouTube (plano 1.4); 1:1 é opcional <code>[extensão]</code>. O corte é central — veja o enquadramento antes de renderizar. O checklist técnico e a thumb abaixo são ferramentas de entrega do Studio, não regra da aula.</p>
 </header>
+
+<section id="guide" class="guide"></section>
 
 <section class="panel">
   <div class="panel-head">
@@ -24,6 +26,7 @@
       <span id="expJobLog" class="mono fine"></span>
     </div>
   </div>
+  <p class="fine">Gere pelo menos o formato da rede onde você vai publicar — é o destino que escolhe o formato (plano 1.4). O <strong>corte é central</strong>: use o preview para conferir que nada importante ficou de fora antes de gastar tempo renderizando.</p>
   <div class="progress"><span id="expBar" class="bar" style="width:0%"></span></div>
   <div id="expFormats" class="grid2"></div>
   <pre id="expLog" class="log"></pre>
@@ -31,31 +34,32 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h3>3. Thumb</h3>
+    <h3>3. Thumb <span class="chip mode">[extensão]</span></h3>
     <div class="row wrap">
       <label class="inline">tempo (s) <input id="expThumbT" type="number" value="3" min="0" step="0.5"></label>
       <button id="btnThumb" disabled>Gerar thumb</button>
       <span id="expThumbInfo" class="fine mono"></span>
     </div>
   </div>
+  <p class="fine">A aula não pede capa. É ferramenta de entrega do Studio: um quadro do próprio vídeo, no tempo que você escolher, para usar como miniatura na rede.</p>
   <div id="expThumb" class="gallery"></div>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>4. QA técnico</h3>
+    <h3>4. QA técnico <span class="chip mode">[extensão]</span></h3>
     <div class="row wrap">
       <button id="btnQa" class="primary" disabled>Gerar QA</button>
       <a id="expQaFile" class="fine mono" target="_blank" rel="noopener"></a>
     </div>
   </div>
   <div id="expQa"></div>
-  <p class="fine">Grava <code>export/qa_report.md</code>. Só o que o ffprobe mede: duração contra o master (tolerância 0,5 s), resolução do formato, codec h264, áudio presente e tamanho do arquivo.</p>
+  <p class="fine">Grava <code>export/qa_report.md</code>. Só o que o ffprobe mede: duração contra o master (tolerância 0,5 s), resolução do formato, codec h264, áudio presente e tamanho do arquivo. <strong>Não julga gosto</strong> — a única falha que bloqueia é <strong>áudio ausente</strong>, porque a trilha da etapa 7 é obrigatória. O resto é atenção: a aula manda publicar mesmo que o primeiro fique fraco.</p>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>5. Reframe pelo CLI (opcional, gasta créditos)</h3>
+    <h3>5. Reframe pelo CLI (opcional, gasta créditos) <span class="chip mode">[extensão]</span></h3>
     <div class="row wrap cli">
       <select id="expAspect"><option value="9:16">9:16 (Instagram/TikTok)</option><option value="1:1">1:1 (feed)</option></select>
       <button id="btnReframe" disabled>Reframe via CLI</button>

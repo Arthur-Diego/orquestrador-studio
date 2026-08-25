@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "os-010-publish-collection",
 		"name": "publish — Etapa 10 (Publicar)",
-		"description": "Colecao executavel dos contratos HTTP da etapa 10 (publish) do Orquestrador Studio.\n\nOrigem: `docs/domains/publish/features/publish-fdd.md` (versao 0.2.0), secao 5 (Contratos publicos), com ordem de execucao da secao 4 e casos negativos da secao 6.\n\nDECISAO 1 DO LOTE (normativa): a rota `portfolio` conta VIDEOS DISTINTOS (`ready = distinct_videos >= 4`, `missing = max(0, 4 - distinct_videos)`), NAO o numero de posts. `goal` = 4.\n\nSem `auth`: o ADR-001 (FDD secao 3, linha 35) determina monolito local sem autenticacao, entao nenhuma rota envia token.\n\nPre-requisitos: servidor local no ar em `{{base_url}}` com o plugin `publish` carregado, e o projeto `{{pid}}` com o arquivo `{{video}}` em `export/`.",
+		"description": "Colecao executavel dos contratos HTTP da etapa 10 (publish) do Orquestrador Studio.\n\nOrigem: `docs/domains/publish/features/publish-fdd.md` (versao 0.2.0), secao 5 (Contratos publicos), com ordem de execucao da secao 4 e casos negativos da secao 6.\n\nADR-012 (normativo, wave 2): o portfolio da aula 015 e GLOBAL. `distinct_videos` conta PROJETOS DISTINTOS de PROJECTS_DIR com pelo menos um post registrado (quatro OBRAS), e `ready`/`missing` vem dai. A decisao 1 do lote (wave 1) continua valendo DENTRO do projeto: o mesmo arquivo em duas redes e 1 video e 2 posts (campo `videos`). Rota nova sem pid: `GET /api/portfolio`.\n\nSem `auth`: o ADR-001 (FDD secao 3, linha 35) determina monolito local sem autenticacao, entao nenhuma rota envia token.\n\nPre-requisitos: servidor local no ar em `{{base_url}}` com o plugin `publish` carregado, e o projeto `{{pid}}` com o arquivo `{{video}}` em `export/`.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -408,10 +408,10 @@
 		},
 		{
 			"name": "Portfolio",
-			"description": "FDD secao 5, Contrato 6. Gate da decisao 1 do lote: distinct_videos >= 4.",
+			"description": "FDD secao 5, Contrato 6 + secao 'Wave 2'. Portfolio GLOBAL (ADR-012).",
 			"item": [
 				{
-					"name": "GET portfolio — status do portfolio (gate de 4 videos distintos)",
+					"name": "GET portfolio — deste projeto + portfolio global (ADR-012)",
 					"request": {
 						"method": "GET",
 						"header": [],
@@ -428,7 +428,7 @@
 								"portfolio"
 							]
 						},
-						"description": "FDD secao 5, Contrato 6 (linha 222). 200 sempre que o projeto existe; nao grava nada.\n\nDECISAO 1 DO LOTE (normativa, FDD linhas 36-40 e 231-232): `ready` e `missing` contam VIDEOS DISTINTOS (`distinct_videos >= 4`), NAO o numero de posts. `goal` = 4.\n`portfolio_md` e null enquanto o log nunca sofreu mutacao."
+						"description": "FDD secao 5, Contrato 6 e secao 'Wave 2 - fidelidade e guia'. 200 sempre que o projeto existe; nao grava nada.\n\nADR-012: `distinct_videos`, `ready` e `missing` sao do portfolio GLOBAL (projetos distintos com post). `count`, `videos` e `published` sao deste projeto. `portfolio_md` e null enquanto o log nunca sofreu mutacao."
 					},
 					"response": [],
 					"event": [
@@ -440,26 +440,184 @@
 									"let body;",
 									"try { body = pm.response.json(); } catch (e) { body = null; }",
 									"pm.test('status 200 (FDD s5 C6)', function () { pm.response.to.have.status(200); });",
-									"pm.test('schema: count/distinct_videos/goal/ready/missing/portfolio_md', function () {",
+									"pm.test('schema do projeto: count/videos/published', function () {",
 									"    pm.expect(body.count, 'count').to.be.a('number');",
+									"    pm.expect(body.videos, 'videos').to.be.a('number');",
+									"    pm.expect(body.published, 'published').to.be.a('boolean');",
+									"    pm.expect(body.published).to.eql(body.count > 0);",
+									"});",
+									"pm.test('schema global: distinct_videos/goal/ready/missing/projects', function () {",
 									"    pm.expect(body.distinct_videos, 'distinct_videos').to.be.a('number');",
 									"    pm.expect(body.goal, 'goal').to.eql(4);",
 									"    pm.expect(body.ready, 'ready').to.be.a('boolean');",
 									"    pm.expect(body.missing, 'missing').to.be.a('number');",
-									"    pm.expect(body).to.have.property('portfolio_md');",
-									"    if (body.portfolio_md !== null) {",
-									"        pm.expect(body.portfolio_md).to.eql('publish/portfolio.md');",
-									"    }",
+									"    pm.expect(body.projects, 'projects').to.be.an('array');",
 									"});",
-									"pm.test('DECISAO 1 DO LOTE: ready == (distinct_videos >= 4), nao count', function () {",
+									"pm.test('ADR-012: ready == (distinct_videos >= 4) e distinct_videos == projects.length', function () {",
 									"    pm.expect(body.ready).to.eql(body.distinct_videos >= 4);",
-									"});",
-									"pm.test('DECISAO 1 DO LOTE: missing == max(0, 4 - distinct_videos)', function () {",
 									"    pm.expect(body.missing).to.eql(Math.max(0, 4 - body.distinct_videos));",
+									"    pm.expect(body.distinct_videos).to.eql(body.projects.length);",
 									"});",
-									"pm.test('distinct_videos <= count (mesmo video em 2 redes = 1 video, 2 posts)', function () {",
-									"    pm.expect(body.distinct_videos).to.be.at.most(body.count);",
+									"pm.test('community: checklist da aula 015 vem junto e nao bloqueia', function () {",
+									"    pm.expect(body.community.total).to.eql(3);",
+									"    pm.expect(body.community.done).to.be.at.most(3);",
+									"});",
+									"pm.test('videos deste projeto <= count (mesmo arquivo em 2 redes = 1 video, 2 posts)', function () {",
+									"    pm.expect(body.videos).to.be.at.most(body.count);",
 									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "GET /api/portfolio — portfolio GLOBAL do aluno (sem pid)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/portfolio",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"portfolio"
+							]
+						},
+						"description": "ADR-012. Rota SEM `pid`: o portfolio e do aluno, nao de um projeto. Conta projetos distintos de PROJECTS_DIR com pelo menos um post em publish/log.json. E a fonte que `prospect.gate` consome."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"let body;",
+									"try { body = pm.response.json(); } catch (e) { body = null; }",
+									"pm.test('status 200', function () { pm.response.to.have.status(200); });",
+									"pm.test('schema: projects/distinct_videos/posts/goal/ready/missing', function () {",
+									"    pm.expect(body.projects).to.be.an('array');",
+									"    pm.expect(body.distinct_videos).to.be.a('number');",
+									"    pm.expect(body.posts).to.be.a('number');",
+									"    pm.expect(body.goal).to.eql(4);",
+									"    pm.expect(body.ready).to.be.a('boolean');",
+									"    pm.expect(body.missing).to.be.a('number');",
+									"});",
+									"pm.test('cada obra traz project_id, name, posts, videos e first_posted', function () {",
+									"    body.projects.forEach(function (p) {",
+									"        pm.expect(p.project_id, 'project_id').to.be.a('string');",
+									"        pm.expect(p.name, 'name').to.be.a('string');",
+									"        pm.expect(p.posts, 'posts').to.be.at.least(1);",
+									"        pm.expect(p.videos, 'videos').to.be.a('number');",
+									"        pm.expect(p).to.have.property('first_posted');",
+									"    });",
+									"});",
+									"pm.test('ADR-012: distinct_videos == numero de projetos com post', function () {",
+									"    pm.expect(body.distinct_videos).to.eql(body.projects.length);",
+									"    pm.expect(body.ready).to.eql(body.distinct_videos >= 4);",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Comunidade (aula 015)",
+			"description": "Auditoria 10.2. Checklist NAO bloqueante persistido em publish/community.json.",
+			"item": [
+				{
+					"name": "GET community — checklist da comunidade ABRAhub",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/community",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"community"
+							]
+						},
+						"description": "Arquivo ausente ou corrompido = tudo por fazer. Nunca levanta, nunca bloqueia."
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('status 200', function () { pm.response.to.have.status(200); });",
+									"pm.test('schema: posted/commented/feedback/updated/done/total', function () {",
+									"    ['posted', 'commented', 'feedback'].forEach(function (k) {",
+									"        pm.expect(body[k], k).to.be.a('boolean');",
+									"    });",
+									"    pm.expect(body.total).to.eql(3);",
+									"    pm.expect(body.done).to.be.a('number');",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "POST community — marcar 'postei na comunidade'",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/projects/{{pid}}/publish/community",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{pid}}",
+								"publish",
+								"community"
+							]
+						},
+						"description": "Campo ausente NAO muda o item. Regrava publish/portfolio.md.",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"posted\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						}
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const body = pm.response.json();",
+									"pm.test('status 200', function () { pm.response.to.have.status(200); });",
+									"pm.test('marca so o item enviado', function () {",
+									"    pm.expect(body.posted).to.eql(true);",
+									"    pm.expect(body.done).to.be.at.least(1);",
+									"});",
+									"pm.test('grava updated', function () { pm.expect(body.updated).to.not.eql(''); });"
 								]
 							}
 						}

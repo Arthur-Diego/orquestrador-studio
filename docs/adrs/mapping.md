@@ -478,3 +478,29 @@ Correções de fidelidade das etapas 7 e 8 (auditoria `wave-2-auditoria-etapas-7
 
 **ADR nova: ADR-011** (MUSIC) — a cena do produto permanece na etapa 5, mas a decisão sobre ela
 acontece na etapa 7, onde a aula 013 a coloca.
+## Atualização 2026-08-25 (wave 2, frente OS-019 — etapas 9, 10 e 11)
+
+Correções de fidelidade das etapas 9 (export), 10 (publish) e 11 (prospect), a partir de
+`docs/domains/studio/waves/wave-2-auditoria-etapas-7-11.md`:
+
+- **PUBLISH** ganhou o portfólio **global**: `publish.global_portfolio()` varre `PROJECTS_DIR` e
+  conta **projetos distintos** com pelo menos um post, exposto em `GET /api/portfolio` (router do
+  plugin `publish`). `publish.portfolio_status(pid)` passou a devolver as duas leituras (a do
+  projeto e a global) e ganhou o checklist de comunidade (`publish/community.json`,
+  `GET|POST /api/projects/{pid}/publish/community`).
+- **PROSPECT** consome esse portfólio em `gate()`; `start_teaser` passou a exigir `replied`
+  (422); `post_ref` virou obrigatório; o pitch ganhou valor por etapa, total e 50 % off
+  (`prospect/pitch.json`, `GET|POST /api/projects/{pid}/prospect/pitch` com `values`/`total`);
+  `music_offset` do teaser é sugerido a partir do primeiro impacto de `audio/beats.json`.
+- **EXPORT**: o QA passou a ter checagem **bloqueante** (veredito `BLOQUEIO` quando falta áudio);
+  textos de tela deixaram de atribuir o formato de vídeo à aula 007 (é plano §1.4) e thumb, QA,
+  1:1 e reframe estão rotulados `[extensão]`.
+- Os três plugins ganharam `studio/etapas/<id>/guide.py` (contrato do ADR-010).
+
+**ADR nova: ADR-012** (PUBLISH) — portfólio global conta projetos distintos (obras), não arquivos
+do mesmo projeto; o gate da etapa 11 passa a ler o portfólio do aluno, não o do projeto do lead.
+
+> **Nota da integração (W5):** este bloco e o da frente OS-018 (ADR-011, MUSIC) foram apensados
+> no fim deste arquivo em worktrees paralelas. O conflito de merge foi resolvido no rebase da
+> frente OS-019 sobre `develop` mantendo os **dois** blocos, na ordem de integração
+> (ADR-011 e depois ADR-012). A numeração das ADRs não colidiu.
