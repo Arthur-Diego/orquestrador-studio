@@ -30,7 +30,7 @@ Se não houver Chromium em `~/.cache/ms-playwright`: `. .venv/bin/activate && pl
 ## Etapas
 
 ### 1 · Referências (aula 009)
-Crie um projeto (nome, produto, vibe). "Sugerir termos" → "Buscar e baixar": o scraper
+Crie um projeto (nome, produto; a **vibe é opcional** — a aula 009 encontra a vibe na etapa 2). "Sugerir termos" → "Buscar e baixar": o scraper
 Playwright percorre o Pinterest em ritmo humano com a sua sessão (login opcional; perfil em
 `~/.orquestrador-studio/pinterest-profile`), baixa as imagens em maior resolução para
 `projects/<id>/refs/candidates/` e você marca as que gosta. "Salvar seleção" copia para
@@ -94,13 +94,21 @@ studio/
   steps.py            catálogo das 11 etapas (ordem, aula); `ready` vem dos plugins
   etapas/<id>/        plugin da etapa: META, router.py, view.html, view.js (descoberta automática)
   config.py           caminhos e layout        higgsfield.py  ponte com o CLI (subprocess --json)
-  common/             ingest (imagem/vídeo/áudio), JobRegistry, ffmpeg — API transversal das etapas
+  common/             ingest (imagem/vídeo/áudio), JobRegistry, ffmpeg, guide — API transversal das etapas
   <etapa>/service.py  serviço de cada etapa (refs, mood, base, storyboard, shots, animate, music, edit, export, publish, prospect)
-  web/                shell da SPA: index.html, style.css, app.js (carrega as views das etapas)
+  web/                shell da SPA: index.html, style.css, app.js + ui.js/ui.css (Studio.ui: componentes compartilhados)
 tests/                pytest sem rede/navegador (serviços, API, ponte, plugins)
 docs/                 contexto do projeto — ver CLAUDE.md (gitflow, dd, guidelines, adrs, domains, agents, plano)
 projects/             dados dos projetos de vídeo (local, ignorado pelo git)
 ```
+
+**Guia por etapa:** cada tela diz o que a aula manda fazer, o que falta e qual é a próxima ação —
+calculado no backend lendo os artefatos do projeto (`studio/common/guide.py`, hook opcional
+`studio/etapas/<id>/guide.py`). Rotas: `GET|PATCH /api/projects/{pid}` (campos `name, product,
+vibe, aspect_ratio` `[extensão]`, `brand` `[extensão]`), `GET /api/projects/{pid}/guide` (as 11
+etapas + progresso da campanha), `GET /api/projects/{pid}/guide/{etapa}` e
+`GET /api/higgsfield/status?refresh=1` (cache de 60 s). Contrato para quem implementa etapa:
+`docs/domains/studio/waves/wave-2-api-transversal.md`.
 
 Variáveis: `STUDIO_PROJECTS`, `STUDIO_STATE`, `STUDIO_DOWNLOADS`, `PORT`.
 
