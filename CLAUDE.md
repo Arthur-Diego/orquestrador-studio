@@ -74,6 +74,10 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
 - Python 3.12 · FastAPI + Uvicorn · Playwright (Chromium) · Pillow. Sem banco: persistência
   em arquivos sob `projects/<id>/` (nunca versionado).
 - Frontend estático em `studio/web/` (HTML/CSS/JS sem build).
+- **Etapas são plugins**: `studio/etapas/<id>/` com `META`, `router.py`, `view.html`, `view.js`
+  (descoberta automática; ver `docs/domains/studio/hld.md`). Para implementar uma etapa nova,
+  crie só essa pasta + `studio/<id>/service.py` + testes; **não edite** `app.py`, `index.html`,
+  `app.js` nem `steps.py`. O `view.js` registra `Studio.register("<id>", ctx => ({init, onProject}))`.
 - Ponte com a Higgsfield **somente** via CLI oficial (`studio/higgsfield.py`, subprocess +
   `--json`). Nunca chamar `api.higgsfield.ai` direto; nunca automatizar a UI da Higgsfield.
 - Testes: `pytest` sem rede e sem navegador (fakes); `make verify` = ruff + pytest.

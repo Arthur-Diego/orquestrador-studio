@@ -49,12 +49,14 @@ mesmo mood → `mood/selected/`, `mood/palette.json`, `mood/mood.md`.
 
 ```
 studio/
-  app.py              API + estáticos          steps.py   catálogo das 11 etapas (aula, status)
+  app.py              núcleo da API (projetos, catálogo, estáticos) + montagem dos plugins
+  steps.py            catálogo das 11 etapas (ordem, aula); `ready` vem dos plugins
+  etapas/<id>/        plugin da etapa: META, router.py, view.html, view.js (descoberta automática)
   config.py           caminhos e layout        higgsfield.py  ponte com o CLI (subprocess --json)
-  refs/pinterest.py   scraper Playwright       refs/service.py  projetos, jobs, seleção
-  mood/service.py     prompt de vibe, import, seleção, paleta
-  web/                index.html, style.css, app.js
-tests/                pytest sem rede/navegador (serviços, API, ponte)
+  refs/               scraper Playwright + serviço da etapa 1
+  mood/service.py     prompt de vibe, import, seleção, paleta (etapa 2)
+  web/                shell da SPA: index.html, style.css, app.js (carrega as views das etapas)
+tests/                pytest sem rede/navegador (serviços, API, ponte, plugins)
 docs/                 contexto do projeto — ver CLAUDE.md (gitflow, dd, guidelines, adrs, domains, agents, plano)
 projects/             dados dos projetos de vídeo (local, ignorado pelo git)
 ```

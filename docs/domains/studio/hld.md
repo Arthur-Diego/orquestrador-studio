@@ -47,7 +47,13 @@ Padrões adotados
 | `app.py` | Rotas, validação de entrada (Pydantic), tradução de exceções em HTTP (404/409/413/422/502), estáticos | `refs.service`, `mood.service`, `higgsfield` |
 | `config.py` | `PROJECTS_DIR`, `STATE_DIR`, `PINTEREST_PROFILE`, `WEB_DIR`, `PROJECT_LAYOUT`; overrides por env | os, pathlib |
 | `steps.py` | Catálogo das 11 etapas: id, ordem, aula, status `ready`/`soon`, descrição | nenhuma |
-| `web/` | Seleção de projeto, navegação por etapa (só `ready` clicável), telas das etapas 1 e 2, polling de jobs, galeria de seleção | API `/api/*`, `localStorage` (projeto e etapa atuais) |
+| `etapas/` (plugins) | Uma pasta por etapa implementada: `META` (id, n, aula), `router.py` (APIRouter com as rotas da etapa), `view.html` e `view.js`; descobertas por `etapas.discover()` e montadas pelo `app.py`; servidas em `/steps/<id>/view.{html,js}` | serviços do domínio da etapa |
+| `web/` | Núcleo da SPA: seleção de projeto, menu de etapas, carregamento sob demanda do `view.html`/`view.js` da etapa e contexto (`Studio.ctx`: `api`, `toast`, `pid()`, `project()`, `files()`) | API `/api/*`, `/steps/*`, `localStorage` |
+
+Regra de extensão (desde 2026-08-25): uma etapa nova **cria só `studio/etapas/<id>/`** e sua
+pasta de serviço; nunca edita `app.py`, `index.html`, `app.js` nem `steps.py` (o catálogo
+`SOON` já lista as 11 etapas e a descoberta promove a etapa a `ready`). Isso permite frentes
+paralelas sem conflito nos arquivos únicos.
 
 ---
 
