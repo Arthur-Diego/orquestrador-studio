@@ -293,3 +293,24 @@ def test_step_screen_carries_the_lesson_texts(client):
     assert 'id="editRuler"' in html and "marcador ▾" in html, "régua de impactos sobre a timeline (8.5)"
     assert "corte seco" in html, "o preto deixou de ser regra de todo corte (8.1)"
     assert "Studio.ui" in js and "destroy()" in js and "ctx.guide()" in js
+
+
+def test_step_screen_consumes_the_shell_catalog(client):
+    """Wave 3 (ADH-OS-20260826-07): a tela usa o catálogo de classes do shell, não markup próprio."""
+    html = client.get("/steps/edit/view.html").text
+    js = client.get("/steps/edit/view.js").text
+    # 04 painéis numerados com `.pn`; texto de aula em `details.lesson`
+    assert html.count('<span class="pn">') == 4
+    assert '<span class="pn">01</span>' in html and '<span class="pn">04</span>' in html
+    assert '<details class="lesson">' in html
+    # régua da trilha: `.beats.sm` pelo helper + eixo `.beats-axis` do protótipo
+    assert 'id="editRuler"' in html and 'class="beats-axis' in html
+    assert "ui.beats(" in js and "sm: true" in js
+    # clipes em `.rowlist`/`.clip-row` com `input.mini`
+    assert 'id="clips" class="rowlist"' in html
+    assert "clip-row" in js and "cin mini" in js
+    # os hooks de JS continuam existindo (nenhuma funcionalidade removida)
+    for hook in ("cin", "cout", "cspeed", "czoom", "cblend", "black", "mv", "del", "sfxrow", "use"):
+        assert hook in js, hook
+    # nada mais é posicionado/colorido por style inline (era o desenho antigo da régua)
+    assert "position:absolute" not in js and "crimson" not in js

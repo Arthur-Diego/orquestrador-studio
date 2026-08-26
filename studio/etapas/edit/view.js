@@ -28,6 +28,12 @@ Studio.register("edit", (ctx) => {
 
   const clipLen = (c) => (c.out - c.in) / Math.max(c.speed || 1, 0.01);
 
+  /** Instante (no bruto, sem pretos) em que o clipe `i` termina — é onde o preto daquele corte cai. */
+  const cutAt = (i) => +((tl.clips || []).slice(0, i + 1).reduce((a, c) => a + clipLen(c), 0)).toFixed(3);
+
+  /** Existe tela preta no corte do clipe `i`? (tolerância de 0,25 s, a mesma de `cutPositions`) */
+  const blackAt = (i) => (tl.blacks || []).some((b) => Math.abs((b.at ?? -1e9) - cutAt(i)) <= 0.25 && b.dur > 0);
+
   function duration() {
     return (tl.clips || []).reduce((a, c) => a + clipLen(c), 0)
       + (tl.blacks || []).reduce((a, b) => a + (b.dur || 0), 0);
@@ -51,15 +57,18 @@ Studio.register("edit", (ctx) => {
     const chip = $("#rulerChip"), ruler = $("#editRuler");
     if (!beats || !beats.duration) {
       chip.textContent = "sem batidas — escolha a trilha na etapa 7"; chip.className = "chip warn";
-      ruler.innerHTML = ""; return;
+      ruler.innerHTML = ""; $("#editAxis").classList.add("hidden"); return;
     }
     const offset = tl ? num($("#musicOffset").value, (tl.music || {}).offset || 0) : 0;
     const impacts = new Set(beats.impacts || []);
     const total = beats.duration;
-    const marks = (beats.beats || []).map((t) => {
-      const strong = impacts.has(t);
-      return `<span title="${t}s${strong ? " (impacto)" : ""}" style="position:absolute;left:${(t / total) * 100}%;bottom:0;width:${strong ? 2 : 1}px;height:${strong ? 70 : 35}%;background:${strong ? "currentColor" : "rgba(128,128,128,.6)"}"></span>`;
-    }).join("");
+    // `.beats.sm` do catálogo: barra por batida (impacto em 100%, accent) e um `.cut` ▾ por corte
+    // — `.cut.off` é o corte fora do ritmo (antes era um span com cor vermelha inline).
+    const marks = (beats.beats || []).map((t, i) => ({
+      h: impacts.has(t) ? 100 : 24 + ((i * 37) % 40),
+      imp: impacts.has(t),
+      title: `${t}s${impacts.has(t) ? " (impacto)" : ""}`,
+    }));
     const cuts = tl ? cutPositions() : [];
     let onBeat = 0;
     const cutMarks = cuts.map((c, i) => {
@@ -67,29 +76,39 @@ Studio.register("edit", (ctx) => {
       const near = (beats.beats || []).reduce((m, b) => Math.min(m, Math.abs(b - t)), Infinity);
       const ok = near <= 0.067;
       if (ok) onBeat++;
-      return `<span title="corte ${i + 1} em ${t.toFixed(2)}s da música${ok ? " — na batida" : " — fora do ritmo"}" style="position:absolute;left:${(t / total) * 100}%;top:0;transform:translateX(-50%);font-size:11px;color:${ok ? "currentColor" : "crimson"}">▾</span>`;
-    }).join("");
-    ruler.innerHTML = marks + cutMarks;
+      return { at: (t / total) * 100, off: !ok,
+               title: `corte ${i + 1} em ${t.toFixed(2)}s da música${ok ? " — na batida" : " — fora do ritmo"}` };
+    });
+    ruler.innerHTML = ui.beats(marks, { sm: true, cuts: cutMarks });
+    $("#editAxis").classList.remove("hidden");
+    $("#editAxisEnd").textContent = `${total.toFixed(1)}s`;
     chip.textContent = cuts.length ? `${onBeat}/${cuts.length} cortes no ritmo` : `${(beats.impacts || []).length} impactos`;
     chip.className = cuts.length && onBeat === cuts.length ? "chip ok" : cuts.length ? "chip warn" : "chip mode";
   }
 
   function render() {
     if (!tl) { $("#clips").innerHTML = `<div class="empty">Sem timeline — a etapa 6 precisa ter takes com like e a etapa 5 um storyboard.</div>`; renderRuler(); return; }
-    $("#clips").innerHTML = tl.clips.length ? tl.clips.map((c, i) => `
-      <div class="row wrap clip" data-i="${i}">
-        <span class="eyebrow">${i + 1} · ${esc(c.scene)}/${esc(c.shot)} ${esc(c.take)}</span>
-        <label class="inline">in <input class="cin" type="number" step="0.05" min="0" value="${c.in}"></label>
-        <label class="inline">out <input class="cout" type="number" step="0.05" min="0" value="${c.out}"></label>
-        <label class="inline">speed <input class="cspeed" type="number" step="0.1" min="0.25" max="4" value="${c.speed}"></label>
-        <label class="inline">zoom <input class="czoom" type="number" step="0.05" min="1" max="1.3" value="${c.zoom ?? 1}"></label>
-        <label class="inline"><input class="cblend" type="checkbox" ${c.blend ? "checked" : ""}> mistura de quadros</label>
-        <button class="ghost mv" data-d="-1" title="subir">↑</button>
-        <button class="ghost mv" data-d="1" title="descer">↓</button>
-        <button class="ghost black" title="insere uma tela preta neste corte (impacto e respiração)">preto aqui</button>
-        <button class="ghost del" title="remover da montagem">remover</button>
-        <span class="fine mono">take ${c.duration ?? "?"} s</span>
-      </div>`).join("") : `<div class="empty">Nenhum clipe na timeline.</div>`;
+    $("#clips").innerHTML = tl.clips.length ? tl.clips.map((c, i) => {
+      const nome = `${c.scene}/${c.shot} ${c.take}`;
+      return `
+      <div class="clip-row clip" data-i="${i}">
+        <span class="n">${String(i + 1).padStart(2, "0")}</span>
+        <div class="thumb">${c.file ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video>` : ""}</div>
+        <span class="name" title="${esc(nome)}">${esc(nome)}</span>
+        <div class="ctl ed-ctl">
+          <label class="inline">in <input class="cin mini" type="number" step="0.05" min="0" value="${c.in}"></label>
+          <label class="inline">out <input class="cout mini" type="number" step="0.05" min="0" value="${c.out}"></label>
+          <label class="inline">speed <input class="cspeed mini" type="number" step="0.1" min="0.25" max="4" value="${c.speed}"></label>
+          <label class="inline">zoom <input class="czoom mini" type="number" step="0.05" min="1" max="1.3" value="${c.zoom ?? 1}"></label>
+          <label class="inline"><input class="cblend" type="checkbox" ${c.blend ? "checked" : ""}> mistura</label>
+          <label class="inline" title="insere uma tela preta neste corte (impacto e respiração)"><input class="cblack black" type="checkbox" ${blackAt(i) ? "checked" : ""}> preto aqui</label>
+          <button class="ghost mini mv" data-d="-1" title="subir">↑</button>
+          <button class="ghost mini mv" data-d="1" title="descer">↓</button>
+          <button class="ghost mini del" title="remover da montagem">remover</button>
+          <span class="fine mono ed-take">take ${c.duration ?? "?"} s</span>
+        </div>
+      </div>`;
+    }).join("") : `<div class="empty">Nenhum clipe na timeline.</div>`;
     $("#blacks").innerHTML = (tl.blacks || []).length
       ? tl.blacks.map((b, i) => `<span class="chip ok">preto em ${b.at} s · ${b.dur} s <button class="link bdel" data-i="${i}">remover</button></span>`).join("")
       : `<span class="chip mode">sem quadros pretos (corte seco)</span>`;
@@ -101,11 +120,11 @@ Studio.register("edit", (ctx) => {
     const player = $("#musicPlay");
     if (mf) { player.src = ctx.files(mf); player.classList.remove("hidden"); } else { player.classList.add("hidden"); }
     $("#sfxTimeline").innerHTML = (tl.sfx || []).map((s, i) => `
-      <div class="row wrap sfxrow" data-i="${i}">
+      <div class="rowcard sfxrow" data-i="${i}">
         <span class="eyebrow mono">${esc(s.file.split("/").pop())}</span>
-        <label class="inline">em <input class="sat" type="number" step="0.1" min="0" value="${s.at}"> s</label>
-        <label class="inline">ganho <input class="sgain" type="number" step="1" min="-40" max="12" value="${s.gain}"> dB</label>
-        <button class="ghost sdel">remover</button>
+        <label class="inline">em <input class="sat mini" type="number" step="0.1" min="0" value="${s.at}"> s</label>
+        <label class="inline">ganho <input class="sgain mini" type="number" step="1" min="-40" max="12" value="${s.gain}"> dB</label>
+        <button class="ghost mini sdel">remover</button>
       </div>`).join("");
     $("#lfClip").innerHTML = tl.clips.map((c, i) => `<option value="${i}">${esc(c.scene)}/${esc(c.shot)} ${esc(c.take)}</option>`).join("");
     $("#durInfo").textContent = `duração ${duration().toFixed(2)} s`;
@@ -156,10 +175,10 @@ Studio.register("edit", (ctx) => {
     sfxLib = await api(`${base()}/sfx`);
     $("#sfxCount").textContent = `${sfxLib.length} SFX`;
     $("#sfxLib").innerHTML = sfxLib.length ? sfxLib.map((s) => `
-      <div class="row wrap">
-        <span class="mono fine">${esc(s.name)} · ${(s.duration || 0).toFixed(1)} s</span>
+      <div class="rowcard">
+        <span class="mono fine ed-take">${esc(s.name)} · ${(s.duration || 0).toFixed(1)} s</span>
         <audio controls preload="none" src="${ctx.files(s.file)}"></audio>
-        <button class="ghost use" data-file="${esc(s.file)}">usar na timeline</button>
+        <button class="ghost mini use" data-file="${esc(s.file)}">usar na timeline</button>
       </div>`).join("") : `<div class="empty">Nenhum SFX importado ainda — gelo, ambiência, respiração, impacto.</div>`;
   }
 
@@ -178,7 +197,8 @@ Studio.register("edit", (ctx) => {
         $("#btnRough").disabled = false;
         render();
         if (j.state === "done" && j.output) {
-          const v = $("#preview"); v.src = `${ctx.files(j.output)}?t=${Date.now()}`; v.classList.remove("hidden");
+          const v = $("#preview"); v.src = `${ctx.files(j.output)}?t=${Date.now()}`;
+          $("#previewWrap").classList.remove("hidden");
           toast(`${j.output} pronto`);
         } else if (j.state === "error") { toast(j.error); }
         ctx.guide();
@@ -204,10 +224,14 @@ Studio.register("edit", (ctx) => {
         const row = e.target.closest(".clip"); if (!row) return;
         const i = +row.dataset.i; collect();
         if (e.target.closest(".del")) tl.clips.splice(i, 1);
-        else if (e.target.closest(".black")) {
-          const at = tl.clips.slice(0, i + 1).reduce((a, c) => a + clipLen(c), 0);
-          tl.blacks = [...(tl.blacks || []), { at: +at.toFixed(3), dur: num($("#blackDur").value, 0.2) || 0.2 }]
-            .sort((a, b) => a.at - b.at);
+        else if (e.target.closest(".cblack")) {
+          const at = cutAt(i);
+          if (e.target.closest(".cblack").checked) {
+            tl.blacks = [...(tl.blacks || []), { at, dur: num($("#blackDur").value, 0.2) || 0.2 }]
+              .sort((a, b) => a.at - b.at);
+          } else {
+            tl.blacks = (tl.blacks || []).filter((b) => Math.abs((b.at ?? -1e9) - at) > 0.25);
+          }
         } else if (e.target.closest(".mv")) {
           const d = +e.target.closest(".mv").dataset.d, j = i + d;
           if (j < 0 || j >= tl.clips.length) return;
