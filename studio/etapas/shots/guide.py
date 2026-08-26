@@ -48,6 +48,32 @@ def _oldest_candidate(cdir: Path) -> float:
     return min((f.stat().st_mtime for f in files), default=0.0)
 
 
+def _numero(scenes: list, sid) -> str:
+    """"cena01" → "1" (o protótipo escreve "cena 1", sem zero à esquerda)."""
+    s = next((x for x in scenes if x.get("id") == sid), None)
+    n = (s or {}).get("n")
+    return str(n) if n else str(sid)
+
+
+def _next_action(scenes: list, escritas: list, sem_base: list, sem_shot: list,
+                 sem_up: list, produto) -> str | None:
+    """Próxima ação no estilo do protótipo (wave 4): imperativo curto, sem "Produza o artefato…".
+
+    `None` devolve o texto padrão do shell (etapa concluída → "siga para a etapa 6").
+    """
+    if not escritas:
+        return "Escrever as cenas da história na etapa 4"
+    if sem_base:
+        return f"Acertar cores e luz na base da cena {_numero(scenes, sem_base[0])} antes do multishot"
+    if sem_shot:
+        return f"Escolher e ordenar os frames da cena {_numero(scenes, sem_shot[0])}"
+    if sem_up:
+        return "Fazer upscale dos frames escolhidos e salvar a ordem de novo"
+    if not produto:
+        return "Montar a cena do produto (aula 013)"
+    return None
+
+
 def guide(pid: str) -> dict:
     root = project_dir(pid)
     g = Guide(META).text(WHAT, CHECKLIST)
@@ -140,4 +166,5 @@ def guide(pid: str) -> dict:
             detail=f"{len(cores)} cores" if cores else "sem mood/palette.json: confira cores e luz no olho",
             fix=None if cores else "Volte à etapa 2 e salve a seleção do mood board")
 
-    return g.build()
+    sem_base = [i for i in ids if i not in com_base]
+    return g.build(next_action=_next_action(scenes, escritas, sem_base, sem_shot, sem_up, produto))
