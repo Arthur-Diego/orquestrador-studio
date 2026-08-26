@@ -45,3 +45,23 @@ def test_view_collects_the_why_of_each_reference(client):
     assert "por quê" in html
     js = _view(client, "view.js")
     assert "input.why" in js and "notes" in js
+
+
+def test_view_follows_the_wave3_redesign_catalog(client):
+    """Wave 3: painéis numerados com `.pn`, textos de aula em `details.lesson`, campos `.field`."""
+    html = _view(client, "view.html")
+    assert html.count('<span class="pn">') == 3, "três painéis numerados (01 busca, 02 upload, 03 escolha)"
+    for n in ("01", "02", "03"):
+        assert f'<span class="pn">{n}</span>' in html
+    assert "1. Buscar no Pinterest" not in html, "o número saiu do texto do h3 e virou `.pn`"
+    assert html.count('<details class="lesson">') >= 3, "texto longo da aula em `details.lesson`"
+    assert "O que a aula 009 manda fazer aqui" in html
+    assert 'class="field"' in html, "marca e termos como `label.field` do catálogo"
+    assert 'class="progress-lbl"' in html and "Último scrape" in html
+    assert 'class="primary cta"' in html, "CTA da busca com o realce do protótipo"
+    assert 'class="ext"' in html, "`[extensão]` como `span.ext`, não como chip"
+
+    js = _view(client, "view.js")
+    assert 'class="src"' in js and 'class="term"' in js, "tile com badge de origem e legenda do termo"
+    assert "style=\"position:absolute" not in js, "o `input.why` deixou o inline style pela classe `.rf-why`"
+    assert "rf-why" in js
