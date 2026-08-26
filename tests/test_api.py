@@ -134,6 +134,10 @@ def test_shell_index_carrega_os_estaticos_na_ordem(client):
                'id="btnEditCamp"', 'id="btnTheme"'):
         assert el in index, el
     assert "studio.theme" in index, "o tema salvo é aplicado antes do primeiro paint"
+    # Wave 4: a barra `.progress` legada do topo saiu (o protótipo não a desenha); o id fica,
+    # sem elemento visível, porque este contrato de teste o exige.
+    assert '<span id="tbBar" hidden></span>' in index
+    assert '<div class="progress hidden">' not in index
     assert "fonts.googleapis.com" in index and index.count("http") == index.count("https"), "sem CDN além das fontes"
     for estatico in ("/static/style.css", "/static/ui.css", "/static/ui.js", "/static/app.js"):
         assert client.get(estatico).status_code == 200, estatico
@@ -144,10 +148,21 @@ def test_shell_tem_visao_geral_wizard_e_roteamento(client):
     app_js = client.get("/static/app.js").text
     # visão geral: cards das 11 etapas com status, o que falta e a próxima ação
     assert "Visão geral da campanha" in app_js and "ovgrid" in app_js and "ovcard" in app_js
-    assert "Faltando:" in app_js and "next_action" in app_js and "etapa atual" in app_js
+    assert "next_action" in app_js and "etapa atual" in app_js
+    # Wave 4: o card não repete o que falta (fica no `title` do rail e no guia da etapa) e a
+    # linha "→" só aparece nos cards concluída / em andamento / bloqueada.
+    assert 'class="miss"' not in app_js and "<b>Faltando:</b>" not in app_js
+    assert "\\nFaltando: " in app_js, "o que falta continua no `title` do item do rail"
+    assert "mostraNext" in app_js
     # wizard e edição rápida da campanha
     assert "Nova campanha" in app_js and "Editar campanha" in app_js
-    assert "(será encontrada na etapa 2)" in app_js, "aula 009: a vibe é encontrada na etapa 2"
+    # Wave 4: o modal do protótipo não tem as duas linhas auxiliares (aulas 009 / 007) e as
+    # ações usam os botões grandes do topbar.
+    assert "A aula 009 encontra a vibe no mood board" not in app_js
+    assert "A aula 007 manda escolher o formato pelo destino" not in app_js
+    assert 'class="ghost lg" data-close' in app_js and 'class="primary lg"' in app_js
+    assert 'class="field fmt-field"' in app_js
+    assert "encontrada na etapa 2" in app_js, "aula 009: a vibe é encontrada na etapa 2"
     for destino in ("YouTube, tela cheia", "Reels, TikTok, Shorts", "Feed quadrado"):
         assert destino in app_js, f"aula 007: formato pelo destino ({destino})"
     assert '"16:9"' in app_js and '"9:16"' in app_js and '"1:1"' in app_js
@@ -160,15 +175,18 @@ def test_shell_tem_visao_geral_wizard_e_roteamento(client):
     assert "Continuar de onde parei" in app_js
 
 
-def test_shell_traz_o_painel_como_o_studio_segue_o_curso(client):
-    """Texto da auditoria §4.3 — o painel inicial explica a fidelidade ao curso (ADR-004)."""
+def test_shell_nao_desenha_mais_o_painel_como_o_studio_segue_o_curso(client):
+    """Wave 4 (regra 2): o protótipo não desenha esse painel — ele saiu da UI.
+
+    O texto da fidelidade ao roteiro (aulas 005/007/008) continua em `CLAUDE.md` e no ADR-004;
+    o que este teste garante é que a UI não o exibe mais, nem na visão geral nem na tela sem
+    campanha. (Substitui o teste da wave 2 que exigia o painel.)
+    """
     app_js = client.get("/static/app.js").text
-    assert "Como o Studio segue o curso" in app_js
-    for trecho in ("fique preso ao processo, não à plataforma",
-                   "o bot da comunidade vira o Claude local",
-                   "Prompts de imagem em inglês, com intenção (mood, ângulo, câmera, estilo)",
-                   "na aula 008 o custo é o principal critério"):
-        assert trecho in app_js, trecho
+    css = client.get("/static/ui.css").text
+    assert "Como o Studio segue o curso" not in app_js
+    assert "courseHtml" not in app_js and "COURSE_TEXT" not in app_js
+    assert ".course" not in css and "course-body" not in css
 
 
 def test_shell_preserva_as_classes_que_as_telas_de_etapa_usam(client):
@@ -225,3 +243,74 @@ def test_shell_redesign_traz_o_pipeline_segmentado_e_o_catalogo_de_classes(clien
     assert "railPipe" in app_js and "tbPipe" in app_js, "os dois pipelines segmentados"
     assert "hfChipSide" in app_js, "chip do CLI no rodapé da sidebar"
     assert "miniprog" not in app_js, "o mini-progresso do rail foi substituído pelo pipeline"
+
+
+# ---------- wave 4 (ADH-OS-20260826-10): fidelidade ao protótipo ----------
+def test_wave4_tokens_e_catalogo_de_classes_do_shell(client):
+    """Contrato transversal da wave 4 (`docs/domains/studio/waves/wave-4.md`).
+
+    As 6 frentes de tela da sub-wave 1 consomem estas classes; o shell as entrega antes delas.
+    Todo token novo tem o par claro derivado do mesmo hue (mecanismo de 3 estados intacto).
+    """
+    css = client.get("/static/style.css").text + client.get("/static/ui.css").text
+    for token in ("--glow-dot", "--accent-soft-1", "--accent-line-3", "--ok-line-2",
+                  "--ok-line-3", "--stripes-sm"):
+        assert css.count(token + ":") == 3, f"{token} precisa dos 3 blocos (claro + 2 escuros)"
+    assert "rgba(79,200,217,.7)" in css and "rgba(11,127,147,.7)" in css, "glow do dot nos 2 temas"
+
+    for classe in (
+        # controles e botões
+        "input.sm", "input.bare", "input.mini.lg", "input.lg", ".w44", "button.sm",
+        "button.icon.mini", "button.ghost:disabled", ".col>button.ghost", ".field.fmt-field",
+        # tipografia e utilitários de linha
+        ".eyebrow.lbl", ".note code", ".grow-md", ".self-start", ".col.g10", ".row.loose",
+        ".row.media", ".row.opts", ".inline.lg", ".q{", ".import-row",
+        # superfícies
+        "main>.panel:last-child", ".panel.over", ".chip.xs", ".stephead.ov .lede",
+        # galerias e prompts
+        ".gallery.sm .card .term", ".gallery.xs .card", ".prompt .txt", ".prompt.sm",
+        ".prompts.one", ".refpick",
+        # linhas
+        ".rowcard .upcount", ".thumb.pick", ".scene-row textarea.txt", ".clip-row .thumb",
+        ".sfx-list", ".sfx-line", ".take .act", ".lead-row .body", ".pitch-table input.v",
+        ".pub-row .chip", ".strip .chip", ".panel .checks",
+        # guia e visão geral
+        ".guide-strip .chip", ".guide-actions button", ".ov-summary .chip.todo",
+        ".ovcard .act button",
+    ):
+        assert classe in css, f"classe/regra {classe} do contrato da wave 4 ausente"
+
+    # o que o protótipo NÃO desenha saiu do CSS
+    for morto in (".guide-what", ".guide-check", ".guide-fix", ".guide-sec>h4",
+                  ".ovcard .miss", ".pub-row .fb", ".scene-row .media"):
+        assert morto not in css, f"{morto} deveria ter saído na wave 4"
+
+    # valores medidos no DOM do protótipo (`_wave4-ref/proto/*.html`)
+    assert "padding:7px 12px;font-size:var(--fs-fine);font-weight:400" in css, "ghost do protótipo"
+    assert "field-sizing:content" in css, "textarea de prompt cresce com o conteúdo"
+    assert "linear-gradient(transparent,rgba(0,0,0,.72))" in css, "legenda do tile do protótipo"
+
+
+def test_wave4_guia_nasce_compacto_e_expande_em_uma_grade(client):
+    """Faixa compacta por padrão; expandido = linha de estado + UMA grade + ações."""
+    js = client.get("/static/ui.js").text
+    assert 'localStorage.getItem(key) === "1"' in js, "sem chave salva o guia nasce FECHADO"
+    assert "guide-strip" in js and "guide-toggle" in js and "aria-expanded" in js
+    assert "g.summary_kind" in js, "o chip extra do guia pode pedir cor de atenção"
+    # a grade é a união de entradas + saídas + validações, sem cabeçalhos nem checklist
+    assert "...(g.inputs || []), ...(g.outputs || []), ...(g.validations || [])" in js
+    assert "guide-items checks" in js
+    for morto in ("guide-what", "guide-check", "guide-fix", "O que fazer nesta etapa",
+                  "Validações da aula", "Checklist da aula"):
+        assert morto not in js, f"{morto} não é desenhado pelo protótipo"
+
+
+def test_wave4_helpers_aditivos_do_studio_ui(client):
+    """`autosize`, `modal({actions})` e `drop` em qualquer elemento — nada foi removido."""
+    js = client.get("/static/ui.js").text
+    for fn in ("autosize(", "modal(", "drop(", "tile(", "pipe(", "beats(", "copyBtn(",
+               "guide(", "renderGuide(", "hfChip(", "upload(", "confirmCost(", "poll("):
+        assert fn in js, f"Studio.ui.{fn} ausente"
+    assert "modal-actions" in js and 'a.kind === "primary" ? "primary" : "ghost"' in js
+    assert "field-sizing" in js or "scrollHeight" in js, "autosize mede a altura do conteúdo"
+    assert "● CLI · " in js, "chip do CLI com o texto do protótipo"

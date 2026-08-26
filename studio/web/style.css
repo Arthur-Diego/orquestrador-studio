@@ -13,17 +13,20 @@
   --ink-row:#26313D;
   --line:#E2E7EE;--line-2:#D2D9E3;--ctl:#B9C3CF;--ctl-hover:#8D99A8;
   --accent:#0B7F93;--accent-hover:#096B7D;--accent-ink:#FFFFFF;
-  --accent-soft:rgba(11,127,147,.08);--accent-soft-2:rgba(11,127,147,.14);
-  --accent-line:rgba(11,127,147,.35);--accent-line-2:rgba(11,127,147,.45);
+  --accent-soft:rgba(11,127,147,.08);--accent-soft-1:rgba(11,127,147,.10);--accent-soft-2:rgba(11,127,147,.14);
+  --accent-line:rgba(11,127,147,.35);--accent-line-2:rgba(11,127,147,.45);--accent-line-3:rgba(11,127,147,.22);
   --ok:#12724F;--ok-soft:rgba(18,114,79,.10);--ok-line:rgba(18,114,79,.35);
+  --ok-line-2:rgba(18,114,79,.22);--ok-line-3:rgba(18,114,79,.3);
   --gate:#9C5A0A;--gate-soft:rgba(156,90,10,.10);--gate-line:rgba(156,90,10,.35);
   --fail:#AE2F2A;--fail-soft:rgba(174,47,42,.10);
   --info:#33509F;--info-soft:rgba(51,80,159,.10);
   --glow-cta:0 2px 10px rgba(11,127,147,.24);
+  --glow-dot:0 0 8px rgba(11,127,147,.7);
   --glow-card:0 8px 28px rgba(11,127,147,.10);
   --ring:0 0 0 3px rgba(11,127,147,.16);
   --ring-sel:0 0 0 3px rgba(11,127,147,.22);
   --stripes:repeating-linear-gradient(45deg,#E7ECF3 0 10px,#F2F5F9 10px 20px);
+  --stripes-sm:repeating-linear-gradient(45deg,#E7ECF3 0 8px,#F2F5F9 8px 16px);
   --topbar-bg:rgba(245,247,250,.86);
   --scrim:rgba(16,23,32,.45);
   --shadow-modal:0 24px 64px rgba(16,23,32,.28);
@@ -49,17 +52,20 @@
     --ink-row:#C9CFD8;
     --line:#1C222B;--line-2:#232A34;--ctl:#2E3641;--ctl-hover:#39424F;
     --accent:#4FC8D9;--accent-hover:#6AD3E1;--accent-ink:#05262C;
-    --accent-soft:rgba(79,200,217,.08);--accent-soft-2:rgba(79,200,217,.14);
-    --accent-line:rgba(79,200,217,.35);--accent-line-2:rgba(79,200,217,.4);
+    --accent-soft:rgba(79,200,217,.08);--accent-soft-1:rgba(79,200,217,.10);--accent-soft-2:rgba(79,200,217,.14);
+    --accent-line:rgba(79,200,217,.35);--accent-line-2:rgba(79,200,217,.4);--accent-line-3:rgba(79,200,217,.22);
     --ok:#50CF9E;--ok-soft:rgba(80,207,158,.10);--ok-line:rgba(80,207,158,.35);
+    --ok-line-2:rgba(80,207,158,.22);--ok-line-3:rgba(80,207,158,.3);
     --gate:#E4A64F;--gate-soft:rgba(228,166,79,.10);--gate-line:rgba(228,166,79,.35);
     --fail:#F08B85;--fail-soft:rgba(240,139,133,.10);
     --info:#93AAF7;--info-soft:rgba(147,170,247,.10);
     --glow-cta:0 0 18px rgba(79,200,217,.22);
+    --glow-dot:0 0 8px rgba(79,200,217,.7);
     --glow-card:0 8px 32px rgba(79,200,217,.08);
     --ring:0 0 0 3px rgba(79,200,217,.14);
     --ring-sel:0 0 0 3px rgba(79,200,217,.2);
     --stripes:repeating-linear-gradient(45deg,#161A20 0 10px,#12151A 10px 20px);
+    --stripes-sm:repeating-linear-gradient(45deg,#161A20 0 8px,#12151A 8px 16px);
     --topbar-bg:rgba(11,13,16,.86);
     --scrim:rgba(4,7,10,.66);
     --shadow-modal:0 24px 64px rgba(0,0,0,.62);
@@ -75,17 +81,20 @@
   --ink-row:#C9CFD8;
   --line:#1C222B;--line-2:#232A34;--ctl:#2E3641;--ctl-hover:#39424F;
   --accent:#4FC8D9;--accent-hover:#6AD3E1;--accent-ink:#05262C;
-  --accent-soft:rgba(79,200,217,.08);--accent-soft-2:rgba(79,200,217,.14);
-  --accent-line:rgba(79,200,217,.35);--accent-line-2:rgba(79,200,217,.4);
+  --accent-soft:rgba(79,200,217,.08);--accent-soft-1:rgba(79,200,217,.10);--accent-soft-2:rgba(79,200,217,.14);
+  --accent-line:rgba(79,200,217,.35);--accent-line-2:rgba(79,200,217,.4);--accent-line-3:rgba(79,200,217,.22);
   --ok:#50CF9E;--ok-soft:rgba(80,207,158,.10);--ok-line:rgba(80,207,158,.35);
+  --ok-line-2:rgba(80,207,158,.22);--ok-line-3:rgba(80,207,158,.3);
   --gate:#E4A64F;--gate-soft:rgba(228,166,79,.10);--gate-line:rgba(228,166,79,.35);
   --fail:#F08B85;--fail-soft:rgba(240,139,133,.10);
   --info:#93AAF7;--info-soft:rgba(147,170,247,.10);
   --glow-cta:0 0 18px rgba(79,200,217,.22);
+  --glow-dot:0 0 8px rgba(79,200,217,.7);
   --glow-card:0 8px 32px rgba(79,200,217,.08);
   --ring:0 0 0 3px rgba(79,200,217,.14);
   --ring-sel:0 0 0 3px rgba(79,200,217,.2);
   --stripes:repeating-linear-gradient(45deg,#161A20 0 10px,#12151A 10px 20px);
+  --stripes-sm:repeating-linear-gradient(45deg,#161A20 0 8px,#12151A 8px 16px);
   --topbar-bg:rgba(11,13,16,.86);
   --scrim:rgba(4,7,10,.66);
   --shadow-modal:0 24px 64px rgba(0,0,0,.62);
@@ -119,13 +128,17 @@ code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--bg-2)
 /* ================= tipografia utilitária ================= */
 .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-5);display:inline-flex;align-items:center;gap:7px}
 .eyebrow.sm{font-size:9.5px;letter-spacing:.08em}
+/* Rótulo de bloco (eyebrow que ocupa a linha inteira acima de um campo/galeria). */
+.eyebrow.lbl{display:block;font-size:10px;letter-spacing:.1em;color:var(--ink-3);margin:0 0 var(--s2)}
 .mono{font-family:"IBM Plex Mono",monospace}
 .fine{font-size:var(--fs-fine);color:var(--ink-3);line-height:1.6;max-width:74ch;margin:var(--s3) 0 0}
 .fine b,.fine strong{color:var(--ink-2);font-weight:600}
 .lede{color:var(--ink-2);max-width:70ch;margin:0;text-wrap:pretty}
-.lede b,.lede strong{color:var(--ink);font-weight:600}
-.note{font-size:12px;color:var(--ink-5);line-height:1.55;margin:var(--s3) 0 0;max-width:78ch}
+.lede b,.lede strong{color:var(--ink);font-weight:700}
+.note{font-size:11.5px;color:var(--ink-5);line-height:1.5;margin:var(--s3) 0 0;max-width:78ch}
 .note b,.note strong{color:var(--ink-3)}
+/* `code` dentro de nota é texto, não bloco destacado (protótipo: sem fundo). */
+.note code{background:none;padding:0;font-size:11px;color:var(--ink-3)}
 .ext{font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--ink-5);letter-spacing:0;text-transform:none;font-weight:400}
 .hidden{display:none!important}
 .row{display:flex;gap:var(--s2);align-items:center}
@@ -137,56 +150,97 @@ code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--bg-2)
    uma a sua versão escopada: `.bs-grow`, `.md-grow`, `.sh-grow`, `.pb-form .u`…). */
 .grow{flex:1;min-width:180px}
 .grow-sm{flex:1;min-width:120px}
-.grow-lg{flex:1.4;min-width:240px}
+.grow-md{flex:1;min-width:200px}
+.grow-lg{flex:1.4;min-width:220px}
+.w44{width:44px}
+.self-start{align-self:flex-start}
 .row.stretch{align-items:stretch}
 .row.stretch>.drop{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px}
 .row.stretch>.col{justify-content:flex-start}
 /* `.fine`/`.note` nascem com `margin-top:12px`, que desalinha a linha quando são inline. */
-.row>.fine,.row>.note,.cli>.fine,.cli>.note,.ctl>.fine,.ctl>.note,.takes>.note{margin-top:0}
+.row>.fine,.row>.note,.cli>.fine,.cli>.note,.ctl>.fine,.ctl>.note,.takes>.note,
+.col>.note,.status>.note{margin-top:0}
+/* Variantes de linha/coluna medidas no protótipo (gap por contexto, não improvisado na tela). */
+.col.g10{gap:10px}
+.col>.cli{margin-top:0;padding-top:var(--s2)}
+.row.loose{gap:var(--s4);margin-bottom:14px}
+.row.loose label{gap:6px}
+.row.media{gap:14px;margin-bottom:14px;align-items:flex-start}
+.row.opts{gap:14px;font-size:var(--fs-fine);color:var(--ink-3)}
+.grid2 .row.opts{gap:var(--s4)}
+.inline.lg{gap:var(--s2);font-size:var(--fs-sm);color:var(--ink-2)}
+/* Pergunta de decisão (etapa 7): texto de peso médio, não um `h4`. */
+.q{margin:0;font-size:var(--fs-sm);font-weight:500;color:var(--ink-row)}
+/* Linha "dropzone + coluna de botões" das telas de importação. */
+.import-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.import-row>.col{min-width:220px;gap:var(--s2)}
+.import-row .col>button{padding:8px 12px}
 .flat{margin-top:0}
 .pre{white-space:pre-wrap}
 
 /* ================= controles ================= */
 input,textarea,select,button{font:inherit;transition:border-color .15s,background .15s,box-shadow .15s,color .15s,transform .15s}
-input,textarea{background:var(--surface-2);border:1px solid var(--ctl);border-radius:var(--r);color:var(--ink);padding:9px 12px;font-size:13.5px}
-textarea{width:100%;resize:vertical;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-fine);line-height:1.7}
+input,textarea{background:var(--surface-2);border:1px solid var(--ctl);border-radius:var(--r);color:var(--ink);padding:8px 11px;font-size:var(--fs-sm)}
+textarea{width:100%;resize:vertical;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-fine);line-height:1.6;padding:10px 12px}
+/* Campo "grande" (modal e campos de destaque do protótipo: 9px 12px / 13.5px). */
+input.lg,.modal-body input:not([type]){padding:9px 12px;font-size:13.5px}
 input::placeholder,textarea::placeholder{color:var(--ink-4)}
 input:hover,textarea:hover{border-color:var(--ctl-hover)}
 input:focus,textarea:focus{border-color:var(--accent);outline:none;box-shadow:var(--ring)}
 input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:auto;padding:0;border:0;box-shadow:none}
 input[type=date],input[type=datetime-local]{color-scheme:inherit}
 .inline input[type=number]{width:60px;padding:5px 8px;border-radius:7px;font-size:var(--fs-fine)}
-input.mini{width:48px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-chip);padding:4px 6px;font-family:"IBM Plex Mono",monospace;font-size:11px}
+.cli .inline input[type=number]{width:52px}
+input.mini{width:44px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-chip);padding:4px 6px;font-family:"IBM Plex Mono",monospace;font-size:11px}
+/* Campo numérico de linha maior (offset/fade da etapa 8): caixa própria, não o chip de 44px. */
+input.mini.lg{width:52px;background:var(--surface-2);border:1px solid var(--ctl);border-radius:7px;padding:5px 8px;font-size:11.5px}
+/* Número inline sem caixa ("últimos 120 min"): só ganha borda no foco. */
+input.bare{width:auto;background:transparent;border:1px solid transparent;border-radius:var(--r-chip);padding:1px 4px;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-fine);color:inherit}
+input.bare:hover{border-color:var(--line-2)}
+input.bare:focus{background:var(--surface-2);border-color:var(--accent)}
+/* Campo curto do cabeçalho de painel (protótipo: 180px, r8, 7px 11px). */
+input.sm{width:180px;max-width:100%;border-radius:var(--r-sm);padding:7px 11px;font-size:var(--fs-fine)}
 /* `input.mini` (0,1,1) perdia para `.inline input[type=number]` (0,2,1) e voltava a 60px, que
    corta valores de 3 casas (ex.: `0.511`). Promovido na integração da wave 3. */
-.inline input.mini,.ctl input.mini{width:64px;padding:4px 6px;border-radius:var(--r-chip);font-family:"IBM Plex Mono",monospace;font-size:11px}
+.inline input.mini,.ctl input.mini{width:44px;padding:4px 6px;border-radius:var(--r-chip);font-family:"IBM Plex Mono",monospace;font-size:11px}
+.inline input.mini.lg,.ctl input.mini.lg{width:52px;padding:5px 8px;border-radius:7px;font-size:11.5px}
 input.mini.wide{width:76px}
 input.mini.num{text-align:right;font-variant-numeric:tabular-nums}
 input.prompt-inline,textarea.prompt-inline{width:100%;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 11px;font-family:"IBM Plex Mono",monospace;font-size:12px}
 textarea.prompt-inline{line-height:1.6;resize:vertical;min-height:56px}
-select{appearance:none;-webkit-appearance:none;background:var(--bg-2) var(--caret) no-repeat right 10px center;border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--ink-2);padding:6px 26px 6px 11px;font-size:var(--fs-fine);cursor:pointer;min-width:0;max-width:100%}
+select{appearance:none;-webkit-appearance:none;background:var(--bg-2) var(--caret) no-repeat right 10px center;border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--ink-2);padding:7px 26px 7px 11px;font-size:var(--fs-fine);cursor:pointer;min-width:0;max-width:100%}
 select:hover{border-color:var(--ctl-hover);color:var(--ink)}
 select:focus{border-color:var(--accent);outline:none;box-shadow:var(--ring)}
 label{color:var(--ink-2)}
 
-button{cursor:pointer;background:transparent;border:1px solid var(--ctl);border-radius:var(--r-sm);color:var(--ink-2);padding:7px 14px;font-size:var(--fs-fine);font-weight:500;white-space:nowrap}
+/* Peso e padding do protótipo (`scp1`): o ghost herda o peso do corpo (400) e é 7px 12px;
+   só `primary` e os botões `.lg`/de card sobem para 500/600. */
+button{cursor:pointer;background:transparent;border:1px solid var(--ctl);border-radius:var(--r-sm);color:var(--ink-2);padding:7px 12px;font-size:var(--fs-fine);font-weight:400;white-space:nowrap}
 button:hover{border-color:var(--ctl-hover);color:var(--ink)}
 button:active{transform:translateY(1px)}
 button.ghost{background:transparent;border-color:var(--ctl);color:var(--ink-2)}
 button.ghost:hover{border-color:var(--ctl-hover);color:var(--ink)}
-button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);padding:7px 14px;font-weight:600}
 button.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover);color:var(--accent-ink)}
 button.primary.cta{font-size:13.5px;padding:10px 16px;border-radius:var(--r);box-shadow:var(--glow-cta)}
-button.lg{font-size:var(--fs-sm);padding:8px 16px;border-radius:var(--r)}
+button.lg{font-size:var(--fs-sm);padding:8px 16px;border-radius:var(--r);font-weight:500}
+button.primary.lg{font-weight:600}
+button.sm{font-size:12px;padding:6px 12px}
+/* Botão só de ícone dentro de linha (↑ ↓ ✕). */
+button.icon.mini{padding:4px 8px;font-size:12px;border-radius:var(--r-chip)}
+/* Botão de coluna (pilha de importação): mais alto, largura do bloco. */
+.col>button.ghost{padding:8px 12px}
 button.ghost.lg{padding:8px 14px}
 button.primary.lg{box-shadow:var(--glow-cta)}
 button.danger{background:transparent;border-color:var(--fail);color:var(--fail)}
 button.danger:hover{background:var(--fail-soft);border-color:var(--fail)}
 button.icon{padding:6px 10px;line-height:1}
-button.link{background:none;border:0;padding:0;color:var(--accent);font-size:12px;font-weight:500;text-decoration:underline}
+button.link{background:none;border:0;padding:0;color:var(--accent);font-size:var(--fs-fine);font-weight:500;text-decoration:underline}
 button.link:hover{color:var(--accent-hover);background:none}
 button.mini{padding:4px 9px;font-size:11px;border-radius:var(--r-chip)}
 button:disabled,button[disabled]{opacity:.5;cursor:not-allowed;transform:none;filter:none}
+/* Ghost desabilitado do protótipo: não desbota, só perde contraste no texto. */
+button.ghost:disabled,button.ghost[disabled]{opacity:1;color:var(--ink-5);border-color:var(--ctl)}
 button.loading{position:relative;color:transparent!important;pointer-events:none}
 button.loading::after{content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;color:var(--ink-2);animation:spin .7s linear infinite}
 button.primary.loading::after{color:var(--accent-ink)}
@@ -197,6 +251,7 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 
 /* `.field` — rótulo eyebrow + controle (modal, painéis, formulários) */
 .field{display:flex;flex-direction:column;gap:6px}
+.field.fmt-field{gap:var(--s2)}
 .field>.eyebrow,.field>label.eyebrow{font-size:10px;letter-spacing:.1em;color:var(--ink-3)}
 .field .hint{font-size:var(--fs-fine);color:var(--ink-5);line-height:1.45}
 
@@ -205,7 +260,7 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 .side{border-right:1px solid var(--line);background:var(--surface-2);display:flex;flex-direction:column;gap:22px;padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
 .brand{display:flex;flex-direction:column;gap:2px}
 .brand .eyebrow{font-size:10.5px;letter-spacing:.14em;color:var(--ink-4)}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent-line-2);flex:0 0 auto}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:var(--glow-dot);flex:0 0 auto}
 .brand h1{font-size:var(--fs-h1);font-weight:700;letter-spacing:-.015em}
 .workspace{display:flex;flex-direction:column;min-width:0}
 main{padding:34px 36px 96px;max-width:1360px;width:100%}
@@ -219,6 +274,7 @@ main{padding:34px 36px 96px;max-width:1360px;width:100%}
 .side-sec button.icon{width:34px;padding:0;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);color:var(--ink-2);font-size:16px;line-height:1}
 .side-sec button.icon:hover{border-color:var(--ctl-hover);color:var(--ink)}
 .navlink{display:flex;align-items:center;gap:9px;width:100%;justify-content:flex-start;background:transparent;border:1px solid transparent;border-radius:var(--r-sm);padding:8px 10px;color:var(--ink-2);font-size:var(--fs-sm);font-weight:500;text-align:left}
+.navlink>span[aria-hidden]{font-size:12px}
 .navlink:hover{background:var(--bg-2);color:var(--ink);border-color:transparent}
 .navlink.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--ink)}
 
@@ -255,8 +311,9 @@ nav li.st-none .st{display:none}
 nav li.st-done:not(.active) .t{color:var(--ink-3)}
 
 /* ---------- rodapé da sidebar ---------- */
-.side-foot{margin-top:auto;position:sticky;bottom:0;padding:14px 0 4px;border-top:1px solid var(--line);background:var(--surface-2);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
-.side-foot .chip{width:fit-content;max-width:100%;white-space:normal;line-height:1.45}
+/* Não é sticky (protótipo): a sidebar inteira rola quando falta altura. */
+.side-foot{margin-top:auto;padding:14px 0 0;border-top:1px solid var(--line);background:var(--surface-2);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.side-foot .chip{width:fit-content;max-width:100%;white-space:normal;line-height:1.45;padding:4px 8px;gap:6px}
 .themebtn{display:flex;align-items:center;gap:var(--s2);background:none;border:0;padding:0;color:var(--ink-4);font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase}
 .themebtn:hover{color:var(--ink-2);background:none;border-color:transparent}
 
@@ -268,7 +325,7 @@ nav li.st-done:not(.active) .t{color:var(--ink-3)}
 .tb-name{font-family:"Bricolage Grotesque","Instrument Sans",sans-serif;font-size:var(--fs-h2);font-weight:600;letter-spacing:-.01em;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:44ch}
 .tb-meta{display:flex;gap:6px;flex-wrap:wrap}
 .tb-meta .chip.mode{border-color:var(--line-2);background:var(--bg-2)}
-.tb-meta .chip.info{border-color:var(--accent-line)}
+.tb-meta .chip.info{background:var(--accent-soft);border-color:var(--accent-line-3)}
 .tb-actions{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .tb-prog{display:flex;flex-direction:column;gap:5px;min-width:170px}
 .tb-prog .lbl{display:flex;justify-content:space-between;gap:var(--s2);font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-5)}
@@ -279,7 +336,15 @@ nav li.st-done:not(.active) .t{color:var(--ink-3)}
 .stephead.ov{margin-bottom:26px}
 .stephead h2{margin:0}
 .stephead .ov-summary{margin-top:4px}
+.stephead.ov .lede{max-width:68ch}
 .panel{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-panel);padding:20px 22px;margin:0 0 16px}
+/* O último painel não empurra o rodapé do `main` (o protótipo termina no painel). */
+main>.panel:last-child{margin-bottom:0}
+/* Texto de apoio logo abaixo do título do painel: espaço fixo, não a margem de `p`. */
+.panel>.fine,.panel-head+.fine{margin:0 0 14px}
+.panel>.progress{margin-bottom:10px}
+/* Alvo de drop quando a zona é o painel inteiro (`Studio.ui.drop(painel)`). */
+.panel.over{border-color:var(--accent);box-shadow:var(--ring)}
 .panel-head{display:flex;justify-content:space-between;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:14px;padding-bottom:var(--s3);border-bottom:1px solid var(--line)}
 .panel-head h3{display:flex;align-items:baseline;gap:10px;font-size:var(--fs-h3);font-weight:600;margin:0}
 .panel-head h3 .pn{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--accent);font-weight:400;letter-spacing:0}
@@ -302,11 +367,13 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .chip.ok,.chip.done{background:var(--ok-soft);color:var(--ok)}
 .chip.warn{background:var(--gate-soft);color:var(--gate)}
 .chip.fail,.chip.blocked{background:var(--fail-soft);color:var(--fail)}
-.chip.info,.chip.in_progress{background:var(--accent-soft-2);color:var(--accent)}
+.chip.info{background:var(--accent-soft);color:var(--accent)}
+.chip.in_progress{background:var(--accent-soft-1);color:var(--accent)}
+.chip.xs{font-size:10px;padding:3px 8px}
 .chip.todo{background:var(--line);color:var(--ink-4)}
 .chip.mode{background:var(--line);color:var(--ink-2)}
 .chip.unknown{background:transparent;color:var(--ink-4);border-color:var(--ctl);border-style:dashed}
-.side-foot .chip.ok{border-color:var(--ok-line)}
+.side-foot .chip.ok{border-color:var(--ok-line-2)}
 
 /* ---------- progresso ---------- */
 .progress{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
@@ -324,13 +391,19 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:var(--s3)}
 .gallery.sm{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
 .gallery.xs{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));max-width:560px;gap:10px}
+.gallery.xs .card{border-radius:var(--r)}
+.gallery.xs .card.sel{box-shadow:none}
+.gallery.xs .card.sel::after{width:20px;height:20px;top:6px;right:6px;font-size:11px}
 .card{position:relative;aspect-ratio:3/4;border-radius:var(--r-tile);overflow:hidden;cursor:pointer;border:2px solid transparent;background:var(--stripes);transition:transform .15s,border-color .15s,box-shadow .15s}
 .card:hover{transform:translateY(-2px)}
 .card img,.card video{width:100%;height:100%;object-fit:cover;display:block}
 .card.wide{aspect-ratio:16/9}
 .card.sq{aspect-ratio:1/1}
 .card .src{position:absolute;top:8px;left:8px;font-family:"IBM Plex Mono",monospace;font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(0,0,0,.55);color:#A7AFBA}
-.card .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.85));color:#EDEFF2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Legenda do tile: gradiente e cor do protótipo (a variante reforçada da wave 3 foi revertida
+   pela regra 1 da wave 4 — o protótipo manda no que é visível). */
+.card .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(transparent,rgba(0,0,0,.72));color:#C9CFD8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gallery.sm .card .term{white-space:normal}
 .card .up{position:absolute;bottom:8px;left:8px;font-family:"IBM Plex Mono",monospace;font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(0,0,0,.55);color:#8B93A0}
 .card .up.ok{color:#50CF9E}
 .card .term~.up{bottom:28px}
@@ -343,7 +416,9 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* Ação dentro do tile ("usar como origem", "Usar como base da cena"). O selo é sempre escuro,
    como `.card .src`: a cor do texto NÃO pode seguir `--accent`, que escurece no tema claro.
    Sobe para 30px quando o tile já tem legenda ou selo de upscale ancorado embaixo. */
-.card .card-act{position:absolute;right:8px;bottom:8px;z-index:2;max-width:calc(100% - 16px);padding:2px 7px;border:0;border-radius:5px;background:rgba(0,0,0,.55);color:#9FE3EE;font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:400;line-height:1.4;white-space:normal;text-align:right;text-decoration:none}
+/* Ação do tile só aparece no hover/foco (protótipo: o tile em repouso é só a imagem). */
+.card .card-act{opacity:0;transition:opacity .15s;position:absolute;right:8px;bottom:8px;z-index:2;max-width:calc(100% - 16px);padding:2px 7px;border:0;border-radius:5px;background:rgba(0,0,0,.55);color:#9FE3EE;font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:400;line-height:1.4;white-space:normal;text-align:right;text-decoration:none}
+.card:hover .card-act,.card:focus-within .card-act{opacity:1}
 .card .card-act:hover{background:rgba(0,0,0,.78);color:#D7F4F9}
 .card .term~.card-act,.card .up~.card-act{bottom:30px}
 /* Tile de exibição pura (a imagem base da etapa 4 não é escolhível). */
@@ -358,20 +433,27 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .prompt .row button.copy,.prompt .row button.link,.prompt .row .copy{margin-left:auto;background:none;border:0;padding:0;color:var(--accent);font-size:12px;font-weight:500;text-decoration:underline}
 .prompt .row button.copy:hover{color:var(--accent-hover);background:none}
 .prompt .ok{color:var(--ok);font-family:"IBM Plex Mono",monospace;font-size:11px}
-.prompt textarea{background:transparent;border:0;padding:0;min-height:96px;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.7;color:var(--ink-2)}
+/* Bloco de prompt: altura pelo conteúdo, sem barra interna (protótipo desenha texto corrido).
+   `field-sizing` cobre os navegadores novos; `Studio.ui.autosize()` é o fallback. */
+.prompt textarea{background:transparent;border:0;padding:0;min-height:0;resize:none;overflow:hidden;field-sizing:content;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.7;color:var(--ink-2)}
+/* Prompt em texto estático (não editável): mesma caixa tipográfica do textarea. */
+.prompt .txt{margin:0;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.6;color:var(--ink-2);white-space:pre-wrap}
 .prompt textarea:focus,.prompt textarea:hover{border:0;outline:none;box-shadow:none}
-.prompt .fine,.prompt p.fine{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.7;margin:0;color:var(--ink-3)}
+.prompt .fine,.prompt p.fine{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.7;margin:0;color:var(--ink-2)}
+/* Card de prompt compacto (etapa 4) e wrapper de card único de largura total. */
+.prompt.sm{padding:12px 14px;gap:6px}
+.prompts.one{display:block}
 .prompt.sel{background:var(--surface-3);border-color:var(--ok-line)}
 .prompt audio{width:100%}
 .prompt-group{display:flex;flex-direction:column;gap:var(--s2);border-left:2px solid transparent;padding-left:10px}
 .prompt-group.sel{border-left-color:var(--accent)}
 .prompt-ref{display:flex;align-items:center;gap:10px}
 .prompt-ref img{width:56px;height:56px;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line-2)}
-.refpick{margin:var(--s2) 0 14px}
+.refpick{margin:0 0 14px}
 .refgallery{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));max-width:560px;gap:10px;margin-top:var(--s2)}
 
 /* ---------- drop de arquivos ---------- */
-.drop{flex:1;min-width:240px;border:2px dashed var(--ctl);border-radius:var(--r-tile);padding:22px;text-align:center;color:var(--ink-3);background:var(--surface-2);cursor:pointer;font-size:var(--fs-fine)}
+.drop{flex:1;min-width:220px;border:2px dashed var(--ctl);border-radius:var(--r-tile);padding:22px;text-align:center;color:var(--ink-3);background:var(--surface-2);cursor:pointer;font-size:var(--fs-fine)}
 .drop:hover{border-color:var(--accent);color:var(--ink-2)}
 .drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--ink-2)}
 .drop u{color:var(--accent);text-decoration:underline}
@@ -394,36 +476,48 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* O `:not()` é o que impede o rótulo de herdar o quadrado do swatch: `.palette.sm>span` (0,2,1)
    vencia `.palette .lbl` (0,2,0) e o rótulo virava um quadrado de 22px que estourava a linha
    (3px de scroll horizontal na etapa 5). Corrigido na integração da wave 3. */
+.panel-head .palette{margin:0}
+.palette.sm{gap:6px}
 .palette>span:not(.lbl):not(.fine):not(.ext){width:34px;height:34px;border-radius:var(--r-sm);border:1px solid var(--line-2);flex:0 0 auto}
 .palette.sm>span:not(.lbl):not(.fine):not(.ext){width:22px;height:22px;border-radius:var(--r-chip)}
 .palette .lbl,.palette .fine,.palette .ext{width:auto;height:auto;flex:0 1 auto;min-width:0;border:0;border-radius:0;margin:0 0 0 6px;font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-5)}
+.palette.sm .lbl{margin-left:var(--s1)}
 
 /* ---------- linhas (publicação, lead, cena, clipe, faixa) ---------- */
-.rowlist{display:flex;flex-direction:column;gap:var(--s2)}
+.rowlist{display:flex;flex-direction:column;gap:10px}
 .rowcard{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px;display:flex;gap:12px 14px;align-items:center;flex-wrap:wrap}
 .rowcard.grid{display:grid;flex-wrap:nowrap}
 .rowcard.sel{background:var(--surface-3);border-color:var(--ok-line)}
-.rowcard.cur{border-color:var(--accent-line-2)}
+.rowcard.cur{background:var(--surface-3);border-color:var(--accent-line-2)}
 /* Card em coluna (cenas da etapa 5): thumb em cima, linha de rótulo + chip embaixo. */
 .rowcard.col{flex-direction:column;align-items:stretch;gap:var(--s2);padding:10px}
 .rowcard.col>.row{justify-content:space-between;width:100%;min-width:0}
-.rowcard.col>.thumb{width:100%}
+.rowcard.col>.thumb{width:100%;border-radius:var(--r-sm)}
 /* Card que é um alvo de escolha (o clique abre/seleciona). */
 .rowcard.pick{cursor:pointer;transition:border-color .15s,transform .15s}
 .rowcard.pick:hover{border-color:var(--ctl-hover);transform:translateY(-2px)}
 .thumb{position:relative;border-radius:7px;overflow:hidden;background:var(--stripes);aspect-ratio:16/9}
+/* Thumb pequena usa o listrado de passo 8px (protótipo); os tiles grandes ficam em 10px. */
+.scene-row .thumb,.clip-row .thumb,.shot-row .thumb{background:var(--stripes-sm)}
 .thumb img,.thumb video{width:100%;height:100%;object-fit:cover;display:block}
 /* Thumb vazia com estado textual — o listrado sozinho não diz por que não há imagem. */
 .thumb.none{display:grid;place-items:center}
 .thumb.none>span,.thumb>.empty{padding:0 var(--s1);font-family:"IBM Plex Mono",monospace;font-size:9.5px;line-height:1.4;color:var(--ink-5);text-align:center}
-.scene-row{display:grid;grid-template-columns:88px 100px minmax(0,1fr);gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
-/* Cena EDITÁVEL (etapa 4): a 2ª coluna vira thumb + select da imagem e a 3ª vira textarea +
-   ações. O catálogo original previa só texto estático nessas colunas. */
-.scene-row .media{display:flex;flex-direction:column;gap:6px;min-width:0}
-.scene-row .media select{width:100%;min-width:0;font-size:11px;padding:4px 22px 4px 8px}
+/* Thumb clicável (escolher a imagem da cena). */
+.thumb.pick{cursor:pointer}
+/* Contagem de upscale ao lado do nome da linha. */
+.rowcard .upcount{font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--ink-5)}
+.rowcard .upcount.warn{color:var(--gate)}
+.rowcard .upcount.ok{color:var(--ok)}
+.scene-row{position:relative;display:grid;grid-template-columns:88px 100px minmax(0,1fr);gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
+/* Cena EDITÁVEL com cara de estática (regra 2 da wave 4): o texto da cena é um `textarea`
+   transparente de altura automática e as ações só aparecem no hover/foco da linha. */
 .scene-row .edit{display:flex;gap:10px;align-items:flex-start;min-width:0}
 .scene-row .edit textarea{flex:1;min-width:0;margin:0}
-.scene-row .acts{display:flex;gap:5px;flex:0 0 auto}
+.scene-row textarea.txt{width:100%;background:transparent;border:0;padding:0;margin:0;font:inherit;font-size:var(--fs-sm);line-height:1.55;color:var(--ink-row);resize:none;overflow:hidden;field-sizing:content;min-height:0}
+.scene-row textarea.txt:focus{outline:none;box-shadow:var(--ring);border-radius:6px}
+.scene-row .acts{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;gap:5px;flex:0 0 auto;opacity:0;transition:opacity .15s}
+.scene-row:hover .acts,.scene-row:focus-within .acts{opacity:1}
 .scene-row .acts button{padding:5px 9px;font-size:12px;line-height:1.2}
 .scene-row .mom,.mom{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-4)}
 .mom[data-mom="comeco"]{color:var(--accent)}
@@ -431,11 +525,16 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .mom[data-mom="acao"]{color:var(--gate)}
 .mom[data-mom="desfecho"]{color:var(--ok)}
 .scene-row .txt{font-size:var(--fs-sm);color:var(--ink-row)}
-.clip-row{display:grid;grid-template-columns:26px 84px minmax(170px,1fr) auto;gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
+.clip-row{display:grid;grid-template-columns:26px 84px minmax(120px,1fr) auto;gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
+.clip-row .thumb{border-radius:6px}
 .clip-row .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
 .clip-row .name{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip-row .ctl{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-3)}
-.clip{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px;gap:10px 14px}
+.clip-row .ctl label{gap:5px;font-size:12px}
+/* Ações e campo extra da linha de clipe: hover/foco, como no protótipo. */
+.clip-row .acts,.clip-row .more{opacity:0;transition:opacity .15s}
+.clip-row:hover .acts,.clip-row:focus-within .acts,
+.clip-row:hover .more,.clip-row:focus-within .more{opacity:1}
 .sfxrow{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;gap:10px 12px}
 .shot-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:16px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px 16px}
 .shot-row .nm{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3)}
@@ -446,7 +545,10 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .take:hover{border-color:var(--ctl-hover)}
 .take.like{background:var(--accent-soft);border-color:var(--accent-line-2);color:var(--ink)}
 .take .like-lbl{color:var(--accent)}
-.take.empty{background:transparent;border-style:dashed;border-color:var(--ctl);color:var(--ink-4);padding:8px 12px;text-align:left;grid-column:auto}
+.take.empty{background:transparent;border-style:dashed;border-color:var(--ctl);color:var(--ink-5);padding:8px 12px;text-align:left;grid-column:auto}
+/* Ações dentro do tile de take: só no hover/foco. */
+.take .act,.take .an-x{display:none}
+.take:hover .act,.take:hover .an-x,.take:focus-within .act,.take:focus-within .an-x{display:inline-flex}
 .take.empty:hover{border-color:var(--ctl-hover);color:var(--ink-3)}
 .take:disabled,.take[disabled]{opacity:.55;cursor:not-allowed;transform:none}
 .an-takes{gap:10px}
@@ -455,15 +557,27 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .track-row .meta{display:flex;flex-direction:column;gap:2px;min-width:140px}
 .track-row .meta .nm{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink)}
 .track-row .meta .mt{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-5)}
-.track-row .wave{flex:1;height:26px;border-radius:5px;background:repeating-linear-gradient(90deg,var(--ctl) 0 2px,transparent 2px 5px);min-width:120px}
+/* A onda é clicável (buscar na faixa) e mostra o progresso em `--p` sobre as barras. */
+.track-row .wave{flex:1;height:26px;border-radius:5px;cursor:pointer;min-width:120px;
+  background-image:linear-gradient(90deg,var(--accent-soft-2) var(--p,0%),transparent 0),
+    repeating-linear-gradient(90deg,var(--ctl) 0 2px,transparent 2px 5px)}
 .track-row audio{flex:1;min-width:180px;height:34px}
+/* Lista de efeitos sonoros da montagem (etapa 8). */
+.sfx-list{display:flex;flex-direction:column;gap:6px;justify-content:center}
+.sfx-line{display:flex;gap:10px;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3)}
+.sfx-line .edit{display:none}
+.sfx-line:hover .edit,.sfx-line:focus-within .edit{display:inline-flex}
 .pub-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
-.pub-row .url{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis}
+.pub-row .url{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:32ch}
 .pub-row .nt{font-size:var(--fs-fine);color:var(--ink-2)}
-/* Faixa de feedback do post: quebra para a linha inteira abaixo dos metadados. */
-.pub-row .fb{display:flex;gap:var(--s2);align-items:center;flex:1 0 100%;flex-wrap:wrap}
-.pub-row .fb input{flex:1;min-width:200px}
-.lead-row{display:flex;flex-wrap:wrap;gap:12px 14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:12px 14px}
+.pub-row .chip{padding:2px 8px}
+/* Ações de linha aparecem no hover/foco (protótipo: a linha em repouso é só o dado). */
+.pub-row .act,.lead-row .body .act{opacity:0;transition:opacity .15s}
+.pub-row:hover .act,.pub-row:focus-within .act,
+.lead-row:hover .body .act,.lead-row:focus-within .body .act{opacity:1}
+.lead-row{display:flex;flex-wrap:wrap;gap:12px 14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:12px 14px;cursor:pointer}
+/* Corpo expandido do lead (promovido do `<style>` escopado `.pr-body` da etapa 11). */
+.lead-row .body{flex:1 0 100%;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:10px}
 .lead-biz{display:flex;flex-direction:column;gap:1px;min-width:150px;flex:1}
 .lead-biz .nm{font-size:13.5px;font-weight:600;color:var(--ink)}
 .lead-biz .h{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-5)}
@@ -477,9 +591,10 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* O ▾ do corte fica ACIMA da caixa (top:-6px): em `top:1px` ele caía sobre as barras de
    impacto, que são 100% da altura e da mesma cor accent. Sem mudar padding nem altura da
    `.beats`, o `.beats-axis` continua alinhado. */
-.beats .cut{position:absolute;top:-6px;z-index:2;font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1;color:var(--accent);transform:translateX(-50%);text-shadow:0 0 3px var(--surface),0 0 2px var(--surface)}
+.beats .cut{position:absolute;top:2px;z-index:2;font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1;color:var(--accent);transform:translateX(-50%);text-shadow:0 0 3px var(--surface),0 0 2px var(--surface)}
 .beats .cut.off{color:var(--fail)}
-.beats-axis{display:flex;justify-content:space-between;gap:var(--s2);font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--ink-5);margin-top:6px}
+.beats-axis{display:flex;justify-content:space-between;gap:var(--s2);font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--ink-5);margin-top:6px;margin-bottom:14px}
+.beats+.note{margin-top:10px}
 
 /* ---------- player ---------- */
 .player{position:relative;border-radius:var(--r-tile);overflow:hidden;background:var(--stripes);aspect-ratio:16/9}
@@ -487,13 +602,13 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* Legenda branca sobre gradiente escuro: no tema claro o `.player` vazio é o listrado CLARO,
    e o gradiente antigo (transparente → 72%) deixava a legenda ilegível no topo da faixa.
    Gradiente reforçado nos dois temas — o texto continua branco sobre fundo escuro. */
-.player .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.85));color:#EDEFF2}
+.player .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(transparent,rgba(0,0,0,.72));color:#C9CFD8}
 .play-big{position:absolute;inset:0;margin:auto;width:52px;height:52px;border-radius:50%;background:rgba(11,13,16,.72);border:1px solid var(--ctl);display:grid;place-items:center;color:#EDEFF2;font-size:18px;cursor:pointer;padding:0}
 
 /* ---------- cards de formato (export, etapa 9) ---------- */
 .fmt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
 .fmt-card{display:flex;flex-direction:column;gap:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px}
-.fmt-card.on{background:var(--surface-3);border-color:var(--ok-line)}
+.fmt-card.on{background:var(--surface-3);border-color:var(--ok-line-3)}
 .fmt-card .top{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
 .fmt-card .top .ratio{font-family:"IBM Plex Mono",monospace;font-size:var(--fs-sm);font-weight:600;color:var(--ink)}
 .fmt-card .top .dest{font-size:11.5px;color:var(--ink-3)}
@@ -504,6 +619,8 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 
 /* ---------- checks (guia e QA) ---------- */
 .checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--s2)}
+/* O QA dentro de painel usa a coluna menor do protótipo; o guia mantém 240px. */
+.panel .checks,.checks.qa{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .checks .it{display:flex;gap:var(--s2);align-items:baseline}
 .checks .mark{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-4)}
 .checks .it.ok .mark{color:var(--ok)}
@@ -515,6 +632,7 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* ---------- faixa (gate do portfólio, avisos) ---------- */
 .strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-tile);padding:10px 16px;margin:0 0 16px;font-size:var(--fs-sm);color:var(--ink-2)}
 .strip>.eyebrow{font-size:9.5px;letter-spacing:.1em}
+.strip .chip{padding:2px 8px}
 .strip.warn{border-color:var(--gate-line)}
 .strip.warn>.eyebrow{color:var(--gate)}
 .strip .pipe{width:120px;flex:0 0 auto}
@@ -523,11 +641,14 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* ---------- pitch (etapa 11) ---------- */
 .pitch{display:grid;grid-template-columns:minmax(240px,1fr) minmax(240px,1.2fr);gap:var(--s5)}
 .pitch-table{display:flex;flex-direction:column;gap:6px}
-.pitch-table .tr{display:flex;justify-content:space-between;gap:var(--s3);align-items:center;font-size:var(--fs-sm);color:var(--ink-2);padding:6px 0;border-bottom:1px solid var(--line)}
+.pitch-table .tr{display:flex;justify-content:space-between;gap:var(--s3);align-items:center;font-size:var(--fs-sm);color:var(--ink-2);padding:6px 0;border-bottom:1px dashed var(--line)}
 .pitch-table .tr .v{font-family:"IBM Plex Mono",monospace}
+/* Valor editável do pitch: número alinhado à direita, sem caixa (só sublinha no foco). */
+.pitch-table input.v{width:7ch;background:transparent;border:0;padding:0;text-align:right;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-sm);color:inherit;appearance:textfield;-moz-appearance:textfield}
+.pitch-table input.v:focus{outline:none;box-shadow:none;border-bottom:1px solid var(--accent)}
 .pitch-table .total{display:flex;justify-content:space-between;gap:var(--s3);font-size:14px;font-weight:600;color:var(--ink);padding:8px 0;border-bottom:0}
 .pitch-table .total .v{font-family:"IBM Plex Mono",monospace;color:var(--accent)}
-.script{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px 16px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;line-height:1.8;color:var(--ink-3);white-space:pre-wrap;margin:0;overflow:auto}
+.script{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px 16px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;line-height:1.8;color:var(--ink-3);white-space:pre-wrap;margin:0;overflow:visible}
 .script .end{color:var(--ink-5)}
 
 /* ---------- CLI (alternativa paga) ---------- */

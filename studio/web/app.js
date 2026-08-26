@@ -37,7 +37,8 @@ const ASPECTS = [
   { id: "1:1", dest: "Feed quadrado", w: 18, h: 18 },
 ];
 const ASPECT_LABEL = { "16:9": "16:9 · YouTube", "9:16": "9:16 · Reels/TikTok", "1:1": "1:1 · feed" };
-const COURSE_TEXT = "Cada etapa reproduz uma aula (o número aparece ao lado). A regra do instrutor é “fique preso ao processo, não à plataforma”: aqui o Midjourney/Higgsfield UI viram Higgsfield (UI ilimitada + CLI pago) e o bot da comunidade vira o Claude local; o processo, as entradas e as saídas são os da aula. Prompts de imagem em inglês, com intenção (mood, ângulo, câmera, estilo). Antes de gastar créditos o Studio mostra o custo — na aula 008 o custo é o principal critério.";
+// Wave 4: o painel de fidelidade ao roteiro (aulas 005/007/008) saiu da UI — o protótipo não o
+// desenha. O texto dele continua em CLAUDE.md e no ADR-004.
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -233,10 +234,11 @@ function cardHtml(s) {
   const st = statusOf(s.id, s.status);
   const pct = g ? Math.round((g.progress || 0) * 100) : 0;
   const atual = guideAll && guideAll.current === s.id;
-  const miss = g && g.missing && g.missing.length
-    ? `<p class="miss"><b>Faltando:</b> ${esc(g.missing.slice(0, 3).join(" · "))}${g.missing.length > 3 ? ` <span class="fine">+${g.missing.length - 3}</span>` : ""}</p>`
-    : "";
-  const next = g && g.next_action ? `<p class="next">→ ${esc(g.next_action)}</p>` : "";
+  // O protótipo desenha a linha "→ …" só nos cards concluída/em andamento (e na bloqueada,
+  // onde ela é o único aviso do que trava a etapa). O que falta continua no `title` do item do
+  // rail e na linha de estado do guia da etapa — o card não repete "Faltando:".
+  const mostraNext = st === "done" || st === "in_progress" || st === "blocked";
+  const next = mostraNext && g && g.next_action ? `<p class="next">→ ${esc(g.next_action)}</p>` : "";
   // O card da etapa em andamento é o único destacado (bg elevado, borda accent, glow e CTA
   // primário); "etapa atual" vai no title/aria para não duplicar o chip de status do protótipo.
   const rotulo = atual ? ' title="etapa atual" aria-current="step"' : "";
@@ -250,17 +252,11 @@ function cardHtml(s) {
     <h4>${esc(s.title)}</h4>
     <p class="desc">${esc(s.desc || "")}</p>
     <div class="progress${st === "done" ? " ok" : ""}"><div class="bar" style="width:${pct}%"></div></div>
-    ${miss}${next}
+    ${next}
     <div class="act">${s.status === "ready"
       ? `<button class="${atual ? "primary" : "ghost"}" data-go="${esc(s.id)}">${acao}</button>`
       : `<button class="ghost" disabled>Em breve</button>`}</div>
   </article>`;
-}
-function courseHtml() {
-  return `<details class="course">
-    <summary>Como o Studio segue o curso<span class="eyebrow">aulas 005 · 007 · 008</span></summary>
-    <div class="course-body"><p>${esc(COURSE_TEXT)}</p></div>
-  </details>`;
 }
 function renderOverview() {
   const ui = window.Studio.ui;
@@ -275,13 +271,11 @@ function renderOverview() {
   <header class="stephead ov">
     <span class="eyebrow">Etapas 1 a 11 · aulas 009 → 015 · 001</span>
     <h2>Visão geral da campanha</h2>
-    <p class="lede">As 11 etapas do curso, na ordem das aulas, com o estado real dos artefatos desta campanha. ${cur ? `Você está na <b>etapa ${esc(cur.n)} — ${esc(cur.title)}</b>.` : "Todas as etapas estão concluídas."}</p>
+    <p class="lede">As 11 etapas do curso, na ordem das aulas, com o estado real dos artefatos. ${cur ? `Você está na <b>etapa ${esc(cur.n)} — ${esc(cur.title)}</b>.` : "Todas as etapas estão concluídas."}</p>
     <div class="ov-summary">${resumo}</div>
   </header>
 
-  <div class="ovgrid">${steps.map(cardHtml).join("")}</div>
-
-  ${courseHtml()}`;
+  <div class="ovgrid">${steps.map(cardHtml).join("")}</div>`;
 
   $("#main").onclick = (ev) => {
     const b = ev.target.closest("[data-go]");
@@ -295,8 +289,7 @@ function renderNoProject() {
     <h2>Nenhuma campanha ainda</h2>
     <p class="lede">Uma campanha guarda tudo o que as 11 etapas do curso produzem: referências, mood board, imagem base, storyboard, ângulos, takes, trilha, montagem, export, publicação e prospecção.</p>
     <button class="primary" id="btnFirst" type="button">Criar a primeira campanha</button>
-  </div>
-  ${courseHtml()}`;
+  </div>`;
   $("#btnFirst").onclick = openWizard;
   $("#main").onclick = null;
 }
@@ -349,7 +342,7 @@ function ensureGuideSlot(main) {
 
 // ---------- wizard e edição da campanha ----------
 function campoFormato(atual) {
-  return `<div class="field">
+  return `<div class="field fmt-field">
     <span class="eyebrow">Formato — pela plataforma de destino</span>
     <div class="fmt">${ASPECTS.map((a) => `<label>
       <span class="box"><i style="width:${a.w}px;height:${a.h}px"></i></span>
@@ -357,7 +350,6 @@ function campoFormato(atual) {
       <span class="ratio">${a.id}</span>
       <span class="dest">${esc(a.dest)}</span>
     </label>`).join("")}</div>
-    <span class="hint">A aula 007 manda escolher o formato pelo destino do vídeo. <code>[extensão]</code></span>
   </div>`;
 }
 function campanhaForm(p, submitLabel) {
@@ -373,12 +365,11 @@ function campanhaForm(p, submitLabel) {
     <label class="field" for="cfVibe">
       <span class="eyebrow">Vibe — opcional, encontrada na etapa 2</span>
       <input id="cfVibe" name="vibe" placeholder="(dá para começar sem nenhuma ideia)" value="${esc(p.vibe || "")}">
-      <span class="hint">A aula 009 encontra a vibe no mood board (será encontrada na etapa 2).</span>
     </label>
     ${campoFormato(p.aspect_ratio || "16:9")}
     <div class="modal-actions">
-      <button type="button" class="ghost" data-close>Cancelar</button>
-      <button type="submit" class="primary">${esc(submitLabel)}</button>
+      <button type="button" class="ghost lg" data-close>Cancelar</button>
+      <button type="submit" class="primary lg">${esc(submitLabel)}</button>
     </div>
   </form>`;
 }

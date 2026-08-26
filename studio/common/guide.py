@@ -14,8 +14,15 @@ def guide(pid: str) -> dict:
             fix="Volte à etapa 1 e salve a seleção", step="refs")
     g.output("base_final", "base/base_final.png", exists(pid, "base/base_final.png"))
     g.check("upscale_2x", "Upscale 2x (aula 009)", "todo")
-    return g.build()
+    return g.build(summary="3/4 cenas prontas")
 ```
+
+`summary` é o **resumo curto da etapa** (wave 4): a UI o mostra como chip extra na faixa
+compacta do guia e ao lado da linha de estado no guia expandido — "1/6 shots prontos",
+"master: pronto", "portfólio 1/4 vídeos". `summary_kind` escolhe a cor do chip
+(`"mode"` neutro, `"ok"`, `"warn"`, `"fail"`, `"info"`); o default é neutro. Os dois campos
+são sempre devolvidos (`None` quando a etapa não tem resumo) — o frontend nunca precisa
+checar se a chave existe.
 
 Regras irrevogáveis do hook (o núcleo confia nelas):
 
@@ -142,8 +149,13 @@ class Guide:
         return self
 
     # --- resultado ---
-    def build(self, next_step=_AUTO, next_action: str | None = None) -> dict:
-        """Fecha o guia: deriva `status`, `progress`, `missing` e a próxima ação."""
+    def build(self, next_step=_AUTO, next_action: str | None = None,
+              summary: str | None = None, summary_kind: str | None = None) -> dict:
+        """Fecha o guia: deriva `status`, `progress`, `missing` e a próxima ação.
+
+        `summary` é o resumo curto da etapa (chip extra do guia, ex.: "1/6 shots prontos");
+        `summary_kind` é a cor desse chip (`ok|warn|fail|info|mode`), neutra por default.
+        """
         sid = self.meta.get("id", "")
         status = self._status()
         done_out = [o for o in self.outputs if o["status"] == "ok"]
@@ -158,6 +170,8 @@ class Guide:
             "what": self._what, "checklist": self._checklist,
             "inputs": self.inputs, "outputs": self.outputs, "validations": self.validations,
             "missing": missing,
+            "summary": summary or None,
+            "summary_kind": (summary_kind or None) if summary else None,
             "next_action": next_action or self._next_action(status, step_next),
             "next_step": step_next,
         }
@@ -209,6 +223,7 @@ def generic_guide(meta: dict, detail: str | None = None) -> dict:
         "status": "unknown", "progress": 0.0,
         "what": meta.get("desc", ""), "checklist": [],
         "inputs": [], "outputs": [], "validations": [], "missing": [],
+        "summary": None, "summary_kind": None,
         "next_action": "Abra a etapa e siga o que a tela pede — esta etapa ainda não tem guia detalhado.",
         "next_step": next_step_id(sid),
     }
