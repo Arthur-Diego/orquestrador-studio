@@ -61,6 +61,56 @@ def test_view_follows_the_wave2_screen_contract(client):
     assert "aba nova na Higgsfield" not in html and "aba nova na Higgsfield" not in js
 
 
+def test_view_follows_the_wave3_design_catalog(client):
+    """Wave 3 (ADH-OS-20260826-04): a etapa 3 usa o catálogo de classes do shell redesenhado."""
+    html = client.get("/steps/base/view.html").text
+    js = client.get("/steps/base/view.js").text
+    # painéis numerados com `.pn`, na ordem visual
+    posicoes = [html.index(f'<span class="pn">{n}</span>') for n in ("01", "02", "03", "04")]
+    assert posicoes == sorted(posicoes), "os 4 painéis são numerados com .pn na ordem visual"
+    assert html.count('<section class="panel">') == 4
+    # texto de aula fora do corpo, em <details class="lesson">
+    assert html.count('<details class="lesson">') == 4
+    assert "O que a aula 009 manda fazer aqui" in html
+    # ref-picker no `.gallery.xs` e galeria de candidatas no `.gallery.sm`
+    assert '<div id="refGallery" class="gallery xs"></div>' in html
+    assert '<div id="baseGallery" class="gallery sm"></div>' in html
+    # cadeia situação → rótulo → upscale 2x como `.stepper` renderizado pelo view.js
+    assert '<div id="baseChain" class="stepper"></div>' in html
+    assert '"st done"' in js and '"st on"' in js and '<span class="sep"></span>' in js
+    # marca do rótulo com `.ext`, nota de fechamento e paleta compacta
+    assert '<span class="ext">[extensão]</span>' in html
+    assert '<p class="note">Escolha uma imagem por passo' in html
+    assert '<div id="basePalette" class="palette sm"></div>' in html
+    # tiles e prompts pelo catálogo (span.src/span.term/.sel via Studio.ui.tile; botão .link)
+    assert "ui.tile(" in js and 'class="link copy"' in js
+    assert "Prompt · situação · editável" in js
+    # o shell continua sendo contrato de leitura: CSS extra é escopado com o prefixo da etapa
+    assert "<style>" in html and ".bs-grow" in html
+
+
+def test_view_keeps_every_id_the_script_queries(client):
+    """Contrato DOM da etapa (recon-wave-3 §1): nenhum id consultado pelo view.js some do HTML."""
+    import re
+
+    html = client.get("/steps/base/view.html").text
+    js = client.get("/steps/base/view.js").text
+    consultados = set(re.findall(r'[$(]"#([A-Za-z0-9_-]+)"', js))
+    declarados = set(re.findall(r'id="([A-Za-z0-9_-]+)"', html))
+    assert consultados <= declarados, sorted(consultados - declarados)
+    for obrigatorio in ("baseClaude", "baseModel", "btnBasePrompts", "refGallery", "refPickState",
+                        "promptRef", "impRef", "promptMode", "promptInstruction", "promptNoPeople",
+                        "btnPrompt", "btnPromptNoBias", "botHint", "baseHint", "basePalette",
+                        "baseMood", "basePrompts", "upscaleHint", "brandName", "brandDesc",
+                        "btnBrand", "labelPrompt", "galKind", "baseCounts", "btnBaseSelect",
+                        "baseChain", "impKind", "impRefChip", "baseDrop", "baseUpload",
+                        "btnBaseDownloads", "baseDlFolder", "baseDlMinutes", "btnBaseHistory",
+                        "baseGallery", "baseHf", "genKind", "genCount", "btnBaseGen",
+                        "baseProgress", "baseLog"):
+        assert f'id="{obrigatorio}"' in html, obrigatorio
+    assert '<div id="baseProgress" class="progress hidden"><span class="bar"></span></div>' in html
+
+
 def test_prompts_endpoint(client, pid):
     r = client.get(f"/api/projects/{pid}/base/prompts")
     assert r.status_code == 200
