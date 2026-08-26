@@ -1,4 +1,9 @@
-// Núcleo do frontend (shell OS-013): campanhas, roteamento, estado por etapa e visão geral.
+// Núcleo do frontend (shell OS-013, redesenhado na wave 3 / ADH-OS-20260826-02): campanhas,
+// roteamento, estado por etapa e visão geral.
+//
+// Redesign: o estado da campanha é comunicado por dois pipelines segmentados de 11 ticks
+// (`#railPipe` na sidebar e `#tbPipe` no topo, mesmo mapa de cores, `title` por segmento) em vez
+// das barras `.progress` da wave 2, e a visão geral vira um grid de cards sem `.panel` em volta.
 //
 // Cada etapa (studio/etapas/<id>/view.js) chama Studio.register(id, factory) e recebe um
 // contexto com $, api, toast, pid(), project(), files(path), guide().
@@ -161,13 +166,29 @@ function statusOf(stepId, stepStatus) {
   if (g) return g.status;
   return stepStatus === "ready" ? "unknown" : "todo";
 }
+/** Estado de cada uma das 11 etapas, na ordem do curso — alimenta os dois pipelines. */
+function estadosDasEtapas() {
+  return steps.map((s) => statusOf(s.id, s.status));
+}
+/** Pipeline segmentado (elemento-assinatura do redesign): 11 `i` com a cor do status. */
+function pipeHtml(estados) {
+  const ui = window.Studio.ui;
+  return steps.map((s, i) => {
+    const st = estados[i];
+    const rotulo = st === "none" ? "sem campanha" : (ui.STATUS_LABEL[st] || st);
+    return `<i class="${esc(st)}" title="${esc(`${s.n} · ${s.title} — ${rotulo}`)}"></i>`;
+  }).join("");
+}
 function renderMenu() {
   const ui = window.Studio.ui;
   $("#btnOverview").classList.toggle("active", view === "overview");
-  $("#steps").innerHTML = steps.map((s) => {
+  const estados = estadosDasEtapas();
+  $("#railPipe").innerHTML = pipeHtml(estados);
+  const feitas = estados.filter((st) => st === "done").length;
+  $("#railCount").textContent = pid ? `${feitas}/${steps.length}` : "—";
+  $("#steps").innerHTML = steps.map((s, i) => {
     const g = guideById[s.id];
-    const st = statusOf(s.id, s.status);
-    const pct = g ? Math.round((g.progress || 0) * 100) : 0;
+    const st = estados[i];
     const falta = g && g.missing && g.missing.length ? `\nFaltando: ${g.missing.join(", ")}` : "";
     const rotulo = st === "none" ? "" : (ui.STATUS_LABEL[st] || st);
     const title = rotulo ? `${s.desc}\n${rotulo}${falta}` : s.desc;
@@ -175,7 +196,6 @@ function renderMenu() {
       <span class="n">${String(s.n).padStart(2, "0")}</span>
       <span class="body"><span class="t">${esc(s.title)}</span><span class="a">aula ${esc(s.aula)}${s.status === "soon" ? " · em breve" : ""}</span></span>
       <span class="st" aria-label="${esc(rotulo)}"></span>
-      ${st === "in_progress" ? `<span class="miniprog"><i style="width:${pct}%"></i></span>` : ""}
     </li>`;
   }).join("");
 }
@@ -188,23 +208,19 @@ function renderTopbar() {
   $("#tbEyebrow").textContent = pid ? `Campanha · ${pid}` : "Campanha";
   const done = guideAll ? guideAll.done : 0;
   const total = guideAll ? guideAll.total : steps.length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
   $("#tbCount").textContent = pid ? `${done}/${total} etapas` : "—";
-  $("#tbBar").style.width = `${pid ? pct : 0}%`;
-  $("#tbBar").parentElement.classList.toggle("ok", done > 0 && done === total);
+  $("#tbPipe").innerHTML = pipeHtml(estadosDasEtapas());
 
   const chips = [];
   if (project && project.product) chips.push(ui.chip(project.product, "mode"));
   chips.push(ui.chip(ASPECT_LABEL[(project && project.aspect_ratio) || "16:9"], "mode"));
   if (project && project.vibe) chips.push(ui.chip(`vibe: ${project.vibe}`, "info"));
-  else if (pid) chips.push(ui.chip("vibe: definida na etapa 2", "todo"));
-  const cur = guideAll && guideAll.current;
-  if (cur && guideById[cur]) chips.push(ui.chip(`agora: etapa ${guideById[cur].n} — ${guideById[cur].title}`, "in_progress"));
-  else if (pid && guideAll && !cur) chips.push(ui.chip("campanha concluída", "done"));
+  else if (pid) chips.push(ui.chip("vibe: definida na etapa 2", "info"));
   $("#tbMeta").innerHTML = pid ? chips.join("") : "";
 
+  const cur = guideAll && guideAll.current;
   $("#btnContinue").disabled = !pid || !cur;
-  $("#btnContinue").textContent = pid && guideAll && !cur ? "Campanha concluída" : "Continuar de onde parei";
+  $("#btnContinue").textContent = pid && guideAll && !cur ? "Campanha concluída" : "Continuar de onde parei →";
   $("#btnEditCamp").disabled = !pid;
   // Sem campanha o topo não tem o que mostrar: só a marca e o convite para criar a primeira.
   $("#topbar").classList.toggle("vazio", !pid);
@@ -219,16 +235,24 @@ function cardHtml(s) {
   const atual = guideAll && guideAll.current === s.id;
   const miss = g && g.missing && g.missing.length
     ? `<p class="miss"><b>Faltando:</b> ${esc(g.missing.slice(0, 3).join(" · "))}${g.missing.length > 3 ? ` <span class="fine">+${g.missing.length - 3}</span>` : ""}</p>`
-    : (st === "done" ? `<p class="miss">Nada pendente nesta etapa.</p>` : "");
+    : "";
   const next = g && g.next_action ? `<p class="next">→ ${esc(g.next_action)}</p>` : "";
-  return `<article class="ovcard st-${st}${atual ? " is-current" : ""}">
-    <div class="ovcard-top"><span class="n">${String(s.n).padStart(2, "0")}</span>${atual ? ui.chip("etapa atual", "info") : ""}${ui.chip(ui.STATUS_LABEL[st] || st, ui.STATUS_KIND[st] || "mode")}</div>
+  // O card da etapa em andamento é o único destacado (bg elevado, borda accent, glow e CTA
+  // primário); "etapa atual" vai no title/aria para não duplicar o chip de status do protótipo.
+  const rotulo = atual ? ' title="etapa atual" aria-current="step"' : "";
+  const acao = atual ? "Continuar aqui" : (st === "done" ? "Rever" : "Abrir");
+  return `<article class="ovcard st-${st}${atual ? " is-current" : ""}"${rotulo}>
+    <div class="ovcard-top">
+      <span class="n">${String(s.n).padStart(2, "0")}</span>
+      <span class="aula">aula ${esc(s.aula)}</span>
+      ${ui.chip(ui.STATUS_LABEL[st] || st, ui.STATUS_KIND[st] || "mode")}
+    </div>
     <h4>${esc(s.title)}</h4>
-    <p class="aula">aula ${esc(s.aula)}</p>
+    <p class="desc">${esc(s.desc || "")}</p>
     <div class="progress${st === "done" ? " ok" : ""}"><div class="bar" style="width:${pct}%"></div></div>
     ${miss}${next}
     <div class="act">${s.status === "ready"
-      ? `<button class="ghost" data-go="${esc(s.id)}">${atual ? "Continuar aqui" : "Abrir"}</button>`
+      ? `<button class="${atual ? "primary" : "ghost"}" data-go="${esc(s.id)}">${acao}</button>`
       : `<button class="ghost" disabled>Em breve</button>`}</div>
   </article>`;
 }
@@ -240,8 +264,6 @@ function courseHtml() {
 }
 function renderOverview() {
   const ui = window.Studio.ui;
-  const done = guideAll ? guideAll.done : 0;
-  const total = guideAll ? guideAll.total : steps.length;
   const cur = guideAll && guideAll.current && guideById[guideAll.current];
   const contagem = {};
   steps.forEach((s) => { const st = statusOf(s.id, s.status); contagem[st] = (contagem[st] || 0) + 1; });
@@ -250,19 +272,14 @@ function renderOverview() {
     .map((k) => ui.chip(`${contagem[k]} ${ui.STATUS_LABEL[k]}`, ui.STATUS_KIND[k])).join("");
 
   $("#main").innerHTML = `
-  <header class="stephead">
+  <header class="stephead ov">
     <span class="eyebrow">Etapas 1 a 11 · aulas 009 → 015 · 001</span>
     <h2>Visão geral da campanha</h2>
-    <p class="lede">As 11 etapas do curso, na ordem das aulas, com o estado real dos artefatos desta campanha. ${cur ? `Você está na <strong>etapa ${esc(cur.n)} — ${esc(cur.title)}</strong>.` : "Todas as etapas estão concluídas."}</p>
+    <p class="lede">As 11 etapas do curso, na ordem das aulas, com o estado real dos artefatos desta campanha. ${cur ? `Você está na <b>etapa ${esc(cur.n)} — ${esc(cur.title)}</b>.` : "Todas as etapas estão concluídas."}</p>
+    <div class="ov-summary">${resumo}</div>
   </header>
 
-  <section class="panel">
-    <div class="panel-head">
-      <h3>Etapas <span class="eyebrow">${done} de ${total} concluídas</span></h3>
-      <div class="ov-summary">${resumo}</div>
-    </div>
-    <div class="ovgrid">${steps.map(cardHtml).join("")}</div>
-  </section>
+  <div class="ovgrid">${steps.map(cardHtml).join("")}</div>
 
   ${courseHtml()}`;
 
@@ -333,7 +350,7 @@ function ensureGuideSlot(main) {
 // ---------- wizard e edição da campanha ----------
 function campoFormato(atual) {
   return `<div class="field">
-    <span class="eyebrow">Formato (pela plataforma de destino)</span>
+    <span class="eyebrow">Formato — pela plataforma de destino</span>
     <div class="fmt">${ASPECTS.map((a) => `<label>
       <span class="box"><i style="width:${a.w}px;height:${a.h}px"></i></span>
       <input type="radio" name="aspect" value="${a.id}"${a.id === atual ? " checked" : ""}>
@@ -345,20 +362,19 @@ function campoFormato(atual) {
 }
 function campanhaForm(p, submitLabel) {
   return `<form id="campForm" novalidate>
-    <div class="field">
-      <label class="eyebrow" for="cfName">Nome da campanha</label>
+    <label class="field" for="cfName">
+      <span class="eyebrow">Nome da campanha</span>
       <input id="cfName" name="name" required maxlength="80" placeholder="ex.: Gelo Zero" value="${esc(p.name || "")}">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="cfProduct">Produto</label>
-      <input id="cfProduct" name="product" placeholder="ex.: energy drink" value="${esc(p.product || "")}">
-      <span class="hint">Vale em inglês: os prompts de imagem são escritos em inglês (aula 007).</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="cfVibe">Vibe (opcional)</label>
-      <input id="cfVibe" name="vibe" placeholder="(será encontrada na etapa 2)" value="${esc(p.vibe || "")}">
-      <span class="hint">A aula 009 encontra a vibe no mood board — dá para começar sem nenhuma ideia.</span>
-    </div>
+    </label>
+    <label class="field" for="cfProduct">
+      <span class="eyebrow">Produto</span>
+      <input id="cfProduct" name="product" placeholder="ex.: energy drink (vale em inglês — os prompts são em inglês)" value="${esc(p.product || "")}">
+    </label>
+    <label class="field" for="cfVibe">
+      <span class="eyebrow">Vibe — opcional, encontrada na etapa 2</span>
+      <input id="cfVibe" name="vibe" placeholder="(dá para começar sem nenhuma ideia)" value="${esc(p.vibe || "")}">
+      <span class="hint">A aula 009 encontra a vibe no mood board (será encontrada na etapa 2).</span>
+    </label>
     ${campoFormato(p.aspect_ratio || "16:9")}
     <div class="modal-actions">
       <button type="button" class="ghost" data-close>Cancelar</button>
@@ -459,7 +475,11 @@ $("#steps").addEventListener("keydown", (e) => {
 
 (async () => {
   aplicaTema(store.get("studio.theme") || "auto");
+  // Chip do CLI da Higgsfield no rodapé da sidebar: o estado do plano vale para a sessão inteira.
+  window.Studio.ui.hfChip("#hfChipSide");
   steps = await api("/api/steps").catch(() => []);
+  // Catálogo em leitura para `Studio.ui` (o guia usa o número da etapa em "Ir para a etapa N").
+  window.Studio.steps = steps;
   steps.filter((s) => s.status === "ready").forEach((s) => readySteps.add(s.id));
   renderMenu();
   await loadProjects();

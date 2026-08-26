@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orquestrador Studio</title>
 <meta name="description" content="Produza uma campanha de vídeo com IA seguindo, etapa por etapa, o método do curso O Orquestrador.">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/ui.css">
 <script>
@@ -27,17 +27,21 @@
         <select id="projSel" aria-label="Campanha atual"></select>
         <button id="btnNewProj" class="ghost icon" title="Nova campanha" aria-label="Nova campanha">+</button>
       </div>
-      <button id="btnOverview" class="navlink" type="button">Visão geral da campanha</button>
+      <button id="btnOverview" class="navlink" type="button"><span aria-hidden="true">◫</span> Visão geral da campanha</button>
     </section>
 
     <nav aria-label="Etapas do curso">
-      <div class="eyebrow">Etapas do curso</div>
+      <div class="rail-head">
+        <span class="eyebrow">Etapas do curso</span>
+        <span class="n" id="railCount">—</span>
+      </div>
+      <div class="pipe" id="railPipe" aria-hidden="true"></div>
       <ol id="steps"></ol>
     </nav>
 
-    <div class="side-foot row">
-      <button id="btnTheme" class="ghost icon" type="button" title="Alternar tema" aria-label="Alternar tema">◐</button>
-      <span class="eyebrow" id="themeLabel">tema: sistema</span>
+    <div class="side-foot">
+      <span class="chip mode" id="hfChipSide">CLI: verificando…</span>
+      <button id="btnTheme" class="themebtn" type="button" title="Alternar tema" aria-label="Alternar tema"><span aria-hidden="true">◐</span> <span id="themeLabel">tema: sistema</span></button>
     </div>
   </aside>
 
@@ -45,16 +49,20 @@
     <header class="topbar" id="topbar">
       <div class="tb-id">
         <span class="eyebrow" id="tbEyebrow">Campanha</span>
-        <h2 class="tb-name" id="tbName">Carregando…</h2>
-        <div class="row wrap tb-meta" id="tbMeta"></div>
+        <div class="tb-line">
+          <h2 class="tb-name" id="tbName">Carregando…</h2>
+          <div class="tb-meta" id="tbMeta"></div>
+        </div>
       </div>
       <div class="tb-actions">
         <div class="tb-prog">
           <div class="lbl"><span>Progresso</span><span id="tbCount">—</span></div>
-          <div class="progress"><div class="bar" id="tbBar" style="width:0%"></div></div>
+          <div class="pipe lg" id="tbPipe"></div>
+          <!-- barra legada da wave 2: o pipeline segmentado a substituiu, o id fica para compatibilidade -->
+          <div class="progress hidden"><div class="bar" id="tbBar" style="width:0%"></div></div>
         </div>
-        <button id="btnEditCamp" class="ghost" type="button" title="Editar a campanha">Editar</button>
-        <button id="btnContinue" class="primary" type="button">Continuar de onde parei</button>
+        <button id="btnEditCamp" class="ghost lg" type="button" title="Editar a campanha">Editar</button>
+        <button id="btnContinue" class="primary lg" type="button">Continuar de onde parei →</button>
       </div>
     </header>
 

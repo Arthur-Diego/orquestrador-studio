@@ -11,6 +11,21 @@
 //
 // Regra de compatibilidade (OS-013): esta API é consumida pelos 11 plugins — dá para ESTENDER,
 // nunca remover nem renomear função existente.
+//
+// Wave 3 (redesign, ADH-OS-20260826-02) — helpers ADITIVOS de marcação, para que as telas não
+// recopiem o HTML das classes do shell (nada foi removido ou renomeado):
+//   Studio.ui.tile({src, badge, term, up, upOk, sel, ord, wide, sq, id, title, cls})
+//       → `div.card` da galeria. `src` = URL da imagem, `badge` = `span.src` (origem),
+//         `term` = legenda mono da base, `up`/`upOk` = selo "upscalado 2x"/"sem upscale",
+//         `ord` = número da ordem (o check do tile selecionado vira o número, etapa 5).
+//   Studio.ui.pipe(estados, {lg, titles})
+//       → `div.pipe` segmentado (um `i` por etapa; classes done/in_progress/blocked/todo).
+//   Studio.ui.beats(lista, {sm, cuts})
+//       → `div.beats` (barras de batida; `{h, imp, title}` ou número 0..1;
+//         `cuts` = `[{at, off, title}]` com o marcador ▾ dos cortes).
+//   Studio.ui.copyBtn(alvo, label)
+//       → `button.link` "Copiar". `alvo` = texto literal ou seletor CSS do campo a copiar;
+//         o clique é tratado por um listener único (toast "copiado" + `.ok` irmão).
 window.Studio = window.Studio || {};
 
 window.Studio.ui = {
@@ -189,9 +204,12 @@ window.Studio.ui = {
   STATUS_KIND: { done: "done", in_progress: "in_progress", blocked: "blocked", todo: "todo", unknown: "unknown" },
 
   /**
-   * Renderiza o painel do guia (`GET /api/projects/{pid}/guide/{step}`) dentro de `el`.
-   * O painel é colapsável: o resumo (status, progresso, o que falta e a próxima ação) fica
-   * sempre visível; as seções detalhadas abrem e fecham, com o estado guardado por etapa.
+   * Renderiza o guia da etapa dentro de `el`, em um dos dois estados (wave 3):
+   * - colapsado → faixa compacta `.guide-strip`: "GUIA", chip de status, chip de %, chip extra
+   *   opcional (`g.summary`) e a próxima ação. A faixa inteira é clicável e expande;
+   * - expandido → `.guide-body[data-open="1"]`: cabeçalho clicável (`.guide-toggle`, caret,
+   *   chips, "recolher"), o que falta (`.guide-missing`), as seções em `.checks` e as ações.
+   * O estado é guardado por etapa em `studio.guide.<id>` (aberto por padrão).
    */
   guide(el, g) {
     const node = typeof el === "string" ? document.querySelector(el) : el;
@@ -200,6 +218,27 @@ window.Studio.ui = {
     const e = (s) => this.esc(s);
     const pct = Math.round((g.progress || 0) * 100);
     const open = this._guideOpen(g.id);
+    const chipStatus = this.chip(this.STATUS_LABEL[g.status] || g.status, this.STATUS_KIND[g.status] || "mode");
+    const chipPct = (g.status === "in_progress" || g.status === "done") ? this.chip(`${pct}%`, "mode") : "";
+    const chipExtra = g.summary ? this.chip(g.summary, "mode") : "";
+    const proxima = g.next_action ? `<span class="guide-next">→ ${e(g.next_action)}</span>` : "";
+    const ligar = () => {
+      node.onclick = (ev) => {
+        const b = ev.target.closest("[data-go]");
+        if (b && window.Studio.go) window.Studio.go(b.dataset.go);
+      };
+    };
+
+    if (!open) {
+      node.innerHTML = `<button class="guide-strip" type="button" aria-expanded="false">
+        <span class="eyebrow sm">Guia</span>
+        ${chipStatus}${chipPct}${chipExtra}${proxima}
+      </button>`;
+      node.querySelector(".guide-strip").onclick = () => { this._guideOpen(g.id, true); this.guide(node, g); };
+      ligar();
+      return;
+    }
+
     const missing = g.missing && g.missing.length
       ? `<span class="k">faltando</span><span class="v">${e(g.missing.join(" · "))}</span>`
       : `<span class="k">tudo pronto</span><span class="v">nenhuma entrada ou saída pendente nesta etapa</span>`;
@@ -214,41 +253,95 @@ window.Studio.ui = {
       secs.push(this._section("Checklist da aula", `<ul class="guide-check">${g.checklist.map((c) =>
         `<li><label><input type="checkbox"> <span>${e(c)}</span></label></li>`).join("")}</ul>`));
     }
-    if (g.next_action) {
-      const btn = g.next_step ? `<button class="ghost" data-go="${e(g.next_step)}">Ir para a etapa seguinte</button>` : "";
-      secs.push(this._section("Próxima ação", `<div class="row wrap"><p class="guide-next">${e(g.next_action)}</p>${btn}</div>`));
-    }
+    const alvo = (window.Studio.steps || []).find((s) => s.id === g.next_step);
+    const acoes = g.next_action
+      ? `<div class="guide-actions"><p class="guide-next">→ Próxima ação: ${e(g.next_action)}</p>${
+        g.next_step ? `<button class="ghost" data-go="${e(g.next_step)}">Ir para a etapa ${e(alvo ? alvo.n : "seguinte")}</button>` : ""}</div>`
+      : "";
 
-    node.innerHTML = `<div class="guide-body" data-open="${open ? 1 : 0}">
-      <div class="guide-head">
-        <button class="guide-toggle" type="button" aria-expanded="${open}">
-          <span class="caret">▾</span>
-          <span class="ttl">Guia da etapa ${e(g.n)}</span>
-          ${this.chip(`aula ${g.aula}`, "mode")}
-          ${this.chip(this.STATUS_LABEL[g.status] || g.status, this.STATUS_KIND[g.status] || "mode")}
-          ${this.chip(`${pct}%`, "mode")}
-          <span class="hint">${open ? "recolher" : "abrir"}</span>
-        </button>
-        <div class="progress${g.status === "done" ? " ok" : ""}"><div class="bar" style="width:${pct}%"></div></div>
+    node.innerHTML = `<div class="guide-body" data-open="1">
+      <button class="guide-toggle" type="button" aria-expanded="true">
+        <span class="caret">▾</span>
+        <span class="ttl">Guia da etapa ${e(g.n)}</span>
+        ${chipStatus}${chipPct}${chipExtra}
+        <span class="hint">recolher</span>
+      </button>
+      <div class="guide-sections">
         <div class="guide-missing${g.missing && g.missing.length ? "" : " all-ok"}">${missing}</div>
-        ${g.next_action ? `<p class="guide-pin">→ ${e(g.next_action)}</p>` : ""}
+        ${secs.join("")}${acoes}
       </div>
-      <div class="guide-sections">${secs.join("")}</div>
     </div>`;
 
-    const body = node.querySelector(".guide-body");
-    const toggle = node.querySelector(".guide-toggle");
-    toggle.onclick = () => {
-      const now = body.dataset.open !== "1";
-      body.dataset.open = now ? "1" : "0";
-      toggle.setAttribute("aria-expanded", String(now));
-      toggle.querySelector(".hint").textContent = now ? "recolher" : "abrir";
-      this._guideOpen(g.id, now);
-    };
-    node.onclick = (ev) => {
-      const b = ev.target.closest("[data-go]");
-      if (b && window.Studio.go) window.Studio.go(b.dataset.go);
-    };
+    node.querySelector(".guide-toggle").onclick = () => { this._guideOpen(g.id, false); this.guide(node, g); };
+    ligar();
+  },
+
+  // ---------- helpers de marcação (aditivos, wave 3) ----------
+  /** HTML de um tile `.card` da galeria — ver o cabeçalho deste arquivo para os campos. */
+  tile(o = {}) {
+    const e = (s) => this.esc(s);
+    const cls = ["card"];
+    if (o.sel) cls.push("sel");
+    if (o.wide) cls.push("wide");
+    if (o.sq) cls.push("sq");
+    if (o.cls) cls.push(o.cls);
+    const attrs = `${o.id !== undefined ? ` data-id="${e(o.id)}"` : ""}${o.ord ? ` data-ord="${e(o.ord)}"` : ""}` +
+      `${o.title ? ` title="${e(o.title)}"` : ""} tabindex="0"`;
+    return `<div class="${cls.join(" ")}"${attrs}>` +
+      `${o.src ? `<img src="${e(o.src)}" loading="lazy" alt="">` : ""}` +
+      `${o.badge ? `<span class="src">${e(o.badge)}</span>` : ""}` +
+      `${o.term ? `<span class="term">${e(o.term)}</span>` : ""}` +
+      `${o.up ? `<span class="up${o.upOk ? " ok" : ""}">${e(o.up)}</span>` : ""}</div>`;
+  },
+
+  /** HTML do pipeline segmentado (`.pipe`): um `i` por etapa, com a classe do status. */
+  pipe(estados, o = {}) {
+    const t = o.titles || [];
+    return `<div class="pipe${o.lg ? " lg" : ""}">${(estados || []).map((s, i) =>
+      `<i class="${this.esc(s || "todo")}"${t[i] ? ` title="${this.esc(t[i])}"` : ""}></i>`).join("")}</div>`;
+  },
+
+  /** HTML da régua de batidas (`.beats`): `{h, imp, title}` ou número 0..1; `cuts` = marcadores ▾. */
+  beats(lista, o = {}) {
+    const barras = (lista || []).map((b) => {
+      const v = typeof b === "number" ? { h: b } : (b || {});
+      const bruto = v.h == null ? 40 : (v.h <= 1 ? v.h * 100 : v.h);
+      const alt = v.imp ? 100 : Math.max(8, Math.min(100, Math.round(bruto)));
+      return `<i class="${v.imp ? "imp" : ""}" style="height:${alt}%"${v.title ? ` title="${this.esc(v.title)}"` : ""}></i>`;
+    }).join("");
+    const cortes = (o.cuts || []).map((c) => {
+      const v = typeof c === "number" ? { at: c } : (c || {});
+      return `<span class="cut${v.off ? " off" : ""}" style="left:${Number(v.at) || 0}%"${
+        v.title ? ` title="${this.esc(v.title)}"` : ""}>▾</span>`;
+    }).join("");
+    return `<div class="beats${o.sm ? " sm" : ""}">${barras}${cortes}</div>`;
+  },
+
+  /**
+   * HTML de um `button.link` "Copiar". `alvo` = texto literal ou seletor CSS do campo cujo
+   * conteúdo será copiado. O clique é tratado pelo listener único do fim deste arquivo.
+   */
+  copyBtn(alvo, label = "Copiar") {
+    const seletor = typeof alvo === "string" && /^[#.[]/.test(alvo.trim());
+    const attr = seletor ? `data-copy-from="${this.esc(alvo)}"` : `data-copy="${this.esc(alvo == null ? "" : alvo)}"`;
+    return `<button type="button" class="link copy" ${attr}>${this.esc(label)}</button>`;
+  },
+
+  /** Copia `texto` para a área de transferência (com fallback para navegadores sem permissão). */
+  async copy(texto) {
+    const t = String(texto == null ? "" : texto);
+    try {
+      await navigator.clipboard.writeText(t);
+      return true;
+    } catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = t; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      ta.remove();
+      return ok;
+    }
   },
 
   /** Busca e renderiza o guia da etapa `stepId` no `#guide` da tela (ou em `el`). */
@@ -294,7 +387,7 @@ window.Studio.ui = {
   },
   _items(items) {
     const e = (s) => this.esc(s);
-    return `<ul class="guide-items">${items.map((it) => {
+    return `<ul class="guide-items checks">${items.map((it) => {
       const mark = it.status === "ok" ? "✓" : it.status === "fail" ? "✕" : it.status === "warn" ? "!" : "·";
       const fix = it.fix
         ? `<span class="guide-fix">${e(it.fix)}${it.step ? ` <button class="link" data-go="${e(it.step)}">ir para a etapa</button>` : ""}</span>`
@@ -304,3 +397,21 @@ window.Studio.ui = {
     }).join("")}</ul>`;
   },
 };
+
+// Listener único do `Studio.ui.copyBtn`: qualquer botão com `data-copy` (texto literal) ou
+// `data-copy-from` (seletor do campo) copia e dá o retorno visual — toast "copiado" e, quando o
+// botão tem um `.ok` irmão, o "copiado ✓" por 1,5 s (mesmo padrão das telas da wave 2).
+document.addEventListener("click", (ev) => {
+  const alvo = ev.target && ev.target.closest ? ev.target.closest("[data-copy],[data-copy-from]") : null;
+  if (!alvo) return;
+  let texto = alvo.dataset.copy || "";
+  if (alvo.dataset.copyFrom) {
+    const n = document.querySelector(alvo.dataset.copyFrom);
+    texto = n ? (n.value !== undefined ? n.value : n.textContent) : "";
+  }
+  window.Studio.ui.copy(texto).then((ok) => {
+    const eco = alvo.parentElement && alvo.parentElement.querySelector(".ok");
+    if (eco) { eco.textContent = ok ? "copiado ✓" : "copie à mão"; setTimeout(() => { eco.textContent = ""; }, 1500); }
+    if (window.Studio.ctx && window.Studio.ctx.toast) window.Studio.ctx.toast(ok ? "copiado" : "não foi possível copiar");
+  });
+});
