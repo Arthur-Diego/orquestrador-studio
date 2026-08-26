@@ -1,14 +1,27 @@
+<style>
+  /* Regras que o catálogo do shell (wave 3) não cobre — escopadas na etapa 3 (prefixo `bs-`),
+     conforme a regra 3 da wave: nenhuma frente de tela edita `studio/web/style.css`. */
+  .bs-grow{flex:1;min-width:220px}
+  .bs-grow-sm{flex:1;min-width:180px}
+  .bs-grow-lg{flex:1.4;min-width:220px}
+  .bs-chain-state{margin-left:14px}
+  .bs-imp{margin:0 0 12px}
+  .bs-io{margin-bottom:14px;align-items:stretch}
+  .bs-io .drop{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px}
+  .bs-io .col{min-width:220px;justify-content:flex-start}
+</style>
+
 <header class="stephead">
   <span class="eyebrow">Etapa 3 · aula 009</span>
   <h2>Imagem base</h2>
-  <p class="lede">Para cada referência escolhida na etapa 1, o <b>bot</b> olha a referência e o seu mood e escreve o prompt do seu produto na <b>exata mesma situação</b> da referência. Você gera na Higgsfield com o mood anexado, escolhe a melhor, troca o rótulo pela sua marca (uma instrução por vez) e faz o upscale 2x. O resultado é <code>base/base_final.png</code> — a imagem que a etapa 4 usa.</p>
+  <p class="lede">O <b>bot</b> olha a referência e o seu mood e escreve o prompt do produto na <b>exata mesma situação</b> da referência. Cadeia: situação → rótulo → upscale 2x.</p>
 </header>
 
 <section id="guide" class="guide"></section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>1. O prompt da aula (quem escreve é o bot)</h3>
+    <h3><span class="pn">01</span>O prompt da aula — quem escreve é o bot</h3>
     <div class="row wrap">
       <span id="baseClaude" class="chip mode">bot: ?</span>
       <select id="baseModel" title="modelo sugerido no hint de geração">
@@ -18,10 +31,13 @@
       <button id="btnBasePrompts" class="ghost">Atualizar</button>
     </div>
   </div>
-  <p class="fine"><b>O que fazer:</b> escolha a referência, descreva em uma frase o que você quer mudar (“a lata está gigante”) e clique em <b>Gerar prompt</b>. O bot lê a referência <b>e</b> as imagens do seu mood — é o “print do mood” que o instrutor mostra ao GPT na aula. O prompt sai editável: ajuste à vontade antes de copiar.</p>
+  <details class="lesson">
+    <summary>O que a aula 009 manda fazer aqui</summary>
+    <p><b>O que fazer:</b> escolha a referência, descreva em uma frase o que você quer mudar (“a lata está gigante”) e clique em <b>Gerar prompt</b>. O bot lê a referência <b>e</b> as imagens do seu mood — é o “print do mood” que o instrutor mostra ao GPT na aula. O prompt sai editável: ajuste à vontade antes de copiar.</p>
+  </details>
   <div class="refpick">
     <div class="row wrap"><span class="eyebrow">Referência (etapa 1) — clique para escolher</span><span id="refPickState" class="chip">nenhuma</span></div>
-    <div id="refGallery" class="gallery refgallery"></div>
+    <div id="refGallery" class="gallery xs"></div>
     <input type="hidden" id="promptRef"><input type="hidden" id="impRef">
   </div>
   <div class="row wrap">
@@ -30,14 +46,14 @@
       <option value="brief">só pelo brief (sem imagens)</option>
       <option value="template">template fixo (sem o bot)</option>
     </select></label>
-    <input id="promptInstruction" placeholder="o que muda nesta referência (ex.: a lata está gigante)">
+    <input id="promptInstruction" class="bs-grow" placeholder="o que muda nesta referência (ex.: a lata está gigante)">
     <label class="inline" title="Na aula 009 o 'no people' é regra do MOOD; aqui é opcional"><input id="promptNoPeople" type="checkbox"> sem pessoas</label>
     <button id="btnPrompt" class="primary">Gerar prompt</button>
-    <button id="btnPromptNoBias" class="ghost" title="Sessão nova do bot, sem nada sobre a sua campanha">Gerar sem viés (sessão nova)</button>
+    <button id="btnPromptNoBias" class="ghost" title="Sessão nova do bot, sem nada sobre a campanha">Gerar sem viés</button>
   </div>
   <p id="botHint" class="fine"></p>
   <p id="baseHint" class="fine"></p>
-  <div id="basePalette" class="palette"></div>
+  <div id="basePalette" class="palette sm"></div>
   <p id="baseMood" class="fine mono"></p>
   <div id="basePrompts" class="prompts"></div>
   <p id="upscaleHint" class="fine"></p>
@@ -45,47 +61,23 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h3>2. Marca do rótulo <span class="chip mode">extensão</span></h3>
-    <div class="row wrap">
-      <input id="brandName" placeholder="nome da marca (ex.: Gelo Zero)">
-      <input id="brandDesc" placeholder="como é a logo (ex.: raio com efeito neon)">
-      <button id="btnBrand" class="primary">Salvar marca</button>
-    </div>
+    <h3><span class="pn">02</span>Marca do rótulo <span class="ext">[extensão]</span></h3>
   </div>
-  <p class="fine"><b>O que a aula manda:</b> trocar o rótulo com uma instrução só — “troque o rótulo da lata, mantenha as cores da lata, mas adicione uma logomarca no formato de raio com efeito neon”. Ficou simples demais? <b>Reescreva a instrução</b> aqui embaixo (ela é editável) e gere de novo: na aula são 3 variações por tentativa. Sem a marca não dá para escrever esse prompt.</p>
+  <div class="row wrap">
+    <input id="brandName" class="bs-grow-sm" placeholder="nome da marca (ex.: Gelo Zero)">
+    <input id="brandDesc" class="bs-grow-lg" placeholder="como é a logo (ex.: raio com efeito neon)">
+    <button id="btnBrand" class="primary">Salvar marca</button>
+  </div>
+  <details class="lesson">
+    <summary>O que a aula 009 manda fazer aqui</summary>
+    <p><b>O que a aula manda:</b> trocar o rótulo com uma instrução só — “troque o rótulo da lata, mantenha as cores da lata, mas adicione uma logomarca no formato de raio com efeito neon”. Ficou simples demais? <b>Reescreva a instrução</b> aqui embaixo (ela é editável) e gere de novo: na aula são 3 variações por tentativa. Sem a marca não dá para escrever esse prompt.</p>
+  </details>
   <div id="labelPrompt" class="prompts"></div>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>3. Importar o que você gerou na UI</h3>
-    <div class="row wrap">
-      <label class="inline">passo <select id="impKind">
-        <option value="situation">situação (produto na cena da referência)</option>
-        <option value="label">rótulo trocado (Nano Banana)</option>
-        <option value="upscale">upscale 2x</option>
-      </select></label>
-      <span class="inline">referência <span id="impRefChip" class="chip">—</span></span>
-    </div>
-  </div>
-  <p class="fine"><b>O que a aula manda:</b> gerar um grid de 4 por prompt com o mood anexado e <b>ignorar a marca e os textos</b> que saírem na embalagem — o rótulo vem no passo seguinte. Importe as que valem a pena; o prompt que você editou acima vai junto e fica registrado em <code>base.md</code>. No <b>upscale</b> o Studio confere se a imagem ficou mesmo ~2x maior.</p>
-  <div class="row wrap">
-    <label class="drop" id="baseDrop">Arraste imagens aqui ou <input id="baseUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
-    <div class="col">
-      <button id="btnBaseDownloads">Importar da pasta Downloads</button>
-      <span id="baseDlFolder" class="fine mono"></span>
-      <label class="inline">últimos <input id="baseDlMinutes" type="number" value="120" min="5"> min</label>
-    </div>
-    <div class="col">
-      <button id="btnBaseHistory">Importar do histórico Higgsfield</button>
-      <span class="fine">via <code>higgsfield generate list --image</code> (precisa de login no CLI)</span>
-    </div>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-head">
-    <h3>4. Escolher e fechar a imagem base</h3>
+    <h3><span class="pn">03</span>Escolher e fechar a imagem base</h3>
     <div class="row wrap">
       <label class="inline">mostrar <select id="galKind">
         <option value="">todas</option>
@@ -97,15 +89,37 @@
       <button id="btnBaseSelect" class="primary" disabled>Usar como imagem base</button>
     </div>
   </div>
-  <p class="fine"><b>O que falta:</b> a cadeia da aula é <b>situação → rótulo → upscale 2x</b>; o painel de guia lá em cima diz em que passo você está. Escolha uma imagem por passo — trocar a situação recomeça a cadeia.</p>
-  <p id="baseChain" class="fine"></p>
-  <div id="baseGallery" class="gallery"></div>
-  <p class="fine">Clique para marcar, dois cliques para abrir em tamanho real. Ao escolher: cópia em <code>base/base_final.png</code> e <code>base/base.md</code> com a cadeia e os prompts usados (é o que o dever de casa da aula pede para postar na comunidade).</p>
+  <div id="baseChain" class="stepper"></div>
+  <div class="row wrap bs-imp">
+    <label class="inline">passo <select id="impKind">
+      <option value="situation">situação (produto na cena da referência)</option>
+      <option value="label">rótulo trocado (Nano Banana)</option>
+      <option value="upscale">upscale 2x</option>
+    </select></label>
+    <span class="inline">referência <span id="impRefChip" class="chip">—</span></span>
+  </div>
+  <div class="row wrap bs-io">
+    <label class="drop" id="baseDrop">Arraste o grid gerado na UI ou <input id="baseUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
+    <div class="col">
+      <button id="btnBaseDownloads">Importar da pasta Downloads</button>
+      <button id="btnBaseHistory">Importar do histórico Higgsfield</button>
+      <label class="inline">últimos <input id="baseDlMinutes" type="number" value="120" min="5"> min</label>
+      <span id="baseDlFolder" class="fine mono"></span>
+    </div>
+  </div>
+  <div id="baseGallery" class="gallery sm"></div>
+  <p class="note">Escolha uma imagem por passo — trocar a situação recomeça a cadeia. Ao fechar: <code>base/base_final.png</code> + <code>base.md</code>.</p>
+  <details class="lesson">
+    <summary>O que a aula 009 manda fazer aqui</summary>
+    <p><b>O que a aula manda na importação:</b> gerar um grid de 4 por prompt com o mood anexado e <b>ignorar a marca e os textos</b> que saírem na embalagem — o rótulo vem no passo seguinte. Importe as que valem a pena; o prompt que você editou no painel 01 vai junto e fica registrado em <code>base.md</code>. No <b>upscale</b> o Studio confere se a imagem ficou mesmo ~2x maior. O histórico usa <code>higgsfield generate list --image</code> (precisa de login no CLI).</p>
+    <p><b>O que falta:</b> a cadeia da aula é <b>situação → rótulo → upscale 2x</b>; o painel de guia lá em cima diz em que passo você está. Escolha uma imagem por passo — trocar a situação recomeça a cadeia.</p>
+    <p>Clique para marcar, dois cliques para abrir em tamanho real. Ao escolher: cópia em <code>base/base_final.png</code> e <code>base/base.md</code> com a cadeia e os prompts usados (é o que o dever de casa da aula pede para postar na comunidade).</p>
+  </details>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>Alternativa paga: gerar via CLI</h3>
+    <h3><span class="pn">04</span>Alternativa paga: gerar via CLI</h3>
     <div class="row wrap">
       <span id="baseHf" class="chip mode">CLI: ?</span>
       <label class="inline">passo <select id="genKind">
@@ -117,7 +131,10 @@
       <button id="btnBaseGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
     </div>
   </div>
-  <p class="fine">O caminho da aula é gerar na interface da Higgsfield (o ilimitado do plano vale só lá) e importar acima. Isto aqui é atalho pago: mostra a estimativa de créditos e pede confirmação antes. O texto editado no painel 1 (ou no 2, no rótulo) é o que vai para o CLI; o formato vem da campanha.</p>
+  <details class="lesson">
+    <summary>O que a aula 009 manda fazer aqui</summary>
+    <p>O caminho da aula é gerar na interface da Higgsfield (o ilimitado do plano vale só lá) e importar no painel 03. Isto aqui é atalho pago: mostra a estimativa de créditos e pede confirmação antes. O texto editado no painel 01 (ou no 02, no rótulo) é o que vai para o CLI; o formato vem da campanha.</p>
+  </details>
   <div id="baseProgress" class="progress hidden"><span class="bar"></span></div>
   <div id="baseLog" class="log"></div>
 </section>

@@ -4,7 +4,7 @@ Studio.register("base", (ctx) => {
   const { $, api, toast } = ctx;
   const ui = Studio.ui;
   const KINDS = { situation: "situação", label: "rótulo", upscale: "upscale" };
-  let cands = [], sel = null, chain = { situation: null, label: null, upscale: null };
+  let cands = [], sel = null, chain = { situation: null, label: null, upscale: null }, finalName = null;
   let refs = [], labelCount = 3, job = null;
 
   const url = (p) => `/api/projects/${ctx.pid()}/base/${p}`;
@@ -27,14 +27,14 @@ Studio.register("base", (ctx) => {
   function promptCard(label, text, key, editable, note) {
     return `<div class="prompt"><div class="row wrap"><span class="eyebrow">${ui.esc(label)}</span>
       ${note ? `<span class="fine">${ui.esc(note)}</span>` : ""}
-      <button class="ghost copy" data-k="${ui.esc(key)}">Copiar</button><span class="ok"></span></div>
+      <button type="button" class="link copy" data-k="${ui.esc(key)}">Copiar</button><span class="ok"></span></div>
       <textarea data-k="${ui.esc(key)}"${editable ? "" : " readonly"}>${ui.esc(text)}</textarea></div>`;
   }
 
   // Galeria das referências da etapa 1: a escolha vale para "Gerar prompt" e para "Importar".
   function renderRefGallery() {
     $("#refGallery").innerHTML = refs.length ? refs.map((f) =>
-      `<div class="card" data-ref="${ui.esc(f.ref_id)}" tabindex="0" title="${ui.esc(f.ref_id)}">
+      `<div class="card${$("#promptRef").value === f.ref_id ? " sel" : ""}" data-ref="${ui.esc(f.ref_id)}" tabindex="0" title="referência ${ui.esc(f.ref_id)}">
          <img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy">
          <span class="term">${ui.esc(f.ref_id)}</span></div>`).join("")
       : `<div class="empty">Nenhuma referência escolhida — volte à etapa 1 e salve a seleção.</div>`;
@@ -56,7 +56,7 @@ Studio.register("base", (ctx) => {
         <span class="fine">referência ${ui.esc(f.ref_id)}</span></div>
       ${promptCard(`instrução para o bot · sessão nova, sem viés · ref ${f.ref_id}`, f.bot_instruction,
                    `b:${f.ref_id}`, false, "cole isto numa aba nova do BOT, junto com a imagem da referência")}
-      ${promptCard(`prompt para gerar · ref ${f.ref_id}`, f.prompt, `p:${f.ref_id}`, true, fonte)}
+      ${promptCard(`Prompt · situação · editável · ref ${f.ref_id}`, f.prompt, `p:${f.ref_id}`, true, fonte)}
     </div>`;
   }
 
@@ -96,7 +96,7 @@ Studio.register("base", (ctx) => {
   async function gerarPrompt(noBias) {
     const btn = noBias ? $("#btnPromptNoBias") : $("#btnPrompt");
     btn.disabled = true;
-    btn.textContent = noBias ? "Perguntando ao bot (sem viés)…" : "Perguntando ao bot…";
+    btn.textContent = noBias ? "Perguntando ao bot (sessão nova)…" : "Perguntando ao bot…";
     try {
       const body = {
         ref_id: $("#promptRef").value || null,
@@ -111,7 +111,7 @@ Studio.register("base", (ctx) => {
       ctx.guide();
     } catch (err) { toast(err.message); }
     btn.disabled = false;
-    btn.textContent = noBias ? "Gerar sem viés (sessão nova)" : "Gerar prompt";
+    btn.textContent = noBias ? "Gerar sem viés" : "Gerar prompt";
   }
 
   async function loadBrand() {
@@ -121,29 +121,45 @@ Studio.register("base", (ctx) => {
 
   // ---------- candidatas ----------
   async function load() {
-    if (!ctx.pid()) { cands = []; return render(); }
+    if (!ctx.pid()) { cands = []; finalName = null; return render(); }
     const r = await api(url("candidates"));
     cands = r.candidates;
     chain = { situation: null, label: null, upscale: null };
     cands.filter((c) => c.selected).forEach((c) => { chain[c.kind] = c.id; });
     if (sel && !cands.some((c) => c.id === sel)) sel = null;
-    render(r.final);
+    finalName = r.final || null;
+    render();
   }
 
-  function render(final) {
+  function render() {
     const only = $("#galKind").value;
     const list = only ? cands.filter((c) => c.kind === only) : cands;
     $("#baseCounts").textContent = `${cands.length} candidatas · ${list.length} exibidas`;
     $("#btnBaseSelect").disabled = !sel;
-    $("#baseChain").textContent = "Cadeia: "
-      + ["situation", "label", "upscale"].map((k) => `${KINDS[k]}: ${chain[k] || "—"}`).join(" · ")
-      + (final ? ` · final: ${final}` : " · sem imagem base ainda");
-    $("#baseGallery").innerHTML = list.length ? list.map((c) =>
-      `<div class="card ${sel === c.id ? "sel" : ""}" data-id="${ui.esc(c.id)}" tabindex="0" title="${ui.esc(c.prompt || c.name || "")}">
-         <img loading="lazy" src="${ui.esc(ctx.files(c.thumb || c.file))}" alt="">
-         <span class="src">${ui.esc(KINDS[c.kind] || c.kind)}${c.selected ? " ✓" : ""}</span>
-         <span class="term">${c.ref_id ? "ref " + ui.esc(c.ref_id) + " · " : ""}${ui.esc(c.source)}</span></div>`).join("")
+    renderChain(finalName);
+    $("#baseGallery").innerHTML = list.length ? list.map((c) => ui.tile({
+      id: c.id,
+      src: ctx.files(c.thumb || c.file),
+      badge: `${KINDS[c.kind] || c.kind}${c.selected ? " ✓" : ""}`,
+      term: `${c.ref_id ? "ref " + c.ref_id + " · " : ""}${c.source}`,
+      sel: sel === c.id,
+      title: c.prompt || c.name || "",
+    })).join("")
       : `<div class="empty">Nenhuma imagem ainda — gere na UI da Higgsfield com o mood anexado e importe acima.</div>`;
+  }
+
+  // Cadeia da aula como `.stepper` do catálogo: passo com candidata escolhida = `done`,
+  // primeiro passo pendente = `on`. O chip do final continua dizendo se a base já fechou.
+  const CHAIN = [["situation", "situação"], ["label", "rótulo"], ["upscale", "upscale 2x"]];
+  function renderChain(final) {
+    const proximo = CHAIN.findIndex(([k]) => !chain[k]);
+    const passos = CHAIN.map(([k, rotulo], i) => {
+      const cls = chain[k] ? "st done" : (i === proximo ? "st on" : "st");
+      const t = chain[k] ? `${rotulo}: ${chain[k]}` : `${rotulo}: ainda não escolhido`;
+      return `<span class="${cls}" title="${ui.esc(t)}"><i>${i + 1}</i>${ui.esc(rotulo)}</span>`;
+    }).join(`<span class="sep"></span>`);
+    const estado = final ? ui.chip(`final: ${final}`, "ok") : ui.chip("sem imagem base ainda", "todo");
+    $("#baseChain").innerHTML = `${passos}<span class="bs-chain-state">${estado}</span>`;
   }
 
   function afterImport(r) {
