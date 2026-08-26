@@ -31,10 +31,29 @@ Studio.register("base", (ctx) => {
       <textarea data-k="${ui.esc(key)}"${editable ? "" : " readonly"}>${ui.esc(text)}</textarea></div>`;
   }
 
+  // Galeria das referências da etapa 1: a escolha vale para "Gerar prompt" e para "Importar".
+  function renderRefGallery() {
+    $("#refGallery").innerHTML = refs.length ? refs.map((f) =>
+      `<div class="card" data-ref="${ui.esc(f.ref_id)}" tabindex="0" title="${ui.esc(f.ref_id)}">
+         <img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy">
+         <span class="term">${ui.esc(f.ref_id)}</span></div>`).join("")
+      : `<div class="empty">Nenhuma referência escolhida — volte à etapa 1 e salve a seleção.</div>`;
+  }
+  function selectRef(id) {
+    $("#promptRef").value = id || ""; $("#impRef").value = id || "";
+    $("#refGallery").querySelectorAll(".card").forEach((c) => c.classList.toggle("sel", c.dataset.ref === id));
+    $("#refPickState").textContent = id ? `ref ${id}` : "nenhuma";
+    $("#refPickState").className = id ? "chip ok" : "chip warn";
+    $("#impRefChip").textContent = id ? `ref ${id}` : "—";
+    $("#basePrompts").querySelectorAll(".prompt-group").forEach((g) => g.classList.toggle("sel", g.dataset.ref === id));
+  }
+
   function refCard(f) {
     const fonte = f.prompt_source === "claude" ? `escrito pelo bot (modo ${f.prompt_mode || "images"})`
                                                : "template fixo — gere pelo bot para ficar como na aula";
-    return `<div class="prompt-group">
+    return `<div class="prompt-group" data-ref="${ui.esc(f.ref_id)}">
+      <div class="prompt-ref"><img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy">
+        <span class="fine">referência ${ui.esc(f.ref_id)}</span></div>
       ${promptCard(`instrução para o bot · sessão nova, sem viés · ref ${f.ref_id}`, f.bot_instruction,
                    `b:${f.ref_id}`, false, "cole isto numa aba nova do BOT, junto com a imagem da referência")}
       ${promptCard(`prompt para gerar · ref ${f.ref_id}`, f.prompt, `p:${f.ref_id}`, true, fonte)}
@@ -63,11 +82,9 @@ Studio.register("base", (ctx) => {
         ? promptCard("troca de rótulo (uma instrução só)", r.label_prompt, "label", true,
                      `edite se ficar simples demais · ${labelCount} variações por vez no CLI`)
         : `<div class="empty">Informe a marca acima para liberar a instrução de troca de rótulo.</div>`;
-      const opts = `<option value="">—</option>` + r.refs.map((f) =>
-        `<option value="${ui.esc(f.ref_id)}">${ui.esc(f.ref_id)}</option>`).join("");
-      $("#impRef").innerHTML = opts;
-      $("#promptRef").innerHTML = opts;
-      if (r.refs.length) $("#promptRef").value = r.refs[0].ref_id;
+      renderRefGallery();
+      selectRef(refs.some((f) => f.ref_id === $("#promptRef").value) ? $("#promptRef").value
+                                                                     : (refs[0] ? refs[0].ref_id : ""));
       $("#upscaleHint").textContent = r.upscale_hint;
     } catch (err) {
       $("#basePrompts").innerHTML = `<div class="empty">${ui.esc(err.message)}</div>`;
@@ -189,6 +206,8 @@ Studio.register("base", (ctx) => {
   return {
     init() {
       $("#btnBasePrompts").onclick = () => loadPrompts();
+      $("#refGallery").addEventListener("click", (e) => { const c = e.target.closest(".card"); if (c) selectRef(c.dataset.ref); });
+      $("#refGallery").addEventListener("keydown", (e) => { const c = e.target.closest(".card"); if (c && e.key === "Enter") selectRef(c.dataset.ref); });
       $("#baseModel").onchange = () => loadPrompts();
       $("#btnPrompt").onclick = () => gerarPrompt(false);
       $("#btnPromptNoBias").onclick = () => gerarPrompt(true);
