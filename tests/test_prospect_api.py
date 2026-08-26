@@ -58,10 +58,10 @@ def test_gate_fechado_bloqueia_escrita_e_libera_leitura(client, project):
     outra_obra(root, "2026-08-obra-1")
     g = client.get(f"/api/projects/{pid}/prospect/gate").json()
     assert g["ok"] is False and g["published"] == 2 and g["required"] == 4
-    assert g["message"] == "A aula manda publicar 4 vídeos criativos antes de prospectar. Você tem 2/4."
+    assert g["message"] == "A aula pede quatro obras diferentes antes de prospectar — faltam 2 campanhas."
     assert g["today_sent"] == 0 and g["daily_limit"] == 10
     r = client.post(f"/api/projects/{pid}/prospect/leads", json=LEAD)
-    assert r.status_code == 409 and "2/4" in r.json()["detail"]
+    assert r.status_code == 409 and "faltam 2 campanhas" in r.json()["detail"]
     assert client.get(f"/api/projects/{pid}/prospect/leads").status_code == 200, "GET nunca bloqueia"
     open_gate(root)
     assert client.post(f"/api/projects/{pid}/prospect/leads", json=LEAD).status_code == 200
@@ -239,21 +239,63 @@ def test_leads_expoe_segmentos_e_sugestao_de_offset(client, project):
 def test_view_esconde_o_teaser_ate_a_resposta_e_mostra_os_segmentos(client):
     html = client.get("/steps/prospect/view.html").text
     js = client.get("/steps/prospect/view.js").text
-    assert "Etapa 11 · aula 001" in html and 'id="guide"' in html
+    assert "Etapa 11 · aula 001" in html
+    # 11.4: esta é a única tela sem `#guide` — a faixa do gate ocupa a posição dele.
+    assert 'id="guide"' not in html
+    assert 'document.querySelector("#guide")' in js, "o slot que o shell injeta é removido no init"
+    # 11.17: os seis segmentos do mar azul viraram o `<select>` do formulário de novo lead.
+    assert 'id="lfSegment"' in html
     for segmento in ("clínicas", "academias", "advogados", "estética", "dentistas", "comércios"):
-        assert segmento in html, segmento
+        assert f'<option value="{segmento}">' in html, segmento
     assert "l.replied" in js and 'data-act="teaser"' in js, "o botão do teaser depende de replied"
     assert "destroy()" in js
 
 
 def test_view_segue_o_catalogo_do_redesign(client):
-    """Wave 3: gate como `.strip.warn` com `.pipe`, leads em `.lead-row` e pitch em `.pitch-table`."""
+    """Wave 4: gate como `.strip.warn` com `.pipe`, leads em `.lead-row` e pitch em `.pitch-table`."""
     html = client.get("/steps/prospect/view.html").text
     js = client.get("/steps/prospect/view.js").text
     assert 'class="strip warn" id="gatePanel"' in html and 'id="gatePipe"' in html
     assert '<span class="pn">01</span>Leads' in html
     assert '<span class="pn">02</span>Pitch da call' in html
-    assert 'details class="lesson"' in html, "o texto longo da aula vira <details class=lesson>"
+    assert "lesson" not in html, "wave 4 regra 4: `details.lesson` só na etapa 1"
+    # 11.10/11.11: a lista "Projetos que já contam" e o rodapé do gate saíram.
+    assert "gateProjects" not in html and "gateProjects" not in js
+    # 11.12: o painel de leads fica visível com o gate fechado (quem recusa é o backend).
+    assert '<section class="panel" id="leadsPanel">' in html
     assert '<div class="pitch">' in html and 'id="pitchBox" class="script"' in html
     assert 'class="lead-row"' in js and '"pitch-table"' in js
     assert "Studio.ui.pipe(" in js, "o gate desenha as quatro obras no .pipe do shell"
+    # 11.13/11.21: o chip de status e o botão "detalhes" saíram; a linha abre pelo clique.
+    assert "statusChip" not in html and "statusChip" not in js
+    assert 'class="link toggle"' not in js
+    # 11.28/11.30/11.32: valores como texto editável, total sem o valor do desconto, script com
+    # as quatro frases da aula.
+    assert 'class="v" type="number"' in js and "mini wide num" not in js
+    assert " · 50% off no 1º" in js and "pitch.discount" not in js
+    assert "pitch.reminders" in js and "→ prospect/pitch.md" in js
+
+
+def test_lead_guarda_o_segmento_do_mar_azul(client, project):
+    """11.17: a linha do lead mostra "@handle · segmento" — o campo é do lead, não do papel."""
+    pid, root = project
+    open_gate(root)
+    lead = client.post(f"/api/projects/{pid}/prospect/leads",
+                       json={**LEAD, "segment": "academias"}).json()
+    assert lead["segment"] == "academias"
+    assert client.get(f"/api/projects/{pid}/prospect/leads").json()["leads"][0]["segment"] == "academias"
+    r = client.post(f"/api/projects/{pid}/prospect/leads",
+                    json={**LEAD, "handle": "@outro", "segment": "padarias"})
+    assert r.status_code == 422 and "segmento deve ser um de" in r.json()["detail"]
+
+
+def test_pitch_devolve_as_quatro_frases_da_caixa_do_script(client, project):
+    """11.32: a caixa do script mostra os `reminders`; o markdown inteiro fica no "Copiar"."""
+    pid, root = project
+    r = client.get(f"/api/projects/{pid}/prospect/pitch").json()
+    assert r["reminders"] == ["Revele o valor por etapa até o total.",
+                              "Condição especial na hora, ou válida por 24h.",
+                              "50% na entrada, 50% na entrega.",
+                              "Venda o resultado, não a IA."]
+    open_gate(root)
+    assert client.post(f"/api/projects/{pid}/prospect/pitch").json()["reminders"] == r["reminders"]
