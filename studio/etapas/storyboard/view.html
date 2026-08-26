@@ -1,109 +1,57 @@
 <style>
-  /* Escopo `.sb-` da etapa 4 (regra 3 da wave 3). As lacunas do catálogo viraram classes do
-     shell na integração (ADH-OS-20260826-09): `.card.static`, `.card .card-act`, `.grow`,
-     `.flat` e as colunas editáveis de `.scene-row` (`.media`/`.edit`/`.acts`). */
+  /* Escopo `.sb-` da etapa 4 (wave 4). O que sobrou aqui é lacuna do shell registrada no
+     final report: o overlay "escolher imagem" da thumb clicável da cena. */
   .sb-base{align-self:start}
+  .sb-pick::after{content:"escolher imagem";position:absolute;inset:0;display:grid;place-items:center;
+    font-family:"IBM Plex Mono",monospace;font-size:9px;color:#D7F4F9;background:rgba(0,0,0,.55);
+    opacity:0;transition:opacity .15s}
+  .sb-pick:hover::after,.sb-pick:focus-visible::after{opacity:1}
 </style>
 
 <header class="stephead">
   <span class="eyebrow">Etapa 4 · aula 010</span>
   <h2>Storyboard</h2>
-  <p class="lede">A imagem base vira história: edite <b>uma instrução por vez</b>, importe o que gostou e escreva ~5 cenas com <b>começo, descoberta, ação e desfecho</b>.</p>
+  <p class="lede">A imagem base vira história: edite <b>uma instrução por vez</b>, importe o que gostou e escreva ~5 cenas com começo, descoberta, ação e desfecho.</p>
 </header>
 
 <section id="guide" class="guide"></section>
 
-<section class="panel">
+<section class="panel" id="sbIdeas">
   <div class="panel-head">
     <h3><span class="pn">01</span>Ideias a partir da imagem base</h3>
-    <div class="row wrap">
-      <span id="sbBaseChip" class="chip">base: ?</span>
-      <span id="sbCounts" class="chip">0 ideias · 0 escolhidas</span>
-    </div>
+    <button id="sbCounts" type="button" class="chip mode" title="Importar ideias geradas na Higgsfield">0 ideias · 0 escolhidas</button>
   </div>
   <div class="grid2 rev">
-    <div class="col">
-      <div class="card wide static sb-base">
-        <img id="sbBase" class="hidden" alt="imagem base da campanha">
-        <span class="term">base/base_final.png</span>
-      </div>
-      <p id="sbBaseWarn" class="fine hidden">Sem <code>base/base_final.png</code>: conclua a etapa 3 para liberar as instruções. Importar ideias e escrever cenas continua funcionando.</p>
+    <div class="card wide static sb-base">
+      <img id="sbBase" class="hidden" alt="imagem base da campanha">
+      <span class="term">base/base_final.png</span>
     </div>
     <div class="col">
       <div class="row wrap">
         <select id="sbKind"></select>
         <select id="sbPreset"><option value="">— fórmulas da aula —</option></select>
-        <span id="sbKindHint" class="fine grow flat"></span>
       </div>
       <textarea id="sbText" rows="2" placeholder="Make the climber even smaller and more realistic"></textarea>
       <div class="row wrap">
-        <button id="sbGen4" class="primary">Montar instrução — gere 4 na Higgsfield (incerto)</button>
-        <button id="sbGen1" class="ghost">Montar instrução — gere 1 na Higgsfield (tweak)</button>
+        <button id="sbGen4" class="primary">Montar instrução — gere 4 (incerto)</button>
+        <button id="sbGen1" class="ghost">gere 1 (tweak)</button>
       </div>
-      <div class="prompt">
+      <div class="prompt sm">
         <div class="row"><span class="eyebrow">Cole isto na Higgsfield</span><button id="sbCopy" type="button" class="link copy">Copiar</button><span id="sbCopied" class="ok"></span></div>
-        <textarea id="sbInstruction" rows="3" readonly placeholder="a instrução montada aparece aqui — os botões não gastam crédito"></textarea>
-        <p id="sbHint" class="fine"></p>
+        <p id="sbInstruction" class="txt">a instrução montada aparece aqui — os botões não gastam crédito</p>
       </div>
     </div>
   </div>
-  <details class="lesson">
-    <summary>O que a aula 010 manda fazer aqui</summary>
-    <p>O Studio <b>monta a instrução</b>; quem gera é você, na interface da Higgsfield (lá o plano é ilimitado). <span id="sbUpscaleNote">O upscale das ideias acontece na etapa 5 (aula 011), depois de escolher os ângulos.</span></p>
-    <p>Estes botões <b>não gastam crédito</b>: eles montam o texto para você colar na Higgsfield. Gerar de verdade é lá (ou pelo CLI, abaixo, que gasta créditos). Escreva as instruções em inglês (aula 007).</p>
-    <p>Draw to Edit só existe na interface (o desenho é seu). No CLI, a aula encadeia as edições: escolha <b>"usar como origem"</b> em uma ideia da galeria para a próxima edição partir dela, e não da imagem base.</p>
-  </details>
-  <div class="row wrap cli">
-    <span id="sbHfState" class="chip">CLI: ?</span>
-    <select id="sbModel"></select>
-    <span id="sbSourceChip" class="chip mode">origem: imagem base</span>
-    <button id="sbSourceClear" class="ghost">voltar à base</button>
-    <button id="sbCliGen" class="ghost" disabled>Gerar via CLI (gasta créditos)</button>
-    <span id="sbJobLog" class="mono fine"></span>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-head"><h3><span class="pn">02</span>Importar as ideias que você gerou</h3></div>
-  <div class="row wrap">
-    <label class="drop" id="sbDrop">Arraste imagens aqui ou <input id="sbUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
-    <div class="col">
-      <button id="sbBtnDownloads" class="ghost">Importar da pasta Downloads</button>
-      <label class="inline">últimos <input id="sbMinutes" type="number" value="120" min="5"> min</label>
-    </div>
-    <div class="col">
-      <button id="sbBtnHistory" class="ghost">Importar do histórico Higgsfield</button>
-      <span class="fine">precisa de login no CLI</span>
-    </div>
-  </div>
-  <details class="lesson">
-    <summary>O que a aula 010 manda fazer aqui</summary>
-    <p>A instrução em uso é gravada junto com cada ideia importada (rastreabilidade). Aceite as imperfeições da IA: corrija com a próxima edição e avance (aula 010).</p>
-  </details>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3><span class="pn">03</span>Escolher as ideias do storyboard</h3>
-    <button id="sbUse" class="primary">Usar no storyboard</button>
-  </div>
-  <div id="sbGallery" class="gallery sm"></div>
-  <p class="note">Um clique escolhe a ideia; o botão <b>usar como origem</b> faz a próxima geração pelo CLI partir dela (edições encadeadas, aula 010). As escolhidas são copiadas para <code>storyboard/ideas/</code> e ficam disponíveis para anexar às cenas. Duplo clique abre a imagem.</p>
-</section>
-
-<section class="panel">
-  <div class="panel-head">
-    <h3><span class="pn">04</span>A história em cenas</h3>
+    <h3><span class="pn">02</span>A história em cenas</h3>
     <div class="row wrap">
       <button id="sbAdd" class="ghost">+ cena</button>
       <button id="sbRender" class="ghost">Gerar storyboard.md</button>
       <button id="sbSave" class="primary">Salvar cenas</button>
-      <a id="sbMd" class="hidden" target="_blank" rel="noopener">abrir storyboard.md</a>
     </div>
   </div>
-  <details class="lesson">
-    <summary>O que a aula 010 manda fazer aqui</summary>
-    <p>A aula 010 escreve ~5 cenas em texto e organiza a linha narrativa em <b>começo → descoberta → ação → desfecho</b> — o rótulo de cada cena abaixo mostra o momento que ela ocupa. Salvar grava <code>storyboard/scenes.json</code> e regrava <code>storyboard/storyboard.md</code>.</p>
-  </details>
   <div id="sbScenes" class="rowlist"></div>
 </section>
