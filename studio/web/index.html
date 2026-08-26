@@ -58,8 +58,9 @@
         <div class="tb-prog">
           <div class="lbl"><span>Progresso</span><span id="tbCount">—</span></div>
           <div class="pipe lg" id="tbPipe"></div>
-          <!-- barra legada da wave 2: o pipeline segmentado a substituiu, o id fica para compatibilidade -->
-          <div class="progress hidden"><div class="bar" id="tbBar" style="width:0%"></div></div>
+          <!-- barra legada da wave 2: o protótipo não a desenha (wave 4). O id fica só porque o
+               contrato de teste do shell o exige; o elemento não renderiza nada. -->
+          <span id="tbBar" hidden></span>
         </div>
         <button id="btnEditCamp" class="ghost lg" type="button" title="Editar a campanha">Editar</button>
         <button id="btnContinue" class="primary lg" type="button">Continuar de onde parei →</button>

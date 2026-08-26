@@ -26,6 +26,17 @@
 //   Studio.ui.copyBtn(alvo, label)
 //       → `button.link` "Copiar". `alvo` = texto literal ou seletor CSS do campo a copiar;
 //         o clique é tratado por um listener único (toast "copiado" + `.ok` irmão).
+//
+// Wave 4 (fidelidade ao protótipo, ADH-OS-20260826-10) — também ADITIVO:
+//   Studio.ui.autosize(el)
+//       → `textarea` de altura automática (fallback de `field-sizing:content`): mede o
+//         `scrollHeight` no 1º render e a cada `input`. Aceita elemento, seletor ou lista.
+//   Studio.ui.modal({title, subtitle, html, actions})
+//       → o `actions` novo monta a linha `.modal-actions` (ghost/primary `.lg`) e devolve os
+//         botões em `m.actions`; sem `actions` o modal continua exatamente como era.
+//   Studio.ui.drop(el, onFiles)
+//       → já aceitava qualquer elemento; a wave 4 documenta o uso com o PAINEL inteiro como
+//         alvo (`.panel.over`), que é o que o protótipo desenha (sem dropzone visível).
 window.Studio = window.Studio || {};
 
 window.Studio.ui = {
@@ -61,19 +72,22 @@ window.Studio.ui = {
     try {
       s = await (await fetch("/api/higgsfield/status")).json();
     } catch (e) {
-      if (node) { node.textContent = "CLI: indisponível"; node.className = "chip warn"; }
+      if (node) { node.textContent = "● CLI · indisponível"; node.className = "chip warn"; }
       return s;
     }
     if (!node) return s;
-    if (!s.installed) { node.textContent = "CLI: não instalado"; node.className = "chip warn"; }
-    else if (!s.logged_in) { node.textContent = "CLI: sem login (higgsfield auth login)"; node.className = "chip warn"; }
-    else { node.textContent = `CLI: ${s.plan || "logado"} · ${s.credits ?? "?"} créditos`; node.className = "chip ok"; }
+    // Texto do protótipo: `● CLI · <plano> · <N> créditos` (bolinha e `·`, sem dois-pontos).
+    // Os estados de erro, que o protótipo não desenha, mantêm o mesmo prefixo.
+    if (!s.installed) { node.textContent = "● CLI · não instalado"; node.className = "chip warn"; }
+    else if (!s.logged_in) { node.textContent = "● CLI · sem login (higgsfield auth login)"; node.className = "chip warn"; }
+    else { node.textContent = `● CLI · ${s.plan || "logado"} · ${s.credits ?? "?"} créditos`; node.className = "chip ok"; }
     return s;
   },
 
   // ---------- importação de arquivos ----------
   /**
-   * Liga drag&drop + "escolha arquivos" em `el` (a classe `over` marca o arraste por cima).
+   * Liga drag&drop + "escolha arquivos" em QUALQUER elemento (`label.drop`, `.panel`, `.card`…):
+   * a classe `over` marca o arraste por cima — `.drop.over` e `.panel.over` têm regra no CSS.
    * Usa o `<input type="file">` que já estiver dentro de `el`; se não houver, cria um oculto.
    */
   drop(el, onFiles) {
@@ -107,6 +121,23 @@ window.Studio.ui = {
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || r.statusText);
     return body;
+  },
+
+  /**
+   * Altura automática de `textarea` (fallback de `field-sizing:content`, que ainda não existe
+   * em todos os navegadores). Chame depois de preencher o valor; o listener de `input` mantém
+   * a altura enquanto o usuário digita. `alvo` = elemento, seletor CSS ou lista de elementos.
+   */
+  autosize(alvo) {
+    const nodes = typeof alvo === "string"
+      ? [...document.querySelectorAll(alvo)]
+      : (alvo && alvo.length !== undefined && !alvo.tagName ? [...alvo] : [alvo]);
+    nodes.filter(Boolean).forEach((el) => {
+      const ajusta = () => { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; };
+      if (!el.dataset.autosize) { el.dataset.autosize = "1"; el.addEventListener("input", ajusta); }
+      ajusta();
+    });
+    return nodes[0] || null;
   },
 
   // ---------- custo ----------
@@ -151,10 +182,12 @@ window.Studio.ui = {
   // ---------- modal ----------
   /**
    * Modal acessível: foco preso dentro do diálogo, `Esc` e clique no fundo fecham, o foco volta
-   * para quem abriu. `opts = {title, subtitle, html, wide}`. Devolve `{el, close()}` — quem
-   * chama liga os botões pelo `el.querySelector(...)`.
+   * para quem abriu. `opts = {title, subtitle, html, actions, onClose}`; `html` aceita conteúdo
+   * arbitrário (galeria, formulário, lista). `actions` (wave 4) é a lista de botões do rodapé:
+   * `[{label, kind: "ghost"|"primary", close: true, onClick(m)}]` — vira `.modal-actions` com
+   * `.ghost.lg`/`.primary.lg`. Devolve `{el, close(), actions}` (os nós dos botões criados).
    */
-  modal({ title, subtitle = "", html = "", onClose } = {}) {
+  modal({ title, subtitle = "", html = "", actions = null, onClose } = {}) {
     const prev = document.activeElement;
     const back = document.createElement("div");
     back.className = "modal-backdrop";
@@ -166,7 +199,10 @@ window.Studio.ui = {
         </div>
         <button class="modal-close" type="button" title="Fechar" aria-label="Fechar">✕</button>
       </div>
-      <div class="modal-body">${html}</div>
+      <div class="modal-body">${html}${(actions && actions.length)
+        ? `<div class="modal-actions">${actions.map((a, i) =>
+          `<button type="button" class="${a.kind === "primary" ? "primary" : "ghost"} lg" data-act="${i}">${this.esc(a.label)}</button>`).join("")}</div>`
+        : ""}</div>
     </div>`;
     const close = () => {
       if (!back.isConnected) return;
@@ -192,7 +228,17 @@ window.Studio.ui = {
     document.body.appendChild(back);
     const auto = back.querySelector("input, select, textarea, button:not(.modal-close)");
     if (auto) auto.focus();
-    return { el: back, close };
+    const ref = { el: back, close, actions: [] };
+    (actions || []).forEach((a, i) => {
+      const b = back.querySelector(`.modal-actions [data-act="${i}"]`);
+      if (!b) return;
+      ref.actions.push(b);
+      b.onclick = () => {
+        if (a.onClick) a.onClick(ref);
+        if (a.close !== false) close();
+      };
+    });
+    return ref;
   },
 
   // ---------- painel do guia ----------
@@ -204,12 +250,15 @@ window.Studio.ui = {
   STATUS_KIND: { done: "done", in_progress: "in_progress", blocked: "blocked", todo: "todo", unknown: "unknown" },
 
   /**
-   * Renderiza o guia da etapa dentro de `el`, em um dos dois estados (wave 3):
-   * - colapsado → faixa compacta `.guide-strip`: "GUIA", chip de status, chip de %, chip extra
-   *   opcional (`g.summary`) e a próxima ação. A faixa inteira é clicável e expande;
+   * Renderiza o guia da etapa dentro de `el`, em um dos dois estados:
+   * - colapsado (PADRÃO, wave 4) → faixa compacta `.guide-strip`: "GUIA", chip de status, chip
+   *   de %, chip extra opcional (`g.summary`, com a cor de `g.summary_kind`) e a próxima ação.
+   *   A faixa inteira é clicável e expande;
    * - expandido → `.guide-body[data-open="1"]`: cabeçalho clicável (`.guide-toggle`, caret,
-   *   chips, "recolher"), o que falta (`.guide-missing`), as seções em `.checks` e as ações.
-   * O estado é guardado por etapa em `studio.guide.<id>` (aberto por padrão).
+   *   chips, "recolher"), a linha de estado (`.guide-missing`), UMA grade `.guide-items.checks`
+   *   com a união de entradas + saídas + validações, e a linha de ações.
+   * O estado é guardado por etapa em `studio.guide.<id>` (fechado por padrão — o protótipo
+   * desenha a faixa compacta em 10 das 11 telas; ver shell-redesign-fdd §10.5).
    */
   guide(el, g) {
     const node = typeof el === "string" ? document.querySelector(el) : el;
@@ -220,7 +269,8 @@ window.Studio.ui = {
     const open = this._guideOpen(g.id);
     const chipStatus = this.chip(this.STATUS_LABEL[g.status] || g.status, this.STATUS_KIND[g.status] || "mode");
     const chipPct = (g.status === "in_progress" || g.status === "done") ? this.chip(`${pct}%`, "mode") : "";
-    const chipExtra = g.summary ? this.chip(g.summary, "mode") : "";
+    // O chip extra ("1/6 shots prontos", "portfólio 1/4 vídeos") pode pedir cor de atenção.
+    const chipExtra = g.summary ? this.chip(g.summary, g.summary_kind || "mode") : "";
     const proxima = g.next_action ? `<span class="guide-next">→ ${e(g.next_action)}</span>` : "";
     const ligar = () => {
       node.onclick = (ev) => {
@@ -239,20 +289,17 @@ window.Studio.ui = {
       return;
     }
 
+    // Linha de estado: "falta …" ou "tudo pronto", com o resumo da etapa quando ele existir.
+    const resumo = g.summary ? ` · ${e(g.summary)}` : "";
     const missing = g.missing && g.missing.length
-      ? `<span class="k">faltando</span><span class="v">${e(g.missing.join(" · "))}</span>`
-      : `<span class="k">tudo pronto</span><span class="v">nenhuma entrada ou saída pendente nesta etapa</span>`;
+      ? `<span class="k">faltando</span><span class="v">${e(g.missing.join(" · "))}${resumo}</span>`
+      : `<span class="k">tudo pronto</span><span class="v">nenhuma entrada ou saída pendente nesta etapa${resumo}</span>`;
 
-    const secs = [];
-    if (g.what) secs.push(this._section("O que fazer nesta etapa", `<p class="guide-what">${e(g.what)}</p>`));
-    if (g.detail) secs.push(this._section("Aviso", `<p class="fine mono">${e(g.detail)}</p>`));
-    if (g.inputs && g.inputs.length) secs.push(this._section("Entradas (vêm de outras etapas)", this._items(g.inputs)));
-    if (g.outputs && g.outputs.length) secs.push(this._section("Saídas (o que esta etapa produz)", this._items(g.outputs)));
-    if (g.validations && g.validations.length) secs.push(this._section("Validações da aula", this._items(g.validations)));
-    if (g.checklist && g.checklist.length) {
-      secs.push(this._section("Checklist da aula", `<ul class="guide-check">${g.checklist.map((c) =>
-        `<li><label><input type="checkbox"> <span>${e(c)}</span></label></li>`).join("")}</ul>`));
-    }
+    // Uma grade só, na ordem do protótipo: entradas, saídas e validações no mesmo `ul.checks`.
+    // `what`, `detail`, o checklist e os títulos de seção não são desenhados (o texto de aula
+    // continua no `guide.py` e nos `details.lesson` das telas que o protótipo tem).
+    const itens = [...(g.inputs || []), ...(g.outputs || []), ...(g.validations || [])];
+    const grade = itens.length ? this._items(itens) : "";
     const alvo = (window.Studio.steps || []).find((s) => s.id === g.next_step);
     const acoes = g.next_action
       ? `<div class="guide-actions"><p class="guide-next">→ Próxima ação: ${e(g.next_action)}</p>${
@@ -268,7 +315,7 @@ window.Studio.ui = {
       </button>
       <div class="guide-sections">
         <div class="guide-missing${g.missing && g.missing.length ? "" : " all-ok"}">${missing}</div>
-        ${secs.join("")}${acoes}
+        ${grade}${acoes}
       </div>
     </div>`;
 
@@ -367,14 +414,18 @@ window.Studio.ui = {
   },
 
   // ---------- internos ----------
-  /** Lê (ou grava, quando `set` vem) o estado colapsado do painel de guia da etapa. */
+  /**
+   * Lê (ou grava, quando `set` vem) o estado do painel de guia da etapa.
+   * Wave 4: sem chave salva o guia nasce FECHADO (faixa compacta) — é o que o protótipo
+   * desenha em 10 das 11 telas. O estado continua lembrado por etapa.
+   */
   _guideOpen(stepId, set) {
     const key = `studio.guide.${stepId}`;
     try {
-      if (set === undefined) return localStorage.getItem(key) !== "0";
+      if (set === undefined) return localStorage.getItem(key) === "1";
       localStorage.setItem(key, set ? "1" : "0");
     } catch (e) { /* localStorage bloqueado: o painel só não lembra do estado */ }
-    return set !== false;
+    return set === true;
   },
   _statusKind(status) {
     if (status === "done" || status === "ok") return "ok";
@@ -385,15 +436,18 @@ window.Studio.ui = {
   _section(title, html) {
     return `<section class="guide-sec"><h4>${this.esc(title)}</h4>${html}</section>`;
   },
+  /**
+   * Grade de itens do guia: só marca + rótulo, como no protótipo. O detalhe e a dica de
+   * correção viram `title` (tooltip) — nada de sublinha nem de link por item.
+   */
   _items(items) {
     const e = (s) => this.esc(s);
     return `<ul class="guide-items checks">${items.map((it) => {
       const mark = it.status === "ok" ? "✓" : it.status === "fail" ? "✕" : it.status === "warn" ? "!" : "·";
-      const fix = it.fix
-        ? `<span class="guide-fix">${e(it.fix)}${it.step ? ` <button class="link" data-go="${e(it.step)}">ir para a etapa</button>` : ""}</span>`
-        : (it.step ? `<span class="guide-fix"><button class="link" data-go="${e(it.step)}">ir para a etapa</button></span>` : "");
-      return `<li class="it ${e(it.status)}"><span class="mark" title="${e(this.ITEM_LABEL[it.status] || it.status)}">${mark}</span>
-        <span class="body"><span class="lbl">${e(it.label)}</span>${it.detail ? `<span class="det">${e(it.detail)}</span>` : ""}${fix}</span></li>`;
+      const dica = [it.detail, it.fix].filter(Boolean).join(" — ");
+      return `<li class="it ${e(it.status)}"${dica ? ` title="${e(dica)}"` : ""}>` +
+        `<span class="mark" title="${e(this.ITEM_LABEL[it.status] || it.status)}">${mark}</span>` +
+        `<span class="lbl">${e(it.label)}</span></li>`;
     }).join("")}</ul>`;
   },
 };
