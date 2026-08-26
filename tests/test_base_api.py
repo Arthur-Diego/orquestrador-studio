@@ -42,51 +42,71 @@ def test_step_is_published_as_ready(client):
 
 
 def test_view_follows_the_wave2_screen_contract(client):
-    """Convenção da wave 2: painel do guia, helpers do Studio.ui e destroy() parando o poll."""
+    """Convenção da wave 2: painel do guia e helpers do Studio.ui.
+
+    Wave 4: o painel 04 (geração paga via CLI) saiu da tela — com ele saíram o poll do job,
+    `ui.poll`/`ui.confirmCost`/`ui.hfChip` e o `destroy()` que parava o poll.
+    """
     html = client.get("/steps/base/view.html").text
     js = client.get("/steps/base/view.js").text
     head = html.index('<header class="stephead">')
     guide = html.index('<section id="guide" class="guide">')
     assert head < guide < html.index("<section class=\"panel\">"), "o guia vem logo após o header"
-    for helper in ("Studio.ui", "ui.drop(", "ui.confirmCost(", "ui.poll(", "ui.esc(", "ui.hfChip(",
+    for helper in ("Studio.ui", "ui.drop(", "ui.esc(", "ui.tile(", "ui.autosize(",
                    'ui.renderGuide("base")'):
         assert helper in js, helper
-    assert "destroy()" in js and "job.stop()" in js
+    for ausente in ("ui.poll(", "ui.confirmCost(", "ui.hfChip(", "job.stop()"):
+        assert ausente not in js, f"{ausente} saiu com o painel 04"
     assert "setTimeout(pollJob" not in js and "addEventListener(\"dragover\"" not in js, "sem helper local duplicado"
     assert "ctx.guide()" in js, "o guia é recarregado depois de cada ação que muda artefato"
-    # B2/B11 na tela
-    assert "sessão nova" in js and "sem viés" in js
-    assert 'id="promptNoPeople"' in html and "sem pessoas" in html
-    assert "aba nova do BOT" in js
+    # B2/B11 na tela: a sessão nova do bot continua sendo um botão, agora só com o title do protótipo
+    assert "Gerar sem viés" in html and "Sessão nova do bot" in html
+    assert "no_bias" in js
     assert "aba nova na Higgsfield" not in html and "aba nova na Higgsfield" not in js
 
 
-def test_view_follows_the_wave3_design_catalog(client):
-    """Wave 3 (ADH-OS-20260826-04): a etapa 3 usa o catálogo de classes do shell redesenhado."""
+def test_view_follows_the_wave4_prototype(client):
+    """Wave 4 (ADH-OS-20260826-12): a etapa 3 é o protótipo `proto/03-base.html`, elemento a
+    elemento — 3 painéis, nenhum `<details>` de aula e nenhum controle que o protótipo não desenha."""
     html = client.get("/steps/base/view.html").text
     js = client.get("/steps/base/view.js").text
-    # painéis numerados com `.pn`, na ordem visual
-    posicoes = [html.index(f'<span class="pn">{n}</span>') for n in ("01", "02", "03", "04")]
-    assert posicoes == sorted(posicoes), "os 4 painéis são numerados com .pn na ordem visual"
-    assert html.count('<section class="panel">') == 4
-    # texto de aula fora do corpo, em <details class="lesson">
-    assert html.count('<details class="lesson">') == 4
-    assert "O que a aula 009 manda fazer aqui" in html
+    # painéis numerados com `.pn`, na ordem visual (o painel 04, do CLI pago, saiu)
+    posicoes = [html.index(f'<span class="pn">{n}</span>') for n in ("01", "02", "03")]
+    assert posicoes == sorted(posicoes), "os 3 painéis são numerados com .pn na ordem visual"
+    assert html.count('<section class="panel">') == 3
+    assert '<span class="pn">04</span>' not in html and "gasta créditos" not in html
+    # o texto de aula vive no guia: `<details class="lesson">` só existe na etapa 1 (regra 4)
+    assert '<details class="lesson">' not in html
+    assert "O que a aula 009 manda fazer aqui" not in html
+    # títulos e textos fixos do protótipo
+    assert '<span class="pn">01</span>O prompt da aula — quem escreve é o bot' in html
+    assert '<span class="pn">02</span>Marca do rótulo' in html
+    assert '<span class="pn">03</span>Escolher e fechar a imagem base' in html
+    assert 'placeholder="o que muda nesta referência"' in html, "sem o exemplo entre parênteses"
+    assert 'placeholder="como é a logo"' in html
+    assert ">Usar como imagem base<" in html and ">Gerar prompt<" in html
     # ref-picker no `.gallery.xs` e galeria de candidatas no `.gallery.sm`
     assert '<div id="refGallery" class="gallery xs"></div>' in html
     assert '<div id="baseGallery" class="gallery sm"></div>' in html
-    # cadeia situação → rótulo → upscale 2x como `.stepper` renderizado pelo view.js
+    assert '<span class="eyebrow lbl">Referência (etapa 1) — clique para escolher</span>' in html
+    # cadeia situação → rótulo → upscale 2x como `.stepper` renderizado pelo view.js; o stepper
+    # é também o seletor do passo da importação (não há mais `select` de passo nem chip no fim)
     assert '<div id="baseChain" class="stepper"></div>' in html
     assert '"st done"' in js and '"st on"' in js and '<span class="sep"></span>' in js
-    # marca do rótulo com `.ext`, nota de fechamento e paleta compacta
+    assert 'data-step="' in js and "bs-chain-state" not in js and "bs-chain-state" not in html
+    # marca do rótulo com `.ext` e nota de fechamento
     assert '<span class="ext">[extensão]</span>' in html
-    assert '<p class="note">Escolha uma imagem por passo' in html
-    assert '<div id="basePalette" class="palette sm"></div>' in html
-    # tiles e prompts pelo catálogo (span.src/span.term/.sel via Studio.ui.tile; botão .link)
+    assert '<p class="note bs-note">Escolha uma imagem por passo' in html
+    # um card de prompt só, de largura total, com a etiqueta exata do protótipo
+    assert '<div id="basePrompts" class="prompts one bs-one"></div>' in html
+    assert "Prompt · situação · editável" in js and "Prompt · rótulo · editável" in js
+    assert "prompt-group" not in js and "instrução para o bot" not in js
     assert "ui.tile(" in js and 'class="link copy"' in js
-    assert "Prompt · situação · editável" in js
-    # o shell é contrato de leitura: os utilitários de layout vêm dele (`.grow`/`.grow-lg`,
-    # promovidos no fechamento da wave 3) e só o que sobra de específico fica escopado `.bs-`
+    # defaults fixos no lugar dos controles removidos
+    assert "no_people: false" in js and "SINCE_MINUTES = 120" in js
+    assert 'url("prompts")' in js and "prompts?model=" not in js
+    # o shell é contrato de leitura: os utilitários de layout vêm dele (`.grow`/`.grow-lg`)
+    # e só o que sobra de específico fica escopado `.bs-`
     assert 'class="grow"' in html and 'class="grow-lg"' in html
     assert "<style>" in html and ".bs-io" in html
     assert ".bs-grow" not in html, "utilitário de crescimento é do shell, não da etapa"
@@ -101,17 +121,18 @@ def test_view_keeps_every_id_the_script_queries(client):
     consultados = set(re.findall(r'[$(]"#([A-Za-z0-9_-]+)"', js))
     declarados = set(re.findall(r'id="([A-Za-z0-9_-]+)"', html))
     assert consultados <= declarados, sorted(consultados - declarados)
-    for obrigatorio in ("baseClaude", "baseModel", "btnBasePrompts", "refGallery", "refPickState",
-                        "promptRef", "impRef", "promptMode", "promptInstruction", "promptNoPeople",
-                        "btnPrompt", "btnPromptNoBias", "botHint", "baseHint", "basePalette",
-                        "baseMood", "basePrompts", "upscaleHint", "brandName", "brandDesc",
-                        "btnBrand", "labelPrompt", "galKind", "baseCounts", "btnBaseSelect",
-                        "baseChain", "impKind", "impRefChip", "baseDrop", "baseUpload",
-                        "btnBaseDownloads", "baseDlFolder", "baseDlMinutes", "btnBaseHistory",
-                        "baseGallery", "baseHf", "genKind", "genCount", "btnBaseGen",
-                        "baseProgress", "baseLog"):
+    for obrigatorio in ("baseClaude", "refGallery", "promptInstruction", "btnPrompt",
+                        "btnPromptNoBias", "basePrompts", "brandName", "brandDesc", "btnBrand",
+                        "btnBaseSelect", "baseChain", "baseDrop", "baseUpload",
+                        "btnBaseDownloads", "btnBaseHistory", "baseGallery"):
         assert f'id="{obrigatorio}"' in html, obrigatorio
-    assert '<div id="baseProgress" class="progress hidden"><span class="bar"></span></div>' in html
+    # ids dos controles que o protótipo não desenha (wave 4): saíram do HTML e do JS
+    for removido in ("baseModel", "btnBasePrompts", "refPickState", "promptRef", "impRef",
+                     "promptMode", "promptNoPeople", "botHint", "baseHint", "basePalette",
+                     "baseMood", "upscaleHint", "labelPrompt", "galKind", "baseCounts",
+                     "impKind", "impRefChip", "baseDlFolder", "baseDlMinutes", "baseHf",
+                     "genKind", "genCount", "btnBaseGen", "baseProgress", "baseLog"):
+        assert f'id="{removido}"' not in html and f'#{removido}"' not in js, removido
 
 
 def test_prompts_endpoint(client, pid):

@@ -110,7 +110,9 @@ def test_guide_is_todo_with_inputs_and_no_output(client, pid):
     assert set(checks(g)) == {"situation_chosen", "upscale_2x", "label_applied", "prompt_en",
                               "ref_id_valid", "final_2048", "md_prompts"}
     assert checks(g)["upscale_2x"]["status"] == "todo"
-    assert "importe as candidatas" in g["next_action"]
+    # wave 4: a próxima ação é curta, no infinitivo, um passo só (estilo do protótipo)
+    assert g["next_action"] == "Escolher uma referência e gerar o primeiro prompt de situação"
+    assert g["summary"] is None and g["summary_kind"] is None, "sem passo escolhido, sem chip extra"
 
 
 # ---------- validações da §3.5 ----------
@@ -128,6 +130,7 @@ def test_guide_is_in_progress_until_the_chain_of_the_lesson_ends(client, pid):
     assert c["prompt_en"]["status"] == "ok" and "palavras" in c["prompt_en"]["detail"]
     assert c["final_2048"]["status"] == "ok" and c["ref_id_valid"]["status"] == "ok"
     assert "upscale" in g["next_action"].lower(), "a cadeia da aula ainda pede o upscale 2x"
+    assert g["summary"] == "cadeia 1/3" and g["summary_kind"] is None, "chip extra da faixa do guia"
 
 
 def test_guide_done_only_when_the_upscale_closes_the_chain(client, pid):
@@ -166,9 +169,11 @@ def test_guide_upscale_ratio_ok_and_warn(client, pid):
     r = upload(client, pid, "u2.png", png(1130, 640, (3, 3, 3)), kind="upscale")
     assert r["warnings"] and "2x" in r["warnings"][0], "B6: aviso já no import"
     client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "upscale")})
-    c = checks(guide_of(client, pid))
+    g = guide_of(client, pid)
+    c = checks(g)
     assert c["upscale_2x"]["status"] == "warn" and "1.1x" in c["upscale_2x"]["detail"]
     assert "High Fidelity V2" in c["upscale_2x"]["fix"]
+    assert g["summary"] == "cadeia 2/3" and g["summary_kind"] == "warn", "chip extra pede atenção"
 
 
 def test_guide_label_check_follows_the_brand_extension(client, pid):
