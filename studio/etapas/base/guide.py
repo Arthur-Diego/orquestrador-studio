@@ -103,16 +103,19 @@ def guide(pid: str) -> dict:
 
     ratio, w0, w1 = base.upscale_ratio(root, cands)
     if not ch["upscale"]:
+        up_status = "todo"
         g.check("upscale_2x", "Upscale 2x (preset High Fidelity V2)", "todo",
                 detail="falta o upscale 2x — é ele que fecha a imagem base",
                 fix="Open in → Upscale → 2x → High Fidelity V2 e importe como “upscale”")
     elif ratio is None:
+        up_status = "warn"
         g.check("upscale_2x", "Upscale 2x (preset High Fidelity V2)", "warn",
                 detail="não deu para conferir a proporção (dimensões indisponíveis)",
                 fix="Confirme que o upscale foi 2x, com o preset High Fidelity V2")
     else:
         ok = base.UPSCALE_MIN <= ratio <= base.UPSCALE_MAX
-        g.check("upscale_2x", "Upscale 2x (preset High Fidelity V2)", "ok" if ok else "warn",
+        up_status = "ok" if ok else "warn"
+        g.check("upscale_2x", "Upscale 2x (preset High Fidelity V2)", up_status,
                 detail=f"{w0}px → {w1}px ({ratio}x)",
                 fix=None if ok else "A aula pede 2x: refaça o upscale com 2x e High Fidelity V2")
 
@@ -161,7 +164,13 @@ def guide(pid: str) -> dict:
             "ok" if md_ok else "todo",
             detail=None if md_ok else "o base.md é regravado quando você escolhe a imagem base")
 
-    return g.build(next_action=_next_action(refs, mood, product, ch, brand))
+    # Chip extra da faixa do guia (wave 4): quanto da cadeia da aula já fechou. Sem nenhum passo
+    # escolhido a faixa fica como no protótipo — só o status e a próxima ação, sem chip extra.
+    feitos = len(feita)
+    summary = f"cadeia {feitos}/3" if feitos else None
+    return g.build(next_action=_next_action(refs, mood, product, ch, brand, n_sit, prompt),
+                   summary=summary,
+                   summary_kind="warn" if summary and up_status == "warn" else None)
 
 
 def _read_md(root: Path) -> str:
@@ -172,19 +181,20 @@ def _read_md(root: Path) -> str:
         return ""
 
 
-def _next_action(refs, mood, product, ch, brand) -> str | None:
-    """Frases da aula para o passo pendente da cadeia; `None` deixa o builder derivar
-    (é o caso quando falta entrada — aí quem manda é o bloqueio)."""
+def _next_action(refs, mood, product, ch, brand, n_sit, prompt) -> str | None:
+    """Próxima ação no estilo do protótipo (wave 4): uma frase curta no infinitivo, um passo só.
+    `None` deixa o builder derivar (é o caso quando falta entrada — aí quem manda é o bloqueio)."""
     if not (refs and mood and product):
         return None
     if not ch["situation"]:
-        return ("Gere o prompt com o bot (referência + mood), gere na UI da Higgsfield com o mood "
-                "anexado e importe as candidatas como “situação” — depois escolha uma.")
+        if not n_sit:
+            if not prompt:
+                return "Escolher uma referência e gerar o primeiro prompt de situação"
+            return "Gerar o grid na UI da Higgsfield com o mood anexado e importar como “situação”"
+        return "Escolher a candidata de situação que ficou melhor"
     if brand.get("name") and not ch["label"]:
-        return ("Troque o rótulo pela sua marca no Nano Banana com uma instrução só (mantenha as "
-                "cores) e importe o resultado como “rótulo”.")
+        return "Trocar o rótulo pela sua marca (uma instrução só) e importar como “rótulo”"
     if not ch["upscale"]:
-        return ("Faça o upscale 2x com o preset High Fidelity V2 e importe como “upscale” — "
-                "é o que fecha a base/base_final.png para a etapa 4.")
+        return "Fazer o upscale 2x (High Fidelity V2) e importar como “upscale”"
     return None
 
