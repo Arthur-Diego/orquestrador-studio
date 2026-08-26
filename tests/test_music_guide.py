@@ -127,3 +127,22 @@ def test_guide_never_creates_artifacts(client, project, root):
     assert not (root / "edit" / "timeline.json").exists()
     assert not (root / "audio" / "rough_sequence.mp4").exists()
     assert not (root / "audio" / "story_check.json").exists()
+
+
+def test_guide_strip_speaks_in_short_imperatives(client, project, root, studio_env, tmp_path):
+    """Wave 4: `next_action` e `summary` são o que a faixa compacta do protótipo desenha."""
+    bloqueado = guide(client, project)
+    assert bloqueado["status"] == "blocked" and bloqueado["summary"] is None
+    assert bloqueado["next_action"].startswith("Antes de continuar:")
+
+    seed(root, music=False)
+    g = guide(client, project)
+    # Estado que o protótipo desenha: "a fazer" + a próxima ação, sem chip extra.
+    assert g["status"] == "todo" and g["summary"] is None and g["summary_kind"] is None
+    assert g["next_action"] == "Montar a sequência bruta e decidir se a história fecha"
+
+    music = studio_env["svc"]("music")
+    music.set_story_check(project, closed=True)
+    g = guide(client, project)
+    assert g["summary"] == "história decidida, sem trilha"
+    assert g["next_action"] == "Ouvir as candidatas e escolher a trilha"
