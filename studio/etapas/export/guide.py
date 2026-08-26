@@ -54,9 +54,11 @@ def guide(pid: str) -> dict:
     fmt = ASPECT_FILE.get(aspect, "16x9")
     alvo = f"export/{fmt}.mp4"
 
+    tem_master = exists(pid, "edit/master.mp4")
+
     g = Guide(META).text(WHAT, CHECKLIST)
 
-    g.input("master", "edit/master.mp4 (etapa 8)", exists(pid, "edit/master.mp4"),
+    g.input("master", "edit/master.mp4 (etapa 8)", tem_master,
             fix="Volte à etapa 8 e renderize o master com a trilha", step="edit")
 
     g.output("formato_alvo", alvo, exists(pid, alvo),
@@ -89,4 +91,7 @@ def guide(pid: str) -> dict:
         g.check("duracao", "Duração de 30 s a 1 min (aula 016)", "warn", detail=f"{dur:g} s",
                 fix="o comercial que a aula vende tem 30 s a 1 min; ajuste a montagem na etapa 8")
 
-    return g.build()
+    # Resumo curto da faixa do guia (wave 4): o estado do insumo desta etapa.
+    return g.build(summary="master: pronto" if tem_master else "master: aguardando a etapa 8",
+                   next_action="Renderizar o formato da rede onde você vai publicar"
+                   if tem_master and not exists(pid, alvo) else None)

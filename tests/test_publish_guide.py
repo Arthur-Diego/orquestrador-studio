@@ -42,6 +42,19 @@ def outra_obra(studio_env, slug):
           "url": f"https://x.test/{slug}", "posted_at": "2026-08-20", "note": ""}]))
 
 
+# ---------- chip-resumo da faixa do guia (wave 4, 10.4) ----------
+def test_resumo_do_guia_e_o_portfolio_global_em_ambar(client, studio_env, pid):
+    g = guide(client, pid)
+    assert g["summary"] == "portfólio 0/4 vídeos" and g["summary_kind"] == "warn"
+    assert g["next_action"] == "Registrar a primeira publicação desta campanha"
+    registra(client, pid)
+    for n in range(1, 4):
+        outra_obra(studio_env, f"2026-08-obra-{n}")
+    g = guide(client, pid)
+    assert g["summary"] == "portfólio 4/4 vídeos" and g["summary_kind"] == "ok"
+    assert g["next_action"] != "Registrar a primeira publicação desta campanha"
+
+
 # ---------- entradas e saídas ----------
 def test_guia_bloqueado_sem_export_da_etapa_9(client, studio_env):
     pid = client.post("/api/projects", json={"name": "Sem Export"}).json()["id"]

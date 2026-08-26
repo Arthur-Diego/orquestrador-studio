@@ -82,6 +82,10 @@ def test_render_thumb_qa_and_list_over_http(client, svc, studio_env, pid):
     assert qa.status_code == 200 and qa.json()["file"] == "export/qa_report.md"
     verdicts = {i["file"]: i["verdict"] for i in qa.json()["items"]}
     assert verdicts["export/9x16.mp4"] == "OK" and verdicts["export/1x1.mp4"] == "ATENCAO"
+    # Wave 4: o grid da tela é por CRITÉRIO, com a frase da aula (auditoria 9.23).
+    checks = qa.json()["checks"]
+    assert any(c["text"].startswith("Resolução 1080×1920 · codec h264") and c["kind"] == "ok" for c in checks)
+    assert any(c["text"] == "16:9 e 1:1 ainda não renderizados" and c["kind"] == "warn" for c in checks)
 
     files = {f["name"]: f for f in client.get(f"/api/projects/{pid}/export/list").json()["files"]}
     assert set(files) == {"9x16.mp4", "thumb.jpg", "qa_report.md"}
@@ -89,7 +93,10 @@ def test_render_thumb_qa_and_list_over_http(client, svc, studio_env, pid):
 
     st = client.get(f"/api/projects/{pid}/export/status").json()
     assert st["outputs"]["9x16"]["width"] == 1080 and st["outputs"]["thumb"]["t"] == 0.5
-    assert st["outputs"]["qa_report"] == {"file": "export/qa_report.md"}
+    # O último QA fica persistido para o grid aparecer já no `load()` da tela (auditoria 9.24).
+    saved = st["outputs"]["qa_report"]
+    assert saved["file"] == "export/qa_report.md" and saved["checks"] == qa.json()["checks"]
+    assert saved["generated"] == qa.json()["generated"]
 
 
 def test_preview_returns_the_crop_rectangle(client, svc, studio_env, pid):

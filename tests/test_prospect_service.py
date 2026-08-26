@@ -74,7 +74,7 @@ def test_gate_conta_projetos_distintos_nao_arquivos(svc, root):
     publish_log(root, ["export/16x9.mp4", "export/9x16.mp4", "export/1x1.mp4", "export/extra.mp4"])
     g = svc.gate(root)
     assert g["published"] == 1 and g["posts"] == 4 and g["ok"] is False
-    assert g["message"] == "A aula manda publicar 4 vídeos criativos antes de prospectar. Você tem 1/4."
+    assert g["message"] == "A aula pede quatro obras diferentes antes de prospectar — faltam 3 campanhas."
     assert g["this_project_published"] is True
 
 
@@ -97,7 +97,7 @@ def test_gate_conta_projeto_do_lead_e_os_outros(svc, root):
 def test_gate_sem_log_ou_com_json_invalido_conta_zero(svc, root):
     g = svc.gate(root)
     assert g["published"] == 0 and g["posts"] == 0 and g["required"] == 4 and g["ok"] is False
-    assert g["message"] == "A aula manda publicar 4 vídeos criativos antes de prospectar. Você tem 0/4."
+    assert g["message"] == "A aula pede quatro obras diferentes antes de prospectar — faltam 4 campanhas."
     (root / "publish").mkdir(parents=True, exist_ok=True)
     (root / "publish" / "log.json").write_text("{isso não é json", encoding="utf-8")
     assert svc.gate(root)["published"] == 0, "log inválido conta como zero e nunca levanta"
@@ -106,7 +106,7 @@ def test_gate_sem_log_ou_com_json_invalido_conta_zero(svc, root):
 def test_gate_fechado_bloqueia_qualquer_escrita(svc, root):
     with pytest.raises(svc.GateClosed) as e:
         a_lead(svc, root)
-    assert "4 vídeos criativos" in str(e.value)
+    assert "quatro obras diferentes" in str(e.value)
     assert not svc.leads_file(root).exists(), "nada é escrito em prospect/ com o gate fechado"
 
 
