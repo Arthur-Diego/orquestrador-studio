@@ -223,3 +223,14 @@ def test_view_html_segue_a_aula_sem_copy_automatica(client):
     assert "comunidade ABRAhub" in html, "10.2: a comunidade entra nas redes sugeridas"
     assert "prática, exposição e validação" in html and "perfil novo ou nas redes que você já tem" in html
     assert "destroy()" in js
+
+
+def test_view_segue_o_catalogo_do_redesign(client):
+    """Wave 3: dois painéis numerados (registro primeiro) e `.pub-row` por publicação."""
+    html = client.get("/steps/publish/view.html").text
+    js = client.get("/steps/publish/view.js").text
+    assert '<span class="pn">01</span>Registrar uma publicação' in html
+    assert '<span class="pn">02</span>Publicações e comunidade' in html
+    assert 'details class="lesson"' in html, "o texto longo da aula vira <details class=lesson>"
+    assert 'id="pubLog" class="rowlist"' in html and 'id="pubExports" class="gallery sm"' in html
+    assert 'class="pub-row"' in js

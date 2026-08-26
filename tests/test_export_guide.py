@@ -119,3 +119,16 @@ def test_tela_atribui_o_formato_ao_plano_e_marca_as_extensoes(client):
     assert 'id="guide"' in html, "convenção de tela da wave 2"
     js = client.get("/steps/export/view.js").text
     assert "destroy()" in js and "Studio.ui.poll" in js
+
+
+def test_view_segue_o_catalogo_do_redesign(client):
+    """Wave 3: painéis numerados, texto de aula em `details.lesson`, `.fmt-grid`/`.fmt-card` e `.checks`."""
+    html = client.get("/steps/export/view.html").text
+    js = client.get("/steps/export/view.js").text
+    assert '<span class="pn">01</span>' in html and '<span class="pn">04</span>' in html
+    assert 'details class="lesson"' in html, "o texto longo da aula vira <details class=lesson>"
+    assert 'id="expFormats" class="fmt-grid"' in html
+    assert '<span class="ext">[extensão]</span>' in html, "o rótulo [extensão] usa .ext, não chip"
+    assert "fmt-card" in js and 'class="box"' in js, "cada formato é um .fmt-card com a proporção desenhada"
+    assert '<div class="checks">' in js, "o QA técnico é a lista .checks (✓/!), não mais uma tabela"
+    assert "max-width:150px" not in js, "o preview do corte usa .ex-prev, não estilo inline"

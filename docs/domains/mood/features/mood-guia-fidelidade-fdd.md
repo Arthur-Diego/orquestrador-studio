@@ -4,6 +4,7 @@ Versão: 1.0 · Data: 2026-08-25 · Domínio: `mood` (etapa 2) + `common/prompte
 Fontes normativas: `docs/domains/studio/waves/wave-2.md` (feature refs+mood),
 `docs/domains/studio/waves/wave-2-auditoria-etapas-1-3.md` §2 (M1–M5, M8, M10, §2.4 textos, §2.5 validações)
 e §4 (G2, G8, G10), `docs/domains/studio/waves/wave-2-api-transversal.md`.
+Redesign visual das telas 1 e 2 (wave 3, `ADH-OS-20260826-03`): `docs/domains/refs/features/views-refs-mood-redesign-fdd.md` — este FDD continua normativo para o comportamento; o do redesign é normativo para o markup.
 
 ### 1. Contexto e motivação técnica
 A etapa 2 monta **uma** vibe para a campanha inteira. A auditoria confirmou a estrutura (1 prompt de

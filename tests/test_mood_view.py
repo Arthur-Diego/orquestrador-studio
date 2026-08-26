@@ -47,3 +47,22 @@ def test_view_marks_studio_choices_and_uses_the_right_plan_name(client):
     assert "2K e 16:9 são sugestão do Studio" in html
     assert "estilização no meio-termo" in html.lower()
     assert "[extensão]" in html and "palette.json" in html
+
+
+def test_view_follows_the_wave3_redesign_catalog(client):
+    """Wave 3: painéis numerados com `.pn`, aula em `details.lesson`, galerias `.gallery.sm`."""
+    html = _view(client, "view.html")
+    assert html.count('<span class="pn">') == 4, "quatro painéis numerados"
+    for n in ("01", "02", "03", "04"):
+        assert f'<span class="pn">{n}</span>' in html
+    assert "1. Achar a vibe" not in html, "o número saiu do texto do h3 e virou `.pn`"
+    assert html.count('<details class="lesson">') >= 3
+    assert "O que a aula 009 manda fazer aqui" in html
+    assert html.count('class="gallery sm"') == 2, "vibe e mood usam a galeria compacta do catálogo"
+    assert 'class="lbl">palette.json' in html, "rótulo da paleta no markup, não só no JS"
+    assert 'class="row wrap cli"' in html, "bloco do CLI preservado"
+
+    js = _view(client, "view.js")
+    assert '<span class="eyebrow">Prompt gerado</span>' in js
+    assert 'class="link copy"' in js, "Copiar como `button.link` do catálogo"
+    assert 'class="lbl">palette.json' in js, "o rótulo sobrevive à reescrita dos swatches"
