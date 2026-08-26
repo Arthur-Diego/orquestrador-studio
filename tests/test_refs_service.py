@@ -1,5 +1,6 @@
 """Etapa 1 — projetos, termos de busca e seleção de referências (sem tocar na rede)."""
 import json
+import time
 
 import pytest
 
@@ -108,3 +109,42 @@ def test_import_upload_adds_manual_references(studio_env):
     # e seguem selecionáveis como qualquer candidata do Pinterest
     refs.select(meta["id"], [cands[0]["id"]])
     assert [p.name for p in (root / "refs" / "brainstorming").iterdir()] == [cands[0]["file"]]
+
+
+def test_last_scrape_is_persisted_for_the_status_column(studio_env, monkeypatch):
+    """Wave 4 (1.22–1.24): a coluna de status abre preenchida com o último scrape.
+
+    O job vive em memória; o resumo (`baixadas/meta` + log por termo) fica em `refs/last_job.json`
+    para a tela desenhar barra, rótulo e log ao reabrir — sem isso ela nasce vazia.
+    """
+    refs = studio_env["refs"]
+    pid = refs.create_project("Ultimo Scrape")["id"]
+    assert refs.job_status(pid) == {"state": "idle"}, "projeto sem scrape mantém a resposta mínima"
+    assert refs.last_job(pid) is None
+
+    def fake_search(terms, cdir, max_per_term, headless, progress):
+        for i, term in enumerate(terms):
+            progress({"stage": "term", "term": term, "index": i, "n_terms": len(terms)})
+            progress({"stage": "download", "term": term, "count": 30})
+            progress({"stage": "saved", "term": term, "id": f"x{i}", "total": 30 * (i + 1)})
+        progress({"stage": "done", "total": 30 * len(terms)})
+
+    monkeypatch.setattr(studio_env["refs"].pinterest, "search", fake_search)
+    refs.start_search(pid, ["red bull ads", "red bull snow ads"], max_per_term=40)
+    for _ in range(200):
+        if refs.job_status(pid)["state"] != "running":
+            break
+        time.sleep(0.02)
+
+    st = refs.job_status(pid)
+    assert st["state"] == "done" and st["total"] == 60 and st["meta"] == 80, "meta = termos × máx."
+    assert [ln["text"] for ln in st["log"]] == [
+        "red bull ads — 30 imagens", "red bull snow ads — 30 imagens", "concluído · 60 candidatas"]
+    assert st["log"][-1]["ok"] is True, "a última linha é a verde do protótipo (`.log .ok`)"
+    assert all(len(ln["time"]) == 5 for ln in st["log"]), "cada linha tem hora [HH:MM]"
+
+    saved = refs.last_job(pid)
+    assert saved["total"] == 60 and saved["meta"] == 80 and len(saved["log"]) == 3
+    refs._jobs.pop(pid)                                   # simula recarregar a página/processo
+    idle = refs.job_status(pid)
+    assert idle["state"] == "idle" and idle["last_job"]["total"] == 60

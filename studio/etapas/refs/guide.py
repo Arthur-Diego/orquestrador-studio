@@ -49,9 +49,10 @@ def guide(pid: str) -> dict:
         "Comece sem ideia nenhuma. Pesquise no Pinterest uma marca já validada do seu segmento "
         '(ex.: "Red Bull", depois "Red Bull snow ads") e role o "buraco de minhoca" que o Pinterest '
         "abre. Marque só o que você gosta e o que foge do clichê — nada de \"lata com fundo preto\". "
-        "Se quiser, traga também imagens salvas do Explore do Midjourney (botão \"adicionar por "
-        "upload\"). Ao salvar, as escolhidas vão para refs/brainstorming/; depois de ver tudo, volte "
-        "e desmarque o que já não te agrada.",
+        "Se quiser, traga também imagens salvas do Explore do Midjourney (arraste-as sobre a "
+        "galeria de candidatas). Ao salvar, as escolhidas vão para refs/brainstorming/; depois de "
+        "ver tudo, volte e desmarque o que já não te agrada. Por direitos autorais elas não entram "
+        "no vídeo — regra do Studio, não da aula.",
         ["Busquei por uma marca validada, não só pela categoria do produto",
          "Salvei o que gosto, sem me prender ao produto (\"não tem nada a ver com Red Bull, mas gostei do conceito\")",
          "Fugi do padrão que \"todo mundo já viu\"",
@@ -63,13 +64,13 @@ def guide(pid: str) -> dict:
     g.input("project", "Projeto criado (nome + produto)", True,
             detail=(meta.get("name") or pid) + (f" · produto: {meta['product']}" if meta.get("product") else ""))
 
-    # Saídas desta etapa.
-    g.output("selected", "≥ 1 referência escolhida em refs/brainstorming/", bool(selected) and n_brain > 0,
+    # Saídas desta etapa. Os rótulos são os do protótipo da wave 4 (itens ✓ do guia expandido).
+    g.output("selected", "Seleção salva em refs/brainstorming/", bool(selected) and n_brain > 0,
              detail=f"{len(selected)} escolhidas · {n_brain} arquivos em brainstorming")
-    g.output("readme", "refs/README.md com a origem de cada referência", has_readme)
+    g.output("readme", "Origem registrada (refs/README.md)", has_readme)
 
     # Validações (auditoria §1.5): qualidade, nunca bloqueio.
-    g.check("candidates", "Busca rodada (há candidatas baixadas)", "ok" if cands else "todo",
+    g.check("candidates", f"Candidatas baixadas do Pinterest ({len(cands)})", "ok" if cands else "todo",
             detail=f"{len(cands)} candidatas", fix=None if cands else "Rode uma busca ou traga imagens por upload")
     if not selected:
         g.check("min_refs", f"{MIN_REFS} ou mais referências escolhidas", "todo",
@@ -103,7 +104,14 @@ def guide(pid: str) -> dict:
             detail=meta.get("product") or "sem produto no project.json",
             fix=None if meta.get("product") else "Preencha o produto na barra lateral do projeto")
 
-    return g.build()
+    # Resumo curto do guia (wave 4, item 1.6): a faixa/linha de estado do protótipo diz
+    # "18 escolhidas em refs/brainstorming/ · origem registrada no README.md".
+    resumo = f"{len(selected)} escolhidas em refs/brainstorming/" if selected else None
+    if resumo and has_readme:
+        resumo += " · origem registrada no README.md"
+    concluida = bool(selected) and n_brain > 0 and has_readme
+    return g.build(summary=resumo,
+                   next_action="encontrar a vibe no mood board" if concluida else None)
 
 
 def _own_words(meta: dict) -> set[str]:
