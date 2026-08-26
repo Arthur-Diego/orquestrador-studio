@@ -335,7 +335,7 @@ def test_view_uses_the_shell_catalog_after_the_redesign(client):
 def test_scene_cards_and_tiles_follow_the_prototype(client):
     """Wave 3: cenas como `.rowcard`, tiles com `data-ord` e selo `span.up`."""
     js = client.get("/steps/shots/view.js").text
-    assert 'class="rowcard sh-scene' in js
+    assert 'class="rowcard col pick' in js, "card de cena usa o `.rowcard.col`/.pick do shell"
     assert 'data-ord=' in js, "o check do tile escolhido vira o número da ordem"
     assert '<span class="up' in js
     assert 'class="lbl">paleta do mood' in js

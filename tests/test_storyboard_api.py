@@ -300,7 +300,7 @@ def test_view_uses_the_shell_catalog_after_the_redesign(client):
     assert '<div class="grid2 rev">' in html
     assert '<div id="sbGallery" class="gallery sm">' in html
     assert '<div id="sbScenes" class="rowlist">' in html
-    assert '<div class="card wide sb-base">' in html
+    assert '<div class="card wide static sb-base">' in html, "`.card.static` do shell = tile não clicável"
     assert "CARD_BTN" not in js, "o botão do tile é posicionado por CSS escopado, não por style inline"
 
 

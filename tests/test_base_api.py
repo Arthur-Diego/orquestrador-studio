@@ -85,8 +85,11 @@ def test_view_follows_the_wave3_design_catalog(client):
     # tiles e prompts pelo catálogo (span.src/span.term/.sel via Studio.ui.tile; botão .link)
     assert "ui.tile(" in js and 'class="link copy"' in js
     assert "Prompt · situação · editável" in js
-    # o shell continua sendo contrato de leitura: CSS extra é escopado com o prefixo da etapa
-    assert "<style>" in html and ".bs-grow" in html
+    # o shell é contrato de leitura: os utilitários de layout vêm dele (`.grow`/`.grow-lg`,
+    # promovidos no fechamento da wave 3) e só o que sobra de específico fica escopado `.bs-`
+    assert 'class="grow"' in html and 'class="grow-lg"' in html
+    assert "<style>" in html and ".bs-io" in html
+    assert ".bs-grow" not in html, "utilitário de crescimento é do shell, não da etapa"
 
 
 def test_view_keeps_every_id_the_script_queries(client):

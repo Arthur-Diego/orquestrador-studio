@@ -19,7 +19,7 @@ Studio.register("mood", (ctx) => {
       `<div class="prompt"><div class="row"><span class="eyebrow">Prompt gerado</span>` +
       `<button class="link copy" data-i="0">Copiar</button><span class="ok"></span></div>` +
       `<textarea data-i="0">${ui.esc(r.prompt)}</textarea>` +
-      (meta ? `<p class="fine mono md-pre">${ui.esc(meta)}</p>` : "") + `</div>`;
+      (meta ? `<p class="fine mono pre">${ui.esc(meta)}</p>` : "") + `</div>`;
   }
 
   async function genPrompts(next) {

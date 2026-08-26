@@ -117,7 +117,7 @@ Studio.register("animate", (ctx) => {
       `<option value="${esc(m)}"${s.cli_mode === m ? " selected" : ""}>${esc(m)}</option>`).join("");
     return `<div class="shot-row" data-k="${esc(key(s))}">
       <div class="col an-left">
-        <div class="thumb${s.image ? "" : " an-noimg"}">${s.image
+        <div class="thumb${s.image ? "" : " none"}">${s.image
           ? `<img src="${ctx.files(s.image)}" loading="lazy" alt="">`
           : `<span>sem frame</span>`}</div>
         <span class="nm">${esc(s.scene)} · ${esc(s.shot)}</span>

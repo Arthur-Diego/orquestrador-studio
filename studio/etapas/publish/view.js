@@ -61,7 +61,7 @@ Studio.register("publish", (ctx) => {
         <a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>
         ${p.note ? `<span class="nt">${esc(p.note)}</span>` : ""}
         <span class="fine mono">${esc(p.posted_at)} · ${esc(p.video)}${orfao ? " — arquivo não está mais em export/" : ""}</span>
-        <div class="pb-fb">
+        <div class="fb">
           <input class="fb" data-id="${esc(p.id)}" placeholder="Feedback recebido (aula 014: compartilhar é o que permite feedback)" value="${esc(p.feedback)}">
           <button class="link save" data-id="${esc(p.id)}">Salvar</button>
           <button class="link del" data-id="${esc(p.id)}">Remover</button>

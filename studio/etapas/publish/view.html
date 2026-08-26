@@ -1,11 +1,8 @@
 <style>
-  /* Lacunas do catálogo do shell (wave 3) — escopo `.pb-` da etapa 10. */
+  /* Escopo `.pb-` da etapa 10. `.pb-form .u/.n` e `.pb-fb` viraram `.grow-lg`/`.grow` e
+     `.pub-row .fb` no shell na integração (ADH-OS-20260826-09). */
   .pb-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
-  .pb-form .u{flex:1.4;min-width:240px}
-  .pb-form .n{flex:1;min-width:200px}
   .pb-exports{margin-top:16px;display:flex;flex-direction:column;gap:8px}
-  .pb-fb{display:flex;gap:8px;align-items:center;flex:1 0 100%;flex-wrap:wrap}
-  .pb-fb input{flex:1;min-width:200px}
   .pb-com{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 4px}
 </style>
 
@@ -36,8 +33,8 @@
     <input id="pubDate" type="date">
   </div>
   <div class="pb-form">
-    <input id="pubUrl" class="u" placeholder="https://www.instagram.com/reel/…">
-    <input id="pubNote" class="n" placeholder="nota livre (o que você testou)">
+    <input id="pubUrl" class="grow-lg" placeholder="https://www.instagram.com/reel/…">
+    <input id="pubNote" class="grow" placeholder="nota livre (o que você testou)">
     <button id="btnPubAdd" class="primary">Registrar publicação</button>
   </div>
   <details class="lesson">
