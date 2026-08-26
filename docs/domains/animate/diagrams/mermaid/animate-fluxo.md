@@ -121,3 +121,51 @@ flowchart LR
 
     HOOK -.->|"proibido: grava"| LP["load_plan()"]
 ```
+
+---
+
+## Estrutura da tela após o redesign (wave 3 · `ADH-OS-20260826-06`)
+
+Fonte: `docs/domains/animate/features/views-animate-redesign-fdd.md` §5. Nomes entre `«»` são
+classes do catálogo do shell (`shell-redesign`, `ADH-OS-20260826-02`).
+
+```mermaid
+flowchart TD
+    HEAD["header«stephead»<br/>Etapa 6 · aula 012 — Animação"] --> GUIA["section#guide«guide»<br/>(markup gerado por Studio.ui.guide)"]
+    GUIA --> P1["section«panel»<br/>«pn» 01 · Takes por shot"]
+    GUIA --> P2["section«panel»<br/>«pn» 02 · Importar os vídeos que você gerou na UI"]
+
+    P1 --> P1H["panel-head: #anReady «chip» · #anHfState «chip» · #anReload"]
+    P1 --> P1L["details«lesson» — texto da aula 012"]
+    P1 --> P1N["#anModelNote «note» · #anWarnings «note»"]
+    P1 --> LIST["div#anShots«rowlist»"]
+    LIST --> ROW["div«shot-row»[data-k='cenaNN/shotMM']"]
+
+    ROW --> L["col «an-left»<br/>«thumb» 16/9 do frame<br/>«nm» cenaNN · shotMM"]
+    ROW --> R["col «an-main»"]
+    R --> PR["textarea.an-prompt«prompt-inline»"]
+    R --> TK["row«an-takes»"]
+    R --> FT["row «an-foot»<br/>chips do shot + Salvar + Atribuir selecionado"]
+    R --> OPT["details«an-opts» — Opções de geração"]
+
+    TK --> T1["button«take»[.like].an-like<br/>'take N · Ds' + «like-lbl» ♥ like"]
+    TK --> T2["a.an-file (mp4) + button.an-like.an-x (rejeitar)"]
+    TK --> T3["button«take empty».an-gen<br/>'+ gerar take N'"]
+    TK --> T4["span«note»<br/>♥ take N escolhido | N falha(s) — na 3ª, troque de modelo"]
+
+    OPT --> O1["an-mode · an-camera · an-action · an-slow · an-suggest"]
+    OPT --> O2["an-endrow[hidden] > an-end (start/end frame)"]
+    OPT --> O3["an-example · an-tips"]
+    OPT --> O4["an-duration · an-black · an-model · an-count · an-gen"]
+    OPT --> O5["details«fine» Avançado [extensão]: an-aspect · an-climode"]
+
+    P2 --> P2H["panel-head: #anCandCount «chip»"]
+    P2 --> DROP["#anDrop«drop» · #anBtnDownloads · #anDlFolder · #anDlMinutes · #anBtnHistory"]
+    P2 --> DICA["p«note» Dica da aula (#anParallel) + details«lesson»"]
+    P2 --> GAL["div#anGallery«gallery sm»<br/>Studio.ui.tile → «card wide»[.sel] + «src» + «term»"]
+```
+
+Roteamento de clique (delegação única em `#anShots`, `e.target.closest('button')`):
+`an-suggest` → `GET animate/prompt` · `an-save` → `PUT animate/shots/{c}/{s}` ·
+`an-assign` → `POST …/takes` · `an-like` → `POST …/takes/{id}/like` ·
+`an-gen` (inclusive o tile `«take empty»`) → `confirmCost` + `POST animate/generate` + polling.

@@ -1,9 +1,17 @@
 ### HLD: animate (etapa 6 — animação, aula 012)
 
-Versão: 1.1
-Data: 2026-08-25
-Responsável: frente OS-006 (wave 1) · frente OS-017 (wave 2, `/dd-parallel`)
+Versão: 1.2
+Data: 2026-08-26
+Responsável: frente OS-006 (wave 1) · frente OS-017 (wave 2) · frente views-animate (`ADH-OS-20260826-06`, wave 3, `/dd-parallel`)
 
+> **v1.2 (wave 3, ADH-OS-20260826-06)** — apenas a **camada de apresentação**. A tela da etapa
+> passou ao redesign dark-first do handoff: cada shot deixou de ser um `section.panel` aninhado
+> dentro de `#anShots` e virou uma linha `.shot-row` (grid `110px | 1fr`: thumb 16/9 + nome mono
+> à esquerda; prompt mono, faixa de tiles `.take`/`.take.like`/`.take.empty` e controles em
+> `details.an-opts` à direita), consumindo o catálogo de classes do `shell-redesign`. Backend,
+> rotas, `service.py` e `guide.py` **não mudaram** — nenhuma seção deste HLD abaixo de
+> "Objetivo técnico" é afetada. Markup e classes: FDD `views-animate-redesign-fdd.md`.
+>
 > **v1.1 (wave 2, OS-017)** — fidelidade ao roteiro e guia da etapa. O par start/end passou a ser
 > gravado no plano e enviado ao CLI (`end_image`), fechando a divergência de gravidade **alta** da
 > auditoria; a ordem de modelos ficou só com os da aula (`kling3_0`, `seedance_2_0`), com
