@@ -258,7 +258,8 @@ def test_view_follows_the_wave2_screen_contract(client):
     assert "Etapa 5 · aula 011" in html
     assert 'Studio.register("shots"' in js
     assert 'renderGuide("shots")' in js
-    assert "destroy()" in js and "job.stop()" in js
+    # Wave 4: a etapa 5 deixou de gerar/upscalar pelo CLI — não há poll, `destroy()` continua.
+    assert "destroy()" in js and "ui.poll(" not in js
 
 
 def test_promote_candidate_to_scene_base_over_http(client, project):
@@ -309,27 +310,58 @@ def test_select_route_returns_the_upscale_warning_and_the_document(client, proje
 
 
 def test_screen_shows_the_lesson_focus_examples_and_the_base_order(client, project):
-    """5.5 e 5.2: exemplos de enquadramento e a ordem "base primeiro" ficam na tela."""
+    """5.5 e 5.2: exemplos de enquadramento (agora no `title`) e a ordem "base primeiro"."""
     html = client.get("/steps/shots/view.html").text
+    js = client.get("/steps/shots/view.js").text
     assert "close no rosto" in html
-    assert "Usar como base da cena" in html
+    assert "Usar como base da cena" in js
     body = client.get(f"/api/projects/{project}/shots/scenes/cena01/prompts").json()
     assert any("rosto" in e for e in body["focus_examples"])
 
 
 # ---------- wave 3: redesign da tela (ADH-OS-20260826-05) ----------
 def test_view_uses_the_shell_catalog_after_the_redesign(client):
-    """Wave 3: painéis numerados com `.pn`, texto de aula em `details.lesson`, sem style inline."""
+    """Wave 4: DOIS painéis (01 cenas, 02 cena aberta), sem `details.lesson`, sem painel do produto."""
     html = client.get("/steps/shots/view.html").text
     js = client.get("/steps/shots/view.js").text
-    for n in ("01", "02", "03", "04"):
+    for n in ("01", "02"):
         assert f'<span class="pn">{n}</span>' in html, n
-    assert html.count('<details class="lesson">') >= 4
+    assert html.count('<span class="pn">') == 2, "o protótipo desenha só dois painéis"
+    assert '<details class="lesson">' not in html, "regra 4 da wave 4: `details` de aula só na etapa 1"
     assert 'id="shotsPalette" class="palette sm' in html
     assert '<div id="shotsGallery" class="gallery sm">' in html
-    assert '<div id="prodGallery" class="gallery sm">' in html
     assert '<p class="note">' in html
     assert "CARD_BTN" not in js, "o botão do tile é posicionado por CSS escopado, não por style inline"
+    # A cena do produto (aula 013) virou um card do grid do painel 01, sem galeria própria.
+    assert "prodGallery" not in html and "prodGallery" not in js
+    assert '"produto"' in js and 'id="prodStatus"' not in html
+
+
+def test_screen_dropped_the_paid_cli_path(client):
+    """Wave 4 (5.22/5.28/5.32): CLI e controles de câmera saem da TELA; as rotas ficam."""
+    html = client.get("/steps/shots/view.html").text
+    js = client.get("/steps/shots/view.js").text
+    for termo in ("Gerar via CLI", "Upscale do último escolhido", "confirmCost", "hfChip",
+                  "promptCamera", "promptLens", "promptAperture", "promptRealism",
+                  "shotsRatio", "shotsWarn", "btnShotsReload", "sceneText", "sh-subhead"):
+        assert termo not in html and termo not in js, termo
+    paths = client.get("/openapi.json").json()["paths"]
+    assert paths.get("/api/projects/{pid}/shots/scenes/{scene}/upscale")
+
+
+def test_prototype_shapes_of_the_wave4_screen(client):
+    """Wave 4: paleta no cabeçalho, chip/checkbox/Salvar no `.panel-head`, builder de uma linha."""
+    html = client.get("/steps/shots/view.html").text
+    js = client.get("/steps/shots/view.js").text
+    head = html.split('<span class="pn">02</span>', 1)[1].split("</div>\n  </div>", 1)[0]
+    for ident in ("shotsCounts", "shotsUpscaled", "btnShotsSave"):
+        assert ident in head, ident
+    assert '<div class="row wrap sh-builder" id="shotsBuilder">' in html
+    assert '<div id="shotsPrompts" class="prompts one hidden">' in html, "o prompt só aparece após o clique"
+    assert '<div class="prompt sm">' in js and '<p class="txt"' in js
+    assert 'class="upcount' in js and 'chip sm' not in js, "o contador de upscale é texto puro (5.16)"
+    assert '<span class="src">' not in js, "o selo de origem saiu dos tiles (5.37)"
+    assert "Studio.ui.modal" in js.replace("ui.modal", "Studio.ui.modal")
 
 
 def test_scene_cards_and_tiles_follow_the_prototype(client):
@@ -345,4 +377,5 @@ def test_scene_title_keeps_the_panel_number_outside(client):
     """`#sceneTitle` é reescrito por textContent: o `.pn` fica fora dele."""
     html = client.get("/steps/shots/view.html").text
     assert '<span class="pn">02</span><span id="sceneTitle">' in html
-    assert 'id="sceneText"' in html, "o texto da cena continua visível na tela"
+    # Wave 4 (5.23): o texto da cena virou `title` do card, não uma linha abaixo do título.
+    assert 'id="sceneText"' not in html
