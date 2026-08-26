@@ -67,6 +67,26 @@ def test_next_step_comes_from_the_course_catalog(studio_env):
     assert G.Guide(META).output("a", "a", True).build(next_step="publish")["next_step"] == "publish"
 
 
+def test_summary_is_optional_and_always_present(studio_env):
+    """Wave 4: o chip extra do guia (`summary`) e a sua cor (`summary_kind`) são campos fixos."""
+    from studio.common import guide as G
+    sem = G.Guide(META).output("a", "a.png", True).build()
+    assert sem["summary"] is None and sem["summary_kind"] is None, "campo sempre presente"
+
+    com = G.Guide(META).output("a", "a.png", False).build(summary="1/6 shots prontos")
+    assert com["summary"] == "1/6 shots prontos" and com["summary_kind"] is None, "cor neutra por default"
+
+    warn = G.Guide(META).output("a", "a.png", False).build(summary="portfólio 1/4 vídeos", summary_kind="warn")
+    assert warn["summary"] == "portfólio 1/4 vídeos" and warn["summary_kind"] == "warn"
+
+    # `summary_kind` sem `summary` não vira chip órfão na UI.
+    orfao = G.Guide(META).output("a", "a.png", True).build(summary_kind="warn")
+    assert orfao["summary"] is None and orfao["summary_kind"] is None
+
+    generico = G.generic_guide(META)
+    assert generico["summary"] is None and generico["summary_kind"] is None
+
+
 def test_build_without_outputs_is_todo(studio_env):
     from studio.common import guide as G
     g = G.Guide(META).text("Só texto.").build()
@@ -145,6 +165,27 @@ def test_step_guide_route_uses_the_plugin_hook(studio_env, client, monkeypatch):
     monkeypatch.setitem(app_module.PLUGINS["mood"], "guide", None)   # simula etapa sem guide.py
     sem_hook = client.get(f"/api/projects/{pid}/guide/mood").json()
     assert sem_hook["status"] == "unknown", "etapa sem guide.py cai no guia genérico"
+
+
+def test_summary_travels_over_http(studio_env, client, monkeypatch):
+    """O resumo chega ao frontend pelas rotas existentes — nenhuma rota nova (regra 5)."""
+    from studio import app as app_module
+    from studio.common import guide as G
+    from studio.etapas import discover
+
+    pid = _new_project(client, "Resumo")
+
+    def hook(_pid):
+        meta = discover()["refs"]["meta"]
+        return (G.Guide(meta).output("a", "refs/brainstorming/", True)
+                .build(summary="18 escolhidas", summary_kind="ok"))
+
+    monkeypatch.setitem(app_module.PLUGINS["refs"], "guide", hook)
+    g = client.get(f"/api/projects/{pid}/guide/refs").json()
+    assert g["summary"] == "18 escolhidas" and g["summary_kind"] == "ok"
+    agg = client.get(f"/api/projects/{pid}/guide").json()
+    assert agg["steps"][0]["summary"] == "18 escolhidas"
+    assert all("summary" in s and "summary_kind" in s for s in agg["steps"]), "campo fixo nas 11"
 
 
 def test_step_guide_route_404s(studio_env, client):
