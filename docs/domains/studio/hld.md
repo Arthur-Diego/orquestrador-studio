@@ -1,7 +1,7 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.3 (wave 2: shell profissional — visão geral, guia por etapa na tela e roteamento)
-Data: 2026-08-25
+Versão: 1.4 (wave 3: redesign dark-first do frontend — pipelines segmentados, catálogo de classes do shell)
+Data: 2026-08-26
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
 ---
@@ -57,8 +57,8 @@ Padrões adotados
 | `common/guide.py` | Contrato do **guia por etapa**: `Guide(META)` (`.text`, `.input`, `.output`, `.check`, `.build`), helpers de leitura pura (`exists`, `read_json`, `count_files`), derivação de `status`/`progress`/`missing` e `generic_guide` (fallback `unknown`) | `refs.service.project_dir`, `steps.SOON` |
 | `higgsfield.py` | Ponte com o CLI; `status()` cacheado por 60 s (`STATUS_TTL`), `reset_status_cache()` para descartar | subprocess |
 | `web/` | Shell da SPA: campanha atual, menu das 11 etapas **com estado real**, topo com progresso da campanha, visão geral (`#/<pid>/overview`), wizard de campanha, roteamento por hash, carregamento sob demanda do `view.html`/`view.js` da etapa, `destroy()` na troca de tela, `Studio.go(target)` e contexto (`Studio.ctx`: `api`, `toast`, `pid()`, `project()`, `files()`, `guide()`) | API `/api/*`, `/steps/*`, `localStorage` |
-| `web/ui.js` + `web/ui.css` | `Studio.ui`: componentes compartilhados das telas — `esc`, `chip`, `hfChip`, `drop`, `upload`, `confirmCost`, `poll`, `guide`, `renderGuide` (+ `modal`, `fmtPct`, `STATUS_KIND` desde a v1.3). Carregados antes do `app.js` e dos plugins | `/api/*`, `style.css` |
-| `web/style.css` | Design system: tokens (cores semânticas ok/warn/fail/info, espaçamentos em múltiplos de 4, escala tipográfica, raios e sombras), tema claro/escuro automático **e** fixável em `[data-theme]`, estados de botão e responsivo (≤ 900 px a sidebar vira topo) | fontes do Google |
+| `web/ui.js` + `web/ui.css` | `Studio.ui`: componentes compartilhados das telas — `esc`, `chip`, `hfChip`, `drop`, `upload`, `confirmCost`, `poll`, `guide`, `renderGuide` (+ `modal`, `fmtPct`, `STATUS_KIND` desde a v1.3; + `tile`, `pipe`, `beats`, `copyBtn`, `copy` desde a v1.4). Carregados antes do `app.js` e dos plugins | `/api/*`, `style.css` |
+| `web/style.css` | Design system **dark-first** (v1.4, handoff `design_handoff_redesign_frontend`): tokens de superfície/ink/linha/accent + ok/gate/fail/info, glows, anéis e listras de placeholder; tema claro derivado dos mesmos hues; aliases dos nomes da v1.3; controles, layout de 264 px, rail e topbar com pipeline segmentado; e o **catálogo de classes** que as telas de etapa consomem (contrato — ver `features/shell-redesign-fdd.md` §5) | fontes do Google |
 
 Regra de extensão (desde 2026-08-25): uma etapa nova **cria só `studio/etapas/<id>/`** e sua
 pasta de serviço; nunca edita `app.py`, `index.html`, `app.js` nem `steps.py` (o catálogo
@@ -92,6 +92,25 @@ nenhuma função de `Studio.ui` foi removida ou renomeada e todas as classes usa
 (`tests/test_api.py`). Detalhe do fluxo em
 `docs/domains/studio/diagrams/mermaid/shell-navegacao.md`; FDD em
 `docs/domains/studio/features/shell-fdd.md`.
+
+**Redesign do frontend (v1.4):** a wave 3 aplicou o handoff `design_handoff_redesign_frontend`
+sobre esses mesmos arquivos — é evolução de CSS/HTML/JS, não reescrita: arquitetura, rotas,
+contrato de plugin e regras de negócio ficaram intactos, e a única dependência nova é o peso
+600 da Bricolage Grotesque no link do Google Fonts. (1) **Dark-first**: os tokens escuros do
+handoff são os valores finais; o tema claro é derivado dos mesmos hues e o mecanismo de 3
+estados (`studio.theme`, auto/claro/escuro) não mudou. (2) **Pipeline segmentado** de 11 ticks
+(`#railPipe` na sidebar, `#tbPipe` no topo, com `title` por segmento) substitui as barras
+`.progress` do shell — as `.progress` internas dos painéis continuam barras simples.
+(3) **Visão geral**: `.ovcard` sem `border-left` (estado por chip + barra de 4 px), card da
+etapa atual elevado com glow e CTA primário, grid direto no `main`. (4) **Guia** em dois
+estados: faixa compacta `.guide-strip` (status, %, próxima ação) e expandido
+`.guide-body[data-open="1"]` com `.guide-missing`, `.checks` e `.guide-actions`.
+(5) **Catálogo de classes**: `studio/web/*` passou a ser o contrato visual explícito das telas
+de etapa — toda classe que os `view.html`/`view.js` usam tem regra aqui, e as telas **nunca**
+editam o CSS do núcleo (ADR-010); a lista normativa está em
+`docs/domains/studio/features/shell-redesign-fdd.md` §5, com os asserts em `tests/test_api.py`.
+(6) **Helpers aditivos** `Studio.ui.tile/pipe/beats/copyBtn` para as telas não recopiarem o
+HTML dessas classes. Spec da wave: `docs/domains/studio/waves/wave-3.md`.
 
 **Guia por etapa (v1.2):** cada plugin pode exportar `studio/etapas/<id>/guide.py` com
 `guide(pid) -> dict`, descoberto por `etapas.discover()` na chave `guide` (opcional). O hook é
@@ -146,6 +165,26 @@ Fonte de verdade
 | `GET /api/higgsfield/status` | API | REST/JSON | Interna | cache de 60 s; `?refresh=1` força |
 | `/api/projects/{pid}/<etapa>/*` | API | REST/JSON, multipart (upload ≤ 25 MB; 200 MB na etapa 6) | Interna | ver HLDs dos domínios |
 | `/files/{pid}/…`, `/static/…` | Estáticos | HTTP | Interna | somente leitura (`/static/ui.js`, `/static/ui.css` = `Studio.ui`; `/static/app.js`, `/static/style.css` = shell) |
+
+**Catálogo de classes do shell (contrato visual, v1.4).** É interface pública tanto quanto as
+rotas: as telas de etapa **consomem** estes nomes e o shell pode acrescentar, nunca renomear.
+Lista normativa com valores em `docs/domains/studio/features/shell-redesign-fdd.md` §5; asserts
+em `tests/test_api.py::test_shell_preserva_as_classes_que_as_telas_de_etapa_usam` e
+`::test_shell_redesign_traz_o_pipeline_segmentado_e_o_catalogo_de_classes`.
+
+| Grupo | Classes | Onde é usado |
+| ----- | ------- | ------------ |
+| Texto | `.eyebrow` (+`.sm`), `.mono`, `.fine`, `.lede`, `.note`, `.ext` | todas as 11 telas |
+| Controles | `input`/`textarea`/`select`, `input.mini`, `input.prompt-inline`, `button` (+`.primary`, `.cta`, `.ghost`, `.link`, `.lg`, `.icon`, `.danger`, `.mini`, `.loading`), `.field`, `.row`(+`.wrap`), `.col`, `.inline`, `.spacer`, `.hidden` | todas |
+| Shell | `.app`, `.side`, `.brand`, `.side-sec`, `.navlink`, `.rail-head`, `.pipe`(+`.lg`, `i.done/.in_progress/.blocked/.todo`), `.side-foot`, `.themebtn`, `.topbar`, `.tb-*`, `main` | `index.html`, `app.js` |
+| Guia | `.guide`, `.guide-strip`, `.guide-body`, `.guide-toggle`, `.guide-sections`, `.guide-missing`, `.guide-sec`, `.guide-what`, `.guide-items`, `.guide-check`, `.guide-fix`, `.guide-next`, `.guide-actions` | `Studio.ui.guide` |
+| Visão geral | `.ovgrid`, `.ovcard`(+`.is-current`, `.st-*`), `.ovcard-top`, `.desc`, `.next`, `.miss`, `.act`, `.ov-summary`, `.course` | `app.js` |
+| Painéis | `.stephead`, `.panel`, `.panel-head` (+`h3 .pn`), `details.lesson`, `.grid2`(+`.rev`, `.even`), `.status`, `.progress`(+`.bar`, `.ok`), `.progress-lbl`, `.log`, `.strip`(+`.warn`), `.checks` | todas |
+| Mídia | `.gallery`(+`.sm`, `.xs`), `.card`(+`.sel`, `.sel[data-ord]`, `.wide`, `.sq`, `.src-of`, `.src`, `.term`, `.up[.ok]`), `.thumb`, `.player`, `.play-big`, `.drop`(+`.sm`, `.over`), `.palette`(+`.sm`) | 1–6, 9, 10 |
+| Prompt | `.prompts`, `.prompt`(+`.sel`), `.prompt-group`, `.prompt-ref`, `.refpick`, `.refgallery`, `.cli` | 2–5, 7, 10, 11 |
+| Linhas | `.rowlist`, `.rowcard`(+`.grid`, `.sel`, `.cur`), `.scene-row`(+`.mom[data-mom]`), `.clip-row`, `.clip`, `.sfxrow`, `.shot-row`, `.take`(+`.like`, `.empty`), `.an-takes .row.sel`, `.track-row`, `.pub-row`, `.lead-row`(+`.lead-biz`, `.lead-post`) | 4–8, 10, 11 |
+| Específicos | `.stepper`, `.beats`(+`.sm`, `i.imp`, `.cut[.off]`), `.beats-axis`, `.fmt-grid`, `.fmt-card`(+`.on`, `.top`, `.box`), `.pitch`, `.pitch-table`(+`.total`), `.script`, `#renderLog .warn` | 3, 7, 8, 9, 11 |
+| Chips e avisos | `.chip` (+`ok/done/warn/fail/blocked/info/in_progress/todo/mode/unknown`, `.sm`), `.empty`, `.empty-state`, `.toast` | todas |
 
 ---
 
@@ -207,6 +246,7 @@ Dashboards e alertas
 - ADRs gerados pelo pipeline `/adr-*` em `docs/adrs/generated/STUDIO/`; ADR-009 (batidas com numpy + ffmpeg) em `MUSIC/`; ADR-010 (guia por leitura pura + núcleo editável só pelo preparo/shell) em `STUDIO/`.
 - `PROJECT_LAYOUT` (v1.2) cobre todas as pastas de etapa (`base`, `storyboard`, `storyboard/ideas`, `shots`, `animate`, `publish`, `prospect`, `mood/vibe`), para o guia ler o projeto inteiro sem precisar criar nada. `candidates`, `assets`, `jobs`, `edit` e `export` são infraestrutura do Studio `[extensão]` — a aula 009 não nomeia essas pastas.
 - Próximos passos: FDD por etapa nova (domínio próprio), `JobRegistry` único, logging estruturado.
+- Redesign (v1.4): não contraria nenhuma decisão vigente (não há ADR sobre design tokens ou tema) — nenhuma ADR nova; o catálogo de classes do shell é o contrato consumido pelas frentes de tela da wave 3.
 - Verificação de UI (v1.3): o CI continua sem navegador (ADR-008) — a tela é coberta por asserts
   HTTP/strings; a checagem visual (Playwright 1440×900, claro e escuro) é ferramenta do
   desenvolvedor e fica registrada por prints no PR.

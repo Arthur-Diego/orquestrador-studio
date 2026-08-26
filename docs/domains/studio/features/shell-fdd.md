@@ -121,6 +121,7 @@ Classes CSS preservadas (contrato implícito com os 11 `view.html`): `stephead`,
 `mode`), `status`, `progress`/`bar`, `log`, `fine`, `gallery`, `card` (+`sel`/`term`/`src`),
 `drop` (+`over`), `prompt`, `prompts`, `cli`, `palette`, `empty`, `hidden`, `mono`,
 `button.primary`, `button.ghost`, `button.link`, `guide*`.
+**Superseded pela wave 3:** esta lista virou o catálogo completo (tokens, classes e helpers) em `docs/domains/studio/features/shell-redesign-fdd.md` §5 — consulte-o como contrato; todos os nomes acima continuam válidos.
 
 ## 6. Regras de negócio
 
