@@ -223,3 +223,12 @@ nav li.st-done .t{color:var(--ink-2)}
   main{padding:var(--s5) var(--s5) 80px}
   .grid2{grid-template-columns:1fr}
 }
+
+/* etapa 3 — galeria de referências (escolha visual em vez de combobox) */
+.refpick{margin:8px 0 12px}
+.refgallery{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));margin-top:8px}
+.refgallery .card{aspect-ratio:1/1}
+.prompt-ref{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.prompt-ref img{width:56px;height:56px;object-fit:cover;border-radius:var(--r1,6px);border:1px solid var(--line)}
+.prompt-group{border-left:3px solid transparent;padding-left:8px}
+.prompt-group.sel{border-left-color:var(--accent)}
