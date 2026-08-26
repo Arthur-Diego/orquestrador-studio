@@ -17,6 +17,10 @@ Crie o arquivo com **uma** função `guide(pid) -> dict`. `discover()` a encontr
 
 ### Regras do hook (o núcleo confia nelas)
 
+0. **`done` significa completo segundo a aula.** Declare como `outputs` *todas* as saídas que a aula
+   exige (ex.: base = situação **e** rótulo **e** upscale); artefato parcial é `in_progress`, nunca
+   `done` — o núcleo deriva `current` da primeira etapa não concluída (retro da wave 2).
+
 1. **É puro.** Só lê arquivos do projeto. Nunca cria nem regrava artefato, nunca chama CLI,
    `ffprobe` ou rede. Cuidado: `edit.get_timeline()` e `animate.load_plan()` **gravam ao ler** —
    use `edit.load_timeline()` e leia `animate/takes.json` direto.

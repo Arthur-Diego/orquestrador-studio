@@ -80,10 +80,14 @@ window.Studio.ui = {
     return input;
   },
 
-  /** POST multipart de arquivos. Devolve o JSON da resposta; lança Error com o `detail` da API. */
-  async upload(url, files, field = "files") {
+  /**
+   * POST multipart de arquivos. `extra` = campos adicionais do formulário (ex.: `{kind, ref_id}`).
+   * Devolve o JSON da resposta; lança Error com o `detail` da API.
+   */
+  async upload(url, files, field = "files", extra = {}) {
     const fd = new FormData();
     [...files].forEach((f) => fd.append(field, f));
+    Object.entries(extra || {}).forEach(([k, v]) => { if (v !== undefined && v !== null) fd.append(k, v); });
     const r = await fetch(url, { method: "POST", body: fd });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.detail || r.statusText);
