@@ -85,4 +85,8 @@ def guide(pid: str) -> dict:
     else:
         g.check("arquivos", "Todo post aponta para um arquivo de export/", "ok")
 
-    return g.build()
+    # Resumo curto da faixa do guia (wave 4): o portfólio global, âmbar enquanto não fecha.
+    return g.build(summary=f"portfólio {glob_n}/{goal} vídeos",
+                   summary_kind="ok" if status["ready"] else "warn",
+                   next_action="Registrar a primeira publicação desta campanha"
+                   if exports and not posts else None)
