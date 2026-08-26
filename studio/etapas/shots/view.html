@@ -1,27 +1,10 @@
 <style>
-  /* Lacunas do catálogo do shell (wave 3 · frente views-storyboard-shots). Escopo `.sh-`:
-     a tela não edita `studio/web/style.css` (HLD studio v1.4 · ADR-010). A integração (W5)
-     decide se promove estas regras para o shell. */
-  /* botão dentro de `.card` (o shell não posiciona `button` no tile); fica ACIMA do selo
-     `.up`, que o shell ancora em bottom:8px. O fundo é sempre escuro, como `.card .src`:
-     a cor do texto não pode seguir `--accent`, que escurece no tema claro. */
-  .sh-tilebtn{position:absolute;right:8px;bottom:30px;z-index:2;font-size:10px;line-height:1.4;
-    padding:2px 7px;border-radius:5px;background:rgba(0,0,0,.55);color:#9FE3EE;text-decoration:none;
-    max-width:calc(100% - 16px);white-space:normal;text-align:right}
-  .sh-tilebtn:hover{background:rgba(0,0,0,.78);color:#D7F4F9}
-  /* `.palette .lbl` do shell (0-2-0) perde para `.palette.sm>span` (0-2-1) e o rótulo herda
-     22x22px, o que estoura a linha; escopo por id para vencer a especificidade. */
-  #shotsPalette .lbl{width:auto;height:auto;flex:0 0 auto;border:0;border-radius:0;white-space:nowrap}
+  /* Escopo `.sh-` da etapa 5 (regra 3 da wave 3). O que era lacuna do catálogo foi promovido
+     ao shell na integração (ADH-OS-20260826-09): `.card .card-act`, `.rowcard.col`,
+     `.rowcard.pick`, `.thumb>.empty`, `.drop.inline`, `.grow` e o `:not()` de `.palette .lbl`.
+     Fica aqui só o que é mesmo desta tela. */
   .sh-wrapchip{white-space:normal;max-width:52ch}
-  .sh-scene{flex-direction:column;align-items:stretch;gap:8px;padding:10px;cursor:pointer;
-    transition:border-color .15s,transform .15s}
-  .sh-scene:hover{border-color:var(--ctl-hover);transform:translateY(-2px)}
-  .sh-scene .row{justify-content:space-between;width:100%;min-width:0}
-  .sh-scene .sh-scene-id{font-size:11px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .sh-scene .thumb{width:100%}
-  .sh-scene .empty{padding:0;font-size:10px}
-  .sh-grow{flex:1 1 220px;min-width:180px}
-  .sh-basedrop{flex:0 0 auto;min-width:0;padding:7px 12px;border-width:1px;font-size:12.5px}
+  .sh-scene-id{font-size:11px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sh-basethumb{max-width:100%;align-self:flex-start;width:100%}
   .sh-scene-text{margin:0 0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
   .sh-subhead{margin-top:var(--s5)}
@@ -59,7 +42,7 @@
       <span id="sceneStatus" class="chip mode">nenhuma cena aberta</span>
       <button id="btnPrepBase" class="ghost">Preparar base (imagem da cena)</button>
       <button id="btnPrepBaseCampaign" class="ghost">Usar a imagem base da campanha</button>
-      <label class="drop sm sh-basedrop" id="baseDrop">outra imagem<input id="baseUpload" type="file" accept="image/*" hidden></label>
+      <label class="drop sm inline" id="baseDrop">outra imagem<input id="baseUpload" type="file" accept="image/*" hidden></label>
     </div>
   </div>
   <p id="sceneText" class="fine sh-scene-text"></p>
@@ -74,7 +57,7 @@
           <option value="angle">Outro ponto de vista (Multi Shot)</option>
           <option value="edit">Edição numerada (uma rodada por vez)</option>
         </select>
-        <input id="promptSubject" class="sh-grow" placeholder="foco (ex.: the astronaut's face — close no rosto)">
+        <input id="promptSubject" class="grow" placeholder="foco (ex.: the astronaut's face — close no rosto)">
         <select id="promptScale"><option value="close">close</option><option value="medium">médio</option><option value="wide">aberto</option></select>
         <select id="promptAngle"><option value="eye-level">altura dos olhos</option><option value="low">contra-plongée</option><option value="high">plongée</option></select>
         <label class="inline"><input id="promptRealism" type="checkbox" checked> bloco de câmera</label>
@@ -92,7 +75,7 @@
       <div class="row wrap cli">
         <span id="shotsHf" class="chip mode">CLI: ?</span>
         <label class="inline">imagens <input id="shotsCount" type="number" value="4" min="1" max="8"></label>
-        <button id="btnShotsGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
+        <button id="btnShotsGen" class="ghost" disabled>Gerar via CLI (gasta créditos)</button>
         <span id="shotsGenLog" class="mono fine"></span>
       </div>
       <div id="shotsProgress" class="progress"><div class="bar"></div></div>
@@ -128,7 +111,7 @@
     <h3><span class="pn">03</span>Cena do produto (aula 013)</h3>
     <div class="row wrap">
       <span id="prodStatus" class="chip mode">sem imagem de referência</span>
-      <label class="drop sm sh-basedrop" id="prodRefDrop">imagem 1 (a cena, ex.: geladeira)<input id="prodRefUpload" type="file" accept="image/*" hidden></label>
+      <label class="drop sm inline" id="prodRefDrop">imagem 1 (a cena, ex.: geladeira)<input id="prodRefUpload" type="file" accept="image/*" hidden></label>
       <button id="btnProdPrompts" class="ghost">Ver as duas instruções</button>
     </div>
   </div>

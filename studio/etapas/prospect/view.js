@@ -125,8 +125,8 @@ Studio.register("prospect", (ctx) => {
     const soma = (pitch.sum || 0).toFixed(2), total = (pitch.total || 0).toFixed(2);
     $("#pitchValues").innerHTML = `<div class="pitch-table">`
       + (pitch.steps || []).map((s) => `<div class="tr"><span>${esc(s)}</span>`
-        + `<span class="v"><input class="mini" type="number" min="0" step="10" data-pitch="${esc(s)}" value="${(pitch.values || {})[s] || 0}"></span></div>`).join("")
-      + `<div class="total"><span>Total</span><span class="v">R$ <input class="mini" type="number" min="0" step="10" data-pitch-total value="${total}">`
+        + `<span class="v"><input class="mini wide num" type="number" min="0" step="10" data-pitch="${esc(s)}" value="${(pitch.values || {})[s] || 0}"></span></div>`).join("")
+      + `<div class="total"><span>Total</span><span class="v">R$ <input class="mini wide num" type="number" min="0" step="10" data-pitch-total value="${total}">`
       + ` · 50% off no 1º: R$ ${(pitch.discount || 0).toFixed(2)}</span></div></div>`
       + `<p class="note">Soma das etapas: R$ ${soma}${pitch.matches ? "" : " — diferente do total: a ancoragem só funciona se as contas fecharem"}.`
       + `${pitch.priced && !pitch.in_range ? ` No começo a aula manda cobrar entre R$ ${pitch.min_price} e R$ ${pitch.max_price}.` : ""}</p>`;

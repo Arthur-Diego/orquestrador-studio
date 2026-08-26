@@ -1,22 +1,8 @@
 <style>
-  /* Lacunas do catálogo do shell (wave 3 · frente views-storyboard-shots). Escopo `.sb-`:
-     a tela não edita `studio/web/style.css` (HLD studio v1.4 · ADR-010). A integração (W5)
-     decide se promove estas regras para o shell. */
-  .sb-base{cursor:default;align-self:start}
-  .sb-base:hover{transform:none}
-  /* botão dentro de `.card` (o shell não posiciona `button` no tile). O fundo do selo é
-     sempre escuro, como `.card .src`: a cor do texto não pode seguir `--accent`, que
-     escurece no tema claro. */
-  .sb-tilebtn{position:absolute;right:8px;bottom:8px;z-index:2;font-size:10px;line-height:1.4;
-    padding:2px 7px;border-radius:5px;background:rgba(0,0,0,.55);color:#9FE3EE;text-decoration:none}
-  .sb-tilebtn:hover{background:rgba(0,0,0,.78);color:#D7F4F9}
-  .sb-inline{margin:0;flex:1 1 200px;min-width:0}
-  .sb-scene-media{display:flex;flex-direction:column;gap:6px;min-width:0}
-  .sb-scene-media select{width:100%;min-width:0;font-size:11px;padding:4px 22px 4px 8px}
-  .sb-scene-body{display:flex;gap:10px;align-items:flex-start;min-width:0}
-  .sb-scene-body .sbTxt{flex:1;min-width:0;margin:0}
-  .sb-scene-acts{display:flex;gap:5px;flex:0 0 auto}
-  .sb-scene-acts button{padding:5px 9px;font-size:12px;line-height:1.2}
+  /* Escopo `.sb-` da etapa 4 (regra 3 da wave 3). As lacunas do catálogo viraram classes do
+     shell na integração (ADH-OS-20260826-09): `.card.static`, `.card .card-act`, `.grow`,
+     `.flat` e as colunas editáveis de `.scene-row` (`.media`/`.edit`/`.acts`). */
+  .sb-base{align-self:start}
 </style>
 
 <header class="stephead">
@@ -37,7 +23,7 @@
   </div>
   <div class="grid2 rev">
     <div class="col">
-      <div class="card wide sb-base">
+      <div class="card wide static sb-base">
         <img id="sbBase" class="hidden" alt="imagem base da campanha">
         <span class="term">base/base_final.png</span>
       </div>
@@ -47,7 +33,7 @@
       <div class="row wrap">
         <select id="sbKind"></select>
         <select id="sbPreset"><option value="">— fórmulas da aula —</option></select>
-        <span id="sbKindHint" class="fine sb-inline"></span>
+        <span id="sbKindHint" class="fine grow flat"></span>
       </div>
       <textarea id="sbText" rows="2" placeholder="Make the climber even smaller and more realistic"></textarea>
       <div class="row wrap">
@@ -72,7 +58,7 @@
     <select id="sbModel"></select>
     <span id="sbSourceChip" class="chip mode">origem: imagem base</span>
     <button id="sbSourceClear" class="ghost">voltar à base</button>
-    <button id="sbCliGen" disabled>Gerar via CLI (gasta créditos)</button>
+    <button id="sbCliGen" class="ghost" disabled>Gerar via CLI (gasta créditos)</button>
     <span id="sbJobLog" class="mono fine"></span>
   </div>
 </section>

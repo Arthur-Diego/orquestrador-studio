@@ -1,22 +1,12 @@
 <style>
-  /* Escopado da etapa 6 (regra 3 da wave 3): o que o catálogo do shell ainda não cobre.
-     Lacunas registradas no FDD views-animate-redesign-fdd.md §12 para a integração (W5). */
-  .an-main textarea.prompt-inline{width:100%;background:var(--bg-2);border:1px solid var(--line-2);
-    border-radius:var(--r-sm);color:var(--ink);padding:8px 11px;font-family:"IBM Plex Mono",monospace;
-    font-size:12px;line-height:1.6;resize:vertical;min-height:56px}
-  .an-main textarea.prompt-inline:focus{border-color:var(--accent);box-shadow:var(--ring)}
+  /* Escopo `.an-` da etapa 6 (regra 3 da wave 3). Promovidos ao shell na integração
+     (ADH-OS-20260826-09): `textarea.prompt-inline`, o reset de `<button>` e o `:disabled` do
+     `.take`, `.thumb.none`, o `gap` de `.an-takes` e o `.shot-row` de 110px em <=900px. */
   .an-left{gap:6px}
   .an-main{gap:10px}
-  .an-noimg{display:grid;place-items:center}
-  .an-noimg span{font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--ink-5)}
-  button.take{font:inherit;font-family:"IBM Plex Mono",monospace;font-size:10px;text-align:left;
-    border-width:1px;line-height:1.5}
-  button.take:disabled{opacity:.55;cursor:not-allowed}
-  .an-takes{gap:10px}
   .an-takes .an-file{font-size:10px;color:var(--ink-5);text-decoration:none;max-width:20ch;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:-4px}
   .an-takes .an-file:hover{color:var(--accent);text-decoration:underline}
-  .an-takes .note{margin:0}
   .take .an-rej{color:var(--fail)}
   button.an-x{padding:5px 8px;font-size:10px;font-family:"IBM Plex Mono",monospace;
     line-height:1;margin-left:-6px}
@@ -30,12 +20,8 @@
   .an-end{min-width:220px}
   .an-model{min-width:150px}
   .an-tips{margin:0;padding-left:18px}
-  /* ≤900px o shell colapsa `.shot-row` para uma coluna: a thumb viraria 16/9 na largura
-     inteira. A etapa vira a coluna esquerda em linha e prende a thumb em 110px. */
   @media (max-width:900px){
     .an-mode,.an-end,.an-model{min-width:0;width:100%}
-    .an-left{flex-direction:row;align-items:center;gap:10px}
-    .an-left .thumb{flex:0 0 110px;width:110px}
   }
 </style>
 

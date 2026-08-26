@@ -101,7 +101,7 @@ Studio.register("storyboard", (ctx) => {
     $("#sbGallery").innerHTML = ideas.length ? ideas.map((i) =>
       `<div class="card ${sel.has(i.id) ? "sel" : ""} ${i.id === sourceId ? "src-of" : ""}" data-id="${esc(i.id)}" tabindex="0" title="${esc(i.prompt)}">
          <img loading="lazy" src="${esc(ctx.files(i.thumb || i.file))}" alt=""><span class="src">${esc(i.source)}</span>
-         <button type="button" class="link sbSrc sb-tilebtn" data-src="${esc(i.id)}">${i.id === sourceId ? "origem ✓" : "usar como origem"}</button></div>`).join("")
+         <button type="button" class="link sbSrc card-act" data-src="${esc(i.id)}">${i.id === sourceId ? "origem ✓" : "usar como origem"}</button></div>`).join("")
       : `<div class="empty">Nenhuma ideia ainda — gere na Higgsfield com a instrução acima e importe.</div>`;
     renderSource();
   }
@@ -121,13 +121,13 @@ Studio.register("storyboard", (ctx) => {
       const arc = arcOf(i + 1, total);
       return `<div class="scene-row" data-i="${i}">
          <span class="mom" data-mom="${esc(momOf(arc.label))}" title="Cena ${i + 1} · ${esc(arc.label)}">${esc(arc.label)}</span>
-         <div class="sb-scene-media">
+         <div class="media">
            <div class="thumb">${s.image ? `<img loading="lazy" src="${esc(ctx.files(s.image))}" alt="">` : ""}</div>
            <select class="sbImg" title="imagem da cena">${opts(s.image)}</select>
          </div>
-         <div class="sb-scene-body">
+         <div class="edit">
            <textarea class="sbTxt" rows="2" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
-           <div class="sb-scene-acts">
+           <div class="acts">
              <button type="button" class="ghost sbUp" title="subir">↑</button><button type="button" class="ghost sbDown" title="descer">↓</button><button type="button" class="ghost sbDel" title="remover">✕</button>
            </div>
          </div>

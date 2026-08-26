@@ -1,6 +1,6 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.4 (wave 3: redesign dark-first do frontend — pipelines segmentados, catálogo de classes do shell)
+Versão: 1.5 (fechamento da wave 3: lacunas de CSS das 6 frentes de tela promovidas ao catálogo do shell)
 Data: 2026-08-26
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
@@ -112,6 +112,23 @@ editam o CSS do núcleo (ADR-010); a lista normativa está em
 (6) **Helpers aditivos** `Studio.ui.tile/pipe/beats/copyBtn` para as telas não recopiarem o
 HTML dessas classes. Spec da wave: `docs/domains/studio/waves/wave-3.md`.
 
+**Fechamento da wave 3 (v1.5):** o catálogo nasceu na sub-wave 0, antes das telas existirem, e
+as 6 frentes da sub-wave 1 acharam 8 lacunas nele. Cada uma contornou com `<style>` escopado no
+próprio `view.html` (regra 3 da wave, ADR-010: tela não edita `studio/web/*`) e registrou a
+lacuna no final report; a integração promoveu **todas** ao `style.css` e retirou as regras
+equivalentes das telas. Duas eram bugs de especificidade, não ausências: `.palette .lbl` (0,2,0)
+perdia para `.palette.sm>span` (0,2,1) e o rótulo herdava o quadrado de 22 px do swatch;
+`input.mini` (0,1,1) perdia para `.inline input[type=number]` (0,2,1) e voltava a 60 px,
+cortando valores de 3 casas. As demais foram ausências reais: `textarea.prompt-inline`, o reset
+de `<button>` no `.take`, o marcador `.beats .cut` encoberto pelas barras de impacto, a legenda
+`.player .term` ilegível no tema claro, o `.shot-row` colapsando a thumb em ≤900 px e um conjunto
+de utilitários (`.grow*`, `.row.stretch`, `.flat`, `.pre`, `.card.static`, `.card .card-act`,
+`.thumb.none`, `.rowcard.col`/`.pick`, `.scene-row .media/.edit/.acts`, `.drop.inline`,
+`.pub-row .fb`) que seis telas tinham reinventado com seis prefixos diferentes. Lição para a
+próxima wave que nascer de handoff: o catálogo do shell só é contrato de verdade depois de a
+primeira tela consumi-lo — reservar uma janela de promoção na integração é parte do plano, não
+retrabalho. Retro: `docs/domains/studio/waves/wave-3-retro.md`.
+
 **Guia por etapa (v1.2):** cada plugin pode exportar `studio/etapas/<id>/guide.py` com
 `guide(pid) -> dict`, descoberto por `etapas.discover()` na chave `guide` (opcional). O hook é
 **puro**: só lê arquivos do projeto — nunca cria/regrava artefato, nunca chama CLI, ffprobe ou
@@ -166,7 +183,7 @@ Fonte de verdade
 | `/api/projects/{pid}/<etapa>/*` | API | REST/JSON, multipart (upload ≤ 25 MB; 200 MB na etapa 6) | Interna | ver HLDs dos domínios |
 | `/files/{pid}/…`, `/static/…` | Estáticos | HTTP | Interna | somente leitura (`/static/ui.js`, `/static/ui.css` = `Studio.ui`; `/static/app.js`, `/static/style.css` = shell) |
 
-**Catálogo de classes do shell (contrato visual, v1.4).** É interface pública tanto quanto as
+**Catálogo de classes do shell (contrato visual, v1.5).** É interface pública tanto quanto as
 rotas: as telas de etapa **consomem** estes nomes e o shell pode acrescentar, nunca renomear.
 Lista normativa com valores em `docs/domains/studio/features/shell-redesign-fdd.md` §5; asserts
 em `tests/test_api.py::test_shell_preserva_as_classes_que_as_telas_de_etapa_usam` e
@@ -175,14 +192,14 @@ em `tests/test_api.py::test_shell_preserva_as_classes_que_as_telas_de_etapa_usam
 | Grupo | Classes | Onde é usado |
 | ----- | ------- | ------------ |
 | Texto | `.eyebrow` (+`.sm`), `.mono`, `.fine`, `.lede`, `.note`, `.ext` | todas as 11 telas |
-| Controles | `input`/`textarea`/`select`, `input.mini`, `input.prompt-inline`, `button` (+`.primary`, `.cta`, `.ghost`, `.link`, `.lg`, `.icon`, `.danger`, `.mini`, `.loading`), `.field`, `.row`(+`.wrap`), `.col`, `.inline`, `.spacer`, `.hidden` | todas |
+| Controles | `input`/`textarea`/`select`, `input.mini` (+`.wide`, `.num`, 64 px dentro de `.inline`/`.ctl`), `input.prompt-inline` **e `textarea.prompt-inline`**, `button` (+`.primary`, `.cta`, `.ghost`, `.link`, `.lg`, `.icon`, `.danger`, `.mini`, `.loading`), `.field`, `.row`(+`.wrap`, `.stretch`), `.col`, `.inline`, `.spacer`, `.hidden`, `.grow`/`.grow-sm`/`.grow-lg`, `.flat`, `.pre` | todas |
 | Shell | `.app`, `.side`, `.brand`, `.side-sec`, `.navlink`, `.rail-head`, `.pipe`(+`.lg`, `i.done/.in_progress/.blocked/.todo`), `.side-foot`, `.themebtn`, `.topbar`, `.tb-*`, `main` | `index.html`, `app.js` |
 | Guia | `.guide`, `.guide-strip`, `.guide-body`, `.guide-toggle`, `.guide-sections`, `.guide-missing`, `.guide-sec`, `.guide-what`, `.guide-items`, `.guide-check`, `.guide-fix`, `.guide-next`, `.guide-actions` | `Studio.ui.guide` |
 | Visão geral | `.ovgrid`, `.ovcard`(+`.is-current`, `.st-*`), `.ovcard-top`, `.desc`, `.next`, `.miss`, `.act`, `.ov-summary`, `.course` | `app.js` |
 | Painéis | `.stephead`, `.panel`, `.panel-head` (+`h3 .pn`), `details.lesson`, `.grid2`(+`.rev`, `.even`), `.status`, `.progress`(+`.bar`, `.ok`), `.progress-lbl`, `.log`, `.strip`(+`.warn`), `.checks` | todas |
-| Mídia | `.gallery`(+`.sm`, `.xs`), `.card`(+`.sel`, `.sel[data-ord]`, `.wide`, `.sq`, `.src-of`, `.src`, `.term`, `.up[.ok]`), `.thumb`, `.player`, `.play-big`, `.drop`(+`.sm`, `.over`), `.palette`(+`.sm`) | 1–6, 9, 10 |
+| Mídia | `.gallery`(+`.sm`, `.xs`), `.card`(+`.sel`, `.sel[data-ord]`, `.wide`, `.sq`, `.src-of`, `.src`, `.term`, `.up[.ok]`, `.static`, `.card-act`), `.thumb`(+`.none`, `>.empty`), `.player`(+`.term`), `.play-big`, `.drop`(+`.sm`, `.over`, `.inline`), `.palette`(+`.sm`, `.lbl`) | 1–6, 9, 10 |
 | Prompt | `.prompts`, `.prompt`(+`.sel`), `.prompt-group`, `.prompt-ref`, `.refpick`, `.refgallery`, `.cli` | 2–5, 7, 10, 11 |
-| Linhas | `.rowlist`, `.rowcard`(+`.grid`, `.sel`, `.cur`), `.scene-row`(+`.mom[data-mom]`), `.clip-row`, `.clip`, `.sfxrow`, `.shot-row`, `.take`(+`.like`, `.empty`), `.an-takes .row.sel`, `.track-row`, `.pub-row`, `.lead-row`(+`.lead-biz`, `.lead-post`) | 4–8, 10, 11 |
+| Linhas | `.rowlist`, `.rowcard`(+`.grid`, `.sel`, `.cur`, `.col`, `.pick`), `.scene-row`(+`.mom[data-mom]`, `.media`, `.edit`, `.acts`), `.clip-row` (nome em 170 px), `.clip`, `.sfxrow`, `.shot-row` (2 colunas também em ≤900 px), `.take`(+`.like`, `.empty`, reset de `<button>`, `:disabled`), `.track-row`, `.pub-row`(+`.fb`), `.lead-row`(+`.lead-biz`, `.lead-post`) | 4–8, 10, 11 |
 | Específicos | `.stepper`, `.beats`(+`.sm`, `i.imp`, `.cut[.off]`), `.beats-axis`, `.fmt-grid`, `.fmt-card`(+`.on`, `.top`, `.box`), `.pitch`, `.pitch-table`(+`.total`), `.script`, `#renderLog .warn` | 3, 7, 8, 9, 11 |
 | Chips e avisos | `.chip` (+`ok/done/warn/fail/blocked/info/in_progress/todo/mode/unknown`, `.sm`), `.empty`, `.empty-state`, `.toast` | todas |
 

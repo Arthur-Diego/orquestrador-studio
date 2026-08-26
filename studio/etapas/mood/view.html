@@ -1,11 +1,8 @@
 <style>
-  /* Ajustes locais da etapa 2 (prefixo `.md-`, regra 3 da wave 3): o catálogo do shell não
-     prevê texto solto dentro de `.cli` nem coluna de importação com largura mínima. */
-  .md-flat{margin:0}
+  /* Escopo `.md-` da etapa 2 (regra 3 da wave 3). `.md-grow`, `.md-flat` e `.md-pre` viraram
+     `.grow`, `.flat` e `.pre` no shell na integração (ADH-OS-20260826-09). */
   .md-side{min-width:210px;max-width:280px;align-items:stretch}
   .md-path{overflow-wrap:anywhere;word-break:break-all}
-  .md-grow{flex:1;min-width:220px}
-  .md-pre{white-space:pre-wrap}
 </style>
 
 <header class="stephead">
@@ -60,9 +57,9 @@
   <div class="col">
     <input id="explorePrompt" placeholder="prompt copiado do Explore / da imagem de vibe (opcional)">
     <div id="briefFields" class="row wrap">
-      <input id="bfPurpose" placeholder="propósito (ex.: campanha de energético para Reels)" class="md-grow">
-      <input id="bfTone" placeholder="tom emocional (ex.: épico, frio, silencioso)" class="md-grow">
-      <input id="bfRef" placeholder="referência estética (filme, fotógrafo, campanha)" class="md-grow">
+      <input id="bfPurpose" placeholder="propósito (ex.: campanha de energético para Reels)" class="grow">
+      <input id="bfTone" placeholder="tom emocional (ex.: épico, frio, silencioso)" class="grow">
+      <input id="bfRef" placeholder="referência estética (filme, fotógrafo, campanha)" class="grow">
     </div>
     <input id="moodInstruction" placeholder="sua instrução para o bot (ex.: bastante neon e neve, mais dramático)">
     <div class="row wrap">
@@ -70,19 +67,19 @@
       <button id="btnMoodGenPrompt" class="primary">Gerar prompt</button>
       <button id="btnMoodPrompts" class="ghost" title="Só no modo template: mesma vibe, outra estilização">Nova variação</button>
       <button id="btnCopyAll" class="ghost">Copiar prompt</button>
-      <span id="promptStatus" class="fine mono md-flat"></span>
+      <span id="promptStatus" class="fine mono flat"></span>
     </div>
-    <p id="moodHint" class="note md-flat"></p>
+    <p id="moodHint" class="note flat"></p>
     <div id="promptList" class="prompts"></div>
-    <details><summary class="fine md-flat">Histórico de prompts gerados</summary><div id="promptHistory" class="log mono"></div></details>
+    <details><summary class="fine flat">Histórico de prompts gerados</summary><div id="promptHistory" class="log mono"></div></details>
     <div class="row wrap cli">
       <span id="hfState" class="chip mode">CLI: ?</span>
       <label class="inline">variações <input id="moodCount" type="number" value="2" min="1" max="4"></label>
       <label class="inline"><input id="moodUseRefs" type="checkbox" checked> usar as imagens de vibe como referência de estilo</label>
       <label class="inline">melhor do grid <select id="moodBest"><option value="">(nenhuma — 1ª rodada)</option></select></label>
-      <button id="btnMoodGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
-      <span id="moodGenLog" class="mono fine md-flat"></span>
-      <span class="note md-flat">o caminho da aula é gerar na UI, onde o ilimitado vale</span>
+      <button id="btnMoodGen" class="ghost" disabled>Gerar via CLI (gasta créditos)</button>
+      <span id="moodGenLog" class="mono fine flat"></span>
+      <span class="note flat">o caminho da aula é gerar na UI, onde o ilimitado vale</span>
     </div>
   </div>
 </section>
@@ -94,11 +91,11 @@
     <div class="col md-side">
       <button id="btnDownloads" class="ghost">Importar da pasta Downloads</button>
       <label class="inline">últimos <input id="dlMinutes" type="number" value="120" min="5"> min</label>
-      <span id="dlFolder" class="fine mono md-flat md-path"></span>
+      <span id="dlFolder" class="fine mono flat md-path"></span>
     </div>
     <div class="col md-side">
       <button id="btnHistory" class="ghost">Importar do histórico Higgsfield</button>
-      <span class="note md-flat">via <code>higgsfield generate list --image</code> (precisa de login no CLI)</span>
+      <span class="note flat">via <code>higgsfield generate list --image</code> (precisa de login no CLI)</span>
     </div>
   </div>
 </section>

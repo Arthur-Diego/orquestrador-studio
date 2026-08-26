@@ -35,7 +35,7 @@ Studio.register("shots", (ctx) => {
     $("#sceneList").innerHTML = scenes.map(s => {
       const falta = s.selected > 0 && s.upscaled < s.selected;
       const dica = `${s.text ? s.text + " · " : ""}${s.candidates} candidatos · ${s.selected} shot(s) escolhidos`;
-      return `<div class="rowcard sh-scene ${s.selected ? "sel" : ""} ${scene === s.id ? "cur" : ""}" data-scene="${esc(s.id)}" tabindex="0" title="${esc(dica)}">
+      return `<div class="rowcard col pick ${s.selected ? "sel" : ""} ${scene === s.id ? "cur" : ""}" data-scene="${esc(s.id)}" tabindex="0" title="${esc(dica)}">
          <div class="thumb">${s.base_ready ? `<img loading="lazy" src="${esc(ctx.files(s.base))}" alt="">` : `<div class="empty">sem base</div>`}</div>
          <div class="row"><span class="mono sh-scene-id">${esc(sceneLabel(s.id))}</span>
            <span class="chip sm ${falta ? "warn" : ""}">${s.upscaled}/${s.selected} upscalados</span></div></div>`;
@@ -130,7 +130,7 @@ Studio.register("shots", (ctx) => {
          <img loading="lazy" src="${esc(ctx.files(c.thumb || c.file))}" alt="">
          <span class="src">${esc(c.source)}</span>
          <span class="up${c.upscaled ? " ok" : ""}">${c.upscaled ? "upscalado 2x" : "sem upscale"}</span>
-         <button type="button" class="link asBase sh-tilebtn" data-base="${esc(c.id)}">Usar como base da cena</button></div>`;
+         <button type="button" class="link asBase card-act" data-base="${esc(c.id)}">Usar como base da cena</button></div>`;
     }).join("") : `<div class="empty">Nenhum candidato — gere na UI da Higgsfield e importe.</div>`;
   }
 

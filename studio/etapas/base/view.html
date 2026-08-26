@@ -1,14 +1,10 @@
 <style>
-  /* Regras que o catálogo do shell (wave 3) não cobre — escopadas na etapa 3 (prefixo `bs-`),
-     conforme a regra 3 da wave: nenhuma frente de tela edita `studio/web/style.css`. */
-  .bs-grow{flex:1;min-width:220px}
-  .bs-grow-sm{flex:1;min-width:180px}
-  .bs-grow-lg{flex:1.4;min-width:220px}
+  /* Escopo `.bs-` da etapa 3 (regra 3 da wave 3). Os utilitários de layout que faltavam viraram
+     classes do shell na integração (ADH-OS-20260826-09): `.grow`, `.grow-lg` e `.row.stretch`. */
   .bs-chain-state{margin-left:14px}
   .bs-imp{margin:0 0 12px}
-  .bs-io{margin-bottom:14px;align-items:stretch}
-  .bs-io .drop{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px}
-  .bs-io .col{min-width:220px;justify-content:flex-start}
+  .bs-io{margin-bottom:14px}
+  .bs-io .col{min-width:220px}
 </style>
 
 <header class="stephead">
@@ -46,7 +42,7 @@
       <option value="brief">só pelo brief (sem imagens)</option>
       <option value="template">template fixo (sem o bot)</option>
     </select></label>
-    <input id="promptInstruction" class="bs-grow" placeholder="o que muda nesta referência (ex.: a lata está gigante)">
+    <input id="promptInstruction" class="grow" placeholder="o que muda nesta referência (ex.: a lata está gigante)">
     <label class="inline" title="Na aula 009 o 'no people' é regra do MOOD; aqui é opcional"><input id="promptNoPeople" type="checkbox"> sem pessoas</label>
     <button id="btnPrompt" class="primary">Gerar prompt</button>
     <button id="btnPromptNoBias" class="ghost" title="Sessão nova do bot, sem nada sobre a campanha">Gerar sem viés</button>
@@ -64,8 +60,8 @@
     <h3><span class="pn">02</span>Marca do rótulo <span class="ext">[extensão]</span></h3>
   </div>
   <div class="row wrap">
-    <input id="brandName" class="bs-grow-sm" placeholder="nome da marca (ex.: Gelo Zero)">
-    <input id="brandDesc" class="bs-grow-lg" placeholder="como é a logo (ex.: raio com efeito neon)">
+    <input id="brandName" class="grow" placeholder="nome da marca (ex.: Gelo Zero)">
+    <input id="brandDesc" class="grow-lg" placeholder="como é a logo (ex.: raio com efeito neon)">
     <button id="btnBrand" class="primary">Salvar marca</button>
   </div>
   <details class="lesson">
@@ -98,7 +94,7 @@
     </select></label>
     <span class="inline">referência <span id="impRefChip" class="chip">—</span></span>
   </div>
-  <div class="row wrap bs-io">
+  <div class="row wrap stretch bs-io">
     <label class="drop" id="baseDrop">Arraste o grid gerado na UI ou <input id="baseUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col">
       <button id="btnBaseDownloads">Importar da pasta Downloads</button>
@@ -128,7 +124,7 @@
         <option value="upscale">upscale</option>
       </select></label>
       <label class="inline">variações <input id="genCount" type="number" value="1" min="1" max="4"></label>
-      <button id="btnBaseGen" class="primary" disabled>Gerar via CLI (gasta créditos)</button>
+      <button id="btnBaseGen" class="ghost" disabled>Gerar via CLI (gasta créditos)</button>
     </div>
   </div>
   <details class="lesson">

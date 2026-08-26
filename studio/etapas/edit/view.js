@@ -95,7 +95,7 @@ Studio.register("edit", (ctx) => {
         <span class="n">${String(i + 1).padStart(2, "0")}</span>
         <div class="thumb">${c.file ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video>` : ""}</div>
         <span class="name" title="${esc(nome)}">${esc(nome)}</span>
-        <div class="ctl ed-ctl">
+        <div class="ctl">
           <label class="inline">in <input class="cin mini" type="number" step="0.05" min="0" value="${c.in}"></label>
           <label class="inline">out <input class="cout mini" type="number" step="0.05" min="0" value="${c.out}"></label>
           <label class="inline">speed <input class="cspeed mini" type="number" step="0.1" min="0.25" max="4" value="${c.speed}"></label>

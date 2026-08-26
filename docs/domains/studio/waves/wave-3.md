@@ -170,3 +170,27 @@ Integração W5 em ordem do curso (1–2 → 3 → 4–5 → 6 → 7–8 → 9�
 - `storyboard`: botões `.sbDel/.sbUp/.sbDown` não podem ganhar filhos (o handler usa `e.target.classList.contains`).
 - Tags exatas exigidas: `<section id="guide" class="guide"></section>` (storyboard, shots, music, edit); `<input id="moodNoPeople" type="checkbox" checked>` e `Produto, texto e logo <b>não</b> são proibidos` (mood); ordem `header.stephead` → `#guide` → `section.panel` (base).
 - Smoke em worktree: copiar `projects/2026-08-wave-teste` do checkout principal para a worktree (`projects/` não é versionado) e subir com `PORT=8766+`.
+
+---
+
+## Fechamento (2026-08-26, `ADH-OS-20260826-09`)
+
+As 7 PRs foram mergeadas em `develop` pelo orquestrador (decisão do lote #2), cada uma assim que
+ficou `CLEAN` — **não** na ordem do curso, porque os arquivos eram disjuntos e a única
+dependência real era a sub-wave 0 antes de tudo:
+
+| Ordem real | PR | Frente | Task-Id |
+|---|---|---|---|
+| 1 | [#34](https://github.com/Arthur-Diego/orquestrador-studio/pull/34) | shell-redesign (sub-wave 0) | `ADH-OS-20260826-02` |
+| 2 | [#35](https://github.com/Arthur-Diego/orquestrador-studio/pull/35) | views-refs-mood (1–2) | `ADH-OS-20260826-03` |
+| 3 | [#36](https://github.com/Arthur-Diego/orquestrador-studio/pull/36) | views-export-publish-prospect (9–11) | `ADH-OS-20260826-08` |
+| 4 | [#39](https://github.com/Arthur-Diego/orquestrador-studio/pull/39) | views-animate (6) | `ADH-OS-20260826-06` |
+| 5 | [#37](https://github.com/Arthur-Diego/orquestrador-studio/pull/37) | views-base (3) | `ADH-OS-20260826-04` |
+| 6 | [#38](https://github.com/Arthur-Diego/orquestrador-studio/pull/38) | views-music-edit (7–8) | `ADH-OS-20260826-07` |
+| 7 | [#40](https://github.com/Arthur-Diego/orquestrador-studio/pull/40) | views-storyboard-shots (4–5) | `ADH-OS-20260826-05` |
+
+`develop` fechou a wave em `2ef0ebb`. A PR de fechamento (`ADH-OS-20260826-09`) promoveu ao
+`style.css` as 8 lacunas de CSS que as frentes registraram, verificou os 6 critérios
+cross-feature no estado integrado e escreveu a retro em
+`docs/domains/studio/waves/wave-3-retro.md`. Promoção `develop → main` fica com o dono do
+produto.
