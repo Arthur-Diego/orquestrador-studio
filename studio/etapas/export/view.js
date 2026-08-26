@@ -1,74 +1,90 @@
-// Etapa 9 — Export (aula 014): formato por rede a partir do master; thumb e QA são [extensão].
+// Etapa 9 — Export (aula 014): formato por rede a partir do master; o QA técnico é [extensão].
+// Wave 4: a tela é o protótipo — card de formato com UM botão, preview no clique da caixa e o
+// QA como grid de checks por critério. Thumb e reframe saíram da tela (as rotas continuam).
 Studio.register("export", (ctx) => {
   const { $, api, toast } = ctx;
-  // Cartão de formato do redesign (wave 3): proporção, destino da rede e o retângulo desenhado.
+  // Cartão de formato do protótipo: proporção, destino da rede e o retângulo desenhado.
   const FMT = {
     "16x9": { ratio: "16:9", dest: "YouTube", w: 46, h: 26 },
     "9x16": { ratio: "9:16", dest: "Reels · TikTok", w: 15, h: 27 },
-    "1x1": { ratio: "1:1", dest: "feed · opcional [extensão]", w: 24, h: 24 },
+    "1x1": { ratio: "1:1", dest: "feed · opcional", w: 24, h: 24 },
   };
-  const LABELS = { "16x9": "16:9 · YouTube", "9x16": "9:16 · Reels e TikTok", "1x1": "1:1 · feed [extensão]" };
-  const FORMATS = Object.keys(LABELS);
+  const FORMATS = Object.keys(FMT);
   const ASPECT = { "16:9": "16x9", "9:16": "9x16", "1:1": "1x1" };
+  //: O painel Thumb saiu da tela (o campo "tempo" com ele): o preview do corte usa sempre o
+  //: mesmo instante — 3 s, ou o meio do vídeo quando o master é mais curto que isso.
+  const PREVIEW_T = 3;
   let st = null, job = null;
 
+  const esc = (s) => Studio.ui.esc(s);
   const url = (p) => `/api/projects/${ctx.pid()}/export/${p}`;
-  const chip = (el, text, cls) => { const e = $(el); e.textContent = text; e.className = "chip " + cls; };
   // Formato da rede-alvo do projeto (project.aspect_ratio, [extensão] — default 16:9).
   const alvo = () => ASPECT[(ctx.project() || {}).aspect_ratio] || "16x9";
 
+  // O protótipo não desenha chip de estado bom: eles só aparecem quando algo falta (regra 6).
+  function chipFalha(sel, mostrar, texto) {
+    const e = $(sel);
+    e.textContent = texto;
+    e.classList.toggle("hidden", !mostrar);
+  }
+
   function renderChips() {
-    chip("#expFfmpeg", st.ffmpeg ? "ffmpeg: pronto" : "ffmpeg: ausente (~/.local/bin)", st.ffmpeg ? "ok" : "warn");
-    const m = st.master;
-    chip("#expMaster", m.exists ? "master: pronto" : "master: aguardando a etapa 8", m.exists ? "ok" : "warn");
-    const hf = st.higgsfield || {};
-    chip("#expHf", !hf.installed ? "CLI: não instalado" : hf.logged_in ? "CLI: logado" : "CLI: sem login", hf.logged_in ? "ok" : "warn");
-    $("#expMasterInfo").textContent = m.exists && m.width
-      ? `edit/master.mp4 · ${m.width}x${m.height} · ${(m.duration || 0).toFixed(1)}s · ${Math.round(m.fps || 0)} fps · ${m.vcodec || "?"}${m.has_audio ? " + " + (m.acodec || "áudio") : " · sem áudio (a trilha da etapa 7 é obrigatória)"}`
-      : m.exists ? "edit/master.mp4 encontrado (sem ffmpeg para medir)." : "Nenhum edit/master.mp4: conclua a etapa 8 (montagem no ritmo).";
+    chipFalha("#expFfmpeg", !st.ffmpeg, "ffmpeg: ausente (~/.local/bin)");
+    chipFalha("#expMaster", !st.master.exists, "master: aguardando a etapa 8");
   }
 
   function ready() { return st && st.ffmpeg && st.master.exists; }
+
+  // Medidas do master viram `title` do botão "Renderizar todos" (o protótipo não desenha a linha).
+  function tituloMaster() {
+    const m = st.master;
+    if (!m.exists) return "conclua a etapa 8 para gerar edit/master.mp4";
+    if (!m.width) return "edit/master.mp4 encontrado (sem ffmpeg para medir)";
+    return `edit/master.mp4 · ${m.width}x${m.height} · ${(m.duration || 0).toFixed(1)}s`
+      + `${m.has_audio ? "" : " · sem áudio (a trilha da etapa 7 é obrigatória)"}`;
+  }
 
   function renderFormats() {
     const running = st.job && st.job.state === "running";
     const alvoFmt = alvo();
     $("#expFormats").innerHTML = FORMATS.map((f) => {
       const o = st.outputs[f], prev = st.previews[f], m = FMT[f];
-      const destino = f === alvoFmt ? Studio.ui.chip("rede-alvo", "ok") : "";
       const off = ready() && !running ? "" : "disabled";
-      return `<div class="fmt-card${o ? " on" : ""}" data-fmt="${f}" title="${Studio.ui.esc(LABELS[f])}">
+      const medidas = o && o.width ? ` · ${o.width}x${o.height} · ${(o.duration || 0).toFixed(1)}s` : "";
+      const caixa = prev
+        ? `<img loading="lazy" src="${ctx.files(prev)}?v=${Date.now()}" alt="preview do corte central em ${m.ratio}">`
+        : `<i class="${o ? "on" : ""}" style="width:${m.w}px;height:${m.h}px"></i>`;
+      return `<div class="fmt-card${o ? " on" : ""}" data-fmt="${f}">
         <div class="top">
-          <span class="ratio">${m.ratio}</span>
-          <span class="dest">${Studio.ui.esc(m.dest)}</span>
-          ${destino}<span class="chip ${o ? "ok" : "mode"}">${o ? "renderizado" : "a renderizar"}</span>
+          <span class="ratio"${f === alvoFmt ? ' title="formato da rede-alvo do projeto"' : ""}>${m.ratio}</span>
+          <span class="dest">${esc(m.dest)}</span>
+          <span class="chip sm ${o ? "ok" : "todo"}">${o ? "renderizado" : "a renderizar"}</span>
         </div>
-        <div class="box"><i class="${o ? "on" : ""}" style="width:${m.w}px;height:${m.h}px"></i></div>
-        ${prev ? `<img class="ex-prev" loading="lazy" src="${ctx.files(prev)}" alt="preview do enquadramento ${m.ratio}">` : ""}
-        <p class="fine mono">${o && o.width ? `${o.width}x${o.height} · ${(o.duration || 0).toFixed(1)}s · ${o.has_audio ? "com áudio" : "sem áudio"}` : "ainda não renderizado"}</p>
-        <div class="ex-acts">
-          <button class="ghost prev" data-fmt="${f}" ${off}>Preview</button>
-          <button class="render${o ? "" : " primary"}" data-fmt="${f}" ${off}>Renderizar</button>
-          ${o ? `<a class="fine mono ver" href="${ctx.files(o.file)}" target="_blank" rel="noopener">Ver arquivo</a>` : ""}
-        </div>
+        <div class="box ex-box" data-fmt="${f}" title="conferir o corte central">${caixa}</div>
+        ${o
+          ? `<button class="ghost open" data-fmt="${f}" title="export/${f}.mp4${medidas}">Ver arquivo</button>`
+          : `<button class="primary render" data-fmt="${f}" ${off}>Renderizar</button>`}
       </div>`;
     }).join("");
-    $("#btnRenderAll").disabled = !ready() || running;
-    $("#btnThumb").disabled = !ready() || running;
+    const btn = $("#btnRenderAll");
+    btn.disabled = !ready() || running;
+    btn.title = tituloMaster();
     $("#btnQa").disabled = !ready() || running;
-    $("#btnReframe").disabled = !ready() || running || !(st.higgsfield || {}).logged_in;
   }
 
   function renderJob() {
     const j = st.job || { state: "idle" };
+    const rodando = j.state === "running";
     const pct = j.total ? Math.round((j.done / j.total) * 100) : 0;
-    $("#expBar").style.width = (j.state === "running" ? pct : j.state === "done" ? 100 : 0) + "%";
-    $("#expJobLog").textContent = j.state === "running" ? `renderizando ${j.done}/${j.total}…`
-      : j.state === "error" ? "erro: " + j.error : j.state === "done" ? `concluído · ${j.added} arquivo(s)` : "";
-    const log = (j.log || []);
-    $("#expLog").textContent = log.join("\n");
-    $("#expLog").classList.toggle("hidden", !log.length);   // sem log, sem caixa vazia na tela
-    if (j.state === "running" && !job) startPoll();
+    // Barra e log só existem enquanto o render acontece (ou quando ele falha).
+    $("#expProgress").classList.toggle("hidden", !rodando);
+    $("#expBar").style.width = (rodando ? pct : 0) + "%";
+    $("#expJobLog").textContent = rodando ? `renderizando ${j.done}/${j.total}…`
+      : j.state === "error" ? "erro: " + j.error : "";
+    const erro = j.state === "error";
+    $("#expLog").textContent = erro ? (j.log || []).join("\n") : "";
+    $("#expLog").classList.toggle("hidden", !erro);
+    if (rodando && !job) startPoll();
   }
 
   function startPoll() {
@@ -83,38 +99,23 @@ Studio.register("export", (ctx) => {
     }, 3000);
   }
 
-  function renderThumb() {
-    const t = st.outputs.thumb;
-    $("#expThumbInfo").textContent = t ? `export/thumb.jpg${t.t != null ? ` · t = ${t.t}s` : ""}` : "nenhuma thumb ainda";
-    $("#expThumb").innerHTML = t ? `<div class="card wide"><img loading="lazy" src="${ctx.files(t.file)}?v=${Date.now()}" alt="thumb"></div>` : "";
-    const qa = st.outputs.qa_report, a = $("#expQaFile");
-    if (qa) { a.textContent = "export/qa_report.md"; a.href = ctx.files(qa.file); } else { a.textContent = ""; a.removeAttribute("href"); }
-  }
-
-  // O relatório do ffprobe vira a lista `.checks` do redesign (✓ / !) — os mesmos dados da
-  // tabela anterior: resolução, duração, áudio e veredito por arquivo.
-  function renderQa(r) {
-    const e = (s) => Studio.ui.esc(s);
-    const linha = (i) => {
-      const ok = i.verdict === "OK";
-      const medidas = [
-        i.width ? `${i.width}x${i.height}` : "resolução não medida",
-        i.duration ? i.duration.toFixed(2) + "s" : "duração não medida",
-        i.has_audio === undefined ? "áudio não medido" : i.has_audio ? "com áudio" : "sem áudio",
-      ].join(" · ");
-      return `<div class="it ${ok ? "ok" : "warn"}"><span class="mark">${ok ? "✓" : "!"}</span>`
-        + `<span class="lbl">${e(i.file)}<span class="det">${e(medidas)} · ${e(i.verdict)}</span></span></div>`;
-    };
-    $("#expQa").innerHTML = (r.blocking
-      ? `<p class="fine"><strong>Bloqueio:</strong> algum arquivo está sem áudio. A trilha da etapa 7 é obrigatória — o resto do checklist é atenção, não impedimento.</p>`
-      : "")
-      + `<div class="checks">${r.items.map(linha).join("")}</div>`;
+  // Grid de checks POR CRITÉRIO (duração, resolução, áudio, formatos que faltam) — é o que o
+  // protótipo desenha; o relatório por arquivo continua em `export/qa_report.md`.
+  function renderQa(checks) {
+    $("#expQa").innerHTML = (checks || []).length
+      ? `<div class="checks qa">${checks.map((c) => {
+        const kind = c.kind === "ok" ? "ok" : c.kind === "fail" ? "fail" : "warn";
+        const marca = kind === "ok" ? "✓" : kind === "fail" ? "✕" : "!";
+        return `<div class="it ${kind}"><span class="mark">${marca}</span><span class="lbl">${esc(c.text)}</span></div>`;
+      }).join("")}</div>`
+      : "";
   }
 
   async function load() {
     if (!ctx.pid()) return;
     st = await api(url("status"));
-    renderChips(); renderFormats(); renderJob(); renderThumb();
+    renderChips(); renderFormats(); renderJob();
+    renderQa((st.outputs.qa_report || {}).checks);
   }
 
   async function render(formats) {
@@ -128,39 +129,28 @@ Studio.register("export", (ctx) => {
     init() {
       $("#btnRenderAll").onclick = () => render(FORMATS);
       $("#expFormats").addEventListener("click", async (e) => {
-        const b = e.target.closest("button"); if (!b) return;
-        const fmt = b.dataset.fmt;
-        if (b.classList.contains("render")) return render([fmt]);
-        if (!b.classList.contains("prev")) return;
-        b.disabled = true;
-        try { const r = await api(url("preview"), { method: "POST", body: JSON.stringify({ format: fmt, t: +$("#expThumbT").value }) }); toast(`Preview de ${fmt} em ${r.t}s`); await load(); ctx.guide(); }
-        catch (err) { toast(err.message); b.disabled = false; }
+        const b = e.target.closest("button");
+        if (b && b.classList.contains("render")) return render([b.dataset.fmt]);
+        if (b && b.classList.contains("open")) return window.open(ctx.files(st.outputs[b.dataset.fmt].file), "_blank", "noopener");
+        // "Confira o enquadramento antes de renderizar": a caixa da proporção é o preview.
+        const box = e.target.closest(".ex-box");
+        if (!box || !ready()) return;
+        const d = st.master.duration || 0;
+        const t = d && d < PREVIEW_T ? +(d / 2).toFixed(2) : PREVIEW_T;
+        try { await api(url("preview"), { method: "POST", body: JSON.stringify({ format: box.dataset.fmt, t }) }); await load(); ctx.guide(); }
+        catch (err) { toast(err.message); }
       });
-      $("#btnThumb").onclick = async () => {
-        try { const r = await api(url("thumb"), { method: "POST", body: JSON.stringify({ t: +$("#expThumbT").value }) }); toast(`Thumb em ${r.t}s (${r.width}x${r.height})`); await load(); ctx.guide(); }
-        catch (e) { toast(e.message); }
-      };
       $("#btnQa").onclick = async () => {
         try {
           const r = await api(url("qa"), { method: "POST" });
-          renderQa(r); await load(); ctx.guide();
+          renderQa(r.checks); await load(); ctx.guide();
           toast(r.blocking ? "QA gerado · BLOQUEIO: arquivo sem áudio"
-            : `QA gerado · ${r.items.filter((i) => i.verdict !== "OK").length} atenção(ões)`);
+            : `QA gerado · ${(r.checks || []).filter((c) => c.kind !== "ok").length} atenção(ões)`);
         } catch (e) { toast(e.message); }
-      };
-      $("#btnReframe").onclick = async () => {
-        const aspect = $("#expAspect").value;
-        const ok = await Studio.ui.confirmCost(
-          () => api(url("reframe/cost"), { method: "POST", body: JSON.stringify({ aspect_ratio: aspect }) }),
-          `Reenquadrar o master para ${aspect} pelo CLI (o arquivo do formato será substituído)`);
-        if (!ok) return;
-        try { st.job = await api(url("reframe"), { method: "POST", body: JSON.stringify({ aspect_ratio: aspect }) }); $("#expReframeInfo").textContent = `reframe ${aspect} em andamento`; renderFormats(); renderJob(); }
-        catch (e) { toast(e.message); }
       };
       this.onProject();
     },
     async onProject() {
-      $("#expQa").innerHTML = "";
       await load();
       Studio.ui.renderGuide("export");
     },

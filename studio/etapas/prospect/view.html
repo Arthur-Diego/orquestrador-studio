@@ -1,24 +1,23 @@
 <style>
-  /* Escopo `.pr-` da etapa 11. O `input.mini` de 76px do pitch virou `input.mini.wide.num`
-     no shell na integração (ADH-OS-20260826-09). */
-  .pr-gatefoot{margin:-6px 0 16px}
-  .pr-newlead{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px;margin-bottom:14px}
-  .pr-newlead form{margin-bottom:8px}
-  .pr-newlead input,.pr-newlead select{flex:1;min-width:170px}
-  .pr-body{flex:1 0 100%;display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
-  .pr-body textarea{width:100%}
-  .pr-body video{width:100%;max-width:360px;border-radius:var(--r-sm)}
-  .pr-teaser{margin-left:auto}
+  /* Lacunas do catálogo do shell — escopo `.pr-` da etapa 11.
+     `.rowlist` do shell tem gap 10px; o protótipo desenha a lista de leads com 8px. */
+  #leadList{gap:8px}
+  .pr-newlead{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:12px 14px;margin-bottom:14px}
+  .pr-newlead input{flex:1;min-width:170px}
+  .pr-newlead select{flex:0 1 200px;min-width:170px}
+  .lead-row .body video{width:100%;max-width:360px;border-radius:var(--r-sm)}
   #gatePipe{display:flex;flex:0 0 auto}
+  /* `appearance:textfield` (S-12) não basta no Chromium atual: sem tirar o spin-button o campo
+     reserva ~15px e o número não encosta no "R$" como no protótipo. */
+  #pitchValues input.v::-webkit-outer-spin-button,
+  #pitchValues input.v::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 </style>
 
 <header class="stephead">
   <span class="eyebrow">Etapa 11 · aula 001</span>
   <h2>Prospecção</h2>
-  <p class="lede">10 DMs por dia em pequenos negócios, com o script literal, citando um post específico e sem link. Teaser só para quem responde. <strong>O Studio redige e registra; enviar é com você.</strong></p>
+  <p class="lede">10 DMs por dia em pequenos negócios, com o script literal, citando um post específico e sem link. Teaser só para quem responde. <strong>O Studio redige; enviar é com você.</strong></p>
 </header>
-
-<section id="guide" class="guide"></section>
 
 <section class="strip warn" id="gatePanel">
   <span class="eyebrow">Gate do portfólio</span>
@@ -27,18 +26,10 @@
   <span id="gateMsg"></span>
 </section>
 
-<div id="gateProjects" class="fine pr-gatefoot"></div>
-
-<details class="lesson pr-gatefoot">
-  <summary>Por que quatro obras antes de prospectar</summary>
-  <p>O portfólio da aula são <strong>quatro obras diferentes</strong>, cada uma no seu projeto — não quatro formatos do mesmo comercial. Para o teaser deste lead, crie um projeto para o negócio dele e percorra as etapas 1 a 6 em versão curta (uma cena basta): o teaser sai de um take desse projeto, e o portfólio vem dos projetos anteriores.</p>
-</details>
-
-<section class="panel hidden" id="leadsPanel">
+<section class="panel" id="leadsPanel">
   <div class="panel-head">
     <h3><span class="pn">01</span>Leads</h3>
     <div class="row wrap">
-      <span id="statusChip" class="chip mode">0 leads</span>
       <span id="todayChip" class="chip mode">0/10 hoje</span>
       <span id="jobChip" class="chip mode hidden">teaser</span>
       <button id="btnNewLead" class="primary">+ Novo lead</button>
@@ -50,18 +41,21 @@
       <input id="lfHandle" placeholder="@perfil" required>
       <input id="lfPostRef" placeholder="o post que ressoou (ex.: o pão das 6h)" required>
       <input id="lfWhy" placeholder="por quê (anotação sua, não vai na DM)">
+      <select id="lfSegment" title="o mar azul da aula 001">
+        <option value="">segmento</option>
+        <option value="clínicas">clínicas</option>
+        <option value="academias">academias</option>
+        <option value="advogados">advogados</option>
+        <option value="estética">estética</option>
+        <option value="dentistas">dentistas</option>
+        <option value="comércios">comércios</option>
+      </select>
       <select id="lfRole"><option value="fã">sou fã da marca</option><option value="consumidor">sou consumidor</option></select>
       <button class="primary" type="submit">Cadastrar lead</button>
     </form>
-    <p class="fine">O post citado é <strong>obrigatório</strong>: "não é spam porque você personaliza — mostra que olhou o perfil e menciona um post específico". A DM é gerada no script da aula, sem links (DM com link cai em spam).</p>
   </div>
   <div id="leadList" class="rowlist"></div>
   <p class="note">Ordem da aula: novo → DM enviada → respondeu → teaser → call. O teaser só aparece depois de "respondeu".</p>
-  <details class="lesson">
-    <summary>O que a aula 001 manda fazer aqui</summary>
-    <p>Os primeiros clientes vêm de DM em pequenos negócios que você já acompanha — <strong>clínicas, academias, advogados, estética, dentistas, comércios</strong>: 10 por dia, com o script literal, citando um post específico e <strong>sem nenhum link</strong>. O contador de hoje é uma meta de disciplina — o Studio avisa acima de 10, nunca impede.</p>
-    <p><strong>Você só cria de verdade se a empresa responder</strong>: aí sai o teaser de 5 a 10 s com música e o convite para uma call de 15 minutos. O Studio redige e registra; <strong>enviar é sempre com você</strong> — não existe automação de envio aqui.</p>
-  </details>
 </section>
 
 <section class="panel" id="pitchPanel">
@@ -76,8 +70,4 @@
     <div id="pitchValues"></div>
     <pre id="pitchBox" class="script"></pre>
   </div>
-  <details class="lesson">
-    <summary>A ancoragem da aula</summary>
-    <p><strong>Revele o valor por etapa até chegar no total que você quer cobrar.</strong> Preencha a coluna ao lado; o total e o "50 % off no 1º trabalho" saem daí. Lembretes da aula: condição especial na hora, ou válida por 24h; 50 % off no primeiro trabalho, deixando claro o valor cheio para os próximos; 50 % na entrada e 50 % na entrega; faixa inicial de R$ 100 a R$ 500 por vídeo de 30 s a 1 min; vender o resultado, não a IA. Salvo em <code>prospect/pitch.md</code>.</p>
-  </details>
 </section>
