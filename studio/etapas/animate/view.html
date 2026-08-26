@@ -1,28 +1,22 @@
 <style>
-  /* Escopo `.an-` da etapa 6 (regra 3 da wave 3). Promovidos ao shell na integração
-     (ADH-OS-20260826-09): `textarea.prompt-inline`, o reset de `<button>` e o `:disabled` do
-     `.take`, `.thumb.none`, o `gap` de `.an-takes` e o `.shot-row` de 110px em <=900px. */
+  /* Escopo `.an-` da etapa 6 (wave 4). Só o que o shell ainda não cobre — candidatos a
+     promoção no fechamento (ADH-OS-20260826-17). Tudo que a wave 3 tinha aqui e o shell já
+     entrega (`.take`, `.takes`, `.rowlist`, `.import-row`, `.prompt-inline`, hover do tile)
+     foi removido. */
+  .chip[hidden]{display:none}
   .an-left{gap:6px}
-  .an-main{gap:10px}
-  .an-takes .an-file{font-size:10px;color:var(--ink-5);text-decoration:none;max-width:20ch;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:-4px}
-  .an-takes .an-file:hover{color:var(--accent);text-decoration:underline}
   .take .an-rej{color:var(--fail)}
-  button.an-x{padding:5px 8px;font-size:10px;font-family:"IBM Plex Mono",monospace;
-    line-height:1;margin-left:-6px}
-  .an-foot{gap:6px}
-  .an-foot button{padding:5px 11px;font-size:12px}
-  #anModelNote:empty,#anWarnings:empty{display:none}
-  details.an-opts>summary{font-size:12.5px;color:var(--ink-4);cursor:pointer}
-  details.an-opts>summary:hover{color:var(--ink-3)}
-  details.an-opts>*+*{margin-top:10px}
-  .an-mode{min-width:200px}
-  .an-end{min-width:220px}
-  .an-model{min-width:150px}
+  .take>.act,.take>.an-x{padding:0 1px;border:0;background:none;color:var(--ink-4);
+    font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1}
+  .take>.act:hover,.take>.an-x:hover{color:var(--ink);background:none;border-color:transparent}
+  .shot-row .note.warn{color:var(--gate)}
   .an-tips{margin:0;padding-left:18px}
-  @media (max-width:900px){
-    .an-mode,.an-end,.an-model{min-width:0;width:100%}
-  }
+  .an-tips:empty{display:none}
+  .an-example:empty{display:none}
+  .modal-body .an-mode,.modal-body .an-model,.modal-body .an-duration{width:100%}
+  /* Protótipo tpl 463 não fixa `align-items`: o drop estica até a altura da coluna de botões.
+     O shell entregou `.import-row{align-items:flex-start}` — override local até a promoção. */
+  .import-row{align-items:stretch}
 </style>
 
 <header class="stephead">
@@ -36,19 +30,9 @@
 <section class="panel">
   <div class="panel-head">
     <h3><span class="pn">01</span>Takes por shot</h3>
-    <div class="row wrap">
-      <span id="anReady" class="chip mode">0/0 shots prontos</span>
-      <span id="anHfState" class="chip mode">CLI: ?</span>
-      <button id="anReload" class="ghost">Recarregar plano</button>
-    </div>
+    <span id="anHfState" class="chip warn" hidden></span>
+    <button id="anReload" class="ghost">Recarregar plano</button>
   </div>
-  <details class="lesson">
-    <summary>O que a aula 012 manda fazer aqui</summary>
-    <p><strong>O que fazer aqui:</strong> para cada frame do storyboard, escreva o movimento, gere as variações (na UI da Higgsfield ou pelo CLI), importe, dê like na usável. <strong>O que a aula manda:</strong> descrever o movimento com clareza, áudio do modelo OFF, 5 s (10 s quando a mudança é lenta), 2 takes antes de escolher. <strong>O que falta</strong> aparece no painel do guia, acima.</p>
-    <p>Prompt simples para cena simples; movimento de câmera elaborado quando não; <strong>start/end frame</strong> entre dois frames seguidos da mesma cena; 10 s para mudanças lentas. Três falhas no mesmo shot? Troque de modelo. Sem jeito? Corte para preto na montagem.</p>
-  </details>
-  <p id="anModelNote" class="note"></p>
-  <p id="anWarnings" class="note"></p>
   <div id="anShots" class="rowlist"></div>
 </section>
 
@@ -57,22 +41,12 @@
     <h3><span class="pn">02</span>Importar os vídeos que você gerou na UI</h3>
     <span id="anCandCount" class="chip mode">0 vídeos</span>
   </div>
-  <div class="row wrap">
+  <div class="import-row">
     <label class="drop" id="anDrop">Arraste os mp4 aqui ou <input id="anUpload" type="file" accept="video/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col">
-      <button id="anBtnDownloads">Importar da pasta Downloads</button>
-      <span id="anDlFolder" class="fine mono"></span>
-      <label class="inline">últimos <input id="anDlMinutes" type="number" value="120" min="5"> min</label>
-    </div>
-    <div class="col">
-      <button id="anBtnHistory">Importar do histórico Higgsfield</button>
-      <span class="fine">via <code>higgsfield generate list --video</code> (precisa de login no CLI)</span>
+      <button id="anBtnDownloads" class="ghost">Importar da pasta Downloads</button>
+      <button id="anBtnHistory" class="ghost">Importar do histórico Higgsfield</button>
     </div>
   </div>
-  <p class="note"><b>Dica da aula:</b> <span id="anParallel">enquanto um take gera, dispare os outros shots em paralelo na UI e importe os mp4 depois</span> — a geração pelo CLI é serial, um job por vez.</p>
-  <details class="lesson">
-    <summary>O que a aula 012 manda fazer aqui</summary>
-    <p><strong>O que fazer aqui:</strong> traga para o Studio os mp4 que você gerou na interface da Higgsfield. Clique em um vídeo para selecioná-lo e depois use <strong>Atribuir selecionado</strong> no shot correspondente. Ele vira <code>videos/cenaNN/shotMM_takeK.mp4</code>.</p>
-  </details>
-  <div id="anGallery" class="gallery sm"></div>
+  <p class="note">Dica da aula: enquanto um take gera, dispare os outros shots em paralelo na UI e importe os mp4 depois.</p>
 </section>
