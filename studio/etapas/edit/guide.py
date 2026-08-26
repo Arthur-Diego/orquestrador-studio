@@ -117,4 +117,25 @@ def guide(pid: str) -> dict:
                 detail=f"{abs(sobra):.1f}s {'de sobra' if sobra >= 0 else 'a menos'} depois do offset",
                 fix=None if sobra >= -0.5 else "Reduza o offset da música, encurte clipes ou escolha outra faixa")
 
-    return g.build()
+    # Faixa compacta do guia (wave 4): imperativo curto no estilo do protótipo. Etapa bloqueada
+    # (sem take com like ou sem trilha) e etapa concluída ficam com o texto padrão do `Guide`.
+    tem_rough, tem_master = exists(pid, "edit/rough_cut.mp4"), exists(pid, "edit/master.mp4")
+    bloqueado = not n_liked or not music
+    proxima = None
+    if not bloqueado:
+        if not tem_rough and not tem_master:
+            proxima = "Propor cortes nos impactos e renderizar o rough cut"
+        elif not tem_master:
+            proxima = "Adicionar SFX e renderizar o master"
+        elif not tem_rough:
+            proxima = "Renderizar o rough cut para conferir o ritmo"
+
+    # O chip extra só aparece depois do primeiro render: no estado "a fazer" o protótipo desenha
+    # só o status e a próxima ação.
+    resumo = resumo_kind = None
+    if tem_master:
+        resumo, resumo_kind = "master: pronto", "ok"
+    elif tem_rough:
+        resumo = "rough: pronto"
+
+    return g.build(next_action=proxima, summary=resumo, summary_kind=resumo_kind)

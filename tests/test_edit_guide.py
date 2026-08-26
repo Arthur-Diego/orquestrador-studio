@@ -106,3 +106,28 @@ def test_guide_warns_when_beats_are_missing(client, project, root):
     g = guide(client, project)
     assert check(g, "beats")["status"] == "warn", "a etapa monta sem beats (decisão 6 da wave 1), com aviso"
     assert g["status"] != "blocked", "validação nunca bloqueia"
+
+
+def test_guide_strip_speaks_in_short_imperatives(client, project, root):
+    """Wave 4: `next_action` e `summary` são o que a faixa compacta do protótipo desenha."""
+    seed(root, music=False)
+    bloqueado = guide(client, project)
+    assert bloqueado["status"] == "blocked" and bloqueado["summary"] is None
+    assert bloqueado["next_action"].startswith("Antes de continuar:"), "bloqueio mantém o texto padrão"
+
+    seed(root)
+    g = guide(client, project)
+    # Estado que o protótipo desenha: "a fazer" + a próxima ação, sem chip extra.
+    assert g["status"] == "todo" and g["summary"] is None and g["summary_kind"] is None
+    assert g["next_action"] == "Propor cortes nos impactos e renderizar o rough cut"
+
+    (root / "edit").mkdir(parents=True, exist_ok=True)
+    (root / "edit" / "rough_cut.mp4").write_bytes(b"rough")
+    g = guide(client, project)
+    assert g["summary"] == "rough: pronto" and g["summary_kind"] is None
+    assert g["next_action"] == "Adicionar SFX e renderizar o master"
+
+    (root / "edit" / "master.mp4").write_bytes(b"master")
+    g = guide(client, project)
+    assert g["status"] == "done" and g["summary"] == "master: pronto" and g["summary_kind"] == "ok"
+    assert "etapa 9" in g["next_action"], "etapa concluída mantém o texto padrão"

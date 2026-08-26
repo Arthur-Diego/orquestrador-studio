@@ -114,4 +114,30 @@ def guide(pid: str) -> dict:
                 "ok" if exists(pid, "audio/license.txt") else "warn",
                 detail="a aula 013 não fala em licença; declarar é recomendação do Studio")
 
-    return g.build()
+    # Faixa compacta do guia (wave 4): a próxima ação é um imperativo curto, no estilo do
+    # protótipo. Etapa bloqueada ou concluída continua com o texto padrão do `Guide`.
+    bloqueado = not scenes or bool(sem_take)
+    tem_batidas = bool(beats.get("beats"))
+    proxima = None
+    if not bloqueado:
+        if not (decidido or music or tem_batidas):
+            proxima = "Montar a sequência bruta e decidir se a história fecha"
+        elif not decidido:
+            proxima = "Decidir se a história fecha ou se falta cena"
+        elif not music:
+            proxima = "Ouvir as candidatas e escolher a trilha"
+        elif not tem_batidas:
+            proxima = "Escolher a trilha de novo — as batidas não foram detectadas"
+
+    # O chip extra só aparece depois que a etapa começou: no estado "a fazer" o protótipo
+    # desenha só o status e a próxima ação.
+    resumo = resumo_kind = None
+    if not bloqueado and (decidido or music or tem_batidas):
+        if tem_batidas:
+            resumo = f"{len(beats.get('beats') or [])} batidas · {len(beats.get('impacts') or [])} impactos"
+        elif music:
+            resumo, resumo_kind = "trilha escolhida, sem batidas", "warn"
+        else:
+            resumo = "história decidida, sem trilha"
+
+    return g.build(next_action=proxima, summary=resumo, summary_kind=resumo_kind)
