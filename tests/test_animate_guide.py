@@ -191,3 +191,23 @@ def test_guide_route_serves_the_animate_hook(client, studio_env, project):
     assert len(g["validations"]) == 10 and g["checklist"]
     agg = client.get(f"/api/projects/{project}/guide").json()
     assert next(s for s in agg["steps"] if s["id"] == "animate")["status"] == g["status"]
+
+
+# ---------- faixa compacta do guia (wave 4, protótipo `06-animate`) ----------
+def test_guide_publishes_the_strip_summary_and_next_action(svc, guide, project):
+    """A contagem que saiu do painel 01 e o imperativo curto do protótipo vêm do backend."""
+    svc.load_plan(project)
+    g = guide(project)
+    assert g["summary"] == "0/2 shots prontos" and g["summary_kind"] is None
+    assert g["next_action"] == "Gerar 2 takes do shot01 e dar like no usável"
+    svc.update_shot(project, "cena01", "shot01", fallback_black=True)
+    g = guide(project)
+    assert g["summary"] == "1/2 shots prontos"
+    assert g["next_action"] == "Gerar 2 takes do shot02 e dar like no usável"
+
+
+def test_guide_without_shots_has_no_summary(studio_env, guide):
+    """Sem storyboard não há contagem — e a próxima ação continua sendo destravar a etapa 5."""
+    pid = studio_env["refs"].create_project("Sem shots")["id"]
+    g = guide(pid)
+    assert g["summary"] is None and "Volte à etapa 5" in g["next_action"]
