@@ -10,10 +10,8 @@ Studio.register("shots", (ctx) => {
   let scenes = [], scene = null, cands = [], order = [], prod = [], loggedIn = false;
   let cameras = [], job = null;
 
-  // `.card` do shell tem `overflow:hidden` e a imagem ocupa 100% da altura: um botão em fluxo
-  // normal ficaria fora do recorte. A tela não pode editar `style.css` (é da frente shell), então
-  // o botão do card é posicionado aqui, logo acima da faixa `.term`.
-  const CARD_BTN = "position:absolute;right:6px;bottom:26px;z-index:2;font-size:10px;padding:2px 6px";
+  // "cena01" → "cena 01" (rótulo mono do card da cena, como no protótipo).
+  const sceneLabel = (id) => String(id || "").replace(/^cena/, "cena ");
 
   // ---------- cenas ----------
   async function loadScenes() {
@@ -25,16 +23,23 @@ Studio.register("shots", (ctx) => {
     $("#shotsWarn").textContent = r.warning;
     $("#shotsRatio").textContent = `proporção: ${r.aspect_ratio || "16:9"}`;
     if (r.product_note) $("#prodNote").textContent = r.product_note;
-    $("#shotsPalette").innerHTML = (r.palette.colors || []).map(c => `<span style="background:${esc(c)}" title="${esc(c)}"></span>`).join("")
-      || `<span class="fine">sem mood/palette.json ainda (etapa 2)</span>`;
+    const cores = (r.palette.colors || []).map(c => `<span style="background:${esc(c)}" title="${esc(c)}"></span>`).join("");
+    $("#shotsPalette").innerHTML = cores
+      ? cores + `<span class="lbl">paleta do mood</span>`
+      : `<span class="lbl">sem mood/palette.json ainda (etapa 2)</span>`;
     $("#prodStatus").textContent = r.product_scene.selected ? "cena do produto salva"
       : r.product_scene.ref_ready ? "imagem 1 enviada" : "sem imagem de referência";
     $("#prodStatus").className = "chip " + (r.product_scene.selected ? "ok" : "mode");
-    $("#sceneList").innerHTML = scenes.map(s =>
-      `<div class="card ${scene === s.id ? "sel" : ""}" data-scene="${esc(s.id)}" tabindex="0" title="${esc(s.text || "")}">
-         ${s.base_ready ? `<img loading="lazy" src="${esc(ctx.files(s.base))}" alt="">` : `<div class="empty">sem base</div>`}
-         <span class="src">${esc(s.id)}</span>
-         <span class="term">${s.candidates} cand. · ${s.selected} shot(s) · ${s.upscaled}/${s.selected} upscalados</span></div>`).join("");
+    // Card de cena do protótipo: `.rowcard` em coluna (thumb 16/9 + "cena NN" + chip de upscale).
+    // `.cur` = cena aberta; `.sel` = cena que já tem frames salvos; o resto vai no `title`.
+    $("#sceneList").innerHTML = scenes.map(s => {
+      const falta = s.selected > 0 && s.upscaled < s.selected;
+      const dica = `${s.text ? s.text + " · " : ""}${s.candidates} candidatos · ${s.selected} shot(s) escolhidos`;
+      return `<div class="rowcard sh-scene ${s.selected ? "sel" : ""} ${scene === s.id ? "cur" : ""}" data-scene="${esc(s.id)}" tabindex="0" title="${esc(dica)}">
+         <div class="thumb">${s.base_ready ? `<img loading="lazy" src="${esc(ctx.files(s.base))}" alt="">` : `<div class="empty">sem base</div>`}</div>
+         <div class="row"><span class="mono sh-scene-id">${esc(sceneLabel(s.id))}</span>
+           <span class="chip sm ${falta ? "warn" : ""}">${s.upscaled}/${s.selected} upscalados</span></div></div>`;
+    }).join("") || `<div class="empty">Nenhuma cena — escreva a história na etapa 4.</div>`;
     const md = $("#shotsMd");
     const anySel = scenes.some(s => s.selected);
     md.classList.toggle("hidden", !anySel);
@@ -46,7 +51,8 @@ Studio.register("shots", (ctx) => {
   async function openScene(id) {
     scene = id; order = [];
     const s = sceneMeta();
-    $("#sceneTitle").textContent = `2. ${id}${s && s.text ? " — " + s.text : ""}`;
+    $("#sceneTitle").textContent = `${sceneLabel(id).replace("cena", "Cena")} — escolher e ordenar`;
+    $("#sceneText").textContent = s && s.text ? s.text : "";
     $("#sceneStatus").textContent = s && s.base_ready ? "base pronta" : "prepare a base da cena";
     $("#sceneStatus").className = "chip " + (s && s.base_ready ? "ok" : "warn");
     const thumb = $("#baseThumb");
@@ -92,7 +98,7 @@ Studio.register("shots", (ctx) => {
       if (r.focus_examples) $("#focusExamples").textContent = "Enquadramentos da aula: " + r.focus_examples.join(" · ");
       $("#shotsHint").textContent = `${r.ui_hint} Proporção ${r.aspect_ratio}. ${r.warning}`;
       $("#shotsPrompts").innerHTML = r.prompts.map((p, i) =>
-        `<div class="prompt"><div class="row"><span class="eyebrow">${esc(p.label)}</span><button class="ghost copy" data-i="${i}">Copiar</button><span class="ok"></span></div><textarea data-i="${i}">${esc(p.text)}</textarea></div>`).join("");
+        `<div class="prompt"><div class="row"><span class="eyebrow">${esc(p.label)}</span><button type="button" class="link copy" data-i="${i}">Copiar</button><span class="ok"></span></div><textarea data-i="${i}">${esc(p.text)}</textarea></div>`).join("");
     } catch (err) { toast(err.message); }
   }
   function renderCameras(list, current) {
@@ -119,11 +125,12 @@ Studio.register("shots", (ctx) => {
     $("#btnShotsUpscale").disabled = !loggedIn || !order.length;
     $("#shotsGallery").innerHTML = cands.length ? cands.map(c => {
       const pos = order.indexOf(c.id);
-      return `<div class="card ${pos >= 0 ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt || c.name || "")}">
+      // `data-ord` faz o check do tile virar o número da ordem (`.card.sel[data-ord]::after` do shell).
+      return `<div class="card ${pos >= 0 ? "sel" : ""}"${pos >= 0 ? ` data-ord="${pos + 1}"` : ""} data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt || c.name || "")}">
          <img loading="lazy" src="${esc(ctx.files(c.thumb || c.file))}" alt="">
-         <span class="src">${pos >= 0 ? "ordem " + (pos + 1) : esc(c.source)}</span>
-         <span class="term">${c.upscaled ? "upscalado ✓" : "sem upscale"}</span>
-         <button class="ghost asBase" data-base="${esc(c.id)}" style="${CARD_BTN}">Usar como base da cena</button></div>`;
+         <span class="src">${esc(c.source)}</span>
+         <span class="up${c.upscaled ? " ok" : ""}">${c.upscaled ? "upscalado 2x" : "sem upscale"}</span>
+         <button type="button" class="link asBase sh-tilebtn" data-base="${esc(c.id)}">Usar como base da cena</button></div>`;
     }).join("") : `<div class="empty">Nenhum candidato — gere na UI da Higgsfield e importe.</div>`;
   }
 
@@ -161,14 +168,15 @@ Studio.register("shots", (ctx) => {
     $("#prodGallery").innerHTML = prod.length ? prod.map(c =>
       `<div class="card ${c.selected ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt || "")}">
          <img loading="lazy" src="${esc(ctx.files(c.thumb || c.file))}" alt=""><span class="src">${esc(c.source)}</span>
-         <span class="term">${c.upscaled ? "upscalado ✓ · " : ""}clique para salvar como cena do produto</span></div>`).join("")
+         <span class="term">clique para salvar como cena do produto</span>
+         <span class="up${c.upscaled ? " ok" : ""}">${c.upscaled ? "upscalado 2x" : "sem upscale"}</span></div>`).join("")
       : `<div class="empty">Envie a imagem 1, rode as duas instruções na Higgsfield e importe o resultado.</div>`;
   }
 
   return {
     init() {
       $("#btnShotsReload").onclick = () => { loadScenes(); loadProd(); ctx.guide(); };
-      $("#sceneList").addEventListener("click", e => { const c = e.target.closest(".card"); if (c) { openScene(c.dataset.scene); loadScenes(); } });
+      $("#sceneList").addEventListener("click", e => { const c = e.target.closest("[data-scene]"); if (c) { openScene(c.dataset.scene); loadScenes(); } });
       $("#btnPrepBase").onclick = () => prepareBase("storyboard");
       $("#btnPrepBaseCampaign").onclick = () => prepareBase("base");
       $("#baseUpload").addEventListener("change", e => { if (e.target.files[0]) prepareBase("upload", e.target.files[0]); });
@@ -278,6 +286,7 @@ Studio.register("shots", (ctx) => {
     async onProject() {
       if (!ctx.pid()) return;
       scene = null; order = []; cameras = [];
+      $("#sceneText").textContent = "";
       ui.hfChip($("#shotsHf")).then(s => { loggedIn = !!s.logged_in; $("#btnShotsGen").disabled = !loggedIn; });
       await loadScenes(); loadProd();
       const d = await api("/api/shots/downloads-folder");
