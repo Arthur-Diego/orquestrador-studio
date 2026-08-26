@@ -74,3 +74,18 @@ Custo/latência do CLI (~10–20 s por chamada): botão com estado "gerando…".
 ### 11. Build order
 `studio/common/prompter.py` → `studio/mood/service.py` (vibe + generate_prompt + histórico) →
 `studio/etapas/mood/router.py` → `view.html`/`view.js` → `tests/test_prompter.py`, `tests/test_mood_service.py`, `tests/test_api.py`.
+
+
+## 14. Wave 2.1 — modelo fixo e padrão de prompt do instrutor (2026-08-25, ADH-OS-20260825-08)
+
+Pedido do dono do produto:
+
+1. **Modelo**: o bot roda `claude -p --model claude-opus-4-8` (Opus 4.8). Sobrescrevível por
+   `STUDIO_PROMPTER_MODEL`. Antes, usava o modelo default do Claude Code do usuário.
+2. **Padrão de saída** (extraído do vídeo da aula 009, prompt do bot do instrutor — literal em
+   `prompter.EXAMPLE_PROMPT`): um parágrafo denso de fotografia publicitária + linhas
+   `Camera:` / `Lighting:` / `Composition:` / `Color grading:` / `Style:`, 120–220 palavras, inglês.
+   Aplicado aos papéis `mood` e `base` (`PROMPT_FORMAT`); `motion` mantém o padrão da aula 012.
+   O template de fallback (sem Claude) produz a mesma estrutura (`_sections`).
+3. Evidência: chamada real `from_brief("base", …)` em 19,6 s devolveu o padrão exato (parágrafo,
+   linha em branco, cinco linhas na ordem), `negative` e `notes_pt` em pt-BR.

@@ -51,7 +51,8 @@ pela pasta **Downloads do Windows** ou pelo **histórico do CLI**; escolha até 
 mesmo mood → `mood/selected/`, `mood/palette.json`, `mood/mood.md`.
 
 ### 3 · Imagem base (aula 009)
-Para cada referência escolhida, o **bot da aula** (Claude CLI, `common/prompter.py`) escreve o
+Para cada referência escolhida, o **bot da aula** (Claude CLI com Opus 4.8, `common/prompter.py`,
+no padrão de prompt do instrutor: parágrafo + Camera/Lighting/Composition/Color grading/Style) escreve o
 prompt olhando a referência e as imagens do mood: "o produto na exata mesma situação da
 referência, com o mood"; "sessão nova sem viés" quando o prompt não entregou a ideia; troca de
 rótulo pela sua marca (campo `brand`, `[extensão]`, 3 variações); upscale 2x importado e
