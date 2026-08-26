@@ -1,42 +1,62 @@
+<style>
+  /* Escopado da etapa 7 — classes que o catálogo do shell (wave 3) ainda não cobre.
+     Prefixo `.mu-` por convenção da wave; ver "lacunas de CSS" no PR ADH-OS-20260826-07. */
+  .mu-q{font-size:13px;font-weight:500;color:var(--ink-row);margin:0}
+  .mu-player{width:100%;margin-bottom:10px}
+  .mu-story{gap:10px}
+</style>
+
 <header class="stephead">
   <span class="eyebrow">Etapa 7 · aula 013</span>
   <h2>Trilha</h2>
-  <p class="lede">Primeiro assista a história inteira, na ordem, sem cortar nada — é assim que se enxerga se a narrativa fecha ou se falta uma cena. Só então ouça várias músicas e escolha uma sentindo a energia. <strong>Você não deve editar antes de escolher a trilha</strong>: a música é o que define ritmo, emoção e impacto. As batidas fortes viram as marcações de "aqui acontece alguma coisa" que a etapa 8 usa para cortar.</p>
+  <p class="lede">Primeiro assista a história inteira, sem cortes. Depois ouça várias músicas e escolha <b>sentindo a energia</b>. <strong>Você não deve editar antes de escolher a trilha</strong>: a música define ritmo, emoção e impacto, e as batidas fortes viram as marcações que a etapa 8 usa para cortar.</p>
 </header>
 
 <section id="guide" class="guide"></section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>0. Assistir a história inteira</h3>
+    <h3><span class="pn">01</span>Assistir a história inteira</h3>
     <div class="row wrap">
       <span id="musStoryChip" class="chip mode">—</span>
       <button id="btnMusStory" class="primary">Montar sequência bruta</button>
     </div>
   </div>
-  <p class="fine">A aula 013 começa aqui: todas as cenas em ordem, sem corte nenhum. O Studio junta os takes com <em>like</em> da etapa 6 na ordem do storyboard e gera <code>audio/rough_sequence.mp4</code> — sem música, sem transição, sem efeito. O objetivo não é editar, é enxergar a história como um todo.</p>
-  <span id="musStoryLog" class="mono fine"></span>
-  <video id="musStoryVideo" class="hidden" controls preload="metadata" style="max-width:100%;border-radius:8px"></video>
-  <div class="prompt">
-    <p id="musStoryQuestion" class="fine"></p>
-    <div class="row wrap">
+  <div class="grid2 even">
+    <div class="col">
+      <div class="player">
+        <video id="musStoryVideo" class="hidden" controls preload="metadata"></video>
+        <span id="musStoryPlay" class="play-big">▶</span>
+        <span class="term">audio/rough_sequence.mp4 · sem música, sem corte</span>
+      </div>
+      <span id="musStoryLog" class="mono fine"></span>
+    </div>
+    <div class="col mu-story">
+      <p id="musStoryQuestion" class="mu-q">A história fecha, ou falta uma cena?</p>
       <label class="inline"><input type="radio" name="musClosed" value="1"> A história fecha</label>
       <label class="inline"><input type="radio" name="musClosed" value="0"> Falta cena / encerramento mais forte</label>
-      <button id="btnMusStoryCheck" class="ghost">Salvar decisão</button>
-    </div>
-    <textarea id="musStoryNote" rows="2" placeholder="O que ficou faltando? (opcional)"></textarea>
-    <p class="fine">Se faltar um encerramento mais comercial, a saída é a <strong>cena do produto</strong>: ela é criada na etapa 5 (mesmo artefato de sempre — ver ADR-011) e animada na etapa 6.</p>
-    <div class="row wrap">
-      <span id="musProductChip" class="chip mode">cena do produto: —</span>
-      <button id="btnMusGoShots" class="ghost">Ir para a cena do produto (etapa 5)</button>
-      <button id="btnMusGoAnimate" class="ghost">Animar a cena (etapa 6)</button>
+      <p class="note">Se faltar encerramento comercial, a saída é a cena do produto (etapas 5 e 6).</p>
+      <textarea id="musStoryNote" rows="2" placeholder="O que ficou faltando? (opcional)"></textarea>
+      <div class="row wrap">
+        <button id="btnMusStoryCheck" class="ghost">Salvar decisão</button>
+        <span id="musProductChip" class="chip mode">cena do produto: —</span>
+      </div>
+      <div class="row wrap">
+        <button id="btnMusGoShots" class="ghost">Ir para a cena do produto (etapa 5)</button>
+        <button id="btnMusGoAnimate" class="ghost">Animar a cena (etapa 6)</button>
+      </div>
     </div>
   </div>
+  <details class="lesson">
+    <summary>O que a aula 013 manda fazer aqui — 0. Assistir a história inteira</summary>
+    <p>A aula 013 começa aqui: todas as cenas em ordem, sem corte nenhum. O Studio junta os takes com <em>like</em> da etapa 6 na ordem do storyboard e gera <code>audio/rough_sequence.mp4</code> — sem música, sem transição, sem efeito. O objetivo não é editar, é enxergar a história como um todo.</p>
+    <p>Se faltar um encerramento mais comercial, a saída é a <strong>cena do produto</strong>: ela é criada na etapa 5 (mesmo artefato de sempre — ver ADR-011) e animada na etapa 6.</p>
+  </details>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>1. Onde buscar</h3>
+    <h3><span class="pn">02</span>Onde buscar</h3>
     <div class="row wrap">
       <button id="btnMusCopyPrompt" class="ghost">Copiar prompt</button>
     </div>
@@ -56,7 +76,9 @@
 </section>
 
 <section class="panel">
-  <div class="panel-head"><h3>2. Importar candidatas</h3></div>
+  <div class="panel-head">
+    <h3><span class="pn">03</span>Importar candidatas</h3>
+  </div>
   <div class="row wrap">
     <label class="drop" id="musDrop">Arraste músicas aqui ou <input id="musUpload" type="file" accept="audio/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col">
@@ -69,31 +91,34 @@
       <span class="fine">via <code>higgsfield generate list --audio</code> (precisa de login no CLI)</span>
     </div>
   </div>
-  <p class="fine">Traga <strong>várias</strong> músicas da biblioteca (YouTube Audio Library, Artlist, Epidemic) — a aula não fixa quantidade. Aceita wav, mp3, m4a e ogg (até 25 MB por arquivo). Arquivo repetido não entra duas vezes.</p>
+  <details class="lesson">
+    <summary>O que a aula 013 manda fazer aqui — trazer várias candidatas</summary>
+    <p>Traga <strong>várias</strong> músicas da biblioteca (YouTube Audio Library, Artlist, Epidemic) — a aula não fixa quantidade. Aceita wav, mp3, m4a e ogg (até 25 MB por arquivo). Arquivo repetido não entra duas vezes.</p>
+  </details>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>3. Ouvir e escolher</h3>
+    <h3><span class="pn">04</span>Ouvir e escolher</h3>
     <div class="row wrap">
       <span id="musCounts" class="chip mode">0 candidatas</span>
       <label class="inline">origem (opcional) <input id="musOrigin" type="text" placeholder="ex.: YouTube Audio Library, 'Frost Rider'"></label>
     </div>
   </div>
-  <div id="musList" class="prompts"></div>
-  <p class="fine">Ouça cada faixa inteira e escolha <strong>sentindo a energia</strong>, não pelo número de bpm. Ao escolher: cópia em <code>audio/music.&lt;ext&gt;</code> e batidas em <code>audio/beats.json</code>. O campo <em>origem</em> é uma <strong>[extensão]</strong> do Studio (grava <code>audio/license.txt</code>) — a aula 013 não fala em licença e não bloqueia a escolha.</p>
+  <div id="musList" class="rowlist"></div>
+  <p class="note">Ouça cada faixa inteira; escolha pelo sentimento, não pelo bpm. Ao escolher: <code>audio/music.*</code> + batidas em <code>audio/beats.json</code>. O campo <em>origem</em> é uma <b>[extensão]</b> do Studio (grava <code>audio/license.txt</code>) — a aula 013 não fala em licença e não bloqueia a escolha.</p>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>4. Batidas da trilha escolhida</h3>
+    <h3><span class="pn">05</span>Batidas da trilha escolhida</h3>
     <div class="row wrap">
       <span id="musBeatsChip" class="chip mode">nenhuma trilha escolhida</span>
       <button id="btnMusBeats" class="ghost">Recalcular batidas</button>
     </div>
   </div>
-  <audio id="musPlayer" controls preload="metadata" style="width:100%"></audio>
-  <div id="musRuler" class="progress" style="position:relative;height:26px;margin-top:8px"></div>
+  <audio id="musPlayer" class="mu-player" controls preload="metadata"></audio>
+  <div id="musRuler"></div>
   <p id="musWarn" class="fine"></p>
-  <p class="fine">Cada risco é uma batida; os riscos altos são os impactos — é neles que a etapa 8 propõe os cortes. Confira de ouvido: a aula escolhe no sentimento, não no número.</p>
+  <p class="note">Riscos altos são os impactos — é neles que a etapa 8 propõe os cortes. Confira de ouvido: a aula escolhe no sentimento, não no número.</p>
 </section>

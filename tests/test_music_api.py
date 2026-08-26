@@ -256,6 +256,24 @@ def test_step_screen_follows_the_lesson_and_the_wave_contract(client):
     assert "Studio.ui" in js and "destroy()" in js and "ctx.guide()" in js
 
 
+def test_step_screen_consumes_the_shell_catalog(client):
+    """Wave 3 (ADH-OS-20260826-07): a tela usa o catálogo de classes do shell, não markup próprio."""
+    html = client.get("/steps/music/view.html").text
+    js = client.get("/steps/music/view.js").text
+    # painéis numerados com `.pn` (05 painéis, na ordem visual) e texto de aula em `details.lesson`
+    assert html.count('<span class="pn">') == 5
+    assert '<span class="pn">01</span>' in html and '<span class="pn">05</span>' in html
+    assert '<details class="lesson">' in html
+    # o passo 0 da aula ganhou o layout do protótipo: player 16/9 + coluna da decisão
+    assert 'class="grid2 even"' in html and 'class="player"' in html and 'class="play-big"' in html
+    # candidatas em `.rowlist`/`.track-row`; régua pelo helper `Studio.ui.beats`
+    assert 'id="musList" class="rowlist"' in html
+    assert "track-row" in js and "rowcard" in js
+    assert "ui.beats(" in js
+    # nada mais é posicionado/colorido por style inline (era o desenho antigo da régua)
+    assert "position:absolute" not in js and "crimson" not in js
+
+
 def test_instructions_do_not_invent_a_number(client, pid):
     instructions = client.get(f"/api/projects/{pid}/music/prompt").json()["instructions"]
     assert "3 a 5" not in instructions and "várias músicas" in instructions

@@ -472,3 +472,10 @@ etapa 7 usa para `audio/rough_sequence.mp4`.
   **não** entrou: depende do contrato `start_end` da etapa 6 (frente OS-017, em voo na mesma
   sub-wave) — pendência 1 da seção 11 deste FDD, ainda aberta.
 - Resolução fixa 1920×1080/30 fps segue como pendência com a etapa 9 (inalterada por esta frente).
+
+---
+
+**Wave 3 (redesign, `ADH-OS-20260826-07`)** — a tela desta etapa foi redesenhada para o
+catálogo de classes do shell sem alterar contrato HTTP, rota ou regra de negócio: o
+comportamento descrito acima continua valendo na íntegra. O mapa de painéis, ids e classes
+da tela vive em `docs/domains/music/features/views-music-edit-redesign-fdd.md` §5.
