@@ -29,6 +29,8 @@ log = logging.getLogger("studio.export")
 
 # Formatos por rede (plano §1.4): 16:9 YouTube, 9:16 Instagram/TikTok. 1:1 é [extensão].
 FORMATS = {"16x9": (1920, 1080), "9x16": (1080, 1920), "1x1": (1080, 1080)}
+#: Proporção legível de cada formato — entra nas frases do QA ("9:16 e 1:1 ainda não renderizados").
+RATIO = {"16x9": "16:9", "9x16": "9:16", "1x1": "1:1"}
 MASTER = "edit/master.mp4"
 THUMB = "export/thumb.jpg"
 QA_REPORT = "export/qa_report.md"
@@ -198,7 +200,11 @@ def status(pid: str) -> dict:
     thumb = edir / "thumb.jpg"
     outputs["thumb"] = {"file": THUMB, "t": _state(root).get("thumb_t"), "size": thumb.stat().st_size} if thumb.exists() else None
     qa = edir / "qa_report.md"
-    outputs["qa_report"] = {"file": QA_REPORT} if qa.exists() else None
+    # Wave 4: o grid de checks da tela 9 precisa aparecer ao carregar, não só depois de "Gerar QA".
+    saved = _state(root).get("qa") or {}
+    outputs["qa_report"] = {"file": QA_REPORT, "generated": saved.get("generated"),
+                            "blocking": bool(saved.get("blocking")),
+                            "checks": saved.get("checks") or []} if qa.exists() else None
     previews = {fmt: f"export/previews/{fmt}.jpg" for fmt in FORMATS if (edir / "previews" / f"{fmt}.jpg").exists()}
     return {"ffmpeg": avail, "higgsfield": _hf_status(), "master": master,
             "outputs": outputs, "previews": previews, "job": registry.status(pid)}
@@ -345,6 +351,51 @@ def _verdict(checks: list[dict]) -> str:
     return "BLOQUEIO" if any(c.get("blocking") for c in falhas) else "ATENCAO"
 
 
+def _seconds(v: float) -> str:
+    """Duração na forma que a tela mostra ("31,8 s")."""
+    return f"{v:.1f}".replace(".", ",")
+
+
+def _lista(itens: list[str]) -> str:
+    """"16:9", "9:16 e 1:1", "16:9, 9:16 e 1:1" — a enumeração das frases do QA."""
+    return itens[0] if len(itens) == 1 else " e ".join([", ".join(itens[:-1]), itens[-1]])
+
+
+def _qa_checks(master: dict, saidas: list[dict]) -> list[dict]:
+    """Checks **por critério** (duração, resolução, áudio, formatos que faltam) — wave 4.
+
+    `items` continua sendo o relatório por arquivo (é o que vai para `qa_report.md`); `checks`
+    é a leitura do mesmo relatório na frase da aula, que é o que a etapa 9 desenha no grid.
+    """
+    checks: list[dict] = []
+    prontos = [i for i in saidas if i.get("exists")]
+
+    if prontos:
+        fora = [i for i in prontos if abs(i["duration"] - master["duration"]) > DURATION_TOLERANCE]
+        dur = _seconds(prontos[0]["duration"])
+        checks.append({"kind": "warn", "text": f"Duração {dur} s — fora da tolerância de "
+                                               f"{_seconds(DURATION_TOLERANCE)} s do master"} if fora
+                      else {"kind": "ok", "text": f"Duração {dur} s — bate com o master"})
+
+    for i in prontos:
+        w, h = FORMATS[i["format"]]
+        texto = f"Resolução {i['width']}×{i['height']} · codec {i.get('vcodec') or '?'}"
+        if (i["width"], i["height"]) == (w, h) and i.get("vcodec") == "h264":
+            checks.append({"kind": "ok", "text": texto})
+        else:
+            checks.append({"kind": "warn", "text": f"{texto} — esperado {w}×{h} · h264"})
+
+    mudo = not master.get("has_audio") or any(not i.get("has_audio") for i in prontos)
+    checks.append({"kind": "fail", "text": "Áudio ausente — bloqueia; a trilha da etapa 7 é obrigatória"}
+                  if mudo else {"kind": "ok", "text": "Áudio presente (trilha da etapa 7)"})
+
+    faltam = [RATIO[i["format"]] for i in saidas if not i.get("exists")]
+    if faltam:
+        checks.append({"kind": "warn", "text": f"{_lista(faltam)} ainda "
+                                               f"{'não renderizados' if len(faltam) > 1 else 'não renderizado'}"})
+    return checks
+
+
 def qa_report(pid: str) -> dict:
     """Checklist técnico determinístico do que o ffprobe mede. Não avalia gosto (aula 014)."""
     root = project_dir(pid)
@@ -360,12 +411,15 @@ def qa_report(pid: str) -> dict:
                   "fps": m["fps"], "vcodec": m["vcodec"], "acodec": m["acodec"], "has_audio": m["has_audio"],
                   "size": m["size"], "checks": mchecks, "verdict": _verdict(mchecks)})
 
+    saidas: list[dict] = []
     for fmt, (w, h) in FORMATS.items():
         f = edir / f"{fmt}.mp4"
         rel = f"export/{fmt}.mp4"
         if not f.exists():
-            items.append({"file": rel, "format": fmt, "exists": False,
-                          "checks": [_check("exists", False)], "verdict": "ATENCAO"})
+            item = {"file": rel, "format": fmt, "exists": False,
+                    "checks": [_check("exists", False)], "verdict": "ATENCAO"}
+            items.append(item)
+            saidas.append(item)
             continue
         p = _probe_full(f)
         checks = [
@@ -377,9 +431,11 @@ def qa_report(pid: str) -> dict:
             _check("audio", p["has_audio"] == m["has_audio"] and p["has_audio"] is True, blocking=True),
             _check("size", p["size"] > 0),
         ]
-        items.append({"file": rel, "format": fmt, "exists": True, "duration": p["duration"], "width": p["width"],
-                      "height": p["height"], "fps": p["fps"], "vcodec": p["vcodec"], "acodec": p["acodec"],
-                      "has_audio": p["has_audio"], "size": p["size"], "checks": checks, "verdict": _verdict(checks)})
+        item = {"file": rel, "format": fmt, "exists": True, "duration": p["duration"], "width": p["width"],
+                "height": p["height"], "fps": p["fps"], "vcodec": p["vcodec"], "acodec": p["acodec"],
+                "has_audio": p["has_audio"], "size": p["size"], "checks": checks, "verdict": _verdict(checks)}
+        items.append(item)
+        saidas.append(item)
 
     thumb = edir / "thumb.jpg"
     if thumb.exists():
@@ -395,10 +451,13 @@ def qa_report(pid: str) -> dict:
     generated = datetime.now().replace(microsecond=0).isoformat()
     _export_dir(root).joinpath("qa_report.md").write_text(_qa_markdown(pid, generated, items))
     blocking = any(i["verdict"] == "BLOQUEIO" for i in items)
+    checks = _qa_checks(m, saidas)
+    # Persistido para o grid da tela aparecer já no `load()` (auditoria 9.24).
+    _save_state(root, qa={"generated": generated, "blocking": blocking, "checks": checks})
     log.info("export qa pid=%s itens=%d atencoes=%d bloqueios=%d ok=True", pid, len(items),
              sum(1 for i in items if i["verdict"] == "ATENCAO"),
              sum(1 for i in items if i["verdict"] == "BLOQUEIO"))
-    return {"file": QA_REPORT, "generated": generated, "items": items, "blocking": blocking}
+    return {"file": QA_REPORT, "generated": generated, "items": items, "checks": checks, "blocking": blocking}
 
 
 _REASONS = {

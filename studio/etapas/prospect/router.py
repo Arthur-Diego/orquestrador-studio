@@ -43,6 +43,8 @@ class LeadIn(BaseModel):
     post_ref: str = ""
     why: str = ""
     role: str = "fã"
+    #: Segmento do mar azul da aula 001 (opcional); a linha do lead mostra "@handle · segmento".
+    segment: str = ""
 
 
 class LeadPatch(BaseModel):
@@ -51,6 +53,7 @@ class LeadPatch(BaseModel):
     post_ref: str | None = None
     why: str | None = None
     role: str | None = None
+    segment: str | None = None
 
 
 class SentIn(BaseModel):
@@ -110,7 +113,8 @@ def prospect_leads(pid: str):
 def prospect_create_lead(pid: str, req: LeadIn):
     root = refs.project_dir(pid)
     with _translated():
-        return prospect.create_lead(root, req.business, req.handle, req.post_ref, req.why, req.role)
+        return prospect.create_lead(root, req.business, req.handle, req.post_ref, req.why,
+                                    req.role, req.segment)
 
 
 @router.get("/api/projects/{pid}/prospect/leads/{lid}")
@@ -198,7 +202,8 @@ def prospect_pitch(pid: str):
     with _translated():
         markdown = prospect.read_pitch(root, meta)
         return {"file": "prospect/pitch.md", "markdown": markdown, **prospect.load_pitch_values(root),
-                "steps": prospect.PITCH_STEPS, "min_price": prospect.MIN_PRICE, "max_price": prospect.MAX_PRICE}
+                "steps": prospect.PITCH_STEPS, "reminders": list(prospect.PITCH_REMINDERS),
+                "min_price": prospect.MIN_PRICE, "max_price": prospect.MAX_PRICE}
 
 
 @router.post("/api/projects/{pid}/prospect/pitch")
@@ -213,4 +218,5 @@ def prospect_write_pitch(pid: str, req: PitchIn | None = None):
         prospect.write_pitch(root, meta)
         pitch = prospect.load_pitch_values(root)
         return {"file": "prospect/pitch.md", "markdown": prospect.pitch_markdown(meta, pitch), **pitch,
-                "steps": prospect.PITCH_STEPS, "min_price": prospect.MIN_PRICE, "max_price": prospect.MAX_PRICE}
+                "steps": prospect.PITCH_STEPS, "reminders": list(prospect.PITCH_REMINDERS),
+                "min_price": prospect.MIN_PRICE, "max_price": prospect.MAX_PRICE}

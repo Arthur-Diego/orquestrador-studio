@@ -92,6 +92,53 @@ def test_import_upload_ignores_non_audio(ffmpeg, music, project):
     assert music.import_upload(project, [("nota.txt", b"nao sou audio")])["added"] == 0
 
 
+# ---------- bpm por candidata (wave 4, auditoria 7.29) ----------
+def test_import_annotates_bpm_on_every_candidate(ffmpeg, music, project, tmp_path):
+    """O protótipo mostra "0:34 · 128 bpm" em TODA faixa, não só na escolhida."""
+    music.import_upload(project, [("a.wav", audio_bytes(tmp_path, "a.wav", seconds=12, bpm=120))])
+    c = music.list_candidates(project)[0]
+    assert isinstance(c["bpm"], int) and 60 <= c["bpm"] <= 200, c["bpm"]
+    assert abs(c["bpm"] - 120) <= 3, "mesma estimativa do beats.py (ADR-009)"
+    assert c["selected"] is False, "o bpm não depende da escolha da trilha"
+
+
+def test_list_candidates_backfills_bpm_of_older_tracks(ffmpeg, studio_env, music, project, tmp_path):
+    """Candidatas gravadas antes da wave 4 não têm a chave: a primeira leitura anota e persiste."""
+    from studio.common import ingest
+    root = studio_env["refs"].project_dir(project)
+    music.import_upload(project, [("a.wav", audio_bytes(tmp_path, "a.wav", seconds=12, bpm=120))])
+    cands = ingest.load_candidates(root, "audio")
+    del cands[0]["bpm"]
+    ingest.save_candidates(root, "audio", cands)
+
+    assert isinstance(music.list_candidates(project)[0]["bpm"], int)
+    assert isinstance(ingest.load_candidates(root, "audio")[0]["bpm"], int), "gravado, não recalculado sempre"
+
+
+def test_bpm_is_null_without_ffmpeg_and_is_retried_later(ffmpeg, monkeypatch, studio_env, music, project, tmp_path):
+    from studio.common import ffmpeg as ff
+    from studio.common import ingest
+    root = studio_env["refs"].project_dir(project)
+    music.import_upload(project, [("a.wav", audio_bytes(tmp_path, "a.wav", seconds=12, bpm=120))])
+    cands = ingest.load_candidates(root, "audio")
+    del cands[0]["bpm"]
+    ingest.save_candidates(root, "audio", cands)
+
+    monkeypatch.setattr(ff, "available", lambda: False)
+    assert music.list_candidates(project)[0]["bpm"] is None, "a chave existe sempre no contrato"
+    assert "bpm" not in ingest.load_candidates(root, "audio")[0], "sem ffmpeg nada é gravado"
+
+    monkeypatch.undo()
+    assert isinstance(music.list_candidates(project)[0]["bpm"], int), "com ffmpeg de volta, anota"
+
+
+def test_bpm_of_a_track_without_rhythm_is_null(ffmpeg, studio_env, music, project, tmp_path):
+    silencio = tmp_path / "silencio.wav"
+    ffmpeg.run(["-f", "lavfi", "-i", "anullsrc=r=22050:cl=mono", "-t", "6", str(silencio)])
+    music.import_upload(project, [("silencio.wav", silencio.read_bytes())])
+    assert music.list_candidates(project)[0]["bpm"] is None
+
+
 def test_import_downloads_only_recent_audio(ffmpeg, studio_env, music, project, tmp_path):
     import os
     import time

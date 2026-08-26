@@ -90,6 +90,16 @@ def _role(value: str) -> str:
     return v
 
 
+def _segment(value: str) -> str:
+    """Segmento do lead (um dos `SEGMENTS` da aula 001). Vazio = ainda não classificado."""
+    v = (value or "").strip().lower()
+    if not v:
+        return ""
+    if v not in SEGMENTS:
+        raise ValueError(f"segmento deve ser um de: {', '.join(SEGMENTS)}")
+    return v
+
+
 def _iso(value: str, field: str) -> str:
     try:
         return datetime.fromisoformat(value).isoformat(timespec="seconds")
@@ -110,11 +120,12 @@ def gate(root: Path) -> dict:
     p = publish.global_portfolio()
     published = p["distinct_videos"]
     ok = p["ready"]
+    faltam = max(REQUIRED_VIDEOS - published, 0)
     message = (
         f"Portfólio pronto: {published} vídeos publicados. Pode prospectar."
         if ok else
-        f"A aula manda publicar {REQUIRED_VIDEOS} vídeos criativos antes de prospectar. "
-        f"Você tem {published}/{REQUIRED_VIDEOS}."
+        "A aula pede quatro obras diferentes antes de prospectar — "
+        + ("falta 1 campanha." if faltam == 1 else f"faltam {faltam} campanhas.")
     )
     return {"published": published, "posts": p["posts"], "required": REQUIRED_VIDEOS, "ok": ok,
             "message": message, "projects": p["projects"],
@@ -140,6 +151,10 @@ def load_leads(root: Path) -> list[dict]:
     data = json.loads(f.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise ValueError("prospect/leads.json inválido: esperava uma lista")
+    # `segment` entrou na wave 4: leads gravados antes voltam com o campo vazio, nunca ausente.
+    for lead in data:
+        if isinstance(lead, dict):
+            lead.setdefault("segment", "")
     return data
 
 
@@ -182,7 +197,8 @@ def followup_text() -> str:
     return FOLLOWUP_TEXT
 
 
-def create_lead(root: Path, business: str, handle: str, post_ref: str = "", why: str = "", role: str = "fã") -> dict:
+def create_lead(root: Path, business: str, handle: str, post_ref: str = "", why: str = "",
+                role: str = "fã", segment: str = "") -> dict:
     require_gate(root)
     business = _text(business, "business", required=True)
     handle = _text(handle, "handle", required=True).lstrip("@").strip().lower()
@@ -199,6 +215,8 @@ def create_lead(root: Path, business: str, handle: str, post_ref: str = "", why:
         "post_ref": _post_ref(post_ref),
         "why": _text(why, "why"),
         "role": _role(role),
+        #: Segmento do mar azul da aula 001 — a linha do lead mostra "@handle · segmento".
+        "segment": _segment(segment),
         "dm_text": "",
         "sent_at": None,
         "replied": False,
@@ -222,7 +240,7 @@ def _replace(root: Path, lead: dict) -> dict:
     return lead
 
 
-EDITABLE = ("business", "handle", "post_ref", "why", "role")
+EDITABLE = ("business", "handle", "post_ref", "why", "role", "segment")
 
 
 def update_lead(root: Path, lid: str, **fields) -> dict:
@@ -236,6 +254,8 @@ def update_lead(root: Path, lid: str, **fields) -> dict:
             continue
         if key == "role":
             lead["role"] = _role(value)
+        elif key == "segment":
+            lead["segment"] = _segment(value)
         elif key == "handle":
             handle = _text(value, "handle", required=True).lstrip("@").strip().lower()
             if not _slug(handle):
@@ -512,6 +532,13 @@ PITCH_ROWS = [
     ("Entrega", "formatos e publicação", "16:9, 9:16 e 1:1"),
 ]
 PITCH_STEPS = [row[0] for row in PITCH_ROWS]
+#: As quatro frases da aula 001 que a caixa do script mostra (o `pitch.md` guarda a lista longa).
+PITCH_REMINDERS = (
+    "Revele o valor por etapa até o total.",
+    "Condição especial na hora, ou válida por 24h.",
+    "50% na entrada, 50% na entrega.",
+    "Venda o resultado, não a IA.",
+)
 PITCH_REL = "prospect/pitch.json"
 
 
