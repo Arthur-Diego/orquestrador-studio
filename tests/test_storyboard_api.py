@@ -287,3 +287,36 @@ def test_two_sentence_instruction_is_accepted_over_http(client, pid, base):
     assert ok.status_code == 200
     two = client.post(url, json={"kind": "edit", "text": "Make it smaller. Remove the rope.", "count": 1})
     assert two.status_code == 422 and "heurística" in two.json()["detail"].lower()
+
+
+# ---------- wave 3: redesign da tela (ADH-OS-20260826-05) ----------
+def test_view_uses_the_shell_catalog_after_the_redesign(client):
+    """Wave 3: painéis numerados com `.pn`, texto de aula em `details.lesson`, sem style inline."""
+    html = client.get("/steps/storyboard/view.html").text
+    js = client.get("/steps/storyboard/view.js").text
+    for n in ("01", "02", "03", "04"):
+        assert f'<span class="pn">{n}</span>' in html, n
+    assert html.count('<details class="lesson">') >= 3
+    assert '<div class="grid2 rev">' in html
+    assert '<div id="sbGallery" class="gallery sm">' in html
+    assert '<div id="sbScenes" class="rowlist">' in html
+    assert '<div class="card wide sb-base">' in html
+    assert "CARD_BTN" not in js, "o botão do tile é posicionado por CSS escopado, não por style inline"
+
+
+def test_scenes_render_as_scene_rows_with_the_narrative_moment(client):
+    """Wave 3: cada cena é uma `.scene-row` com `.mom[data-mom]` colorido pelo shell."""
+    js = client.get("/steps/storyboard/view.js").text
+    assert 'class="scene-row"' in js
+    assert 'class="mom" data-mom=' in js
+    assert '#sbScenes .scene-row' in js, "collect() lê as cenas pelo novo seletor"
+
+
+def test_scene_buttons_stay_childless(client):
+    """O handler usa `e.target.classList.contains`: ↑ ↓ ✕ não podem ganhar filhos."""
+    import re
+    js = client.get("/steps/storyboard/view.js").text
+    for cls in ("sbUp", "sbDown", "sbDel"):
+        m = re.search(r'<button[^>]*\b' + cls + r'\b[^>]*>(.*?)</button>', js)
+        assert m, cls
+        assert "<" not in m.group(1), (cls, m.group(1))

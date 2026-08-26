@@ -12,9 +12,10 @@ Studio.register("storyboard", (ctx) => {
 
   const url = (p) => `/api/projects/${ctx.pid()}/storyboard${p || ""}`;
 
-  // `.card` do shell recorta o que passa da imagem (`overflow:hidden`); a tela não edita
-  // `style.css` (é da frente shell), então o botão do card é posicionado aqui.
-  const CARD_BTN = "position:absolute;right:6px;bottom:6px;z-index:2;font-size:10px;padding:2px 6px";
+  // O rótulo do arco vira o `data-mom` que o shell colore (`.mom[data-mom="comeco|…"]`):
+  // "começo" → comeco, "ação" → acao. Sem acento, minúsculo, só letras.
+  const momOf = (label) => String(label || "").normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "");
 
   // Mesma regra do backend (`storyboard.service.scene_arc`): a aula 010 organiza a história em
   // começo → descoberta → ação → desfecho; com ~5 cenas a ação ocupa o miolo.
@@ -100,7 +101,7 @@ Studio.register("storyboard", (ctx) => {
     $("#sbGallery").innerHTML = ideas.length ? ideas.map((i) =>
       `<div class="card ${sel.has(i.id) ? "sel" : ""} ${i.id === sourceId ? "src-of" : ""}" data-id="${esc(i.id)}" tabindex="0" title="${esc(i.prompt)}">
          <img loading="lazy" src="${esc(ctx.files(i.thumb || i.file))}" alt=""><span class="src">${esc(i.source)}</span>
-         <button class="ghost sbSrc" data-src="${esc(i.id)}" style="${CARD_BTN}">${i.id === sourceId ? "origem ✓" : "usar como origem"}</button></div>`).join("")
+         <button type="button" class="link sbSrc sb-tilebtn" data-src="${esc(i.id)}">${i.id === sourceId ? "origem ✓" : "usar como origem"}</button></div>`).join("")
       : `<div class="empty">Nenhuma ideia ainda — gere na Higgsfield com a instrução acima e importe.</div>`;
     renderSource();
   }
@@ -114,19 +115,27 @@ Studio.register("storyboard", (ctx) => {
     const opts = (cur) => `<option value="">— sem imagem —</option>` + selectedIdeas().map((i) =>
       `<option value="${esc(i.file)}" ${i.file === cur ? "selected" : ""}>${esc(i.id)}</option>`).join("");
     const total = scenes.length;
+    // `.scene-row` do shell: momento narrativo | thumb + select da imagem | texto e ações.
+    // Os botões ↑ ↓ ✕ NUNCA recebem filhos: o handler usa `e.target.classList.contains`.
     $("#sbScenes").innerHTML = scenes.map((s, i) => {
       const arc = arcOf(i + 1, total);
-      return `<div class="prompt" data-i="${i}">
-         <div class="row"><span class="eyebrow">Cena ${i + 1} · ${esc(arc.label)}</span>
-           <select class="sbImg">${opts(s.image)}</select>
-           <button class="ghost sbUp" title="subir">↑</button><button class="ghost sbDown" title="descer">↓</button>
-           <button class="ghost sbDel" title="remover">remover</button></div>
-         <textarea class="sbTxt" rows="2" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
+      return `<div class="scene-row" data-i="${i}">
+         <span class="mom" data-mom="${esc(momOf(arc.label))}" title="Cena ${i + 1} · ${esc(arc.label)}">${esc(arc.label)}</span>
+         <div class="sb-scene-media">
+           <div class="thumb">${s.image ? `<img loading="lazy" src="${esc(ctx.files(s.image))}" alt="">` : ""}</div>
+           <select class="sbImg" title="imagem da cena">${opts(s.image)}</select>
+         </div>
+         <div class="sb-scene-body">
+           <textarea class="sbTxt" rows="2" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
+           <div class="sb-scene-acts">
+             <button type="button" class="ghost sbUp" title="subir">↑</button><button type="button" class="ghost sbDown" title="descer">↓</button><button type="button" class="ghost sbDel" title="remover">✕</button>
+           </div>
+         </div>
        </div>`;
     }).join("");
   }
   function collect() {
-    return [...document.querySelectorAll("#sbScenes .prompt")].map((el) => ({
+    return [...document.querySelectorAll("#sbScenes .scene-row")].map((el) => ({
       text: el.querySelector(".sbTxt").value, image: el.querySelector(".sbImg").value || null,
     }));
   }
@@ -211,7 +220,7 @@ Studio.register("storyboard", (ctx) => {
       };
       $("#sbAdd").onclick = () => { scenes = collect().concat({ text: "", image: null }); renderScenes(); };
       $("#sbScenes").addEventListener("click", (e) => {
-        const box = e.target.closest(".prompt"); if (!box) return;
+        const box = e.target.closest(".scene-row"); if (!box) return;
         const i = +box.dataset.i;
         scenes = collect();
         if (e.target.classList.contains("sbDel")) scenes.splice(i, 1);
@@ -219,6 +228,13 @@ Studio.register("storyboard", (ctx) => {
         else if (e.target.classList.contains("sbDown") && i < scenes.length - 1) scenes.splice(i + 1, 0, scenes.splice(i, 1)[0]);
         else return;
         renderScenes();
+      });
+      // A miniatura da cena acompanha o select sem esperar o próximo render.
+      $("#sbScenes").addEventListener("change", (e) => {
+        if (!e.target.classList.contains("sbImg")) return;
+        const box = e.target.closest(".scene-row"); if (!box) return;
+        const t = box.querySelector(".thumb"); if (!t) return;
+        t.innerHTML = e.target.value ? `<img loading="lazy" src="${esc(ctx.files(e.target.value))}" alt="">` : "";
       });
       $("#sbSave").onclick = async () => {
         try {
