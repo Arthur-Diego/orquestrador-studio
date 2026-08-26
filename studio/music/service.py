@@ -80,24 +80,64 @@ def mood_prompt(pid: str) -> dict:
 
 
 # ---------- candidatas (importação delegada a studio/common/ingest.py) ----------
+def _track_bpm(path: Path) -> int | None:
+    """bpm inteiro da faixa, ou None (arquivo curto, sem periodicidade ou análise que falhou)."""
+    if not path.exists():
+        return None
+    try:
+        bpm = beats_mod.estimate_bpm(beats_mod.onset_envelope(beats_mod.decode_pcm(path)))
+    except Exception as e:  # noqa: BLE001  (uma candidata sem bpm não pode derrubar a listagem)
+        log.warning("bpm failed file=%s reason=%s", path.name, e)
+        return None
+    return round(bpm) if bpm else None
+
+
+def _annotate_bpm(root: Path) -> list[dict]:
+    """Anota `bpm` em cada candidata que ainda não tem a chave e persiste (wave 4, regra 5).
+
+    A tela mostra "0:34 · 128 bpm" em TODA faixa, não só na escolhida — é o mesmo cálculo do
+    `beats.py` (ADR-009), ~40 ms por faixa, feito uma vez por candidata. Sem ffmpeg nada é
+    gravado (a próxima leitura tenta de novo) e a resposta sai com `bpm: null`.
+    """
+    cands = ingest.load_candidates(root, STEP)
+    pendentes = [c for c in cands if "bpm" not in c]
+    if not pendentes:
+        return cands
+    if ff.available():
+        for c in pendentes:
+            c["bpm"] = _track_bpm(root / STEP / "candidates" / c["file"])
+        ingest.save_candidates(root, STEP, cands)
+        return cands
+    for c in pendentes:
+        c["bpm"] = None
+    return cands
+
+
 def list_candidates(pid: str) -> list[dict]:
-    return ingest.load_candidates(project_dir(pid), STEP)
+    """Backfill preguiçoso do `bpm`: as candidatas antigas ganham a chave na primeira leitura."""
+    return _annotate_bpm(project_dir(pid))
 
 
 def import_upload(pid: str, files: list[tuple[str, bytes]]) -> dict:
-    r = ingest.import_upload(project_dir(pid), STEP, files, kind=KIND)
+    root = project_dir(pid)
+    r = ingest.import_upload(root, STEP, files, kind=KIND)
+    _annotate_bpm(root)
     log.info("import ok pid=%s source=upload added=%s", pid, r["added"])
     return r
 
 
 def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 120, limit: int = 40) -> dict:
-    r = ingest.import_downloads(project_dir(pid), STEP, folder, since_minutes, limit, kind=KIND)
+    root = project_dir(pid)
+    r = ingest.import_downloads(root, STEP, folder, since_minutes, limit, kind=KIND)
+    _annotate_bpm(root)
     log.info("import ok pid=%s source=downloads added=%s", pid, r["added"])
     return r
 
 
 def import_history(pid: str, size: int = 50) -> dict:
-    r = ingest.import_history(project_dir(pid), STEP, KIND, size)
+    root = project_dir(pid)
+    r = ingest.import_history(root, STEP, KIND, size)
+    _annotate_bpm(root)
     log.info("import ok pid=%s source=higgsfield added=%s", pid, r["added"])
     return r
 
@@ -165,6 +205,8 @@ def start_generate(pid: str, prompt: str, duration: int = DEFAULT_DURATION, coun
                 json.dumps(res.get("raw"), ensure_ascii=False, indent=1, default=str))
             job["log"].append(f"faixa {i + 1}/{count}: {len(urls)} áudio(s) em {_elapsed(started)}")
             job["done"] = i + 1
+        if job["added"]:
+            _annotate_bpm(root)
         if job["added"] == 0 and last_error:
             raise RuntimeError(last_error)
 
