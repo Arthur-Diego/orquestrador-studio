@@ -4,6 +4,7 @@ Versão: 1.0 · Data: 2026-08-25 · Domínio: `refs` (etapa 1) · Wave 2 · Gate
 Fontes normativas: `docs/domains/studio/waves/wave-2.md` (feature refs+mood),
 `docs/domains/studio/waves/wave-2-auditoria-etapas-1-3.md` §1 (R1–R5, §1.4 textos, §1.5 validações),
 `docs/domains/studio/waves/wave-2-api-transversal.md` (contrato do guia e do `Studio.ui`).
+Redesign visual das telas 1 e 2 (wave 3, `ADH-OS-20260826-03`): `docs/domains/refs/features/views-refs-mood-redesign-fdd.md` — este FDD continua normativo para o comportamento; o do redesign é normativo para o markup.
 
 ### 1. Contexto e motivação técnica
 A etapa 1 reproduz o primeiro passo da aula 009: pesquisar campanhas reais, salvar o que se gosta

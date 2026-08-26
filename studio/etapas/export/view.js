@@ -1,6 +1,12 @@
 // Etapa 9 — Export (aula 014): formato por rede a partir do master; thumb e QA são [extensão].
 Studio.register("export", (ctx) => {
   const { $, api, toast } = ctx;
+  // Cartão de formato do redesign (wave 3): proporção, destino da rede e o retângulo desenhado.
+  const FMT = {
+    "16x9": { ratio: "16:9", dest: "YouTube", w: 46, h: 26 },
+    "9x16": { ratio: "9:16", dest: "Reels · TikTok", w: 15, h: 27 },
+    "1x1": { ratio: "1:1", dest: "feed · opcional [extensão]", w: 24, h: 24 },
+  };
   const LABELS = { "16x9": "16:9 · YouTube", "9x16": "9:16 · Reels e TikTok", "1x1": "1:1 · feed [extensão]" };
   const FORMATS = Object.keys(LABELS);
   const ASPECT = { "16:9": "16x9", "9:16": "9x16", "1:1": "1x1" };
@@ -28,16 +34,22 @@ Studio.register("export", (ctx) => {
     const running = st.job && st.job.state === "running";
     const alvoFmt = alvo();
     $("#expFormats").innerHTML = FORMATS.map((f) => {
-      const o = st.outputs[f], prev = st.previews[f];
-      const destino = f === alvoFmt ? Studio.ui.chip("formato da rede-alvo", "ok") : "";
-      return `<div class="panel" data-fmt="${f}" style="align-self:start">
-        <div class="panel-head"><h3>${Studio.ui.esc(LABELS[f])}</h3><span class="chip ${o ? "ok" : "mode"}">${o ? "gerado" : "pendente"}</span>${destino}</div>
-        ${prev ? `<img loading="lazy" src="${ctx.files(prev)}" alt="preview do enquadramento ${f}" style="max-width:150px;max-height:200px;border-radius:8px">` : ""}
+      const o = st.outputs[f], prev = st.previews[f], m = FMT[f];
+      const destino = f === alvoFmt ? Studio.ui.chip("rede-alvo", "ok") : "";
+      const off = ready() && !running ? "" : "disabled";
+      return `<div class="fmt-card${o ? " on" : ""}" data-fmt="${f}" title="${Studio.ui.esc(LABELS[f])}">
+        <div class="top">
+          <span class="ratio">${m.ratio}</span>
+          <span class="dest">${Studio.ui.esc(m.dest)}</span>
+          ${destino}<span class="chip ${o ? "ok" : "mode"}">${o ? "renderizado" : "a renderizar"}</span>
+        </div>
+        <div class="box"><i class="${o ? "on" : ""}" style="width:${m.w}px;height:${m.h}px"></i></div>
+        ${prev ? `<img class="ex-prev" loading="lazy" src="${ctx.files(prev)}" alt="preview do enquadramento ${m.ratio}">` : ""}
         <p class="fine mono">${o && o.width ? `${o.width}x${o.height} · ${(o.duration || 0).toFixed(1)}s · ${o.has_audio ? "com áudio" : "sem áudio"}` : "ainda não renderizado"}</p>
-        <div class="row wrap">
-          <button class="ghost prev" data-fmt="${f}" ${ready() && !running ? "" : "disabled"}>Preview do corte</button>
-          <button class="render" data-fmt="${f}" ${ready() && !running ? "" : "disabled"}>Renderizar</button>
-          ${o ? `<a class="fine mono" href="${ctx.files(o.file)}" target="_blank" rel="noopener">abrir</a>` : ""}
+        <div class="ex-acts">
+          <button class="ghost prev" data-fmt="${f}" ${off}>Preview</button>
+          <button class="render${o ? "" : " primary"}" data-fmt="${f}" ${off}>Renderizar</button>
+          ${o ? `<a class="fine mono ver" href="${ctx.files(o.file)}" target="_blank" rel="noopener">Ver arquivo</a>` : ""}
         </div>
       </div>`;
     }).join("");
@@ -53,7 +65,9 @@ Studio.register("export", (ctx) => {
     $("#expBar").style.width = (j.state === "running" ? pct : j.state === "done" ? 100 : 0) + "%";
     $("#expJobLog").textContent = j.state === "running" ? `renderizando ${j.done}/${j.total}…`
       : j.state === "error" ? "erro: " + j.error : j.state === "done" ? `concluído · ${j.added} arquivo(s)` : "";
-    $("#expLog").textContent = (j.log || []).join("\n");
+    const log = (j.log || []);
+    $("#expLog").textContent = log.join("\n");
+    $("#expLog").classList.toggle("hidden", !log.length);   // sem log, sem caixa vazia na tela
     if (j.state === "running" && !job) startPoll();
   }
 
@@ -72,22 +86,29 @@ Studio.register("export", (ctx) => {
   function renderThumb() {
     const t = st.outputs.thumb;
     $("#expThumbInfo").textContent = t ? `export/thumb.jpg${t.t != null ? ` · t = ${t.t}s` : ""}` : "nenhuma thumb ainda";
-    $("#expThumb").innerHTML = t ? `<div class="card" style="max-width:320px"><img loading="lazy" src="${ctx.files(t.file)}?v=${Date.now()}" alt="thumb"></div>` : "";
+    $("#expThumb").innerHTML = t ? `<div class="card wide"><img loading="lazy" src="${ctx.files(t.file)}?v=${Date.now()}" alt="thumb"></div>` : "";
     const qa = st.outputs.qa_report, a = $("#expQaFile");
     if (qa) { a.textContent = "export/qa_report.md"; a.href = ctx.files(qa.file); } else { a.textContent = ""; a.removeAttribute("href"); }
   }
 
+  // O relatório do ffprobe vira a lista `.checks` do redesign (✓ / !) — os mesmos dados da
+  // tabela anterior: resolução, duração, áudio e veredito por arquivo.
   function renderQa(r) {
     const e = (s) => Studio.ui.esc(s);
-    const kind = (v) => (v === "OK" ? "ok" : "warn");
+    const linha = (i) => {
+      const ok = i.verdict === "OK";
+      const medidas = [
+        i.width ? `${i.width}x${i.height}` : "resolução não medida",
+        i.duration ? i.duration.toFixed(2) + "s" : "duração não medida",
+        i.has_audio === undefined ? "áudio não medido" : i.has_audio ? "com áudio" : "sem áudio",
+      ].join(" · ");
+      return `<div class="it ${ok ? "ok" : "warn"}"><span class="mark">${ok ? "✓" : "!"}</span>`
+        + `<span class="lbl">${e(i.file)}<span class="det">${e(medidas)} · ${e(i.verdict)}</span></span></div>`;
+    };
     $("#expQa").innerHTML = (r.blocking
       ? `<p class="fine"><strong>Bloqueio:</strong> algum arquivo está sem áudio. A trilha da etapa 7 é obrigatória — o resto do checklist é atenção, não impedimento.</p>`
       : "")
-      + `<table><thead><tr><th>Arquivo</th><th>Resolução</th><th>Duração</th><th>Áudio</th><th>Veredito</th></tr></thead><tbody>`
-      + r.items.map((i) => `<tr><td class="mono">${e(i.file)}</td><td>${i.width ? `${i.width}x${i.height}` : "—"}</td>`
-        + `<td>${i.duration ? i.duration.toFixed(2) + "s" : "—"}</td><td>${i.has_audio === undefined ? "—" : i.has_audio ? "sim" : "não"}</td>`
-        + `<td><span class="chip ${kind(i.verdict)}">${e(i.verdict)}</span></td></tr>`).join("")
-      + `</tbody></table>`;
+      + `<div class="checks">${r.items.map(linha).join("")}</div>`;
   }
 
   async function load() {

@@ -41,8 +41,11 @@ Studio.register("refs", (ctx) => {
         const l = j.last, line = logLine(l);
         if (!log.textContent.endsWith(line + "\n")) log.textContent += line + "\n";
         log.scrollTop = log.scrollHeight;
-        if (l.stage === "term") bar.style.width = `${Math.round((l.index / l.n_terms) * 100)}%`;
-        if (l.stage === "done") bar.style.width = "100%";
+        if (l.stage === "term") {
+          bar.style.width = `${Math.round((l.index / l.n_terms) * 100)}%`;
+          scrapeLabel(`${l.index + 1}/${l.n_terms} termos`);
+        }
+        if (l.stage === "done") { bar.style.width = "100%"; scrapeLabel(`${l.total} candidatas`); }
         if (l.stage === "start") {
           $("#loginState").textContent = `sessão: ${l.logged_in ? "logada" : "não logada"}`;
           $("#loginState").className = "chip " + (l.logged_in ? "ok" : "warn");
@@ -73,16 +76,26 @@ Studio.register("refs", (ctx) => {
     $("#counts").textContent = `${cands.length} candidatas · ${selected.size} escolhidas`;
   }
 
+  // Rótulo do "Último scrape" (`.progress-lbl` do redesign): sempre derivado do job real
+  // ou da lista de candidatas — nunca dado de exemplo.
+  function scrapeLabel(txt) {
+    const el = $("#scrapeCount");
+    if (el) el.textContent = txt || (cands.length ? `${cands.length} candidatas` : "—");
+  }
+
   function render() {
     const g = $("#gallery"), term = $("#filterTerm").value, only = $("#onlySel").checked;
     const list = cands.filter(c => (!term || c.term === term) && (!only || selected.has(c.id)));
     counts();
+    if (!job) scrapeLabel();
+    // Tile do catálogo do shell: `.card` > img + `span.src` (origem) + `span.term` (termo).
+    // O `input.why` é [extensão] do Studio e usa a classe local `.rf-why` (view.html).
     g.innerHTML = list.length ? list.map(c =>
       `<div class="card ${selected.has(c.id) ? "sel" : ""}" data-id="${ui.esc(c.id)}" tabindex="0" title="${ui.esc(c.alt || "")}">
          <img loading="lazy" src="${ctx.files(`refs/candidates/${c.thumb}`)}" alt="">
+         <span class="src">${ui.esc(c.source || "pinterest")}</span>
          <span class="term">${ui.esc(c.term)}</span>
-         <input class="why" data-id="${ui.esc(c.id)}" placeholder="por quê? (opcional)" value="${ui.esc(notes[c.id] || "")}"
-                style="position:absolute;left:0;right:0;bottom:24px;border:0;border-radius:0;padding:4px 8px;font-size:11px;background:rgba(0,0,0,.55);color:#fff">
+         <input class="why rf-why" data-id="${ui.esc(c.id)}" placeholder="por quê? (opcional)" value="${ui.esc(notes[c.id] || "")}">
        </div>`).join("")
       : `<div class="empty">${ctx.pid() ? "Nenhuma candidata ainda — rode uma busca ou traga imagens por upload." : "Crie ou selecione um projeto."}</div>`;
   }

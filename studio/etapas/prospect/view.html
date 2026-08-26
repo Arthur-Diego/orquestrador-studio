@@ -1,58 +1,84 @@
+<style>
+  /* Lacunas do catálogo do shell (wave 3) — escopo `.pr-` da etapa 11. */
+  .pr-gatefoot{margin:-6px 0 16px}
+  .pr-newlead{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px;margin-bottom:14px}
+  .pr-newlead form{margin-bottom:8px}
+  .pr-newlead input,.pr-newlead select{flex:1;min-width:170px}
+  .pr-body{flex:1 0 100%;display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
+  .pr-body textarea{width:100%}
+  .pr-body video{width:100%;max-width:360px;border-radius:var(--r-sm)}
+  .pr-teaser{margin-left:auto}
+  /* `input.mini` do shell tem 48px — o valor em reais precisa de folga. */
+  #pitchValues .pitch-table input.mini{width:76px;text-align:right}
+  #gatePipe{display:flex;flex:0 0 auto}
+</style>
+
 <header class="stephead">
   <span class="eyebrow">Etapa 11 · aula 001</span>
   <h2>Prospecção</h2>
-  <p class="lede">Os primeiros clientes vêm de DM em pequenos negócios — <strong>clínicas, academias, advogados, estética, dentistas, comércios</strong>: 10 por dia, com o script literal, citando um post específico e sem nenhum link. <strong>Você só cria de verdade se a empresa responder</strong>: aí sai o teaser de 5 a 10 s com música e o convite para uma call de 15 minutos. <strong>O Studio redige e registra; enviar é com você</strong> — não existe automação de envio aqui.</p>
+  <p class="lede">10 DMs por dia em pequenos negócios, com o script literal, citando um post específico e sem link. Teaser só para quem responde. <strong>O Studio redige e registra; enviar é com você.</strong></p>
 </header>
 
 <section id="guide" class="guide"></section>
 
-<section class="panel" id="gatePanel">
-  <div class="panel-head">
-    <h3>Portfólio (global)</h3>
-    <span id="gateChip" class="chip mode">—</span>
-  </div>
-  <p id="gateMsg" class="fine"></p>
-  <p class="fine">O portfólio da aula são <strong>quatro obras diferentes</strong>, cada uma no seu projeto — não quatro formatos do mesmo comercial. Para o teaser deste lead, crie um projeto para o negócio dele e percorra as etapas 1 a 6 em versão curta (uma cena basta): o teaser sai de um take desse projeto, e o portfólio vem dos projetos anteriores.</p>
-  <div id="gateProjects" class="fine"></div>
+<section class="strip warn" id="gatePanel">
+  <span class="eyebrow">Gate do portfólio</span>
+  <span id="gateChip" class="chip warn">—</span>
+  <div id="gatePipe"></div>
+  <span id="gateMsg"></span>
 </section>
 
-<section class="panel hidden" id="newLeadPanel">
-  <div class="panel-head">
-    <h3>1. Novo lead</h3>
-    <span id="todayChip" class="chip mode">0/10 hoje</span>
-  </div>
-  <form id="leadForm" class="row wrap">
-    <input id="lfBusiness" placeholder="negócio (ex.: Padaria do Zé)" required>
-    <input id="lfHandle" placeholder="@perfil" required>
-    <input id="lfPostRef" placeholder="o post que ressoou (ex.: o pão das 6h)" required>
-    <input id="lfWhy" placeholder="por quê (anotação sua, não vai na DM)">
-    <select id="lfRole"><option value="fã">sou fã da marca</option><option value="consumidor">sou consumidor</option></select>
-    <button class="primary" type="submit">Cadastrar lead</button>
-  </form>
-  <p class="fine">O post citado é <strong>obrigatório</strong>: "não é spam porque você personaliza — mostra que olhou o perfil e menciona um post específico". A DM é gerada no script da aula, sem links (DM com link cai em spam). O contador de hoje é uma meta de disciplina — o Studio avisa acima de 10, nunca impede.</p>
-</section>
+<div id="gateProjects" class="fine pr-gatefoot"></div>
+
+<details class="lesson pr-gatefoot">
+  <summary>Por que quatro obras antes de prospectar</summary>
+  <p>O portfólio da aula são <strong>quatro obras diferentes</strong>, cada uma no seu projeto — não quatro formatos do mesmo comercial. Para o teaser deste lead, crie um projeto para o negócio dele e percorra as etapas 1 a 6 em versão curta (uma cena basta): o teaser sai de um take desse projeto, e o portfólio vem dos projetos anteriores.</p>
+</details>
 
 <section class="panel hidden" id="leadsPanel">
   <div class="panel-head">
-    <h3>2. Leads</h3>
+    <h3><span class="pn">01</span>Leads</h3>
     <div class="row wrap">
       <span id="statusChip" class="chip mode">0 leads</span>
+      <span id="todayChip" class="chip mode">0/10 hoje</span>
       <span id="jobChip" class="chip mode hidden">teaser</span>
+      <button id="btnNewLead" class="primary">+ Novo lead</button>
     </div>
   </div>
-  <p class="fine">A ordem da aula é <code>novo → DM enviada → respondeu → teaser → call</code>. O botão do teaser só aparece depois de "respondeu": a aula é explícita em criar apenas para quem responde.</p>
-  <div id="leadList" class="prompts"></div>
+  <div class="pr-newlead hidden" id="newLeadPanel">
+    <form id="leadForm" class="row wrap">
+      <input id="lfBusiness" placeholder="negócio (ex.: Padaria do Zé)" required>
+      <input id="lfHandle" placeholder="@perfil" required>
+      <input id="lfPostRef" placeholder="o post que ressoou (ex.: o pão das 6h)" required>
+      <input id="lfWhy" placeholder="por quê (anotação sua, não vai na DM)">
+      <select id="lfRole"><option value="fã">sou fã da marca</option><option value="consumidor">sou consumidor</option></select>
+      <button class="primary" type="submit">Cadastrar lead</button>
+    </form>
+    <p class="fine">O post citado é <strong>obrigatório</strong>: "não é spam porque você personaliza — mostra que olhou o perfil e menciona um post específico". A DM é gerada no script da aula, sem links (DM com link cai em spam).</p>
+  </div>
+  <div id="leadList" class="rowlist"></div>
+  <p class="note">Ordem da aula: novo → DM enviada → respondeu → teaser → call. O teaser só aparece depois de "respondeu".</p>
+  <details class="lesson">
+    <summary>O que a aula 001 manda fazer aqui</summary>
+    <p>Os primeiros clientes vêm de DM em pequenos negócios que você já acompanha — <strong>clínicas, academias, advogados, estética, dentistas, comércios</strong>: 10 por dia, com o script literal, citando um post específico e <strong>sem nenhum link</strong>. O contador de hoje é uma meta de disciplina — o Studio avisa acima de 10, nunca impede.</p>
+    <p><strong>Você só cria de verdade se a empresa responder</strong>: aí sai o teaser de 5 a 10 s com música e o convite para uma call de 15 minutos. O Studio redige e registra; <strong>enviar é sempre com você</strong> — não existe automação de envio aqui.</p>
+  </details>
 </section>
 
 <section class="panel" id="pitchPanel">
   <div class="panel-head">
-    <h3>3. Pitch da call (15 minutos)</h3>
+    <h3><span class="pn">02</span>Pitch da call — 15 minutos</h3>
     <div class="row wrap">
       <button id="btnPitchCopy" class="ghost">Copiar</button>
       <button id="btnPitchSave" class="primary">Salvar valores e regerar</button>
     </div>
   </div>
-  <p class="fine">Ancoragem da aula: <strong>revele o valor por etapa até chegar no total que você quer cobrar</strong>. Preencha a coluna abaixo; o total e o "50 % off no 1º trabalho" saem daí. Lembretes da aula: condição especial na hora, ou válida por 24h; 50 % off no primeiro trabalho, deixando claro o valor cheio para os próximos; 50 % na entrada e 50 % na entrega; faixa inicial de R$ 100 a R$ 500 por vídeo de 30 s a 1 min; vender o resultado, não a IA. Salvo em <code>prospect/pitch.md</code>.</p>
-  <div id="pitchValues"></div>
-  <pre id="pitchBox" class="log mono"></pre>
+  <div class="pitch">
+    <div id="pitchValues"></div>
+    <pre id="pitchBox" class="script"></pre>
+  </div>
+  <details class="lesson">
+    <summary>A ancoragem da aula</summary>
+    <p><strong>Revele o valor por etapa até chegar no total que você quer cobrar.</strong> Preencha a coluna ao lado; o total e o "50 % off no 1º trabalho" saem daí. Lembretes da aula: condição especial na hora, ou válida por 24h; 50 % off no primeiro trabalho, deixando claro o valor cheio para os próximos; 50 % na entrada e 50 % na entrega; faixa inicial de R$ 100 a R$ 500 por vídeo de 30 s a 1 min; vender o resultado, não a IA. Salvo em <code>prospect/pitch.md</code>.</p>
+  </details>
 </section>
