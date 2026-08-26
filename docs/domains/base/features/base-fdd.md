@@ -8,6 +8,10 @@ Fontes: `docs/domains/studio/waves/wave-1.md` (bloco "Feature: base"), `wave-1-a
 `docs/domains/studio/recon-wave-1.md`, `CLAUDE.md` (gates), `docs/domains/base/prd.md`.
 Todas as decisões `[auto-aceito: ...]` sobem para a revisão em lote da W3.
 
+Camada visual (wave 3, `ADH-OS-20260826-04`): o markup e o render da tela desta etapa passaram a
+seguir o redesign dark-first — ver `docs/domains/base/features/views-base-redesign-fdd.md`
+(este FDD continua valendo para comportamento, contratos HTTP e regras da aula).
+
 ---
 
 ### 1. Contexto e motivação técnica
