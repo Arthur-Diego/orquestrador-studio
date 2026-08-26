@@ -1,10 +1,22 @@
-"""Tela da etapa 1: contrato de tela da wave 2 e textos fiéis à aula 009 (ADR-008: asserts de string)."""
+"""Tela da etapa 1: contrato de tela da wave 4 (idêntica ao protótipo) e textos fiéis à aula 009.
+
+Wave 4: o protótipo desenha DOIS painéis (busca e escolha). O painel de upload manual, o campo
+"por quê" de cada tile e o filtro "só escolhidas" saíram da tela; o texto de aula que eles
+carregavam continua no `guide.py` (ADR-004: o texto não se perde, a tela é que não o desenha).
+"""
 
 
 def _view(client, name):
     r = client.get(f"/steps/refs/{name}")
     assert r.status_code == 200
     return r.text
+
+
+def _guide(client):
+    pid = client.post("/api/projects", json={"name": "Refs View", "product": "energy drink"}).json()["id"]
+    r = client.get(f"/api/projects/{pid}/guide/refs")
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 def test_view_follows_the_wave_screen_contract(client):
@@ -23,45 +35,58 @@ def test_view_follows_the_wave_screen_contract(client):
 
 
 def test_view_is_honest_about_where_each_rule_comes_from(client):
-    """R3: "não entra no vídeo" é regra do Studio (direitos autorais), não da aula."""
+    """R3: "não entra no vídeo" é regra do Studio (direitos autorais), não da aula.
+
+    Wave 4: o protótipo não desenha essa frase no lede — ela vive no guia da etapa.
+    """
     html = _view(client, "view.html")
     assert "nada entra no vídeo final" not in html
-    assert "regra do Studio, não da aula" in html
+    assert "regra do Studio, não da aula" not in html, "o protótipo encurta o lede"
+    assert "regra do Studio, não da aula" in _guide(client)["what"]
 
 
 def test_view_offers_the_validated_brand_and_the_explore_source(client):
-    """R1 e R2: campo de marca validada e upload das imagens salvas do Explore."""
+    """R1 e R2: campo de marca validada; upload das imagens do Explore sem painel próprio."""
     html = _view(client, "view.html")
     assert 'id="brand"' in html and "marca validada" in html and "Red Bull" in html
-    assert "Explore do Midjourney" in html and 'id="refsDrop"' in html
-    assert "[extensão]" in html, "o upload e o campo \"por quê\" são extensões do Studio"
+    assert 'id="refsUpload"' in html, "o seletor de arquivos existe, oculto (o protótipo não o desenha)"
+    assert "Adicionar referências salvas à mão" not in html, "o painel de upload saiu na wave 4"
+    assert "Explore do Midjourney" in _guide(client)["what"], "a segunda fonte da aula segue no guia"
     js = _view(client, "view.js")
     assert "brand=" in js and "refs/import/upload" in js
+    assert 'ui.drop($("#refsPick")' in js, "o painel de escolha inteiro é o alvo de drop (.panel.over)"
 
 
-def test_view_collects_the_why_of_each_reference(client):
-    """R4: o "por quê" existe no README — agora a tela preenche (marcado [extensão])."""
+def test_view_no_longer_collects_the_why_of_each_reference(client):
+    """Wave 4: o campo "por quê" (extensão que o protótipo não desenha) saiu da tela."""
     html = _view(client, "view.html")
-    assert "por quê" in html
+    assert "por quê" not in html and "[extensão]" not in html
     js = _view(client, "view.js")
-    assert "input.why" in js and "notes" in js
+    assert "input.why" not in js and "rf-why" not in js
+    assert "onlySel" not in js and "só escolhidas" not in html, "filtro que o protótipo não desenha"
 
 
-def test_view_follows_the_wave3_redesign_catalog(client):
-    """Wave 3: painéis numerados com `.pn`, textos de aula em `details.lesson`, campos `.field`."""
+def test_view_shows_the_last_scrape_when_the_screen_opens(client):
+    """1.22–1.24: barra, rótulo `baixadas/meta` e log do último scrape vêm do backend."""
+    js = _view(client, "view.js")
+    assert "last_job" in js and "renderJob(" in js
+    assert "refs/job" in js
+
+
+def test_view_follows_the_prototype_panels(client):
+    """Wave 4: dois painéis numerados, um único `details.lesson` (só a etapa 1 tem)."""
     html = _view(client, "view.html")
-    assert html.count('<span class="pn">') == 3, "três painéis numerados (01 busca, 02 upload, 03 escolha)"
-    for n in ("01", "02", "03"):
+    assert html.count('<span class="pn">') == 2, "dois painéis numerados (01 busca, 02 escolha)"
+    for n in ("01", "02"):
         assert f'<span class="pn">{n}</span>' in html
     assert "1. Buscar no Pinterest" not in html, "o número saiu do texto do h3 e virou `.pn`"
-    assert html.count('<details class="lesson">') >= 3, "texto longo da aula em `details.lesson`"
+    assert html.count('<details class="lesson">') == 1, "só o painel 01 tem texto de aula (protótipo)"
     assert "O que a aula 009 manda fazer aqui" in html
     assert 'class="field"' in html, "marca e termos como `label.field` do catálogo"
     assert 'class="progress-lbl"' in html and "Último scrape" in html
     assert 'class="primary cta"' in html, "CTA da busca com o realce do protótipo"
-    assert 'class="ext"' in html, "`[extensão]` como `span.ext`, não como chip"
+    assert "Escolher o que você gosta" in html and "Refazer login" in html
 
     js = _view(client, "view.js")
     assert 'class="src"' in js and 'class="term"' in js, "tile com badge de origem e legenda do termo"
-    assert "style=\"position:absolute" not in js, "o `input.why` deixou o inline style pela classe `.rf-why`"
-    assert "rf-why" in js
+    assert 'style="position:absolute' not in js

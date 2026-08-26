@@ -210,3 +210,27 @@ def test_generate_prompt_modes_and_history(studio_env, project, monkeypatch):
         mood.generate_prompt(project, "images", "x", ["nao-existe"])
     hist = mood.prompt_history(project)
     assert [h["mode"] for h in hist] == ["images", "template"]
+
+
+def test_candidates_expose_the_import_batch_for_the_tile_legend(studio_env, project):
+    """Wave 4 (2.36): a legenda do tile é "<lote> · img N" — `batch`/`batch_index` derivados.
+
+    O lote não é estado novo: sai do `job_id` do CLI ou do minuto da importação (um grid inteiro
+    entra de uma vez). Só o `GET /mood/candidates` anota; `load()` segue devolvendo o arquivo cru.
+    """
+    mood = studio_env["mood"]
+    mood.import_upload(project, [(f"g{i}.png", image_bytes(color=(i * 20, 30, 40))) for i in range(4)])
+    lote1 = mood.candidates(project)
+    assert [c["batch"] for c in lote1] == ["grid_01"] * 4
+    assert [c["batch_index"] for c in lote1] == [1, 2, 3, 4]
+    assert all("batch" not in c for c in mood.load(project)), "o derivado não é gravado no disco"
+
+    root = studio_env["refs"].project_dir(project)
+    cru = json.loads((root / "mood" / "candidates.json").read_text())
+    for c in cru[2:]:                                     # simula um segundo grid (outro job do CLI)
+        c["job_id"] = "job-2"
+    (root / "mood" / "candidates.json").write_text(json.dumps(cru, ensure_ascii=False))
+
+    lote2 = mood.candidates(project)
+    assert [c["batch"] for c in lote2] == ["grid_01", "grid_01", "grid_02", "grid_02"]
+    assert [c["batch_index"] for c in lote2] == [1, 2, 1, 2]

@@ -1,8 +1,11 @@
 <style>
-  /* Escopo `.md-` da etapa 2 (regra 3 da wave 3). `.md-grow`, `.md-flat` e `.md-pre` viraram
-     `.grow`, `.flat` e `.pre` no shell na integração (ADH-OS-20260826-09). */
-  .md-side{min-width:210px;max-width:280px;align-items:stretch}
-  .md-path{overflow-wrap:anywhere;word-break:break-all}
+  /* Lacunas do catálogo do shell (wave 4). `.md-side`: coluna de importação de 200px (o
+     `.import-row>.col` do shell é de 220px, medida do painel 03). `.md-min`: o número inline
+     de "últimos N min" — `input.bare` ainda não encolhe para o conteúdo em `type=number`. */
+  .md-side{min-width:200px}
+  #briefFields[hidden]{display:none}
+  input.bare.md-min{width:4ch;field-sizing:content;text-align:center}
+  input.bare.md-min::-webkit-inner-spin-button,input.bare.md-min::-webkit-outer-spin-button{appearance:none;margin:0}
 </style>
 
 <header class="stephead">
@@ -16,21 +19,17 @@
 <section class="panel">
   <div class="panel-head">
     <h3><span class="pn">01</span>Achar a vibe</h3>
-    <div class="row wrap">
+    <div class="row">
       <span id="claudeState" class="chip mode">bot: ?</span>
       <span id="vibeCount" class="chip mode">0 imagens · 0 escolhidas (máx. 4)</span>
     </div>
   </div>
   <p class="fine">Traga 1–4 imagens cujo <b>sentimento</b> você gosta (Explore do Midjourney, Pinterest, frame de filme). Evite rostos em destaque — o produto é o foco.</p>
-  <details class="lesson">
-    <summary>O que a aula 009 manda fazer aqui</summary>
-    <p>Aula 009: a vibe é <b>encontrada</b>, não descrita — uma imagem cujo <b>sentimento</b> você gosta ("não precisa ter a ver com esse tipo de campanha"). O instrutor procura no Explore do Midjourney ("Drink Ice", "Snow Commercial") porque lá vem o prompt junto. Traga 1 a 4 imagens de vibe (Explore, Pinterest, frame de filme) e marque as que definem a identidade visual. Evite imagens focadas demais no rosto — o produto é o foco.</p>
-  </details>
-  <div class="row wrap">
+  <div class="row media wrap">
     <label class="drop" id="vibeDrop">Arraste imagens de vibe aqui ou <input id="vibeUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col md-side">
       <button id="btnVibeDownloads" class="ghost">Importar da pasta Downloads</button>
-      <label class="inline">últimos <input id="vibeMinutes" type="number" value="120" min="5"> min</label>
+      <span class="note">últimos <input id="vibeMinutes" class="bare md-min" type="number" value="120" min="5" max="10080" title="janela de importação da pasta Downloads, em minutos"> min</span>
     </div>
   </div>
   <div id="vibeGallery" class="gallery sm"></div>
@@ -41,61 +40,43 @@
     <h3><span class="pn">02</span>Prompt de vibe — o "bot" da aula</h3>
     <div class="row wrap">
       <select id="moodMode">
-        <option value="images">imagens de vibe + instrução (Claude)</option>
-        <option value="brief">brief profissional, sem imagem (Claude)</option>
-        <option value="template">template fixo (sem Claude)</option>
+        <option value="images">imagens de vibe + instrução</option>
+        <option value="brief">brief profissional</option>
+        <option value="template">template fixo</option>
       </select>
-      <select id="moodModel"><option value="nano_banana_2">Nano Banana Pro (UI: ilimitado 2K no Ultimate)</option><option value="gpt_image_2">GPT Image 2 (mais fiel ao prompt)</option></select>
+      <select id="moodModel"><option value="nano_banana_2" title="na UI: ilimitado em 2K no plano Ultimate">Nano Banana Pro</option><option value="gpt_image_2" title="mais fiel ao prompt">GPT Image 2</option></select>
     </div>
   </div>
-  <details class="lesson">
-    <summary>O que a aula 009 manda fazer aqui</summary>
-    <p>A aula começa <b>copiando o prompt</b> da imagem que ela encontrou no Explore ("copiar o prompt dessa pessoa e criar ali pra mim"). Se você tem esse prompt, cole abaixo: ele vira a base e o Studio só acrescenta o tratamento de estilização. Sem prompt copiado, o bot escreve um a partir das imagens de vibe. Um mood board <b>pode</b> conter o produto — o da aula contém ("ele já me deu inclusive o Red Bull […] essa é a vibe").</p>
-    <p>A aula pediu "não tenho nenhum interesse em pessoas" porque o foco era o produto; desmarque "sem pessoas" se a sua campanha quiser gente. Produto, texto e logo <b>não</b> são proibidos aqui.</p>
-    <p>Saiu tudo parecido demais? Aumente a estilização (aula 007: <b>estilização no meio-termo — extremos alucinam</b>). Não pegou a vibe? Marque a melhor imagem do grid como referência de estilo e gere outro grid com o <b>mesmo</b> prompt. 2K e 16:9 são sugestão do Studio, não regra da aula.</p>
-  </details>
-  <div class="col">
-    <input id="explorePrompt" placeholder="prompt copiado do Explore / da imagem de vibe (opcional)">
-    <div id="briefFields" class="row wrap">
-      <input id="bfPurpose" placeholder="propósito (ex.: campanha de energético para Reels)" class="grow">
-      <input id="bfTone" placeholder="tom emocional (ex.: épico, frio, silencioso)" class="grow">
-      <input id="bfRef" placeholder="referência estética (filme, fotógrafo, campanha)" class="grow">
+  <div class="col g10">
+    <input id="explorePrompt" class="lg" placeholder="prompt copiado do Explore / da imagem de vibe (opcional)">
+    <div id="briefFields" class="row wrap" hidden>
+      <input id="bfPurpose" placeholder="propósito (ex.: campanha de energético para Reels)" class="grow lg">
+      <input id="bfTone" placeholder="tom emocional (ex.: épico, frio, silencioso)" class="grow lg">
+      <input id="bfRef" placeholder="referência estética (filme, fotógrafo, campanha)" class="grow lg">
     </div>
-    <input id="moodInstruction" placeholder="sua instrução para o bot (ex.: bastante neon e neve, mais dramático)">
-    <div class="row wrap">
+    <input id="moodInstruction" class="lg" placeholder="sua instrução para o bot (ex.: bastante neon e neve, mais dramático)">
+    <div class="row opts wrap">
       <label class="inline" title="A aula pediu isso para a campanha dela, porque o foco era o produto — não é uma regra do curso."><input id="moodNoPeople" type="checkbox" checked> sem pessoas</label>
       <button id="btnMoodGenPrompt" class="primary">Gerar prompt</button>
       <button id="btnMoodPrompts" class="ghost" title="Só no modo template: mesma vibe, outra estilização">Nova variação</button>
-      <button id="btnCopyAll" class="ghost">Copiar prompt</button>
-      <span id="promptStatus" class="fine mono flat"></span>
     </div>
-    <p id="moodHint" class="note flat"></p>
-    <div id="promptList" class="prompts"></div>
-    <details><summary class="fine flat">Histórico de prompts gerados</summary><div id="promptHistory" class="log mono"></div></details>
+    <div id="promptList"></div>
     <div class="row wrap cli">
       <span id="hfState" class="chip mode">CLI: ?</span>
       <label class="inline">variações <input id="moodCount" type="number" value="2" min="1" max="4"></label>
-      <label class="inline"><input id="moodUseRefs" type="checkbox" checked> usar as imagens de vibe como referência de estilo</label>
-      <label class="inline">melhor do grid <select id="moodBest"><option value="">(nenhuma — 1ª rodada)</option></select></label>
       <button id="btnMoodGen" class="ghost" disabled>Gerar via CLI (gasta créditos)</button>
-      <span id="moodGenLog" class="mono fine flat"></span>
-      <span class="note flat">o caminho da aula é gerar na UI, onde o ilimitado vale</span>
+      <span class="note">o caminho da aula é gerar na UI, onde o ilimitado vale</span>
     </div>
   </div>
 </section>
 
 <section class="panel">
   <div class="panel-head"><h3><span class="pn">03</span>Importar o grid que você gerou na UI</h3></div>
-  <div class="row wrap">
+  <div class="import-row">
     <label class="drop" id="drop">Arraste imagens aqui ou <input id="upload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
-    <div class="col md-side">
-      <button id="btnDownloads" class="ghost">Importar da pasta Downloads</button>
-      <label class="inline">últimos <input id="dlMinutes" type="number" value="120" min="5"> min</label>
-      <span id="dlFolder" class="fine mono flat md-path"></span>
-    </div>
-    <div class="col md-side">
-      <button id="btnHistory" class="ghost">Importar do histórico Higgsfield</button>
-      <span class="note flat">via <code>higgsfield generate list --image</code> (precisa de login no CLI)</span>
+    <div class="col">
+      <button id="btnDownloads" class="ghost" title="Imagens recentes da pasta Downloads (a janela em minutos é a do painel 01)">Importar da pasta Downloads</button>
+      <button id="btnHistory" class="ghost" title="via `higgsfield generate list --image` (precisa de login no CLI)">Importar do histórico Higgsfield</button>
     </div>
   </div>
 </section>
@@ -104,16 +85,11 @@
   <div class="panel-head">
     <h3><span class="pn">04</span>Escolher o mood</h3>
     <div class="row wrap">
-      <input id="moodNote" placeholder="a vibe em 3 palavras (ex.: neve, neon, silêncio)">
+      <input id="moodNote" class="sm" placeholder="a vibe em 3 palavras">
       <span id="moodCounts" class="chip mode">0 candidatas · 0 escolhidas</span>
       <button id="btnMoodSave" class="primary">Salvar mood</button>
     </div>
   </div>
-  <details class="lesson">
-    <summary>O que a aula 009 manda fazer aqui</summary>
-    <p>Salve as que estão no <b>mesmo</b> mood (a aula salva as 4 da rodada que funcionou, mais as do primeiro grid de que ela gostou). Esse conjunto vira o filtro de tudo o que você gerar daqui em diante — o Studio usa essas imagens como referência nas etapas seguintes, que é a alternativa ao Moodboard do Midjourney mostrada na própria aula. A vibe em 3 palavras é gravada no projeto: a aula descobre a vibe aqui, não na criação da campanha.</p>
-  </details>
   <div id="palette" class="palette"><span class="lbl">palette.json · derivado técnico [extensão]</span></div>
   <div id="moodGallery" class="gallery sm"></div>
-  <p class="note">Ao salvar: cópias em <code>mood/selected/</code>, <code>mood/mood.md</code> com os prompts de origem e <code>mood/palette.json</code> com as cores dominantes — derivado técnico do Studio; a aula usa as próprias imagens como filtro e nunca extrai paleta.</p>
 </section>

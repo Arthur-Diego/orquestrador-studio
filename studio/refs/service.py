@@ -88,12 +88,62 @@ def suggest_terms(product: str, vibe: str = "", brand: str = "") -> list[str]:
 
 
 # ---------- job de busca ----------
+#: Resumo do último scrape concluído, para a tela abrir com a barra, o rótulo e o log preenchidos
+#: (wave 4, itens 1.22–1.24 da auditoria): sem isso a coluna de status nasce vazia a cada reload.
+LAST_JOB_FILE = "refs/last_job.json"
+
+
+def _hhmm(ts: float | None) -> str:
+    return time.strftime("%H:%M", time.localtime(ts or time.time()))
+
+
+def _log_line(ev: dict) -> dict | None:
+    """Uma linha do log no formato do protótipo, ou None para eventos que ele não desenha.
+
+    `[HH:MM] <termo> — <n> imagens` por termo baixado e `[HH:MM] concluído · <n> candidatas`
+    na última linha (essa em verde, `.log .ok`).
+    """
+    stage = ev.get("stage")
+    if stage == "download":
+        return {"time": _hhmm(ev.get("t")), "text": f"{ev.get('term', '')} — {ev.get('count', 0)} imagens"}
+    if stage == "done":
+        return {"time": _hhmm(ev.get("t")), "text": f"concluído · {ev.get('total', 0)} candidatas", "ok": True}
+    return None
+
+
+def _write_last_job(pid: str, job: dict) -> None:
+    """Grava o resumo do scrape recém-concluído. Falha de escrita nunca derruba o job."""
+    try:
+        path = project_dir(pid) / LAST_JOB_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(
+            {"total": job["total"], "meta": job["meta"], "log": job["log"],
+             "finished": _hhmm(time.time()), "terms": job["terms"]}, ensure_ascii=False, indent=1))
+    except (OSError, KeyError):
+        return
+
+
+def last_job(pid: str) -> dict | None:
+    """Resumo do último scrape concluído (None quando o projeto ainda não rodou nenhum)."""
+    try:
+        path = project_dir(pid) / LAST_JOB_FILE
+        if not path.is_file():
+            return None
+        data = json.loads(path.read_text())
+    except (KeyError, OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def start_search(pid: str, terms: list[str], max_per_term: int = 30, headless: bool = True) -> dict:
     root = project_dir(pid)
     with _lock:
         if pid in _jobs and _jobs[pid]["state"] == "running":
             raise RuntimeError("Já existe uma busca em andamento para este projeto.")
-        job = {"state": "running", "started": time.time(), "terms": terms, "events": [], "total": 0, "error": None}
+        # `meta` é o teto do scrape (nº de termos × máx. por termo): a barra do protótipo mostra
+        # "baixadas/meta" ("94/120"), tanto durante o job quanto ao reabrir a tela.
+        job = {"state": "running", "started": time.time(), "terms": terms, "events": [], "total": 0,
+               "meta": len(terms) * max(1, max_per_term), "log": [], "error": None}
         _jobs[pid] = job
 
     def progress(ev: dict):
@@ -101,10 +151,16 @@ def start_search(pid: str, terms: list[str], max_per_term: int = 30, headless: b
         job["events"].append(ev)
         if "total" in ev:
             job["total"] = ev["total"]
+        line = _log_line(ev)
+        if line:
+            job["log"].append(line)
 
     def run():
         try:
             pinterest.search(terms, root / "refs" / "candidates", max_per_term, headless, progress)
+            # o resumo é gravado ANTES de marcar "done": quem observa o estado já encontra o
+            # `last_job.json` no disco (a tela recarrega o status assim que o job termina).
+            _write_last_job(pid, job)
             job["state"] = "done"
         except Exception as e:  # noqa: BLE001
             job["state"] = "error"
@@ -117,9 +173,13 @@ def start_search(pid: str, terms: list[str], max_per_term: int = 30, headless: b
 def job_status(pid: str) -> dict:
     job = _jobs.get(pid)
     if not job:
-        return {"state": "idle"}
+        # Projeto sem scrape nenhum mantém a resposta mínima do contrato (`{"state": "idle"}`);
+        # com scrape anterior, devolve o resumo persistido para a tela desenhar o último estado.
+        last = last_job(pid)
+        return {"state": "idle", "last_job": last} if last else {"state": "idle"}
     last = job["events"][-1] if job["events"] else {}
-    return {"state": job["state"], "terms": job["terms"], "total": job["total"], "last": last, "error": job["error"]}
+    return {"state": job["state"], "terms": job["terms"], "total": job["total"], "meta": job["meta"],
+            "log": job["log"], "last": last, "error": job["error"]}
 
 
 def start_login() -> dict:

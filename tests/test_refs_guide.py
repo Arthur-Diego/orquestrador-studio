@@ -45,7 +45,8 @@ def test_guide_of_an_empty_project_is_todo_and_never_blocked(client, project):
     assert g["status"] == "todo" and g["progress"] == 0.0
     assert g["next_step"] == "mood"
     assert g["inputs"][0]["status"] == "ok", "a etapa 1 é a primeira do curso: nada a bloquear"
-    assert "≥ 1 referência escolhida em refs/brainstorming/" in g["missing"]
+    assert "Seleção salva em refs/brainstorming/" in g["missing"], "rótulos do protótipo (wave 4)"
+    assert g["summary"] is None and g["summary_kind"] is None, "sem resumo antes de salvar nada"
     assert "marca já validada" in g["what"] and "Explore do Midjourney" in g["what"]
     assert any("marca validada" in c for c in g["checklist"])
     assert _checks(g)["candidates"] == "todo" and _checks(g)["min_refs"] == "todo"
@@ -59,7 +60,9 @@ def test_guide_is_done_when_references_are_saved(client, studio_env, project):
     checks = _checks(g)
     assert checks["min_refs"] == "ok" and checks["brainstorming_sync"] == "ok"
     assert checks["brand_term"] == "ok" and checks["alt_junk"] == "ok" and checks["product"] == "ok"
-    assert g["next_action"].startswith("Etapa concluída")
+    assert g["next_action"] == "encontrar a vibe no mood board", "texto do protótipo (wave 4)"
+    assert g["summary"] == "3 escolhidas em refs/brainstorming/ · origem registrada no README.md"
+    assert any(c["label"].startswith("Candidatas baixadas do Pinterest (") for c in g["validations"])
 
 
 def test_guide_warns_on_few_references_and_generic_terms(client, studio_env, project):

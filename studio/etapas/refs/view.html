@@ -1,19 +1,17 @@
 <style>
-  /* Lacuna do catálogo do shell: o campo "por quê" do tile (`input.why`) não tem regra em
-     style.css/ui.css. Escopo local com prefixo da etapa (regra 3 da wave 3). */
-  .card input.why.rf-why{position:absolute;left:0;right:0;bottom:22px;z-index:2;border:0;border-radius:0;
-    padding:4px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1.4;
-    background:rgba(0,0,0,.5);color:#C9CFD8;box-shadow:none;transition:opacity .15s,background .15s}
-  .card input.why.rf-why::placeholder{color:#8B93A0}
-  .card input.why.rf-why:placeholder-shown{opacity:.5}
-  .card:hover input.why.rf-why,.card input.why.rf-why:focus{opacity:1;background:rgba(0,0,0,.72)}
+  /* Lacunas do catálogo do shell (wave 4): coluna de status do scrape e o link discreto de
+     upload — o protótipo não desenha painel de upload, então a ação vive no drop sobre o
+     painel 02 e neste `button.link` revelado no hover do cabeçalho. */
   .rf-prog{display:flex;flex-direction:column;gap:5px}
+  #refsPick .panel-head{position:relative}
+  #refsPick .rf-bring{position:absolute;right:0;top:calc(100% + 2px);opacity:0;transition:opacity .15s}
+  #refsPick .panel-head:hover .rf-bring,#refsPick .rf-bring:focus-visible{opacity:1}
 </style>
 
 <header class="stephead">
   <span class="eyebrow">Etapa 1 · aula 009</span>
   <h2>Referências</h2>
-  <p class="lede">Comece sem ideia nenhuma: pesquise uma marca já validada, role o "buraco de minhoca" do Pinterest e marque só o que você gosta. As escolhidas viram referência para os prompts das próximas etapas — por direitos autorais, elas não entram no vídeo (regra do Studio, não da aula).</p>
+  <p class="lede">Comece sem ideia nenhuma: pesquise uma marca já validada, role o Pinterest e marque só o que você gosta. As escolhidas viram referência para os prompts das próximas etapas.</p>
 </header>
 
 <section id="guide" class="guide"></section>
@@ -21,26 +19,26 @@
 <section class="panel">
   <div class="panel-head">
     <h3><span class="pn">01</span>Buscar no Pinterest</h3>
-    <div class="row wrap">
+    <div class="row">
       <span id="loginState" class="chip mode">sessão: ?</span>
-      <button id="btnLogin" class="ghost">Fazer login no Pinterest</button>
+      <button id="btnLogin" class="ghost">Refazer login</button>
     </div>
   </div>
   <details class="lesson">
     <summary>O que a aula 009 manda fazer aqui</summary>
-    <p>A aula 009 começa por uma <b>marca já validada</b> ("Red Bull", que "já tem anúncios validados") e só depois refina pela situação ("Red Bull snow ads"). Informe a marca abaixo e o Studio monta os termos nessa ordem; os termos pelo seu produto entram como complemento. A vibe da campanha ainda não precisa existir — ela é encontrada na etapa 2.</p>
+    <p>Comece por uma <b>marca já validada</b> ("Red Bull, que já tem anúncios validados") e só depois refine pela situação ("Red Bull snow ads"). Os termos pelo seu produto entram como complemento. A vibe ainda não precisa existir — ela é encontrada na etapa 2.</p>
   </details>
   <div class="grid2">
     <div class="col">
       <label class="field">
         <span class="eyebrow">marca validada para se inspirar</span>
-        <input id="brand" placeholder="ex.: Red Bull">
+        <input id="brand" class="lg" placeholder="ex.: Red Bull">
       </label>
       <label class="field">
         <span class="eyebrow">termos de busca — um por linha, em inglês</span>
         <textarea id="terms" rows="6" placeholder="Red Bull ads&#10;Red Bull snow ads&#10;energy drink ad campaign"></textarea>
       </label>
-      <div class="row wrap">
+      <div class="row opts wrap">
         <label class="inline">máx. por termo <input id="maxPer" type="number" value="30" min="5" max="100"></label>
         <label class="inline"><input id="headed" type="checkbox"> ver o navegador</label>
         <button id="btnSuggest" class="link">Sugerir termos a partir do projeto</button>
@@ -53,39 +51,22 @@
         <div id="progress" class="progress"><div class="bar"></div></div>
       </div>
       <div id="log" class="log mono"></div>
-      <p class="note">Roda em ritmo humano com a sua sessão. Contraria os termos do Pinterest — use de preferência uma conta secundária.</p>
+      <span class="note">Roda em ritmo humano com a sua sessão. Contraria os termos do Pinterest — prefira uma conta secundária.</span>
     </div>
   </div>
 </section>
 
-<section class="panel">
+<section class="panel" id="refsPick">
   <div class="panel-head">
-    <h3><span class="pn">02</span>Adicionar referências salvas à mão <span class="ext">[extensão]</span></h3>
-  </div>
-  <details class="lesson">
-    <summary>O que a aula 009 manda fazer aqui</summary>
-    <p>A aula cita uma segunda fonte: a aba <b>Explore do Midjourney</b> ("que também é muito boa"; busque "Ads", "Soda Ads"). Ela não tem automação aqui — salve as imagens que você gostou e traga por upload; elas entram na mesma galeria e são escolhidas do mesmo jeito.</p>
-  </details>
-  <div class="row wrap">
-    <label class="drop" id="refsDrop">Arraste imagens aqui ou <input id="refsUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-head">
-    <h3><span class="pn">03</span>Escolher o que você gosta</h3>
+    <h3><span class="pn">02</span>Escolher o que você gosta</h3>
     <div class="row wrap">
       <select id="filterTerm"><option value="">todos os termos</option></select>
-      <label class="inline"><input id="onlySel" type="checkbox"> só escolhidas</label>
       <span id="counts" class="chip mode">0 candidatas · 0 escolhidas</span>
       <button id="btnSave" class="primary">Salvar seleção</button>
     </div>
+    <button id="btnBring" class="link rf-bring" type="button" title="Imagens salvas à mão (Explore do Midjourney, print, download avulso) — ou arraste-as sobre este painel">trazer imagens</button>
   </div>
   <p class="fine">Marque o que <b>você</b> gosta e o que foge do clichê. Clique para marcar; a aula manda voltar no fim e desmarcar o que já não agrada.</p>
-  <details class="lesson">
-    <summary>O que a aula 009 manda fazer aqui</summary>
-    <p>Marque o que <b>você</b> gosta e o que foge do clichê ("muito padrãozinho, mostrando a lata, com fundo preto — quero fugir disso"). Não precisa ter a ver com o produto. Depois de ver tudo, volte e desmarque o que já não te agrada: a aula apaga referências no fim.</p>
-  </details>
   <div id="gallery" class="gallery"></div>
-  <p class="note">Duplo clique abre a imagem original. O campo "por quê" é <span class="ext">[extensão]</span> do Studio (a aula não escreve nada sobre as imagens) e vai para o <code>README.md</code>. Ao salvar, as escolhidas são copiadas para <code>refs/brainstorming/</code>.</p>
+  <input id="refsUpload" type="file" accept="image/*" multiple hidden>
 </section>
