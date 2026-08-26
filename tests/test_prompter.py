@@ -98,3 +98,29 @@ def test_explore_prompt_becomes_the_base_of_the_vibe_prompt():
     t = prompter.fallback_template("mood", {"product": "soda", "explore_prompt": "Neon snowfield at dusk"}, 1)
     assert t["prompt"].startswith("Neon snowfield at dusk.")
     assert "stronger stylization" in t["prompt"]
+
+
+def test_bot_uses_opus_and_the_instructor_pattern(monkeypatch):
+    """Pedido do dono do produto: Opus 4.8 e o padrão de prompt extraído do vídeo da aula 009."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_claude({"prompt": "x", "negative": "", "camera": "", "notes_pt": ""}, calls))
+    prompter.from_brief("base", {"product": "energy drink"})
+    args = calls[0]
+    assert args[args.index("--model") + 1] == prompter.MODEL == "claude-opus-4-8"
+    sent = args[2]
+    for label in prompter.PROMPT_SECTIONS:
+        assert label in sent, label
+    assert "Canon EOS R5" in sent, "o exemplar do vídeo vai junto como referência de estrutura"
+    for kind in ("mood", "base"):
+        assert "Color grading:" in prompter.ROLES[kind]
+    assert "Color grading:" not in prompter.ROLES["motion"], "vídeo tem padrão próprio (aula 012)"
+
+
+def test_fallback_follows_the_pattern_too():
+    for kind in ("mood", "base"):
+        t = prompter.fallback_template(kind, {"product": "energy drink", "vibe": "snow neon"})
+        lines = t["prompt"].split("\n")
+        assert lines[0] and lines[1] == "" and [ln.split(":")[0] + ":" for ln in lines[2:]] == list(prompter.PROMPT_SECTIONS)
+    sem = prompter.fallback_template("base", {"product": "x"}, no_people=False)
+    assert "no people" not in sem["prompt"].lower()

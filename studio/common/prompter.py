@@ -9,6 +9,7 @@ Fallback determinístico (`fallback_template`) quando o CLI não existe ou falha
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -16,8 +17,44 @@ import time
 from pathlib import Path
 
 BIN = shutil.which("claude")
+#: Modelo usado pelo bot (pedido do dono do produto: Opus 4.8). Sobrescreva com STUDIO_PROMPTER_MODEL.
+MODEL = os.environ.get("STUDIO_PROMPTER_MODEL", "claude-opus-4-8")
 TIMEOUT_S = 180
 MAX_IMAGES = 4
+
+#: Padrão de prompt do bot do instrutor, extraído do vídeo da aula 009: um parágrafo denso de
+#: fotografia publicitária + cinco linhas técnicas. O bot deve seguir ESTA estrutura (não copiar o
+#: conteúdo). Mantido literal como exemplar para o modelo.
+EXAMPLE_PROMPT = (
+    "Ultra-realistic commercial product photography of an energy drink can partially embedded in fresh snow, "
+    "no people, no human elements. The can is centered and upright, covered with fine ice crystals, frost, and "
+    "condensation droplets, emphasizing extreme cold. Surrounding environment is a snowy forest at dusk or blue "
+    "hour, softly blurred in the background for depth. Strong neon lighting accents in cyan and magenta wrap "
+    "around the scene and subtly reflect on the aluminum surface, creating a futuristic winter-neon aesthetic. "
+    "Cinematic contrast with cool blue ambient light and vibrant neon rim lights outlining the can. Shot as "
+    "high-end advertising photography, sharp focus, hyper-detailed textures, visible aluminum grain, crisp "
+    "typography, realistic reflections.\n\n"
+    "Camera: Canon EOS R5, 85mm lens, f/2.8, shallow depth of field, tack-sharp product focus.\n"
+    "Lighting: diffused cold key light from above, neon rim lights on both sides, subtle backlight for separation.\n"
+    "Composition: clean, minimal, premium, centered hero shot.\n"
+    "Color grading: icy blues, teal shadows, neon cyan and pink highlights, cinematic contrast.\n"
+    "Style: futuristic winter commercial, neon snow aesthetic, ultra-photorealistic, high resolution, sharp "
+    "details, no illustration, no CGI look, no people."
+)
+
+#: Rótulos das linhas técnicas do padrão (na ordem).
+PROMPT_SECTIONS = ("Camera:", "Lighting:", "Composition:", "Color grading:", "Style:")
+
+PROMPT_FORMAT = (
+    "FORMAT (mandatory, this is the instructor's bot pattern): the \"prompt\" value is ONE dense paragraph of "
+    "high-end advertising photography (subject and its state, environment and depth, lighting accents and how they "
+    "reflect on materials, cinematic contrast, 'shot as high-end advertising photography, sharp focus, "
+    "hyper-detailed textures, realistic reflections'), then a blank line, then exactly these five lines in this "
+    "order: 'Camera: <body, lens mm, aperture, depth of field, focus>', 'Lighting: <key, rim, back light>', "
+    "'Composition: <framing>', 'Color grading: <palette, shadows, highlights, contrast>', 'Style: <look, "
+    "photorealism, resolution, exclusions>'. 120–220 words in total, English. Example of the pattern (copy the "
+    "STRUCTURE and level of detail, never the content):\n---\n" + EXAMPLE_PROMPT + "\n---"
+)
 
 # Papel do bot por tipo de prompt — o que a aula manda em cada caso.
 ROLES = {
@@ -29,14 +66,12 @@ ROLES = {
         "You are a cinematic art director writing image-generation prompts (Midjourney/Higgsfield style). "
         "Task: write ONE prompt for a MOOD FRAME — the visual identity of an ad campaign: light, color palette, "
         "atmosphere, materials, textures, time of day, weather. Rules from the course: one single vibe, chosen by "
-        "FEELING (it does not have to be about the product); photorealistic cinematic still; include camera "
-        "body, lens (mm), aperture, film stock/grain and lighting setup. 60–120 words, English."
+        "FEELING (it does not have to be about the product); photorealistic cinematic still. " + PROMPT_FORMAT
     ),
     "base": (
         "You are a cinematic art director writing image-generation prompts. Task: write ONE prompt that places the "
         "product in EXACTLY the same situation/composition as the reference image, keeping the campaign mood "
-        "(light, palette, atmosphere). Photorealistic, camera body, lens, "
-        "aperture, lighting. 60–120 words, English."
+        "(light, palette, atmosphere). Ultra-photorealistic commercial product photography. " + PROMPT_FORMAT
     ),
     "motion": (
         "You are a film director writing image-to-video motion prompts (Kling/Seedance style). Task: describe the "
@@ -49,7 +84,8 @@ ROLES = {
 OUTPUT_SPEC = (
     'Return ONLY a JSON object inside a ```json fence with keys: "prompt" (the final prompt, English), '
     '"negative" (comma-separated things to avoid, English), "camera" (camera/lens/aperture summary), '
-    '"notes_pt" (2 short lines in Brazilian Portuguese explaining the choices).'
+    '"notes_pt" (2 short lines in Brazilian Portuguese explaining the choices). Inside "prompt", keep real line '
+    'breaks (\\n) between the paragraph and the technical lines.'
 )
 
 
@@ -61,7 +97,7 @@ def _run(prompt: str, images: list[Path] | None = None, timeout: int = TIMEOUT_S
     """Chama `claude -p`. Com imagens, libera só a tool Read (o Claude lê os arquivos). Devolve (texto, segundos)."""
     if not BIN:
         raise RuntimeError("Claude CLI não encontrado no PATH (instale o Claude Code ou use o modo template)")
-    args = [BIN, "-p", prompt, "--output-format", "text", "--max-turns", "6"]
+    args = [BIN, "-p", prompt, "--model", MODEL, "--output-format", "text", "--max-turns", "6"]
     if images:
         args += ["--allowedTools", "Read"]
     t0 = time.time()
@@ -136,6 +172,18 @@ STYLE_VARIANTS = [
 _STYLE_VARIANTS = STYLE_VARIANTS   # alias histórico
 
 
+def _sections(vibe: str, composition: str, no_people: bool) -> str:
+    """As cinco linhas técnicas do padrão do bot (`EXAMPLE_PROMPT`), para o template sem Claude."""
+    style = "ultra-photorealistic, high resolution, sharp details, no illustration, no CGI look"
+    if no_people:
+        style += ", no people"
+    return ("\n\nCamera: RED Komodo 6K, 50mm lens, T2.8, shallow depth of field, tack-sharp focus.\n"
+            "Lighting: diffused key light, rim lights on both sides, subtle backlight for separation.\n"
+            f"Composition: {composition}.\n"
+            f"Color grading: {vibe} palette, cinematic contrast.\n"
+            f"Style: {style}.")
+
+
 def fallback_template(kind: str, brief: dict, variation: int = 0, no_people: bool = True) -> dict:
     """Template determinístico (sem Claude) — o que a etapa 2 usava antes desta feature.
 
@@ -159,10 +207,13 @@ def fallback_template(kind: str, brief: dict, variation: int = 0, no_people: boo
                       "Photorealistic cinematic still, shot on RED Komodo, film grain.")
         if no_people:
             prompt += " No people."
+        prompt += _sections(vibe, "wide, empty, atmosphere-first establishing shot", no_people)
     elif kind == "base":
-        prompt = (f"The {product} placed in exactly the same situation and composition as the reference image, with the "
-                  f"campaign mood ({vibe}): same light, palette and atmosphere. Photorealistic, shot on RED Komodo, "
-                  "50mm, T2.8. No text.")
+        prompt = (f"Ultra-realistic commercial product photography of the {product} placed in exactly the same "
+                  f"situation and composition as the reference image, with the campaign mood ({vibe}): same light, "
+                  "palette and atmosphere. Shot as high-end advertising photography, sharp focus, hyper-detailed "
+                  "textures, realistic reflections. No text.")
+        prompt += _sections(vibe, "clean, minimal, premium, centered hero shot", no_people)
     else:
         prompt = ("Subject performs one clear action; slow cinematic camera move; keep lighting, colors and character "
                   "identical to the input frame; realistic physics; no text.")
