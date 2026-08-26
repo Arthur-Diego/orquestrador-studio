@@ -15,6 +15,9 @@ from ...animate import service as animate
 from ...common.guide import Guide, exists
 from . import META
 
+#: A aula 012 pede 2 takes por shot antes de escolher (mesmo valor da tela).
+TAKES_DA_AULA = 2
+
 #: `videos/cenaNN/shotMM_takeK.ext` — a nomenclatura que a aula pede ("nomear e organizar").
 TAKE_NAME = re.compile(r"^videos/[^/]+/[^/]+_take\d+\.[A-Za-z0-9]+$")
 
@@ -114,7 +117,21 @@ def guide(pid: str) -> dict:
 
     # ---------- validações (auditoria §6.5) ----------
     _checks(g, pid, shots, total, ready)
-    return g.build()
+    # Wave 4: a faixa compacta do guia mostra "N/M shots prontos" (o chip que saiu do painel 01)
+    # e uma próxima ação imperativa no estilo do protótipo.
+    return g.build(summary=f"{len(ready)}/{total} shots prontos" if total else None,
+                   next_action=_next_action(shots))
+
+
+def _next_action(shots: list[dict]) -> str | None:
+    """Imperativo curto do protótipo: "Gerar 2 takes do shot02 e dar like no usável"."""
+    pendentes = [s for s in shots if not _ready(s)]
+    if not shots or not pendentes:
+        return None
+    alvo = pendentes[0]
+    faltam = max(TAKES_DA_AULA - len(alvo.get("takes") or []), 1)
+    return (f"Gerar {faltam} {'takes' if faltam > 1 else 'take'} do {alvo.get('shot') or 'shot'} "
+            "e dar like no usável")
 
 
 def _checks(g: Guide, pid: str, shots: list[dict], total: int, ready: list[dict]) -> None:
