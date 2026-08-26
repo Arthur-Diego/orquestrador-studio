@@ -1,77 +1,466 @@
-// Núcleo do frontend: projetos, navegação e carregamento dos plugins de etapa.
+// Núcleo do frontend (shell OS-013): campanhas, roteamento, estado por etapa e visão geral.
+//
 // Cada etapa (studio/etapas/<id>/view.js) chama Studio.register(id, factory) e recebe um
-// contexto com $, api, toast, pid(), project(), files(path).
+// contexto com $, api, toast, pid(), project(), files(path), guide().
+// `ui.js` roda antes deste arquivo e já criou window.Studio.ui — por isso aqui é Object.assign.
+//
+// Roteamento: o hash é a fonte de verdade (`#/<pid>/<step>` e `#/<pid>/overview`); o
+// localStorage só serve de fallback quando o hash está vazio ou aponta para algo inexistente.
+// O estado de cada etapa (a fazer / bloqueada / em andamento / concluída) vem SEMPRE do guia do
+// backend (`GET /api/projects/{pid}/guide`), nunca de um cálculo daqui.
 const $ = (s) => document.querySelector(s);
 const api = async (path, opts = {}) => {
   const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
   return r.json();
 };
-const toast = (m) => { const t = $("#toast"); t.textContent = m; t.classList.remove("hidden"); setTimeout(() => t.classList.add("hidden"), 2600); };
+const toast = (m) => { const t = $("#toast"); t.textContent = m; t.classList.remove("hidden"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add("hidden"), 3200); };
+const esc = (s) => window.Studio.ui.esc(s);
 
-let projects = [], pid = null, current = null;
-const factories = {}, instances = {}, loaded = new Set();
+// ---------- estado ----------
+let steps = [], projects = [], pid = null, project = null;
+let guideAll = null;              // { steps: [Guide × 11], done, total, progress, current }
+let guideById = {};               // id → Guide
+let view = "overview";            // "overview" | <id da etapa>
+let currentStep = null;           // etapa instanciada em #main
+const factories = {}, instances = {}, loaded = new Set(), readySteps = new Set();
+let refreshTimer = null;
 
-window.Studio = {
+const ASPECTS = [
+  { id: "16:9", dest: "YouTube, tela cheia", w: 28, h: 16 },
+  { id: "9:16", dest: "Reels, TikTok, Shorts", w: 11, h: 20 },
+  { id: "1:1", dest: "Feed quadrado", w: 18, h: 18 },
+];
+const ASPECT_LABEL = { "16:9": "16:9 · YouTube", "9:16": "9:16 · Reels/TikTok", "1:1": "1:1 · feed" };
+const COURSE_TEXT = "Cada etapa reproduz uma aula (o número aparece ao lado). A regra do instrutor é “fique preso ao processo, não à plataforma”: aqui o Midjourney/Higgsfield UI viram Higgsfield (UI ilimitada + CLI pago) e o bot da comunidade vira o Claude local; o processo, as entradas e as saídas são os da aula. Prompts de imagem em inglês, com intenção (mood, ângulo, câmera, estilo). Antes de gastar créditos o Studio mostra o custo — na aula 008 o custo é o principal critério.";
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* localStorage bloqueado */ } },
+};
+
+// ---------- contrato com os plugins de etapa ----------
+window.Studio = Object.assign(window.Studio || {}, {
   register(id, factory) { factories[id] = factory; },
+  /** Navegação entre telas: etapas e a visão geral (`Studio.go("overview")`). */
+  go(target) {
+    if (target === "overview" || factories[target] || readySteps.has(target)) navigate(target);
+  },
+  /** `Studio.ui.renderGuide` avisa aqui: o menu e a barra de progresso acompanham a etapa. */
+  onGuide(stepId, g) {
+    if (g) { guideById[stepId] = g; recomputeOverview(); renderMenu(); renderTopbar(); }
+    scheduleGuideRefresh();
+  },
   ctx: {
     $, api, toast,
     pid: () => pid,
-    project: () => projects.find(p => p.id === pid) || null,
+    project: () => project || projects.find((p) => p.id === pid) || null,
     files: (path) => `/files/${pid}/${path}`,
+    // Recarrega o painel #guide da etapa em exibição (após qualquer ação que muda artefatos).
+    guide: () => window.Studio.ui.renderGuide(currentStep),
   },
-};
+});
 
-// ---------- projetos ----------
+// ---------- roteamento por hash ----------
+function parseHash() {
+  const m = (location.hash || "").match(/^#\/([^/]+)(?:\/([^/]+))?\/?$/);
+  return m ? { pid: decodeURIComponent(m[1]), view: m[2] ? decodeURIComponent(m[2]) : "overview" } : null;
+}
+async function navigate(target, opts = {}) {
+  const p = opts.pid || pid;
+  if (!p) { await applyRoute(); return; }
+  const h = `#/${encodeURIComponent(p)}/${encodeURIComponent(target)}`;
+  if (location.hash === h) { await applyRoute(); return; }
+  if (opts.replace) { history.replaceState(null, "", h); await applyRoute(); }
+  else location.hash = h;                       // dispara hashchange → applyRoute()
+}
+async function applyRoute() {
+  if (!projects.length) {
+    pid = null; project = null; guideAll = null; guideById = {};
+    renderMenu(); renderTopbar(); renderNoProject();
+    return;
+  }
+  const r = parseHash();
+  let wantPid = r && r.pid;
+  let wantView = r && r.view;
+  if (!wantPid || !projects.some((p) => p.id === wantPid)) {
+    const saved = store.get("studio.pid");
+    wantPid = projects.some((p) => p.id === saved) ? saved : projects[0].id;
+    if (!r) wantView = store.get("studio.view") || "overview";
+    return navigate(wantView || "overview", { pid: wantPid, replace: true });
+  }
+  if (wantView !== "overview" && !readySteps.has(wantView)) {
+    return navigate("overview", { pid: wantPid, replace: true });
+  }
+  const trocouProjeto = wantPid !== pid;
+  pid = wantPid;
+  store.set("studio.pid", pid); store.set("studio.view", wantView);
+  if ($("#projSel").value !== pid) $("#projSel").value = pid;
+  if (trocouProjeto) {
+    project = null; guideAll = null; guideById = {};
+    renderTopbar(); renderMenu();
+    await loadProjectState();
+  }
+  view = wantView;
+  renderMenu(); renderTopbar();
+  if (view === "overview") { destroyCurrent(); renderOverview(); }
+  else await showView(view);
+}
+window.addEventListener("hashchange", () => { applyRoute(); });
+
+// ---------- dados da campanha ----------
 async function loadProjects(selectId) {
-  projects = await api("/api/projects");
+  projects = await api("/api/projects").catch(() => []);
   const sel = $("#projSel");
-  sel.innerHTML = projects.length ? projects.map(p => `<option value="${p.id}">${p.name}</option>`).join("") : `<option value="">— crie um projeto —</option>`;
-  pid = selectId || localStorage.getItem("studio.pid") || (projects[0] && projects[0].id) || null;
-  if (pid && !projects.some(p => p.id === pid)) pid = projects[0] ? projects[0].id : null;
-  if (pid) sel.value = pid;
-  onProjectChange();
+  sel.innerHTML = projects.length
+    ? projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")
+    : `<option value="">— nenhuma campanha —</option>`;
+  if (selectId) { pid = null; await navigate("overview", { pid: selectId, replace: true }); return; }
+  await applyRoute();
 }
-function onProjectChange() {
-  pid = $("#projSel").value || null;
-  if (pid) localStorage.setItem("studio.pid", pid);
-  if (current && instances[current] && instances[current].onProject) instances[current].onProject();
+async function loadProjectState() {
+  const [p, g] = await Promise.allSettled([
+    api(`/api/projects/${encodeURIComponent(pid)}`),
+    api(`/api/projects/${encodeURIComponent(pid)}/guide`),
+  ]);
+  project = p.status === "fulfilled" ? p.value : (projects.find((x) => x.id === pid) || null);
+  guideAll = g.status === "fulfilled" ? g.value : null;
+  guideById = {};
+  if (guideAll && guideAll.steps) guideAll.steps.forEach((s) => { guideById[s.id] = s; });
+  renderTopbar(); renderMenu();
 }
-$("#projSel").addEventListener("change", onProjectChange);
-$("#btnNewProj").onclick = () => $("#newProj").classList.toggle("hidden");
-$("#npCancel").onclick = () => $("#newProj").classList.add("hidden");
-$("#newProj").onsubmit = async (e) => {
-  e.preventDefault();
-  try {
-    const p = await api("/api/projects", { method: "POST", body: JSON.stringify({ name: $("#npName").value, product: $("#npProduct").value, vibe: $("#npVibe").value }) });
-    $("#newProj").classList.add("hidden"); $("#newProj").reset();
-    await loadProjects(p.id); toast(`Projeto ${p.name} criado`);
-  } catch (err) { toast(err.message); }
-};
+/** Recalcula `done`/`current` depois que uma etapa devolveu um guia novo (sem ir ao servidor). */
+function recomputeOverview() {
+  if (!guideAll) return;
+  guideAll.steps = steps.map((s) => guideById[s.id]).filter(Boolean);
+  guideAll.done = guideAll.steps.filter((g) => g.status === "done").length;
+  guideAll.total = guideAll.steps.length;
+  guideAll.progress = guideAll.total ? guideAll.done / guideAll.total : 0;
+  const next = guideAll.steps.find((g) => g.status !== "done");
+  guideAll.current = next ? next.id : null;
+}
+/** Recarrega o agregado do guia com debounce — uma etapa pode chamar `ctx.guide()` várias vezes. */
+function scheduleGuideRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(async () => {
+    if (!pid) return;
+    try {
+      guideAll = await api(`/api/projects/${encodeURIComponent(pid)}/guide`);
+      guideById = {};
+      guideAll.steps.forEach((s) => { guideById[s.id] = s; });
+      renderMenu(); renderTopbar();
+      if (view === "overview") renderOverview();
+    } catch (e) { /* o guia é informativo: falhar aqui não pode atrapalhar a tela */ }
+  }, 400);
+}
 
-// ---------- etapas ----------
+// ---------- menu lateral ----------
+function statusOf(stepId, stepStatus) {
+  if (!pid) return "none";                    // sem campanha não existe estado de etapa
+  const g = guideById[stepId];
+  if (g) return g.status;
+  return stepStatus === "ready" ? "unknown" : "todo";
+}
+function renderMenu() {
+  const ui = window.Studio.ui;
+  $("#btnOverview").classList.toggle("active", view === "overview");
+  $("#steps").innerHTML = steps.map((s) => {
+    const g = guideById[s.id];
+    const st = statusOf(s.id, s.status);
+    const pct = g ? Math.round((g.progress || 0) * 100) : 0;
+    const falta = g && g.missing && g.missing.length ? `\nFaltando: ${g.missing.join(", ")}` : "";
+    const rotulo = st === "none" ? "" : (ui.STATUS_LABEL[st] || st);
+    const title = rotulo ? `${s.desc}\n${rotulo}${falta}` : s.desc;
+    return `<li class="${s.status} st-${st}${view === s.id ? " active" : ""}" data-id="${esc(s.id)}" title="${esc(title)}"${s.status === "ready" ? ' tabindex="0" role="button"' : ""}>
+      <span class="n">${String(s.n).padStart(2, "0")}</span>
+      <span class="body"><span class="t">${esc(s.title)}</span><span class="a">aula ${esc(s.aula)}${s.status === "soon" ? " · em breve" : ""}</span></span>
+      <span class="st" aria-label="${esc(rotulo)}"></span>
+      ${st === "in_progress" ? `<span class="miniprog"><i style="width:${pct}%"></i></span>` : ""}
+    </li>`;
+  }).join("");
+}
+
+// ---------- topo da campanha ----------
+function renderTopbar() {
+  const ui = window.Studio.ui;
+  const nome = project ? project.name : (projects.find((p) => p.id === pid) || {}).name;
+  $("#tbName").textContent = nome || "Nenhuma campanha";
+  $("#tbEyebrow").textContent = pid ? `Campanha · ${pid}` : "Campanha";
+  const done = guideAll ? guideAll.done : 0;
+  const total = guideAll ? guideAll.total : steps.length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  $("#tbCount").textContent = pid ? `${done}/${total} etapas` : "—";
+  $("#tbBar").style.width = `${pid ? pct : 0}%`;
+  $("#tbBar").parentElement.classList.toggle("ok", done > 0 && done === total);
+
+  const chips = [];
+  if (project && project.product) chips.push(ui.chip(project.product, "mode"));
+  chips.push(ui.chip(ASPECT_LABEL[(project && project.aspect_ratio) || "16:9"], "mode"));
+  if (project && project.vibe) chips.push(ui.chip(`vibe: ${project.vibe}`, "info"));
+  else if (pid) chips.push(ui.chip("vibe: definida na etapa 2", "todo"));
+  const cur = guideAll && guideAll.current;
+  if (cur && guideById[cur]) chips.push(ui.chip(`agora: etapa ${guideById[cur].n} — ${guideById[cur].title}`, "in_progress"));
+  else if (pid && guideAll && !cur) chips.push(ui.chip("campanha concluída", "done"));
+  $("#tbMeta").innerHTML = pid ? chips.join("") : "";
+
+  $("#btnContinue").disabled = !pid || !cur;
+  $("#btnContinue").textContent = pid && guideAll && !cur ? "Campanha concluída" : "Continuar de onde parei";
+  $("#btnEditCamp").disabled = !pid;
+  // Sem campanha o topo não tem o que mostrar: só a marca e o convite para criar a primeira.
+  $("#topbar").classList.toggle("vazio", !pid);
+}
+
+// ---------- visão geral ----------
+function cardHtml(s) {
+  const ui = window.Studio.ui;
+  const g = guideById[s.id];
+  const st = statusOf(s.id, s.status);
+  const pct = g ? Math.round((g.progress || 0) * 100) : 0;
+  const atual = guideAll && guideAll.current === s.id;
+  const miss = g && g.missing && g.missing.length
+    ? `<p class="miss"><b>Faltando:</b> ${esc(g.missing.slice(0, 3).join(" · "))}${g.missing.length > 3 ? ` <span class="fine">+${g.missing.length - 3}</span>` : ""}</p>`
+    : (st === "done" ? `<p class="miss">Nada pendente nesta etapa.</p>` : "");
+  const next = g && g.next_action ? `<p class="next">→ ${esc(g.next_action)}</p>` : "";
+  return `<article class="ovcard st-${st}${atual ? " is-current" : ""}">
+    <div class="ovcard-top"><span class="n">${String(s.n).padStart(2, "0")}</span>${atual ? ui.chip("etapa atual", "info") : ""}${ui.chip(ui.STATUS_LABEL[st] || st, ui.STATUS_KIND[st] || "mode")}</div>
+    <h4>${esc(s.title)}</h4>
+    <p class="aula">aula ${esc(s.aula)}</p>
+    <div class="progress${st === "done" ? " ok" : ""}"><div class="bar" style="width:${pct}%"></div></div>
+    ${miss}${next}
+    <div class="act">${s.status === "ready"
+      ? `<button class="ghost" data-go="${esc(s.id)}">${atual ? "Continuar aqui" : "Abrir"}</button>`
+      : `<button class="ghost" disabled>Em breve</button>`}</div>
+  </article>`;
+}
+function courseHtml() {
+  return `<details class="course">
+    <summary>Como o Studio segue o curso<span class="eyebrow">aulas 005 · 007 · 008</span></summary>
+    <div class="course-body"><p>${esc(COURSE_TEXT)}</p></div>
+  </details>`;
+}
+function renderOverview() {
+  const ui = window.Studio.ui;
+  const done = guideAll ? guideAll.done : 0;
+  const total = guideAll ? guideAll.total : steps.length;
+  const cur = guideAll && guideAll.current && guideById[guideAll.current];
+  const contagem = {};
+  steps.forEach((s) => { const st = statusOf(s.id, s.status); contagem[st] = (contagem[st] || 0) + 1; });
+  const resumo = ["done", "in_progress", "blocked", "todo", "unknown"]
+    .filter((k) => contagem[k])
+    .map((k) => ui.chip(`${contagem[k]} ${ui.STATUS_LABEL[k]}`, ui.STATUS_KIND[k])).join("");
+
+  $("#main").innerHTML = `
+  <header class="stephead">
+    <span class="eyebrow">Etapas 1 a 11 · aulas 009 → 015 · 001</span>
+    <h2>Visão geral da campanha</h2>
+    <p class="lede">As 11 etapas do curso, na ordem das aulas, com o estado real dos artefatos desta campanha. ${cur ? `Você está na <strong>etapa ${esc(cur.n)} — ${esc(cur.title)}</strong>.` : "Todas as etapas estão concluídas."}</p>
+  </header>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h3>Etapas <span class="eyebrow">${done} de ${total} concluídas</span></h3>
+      <div class="ov-summary">${resumo}</div>
+    </div>
+    <div class="ovgrid">${steps.map(cardHtml).join("")}</div>
+  </section>
+
+  ${courseHtml()}`;
+
+  $("#main").onclick = (ev) => {
+    const b = ev.target.closest("[data-go]");
+    if (b && !b.disabled) window.Studio.go(b.dataset.go);
+  };
+}
+function renderNoProject() {
+  $("#main").innerHTML = `
+  <div class="empty-state">
+    <span class="eyebrow">Orquestrador Studio</span>
+    <h2>Nenhuma campanha ainda</h2>
+    <p class="lede">Uma campanha guarda tudo o que as 11 etapas do curso produzem: referências, mood board, imagem base, storyboard, ângulos, takes, trilha, montagem, export, publicação e prospecção.</p>
+    <button class="primary" id="btnFirst" type="button">Criar a primeira campanha</button>
+  </div>
+  ${courseHtml()}`;
+  $("#btnFirst").onclick = openWizard;
+  $("#main").onclick = null;
+}
+
+// ---------- telas de etapa ----------
 function loadScript(src) {
   return new Promise((resolve, reject) => { const s = document.createElement("script"); s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("falha ao carregar " + src)); document.body.appendChild(s); });
 }
-async function showView(id) {
-  document.querySelectorAll("#steps li").forEach(li => li.classList.toggle("active", li.dataset.id === id));
-  localStorage.setItem("studio.view", id);
-  const main = $("#main");
-  main.innerHTML = await (await fetch(`/steps/${id}/view.html`)).text();
-  if (!loaded.has(id)) { await loadScript(`/steps/${id}/view.js`); loaded.add(id); }
-  current = id;
-  instances[id] = factories[id](window.Studio.ctx);
-  instances[id].init();
+/** Encerra a tela anterior: sem isso o polling dela sobrevive à troca e continua batendo na API. */
+function destroyCurrent() {
+  if (currentStep && instances[currentStep] && instances[currentStep].destroy) {
+    try { instances[currentStep].destroy(); } catch (e) { /* uma tela quebrada não impede a troca */ }
+  }
+  currentStep = null;
+  $("#main").onclick = null;
 }
+async function showView(id) {
+  destroyCurrent();
+  const main = $("#main");
+  try {
+    const r = await fetch(`/steps/${encodeURIComponent(id)}/view.html`);
+    if (!r.ok) throw new Error(`etapa ${id}: tela indisponível (${r.status})`);
+    main.innerHTML = await r.text();
+    if (!loaded.has(id)) { await loadScript(`/steps/${encodeURIComponent(id)}/view.js`); loaded.add(id); }
+    if (!factories[id]) throw new Error(`etapa ${id}: view.js não registrou a tela`);
+    ensureGuideSlot(main);
+    currentStep = id;
+    instances[id] = factories[id](window.Studio.ctx);
+    instances[id].init();
+    // A tela também chama `renderGuide` nas suas ações; aqui garantimos o painel no 1º render.
+    window.Studio.ui.renderGuide(id);
+  } catch (err) {
+    currentStep = null;
+    main.innerHTML = `<div class="empty">Não foi possível abrir esta etapa: ${esc(err.message)}</div>`;
+    toast(err.message);
+  }
+}
+/**
+ * O contrato da wave 2 pede `<section id="guide" class="guide">` logo após o `header.stephead`.
+ * Enquanto as frentes de etapa não migram os seus `view.html`, o shell cria o slot — quando o
+ * `view.html` já traz o seu, nada muda (o elemento existente é reaproveitado).
+ */
+function ensureGuideSlot(main) {
+  if (main.querySelector("#guide")) return;
+  const sec = document.createElement("section");
+  sec.id = "guide"; sec.className = "guide";
+  const head = main.querySelector("header.stephead");
+  if (head && head.parentNode) head.after(sec); else main.prepend(sec);
+}
+
+// ---------- wizard e edição da campanha ----------
+function campoFormato(atual) {
+  return `<div class="field">
+    <span class="eyebrow">Formato (pela plataforma de destino)</span>
+    <div class="fmt">${ASPECTS.map((a) => `<label>
+      <span class="box"><i style="width:${a.w}px;height:${a.h}px"></i></span>
+      <input type="radio" name="aspect" value="${a.id}"${a.id === atual ? " checked" : ""}>
+      <span class="ratio">${a.id}</span>
+      <span class="dest">${esc(a.dest)}</span>
+    </label>`).join("")}</div>
+    <span class="hint">A aula 007 manda escolher o formato pelo destino do vídeo. <code>[extensão]</code></span>
+  </div>`;
+}
+function campanhaForm(p, submitLabel) {
+  return `<form id="campForm" novalidate>
+    <div class="field">
+      <label class="eyebrow" for="cfName">Nome da campanha</label>
+      <input id="cfName" name="name" required maxlength="80" placeholder="ex.: Gelo Zero" value="${esc(p.name || "")}">
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="cfProduct">Produto</label>
+      <input id="cfProduct" name="product" placeholder="ex.: energy drink" value="${esc(p.product || "")}">
+      <span class="hint">Vale em inglês: os prompts de imagem são escritos em inglês (aula 007).</span>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="cfVibe">Vibe (opcional)</label>
+      <input id="cfVibe" name="vibe" placeholder="(será encontrada na etapa 2)" value="${esc(p.vibe || "")}">
+      <span class="hint">A aula 009 encontra a vibe no mood board — dá para começar sem nenhuma ideia.</span>
+    </div>
+    ${campoFormato(p.aspect_ratio || "16:9")}
+    <div class="modal-actions">
+      <button type="button" class="ghost" data-close>Cancelar</button>
+      <button type="submit" class="primary">${esc(submitLabel)}</button>
+    </div>
+  </form>`;
+}
+function ligaForm(m, onSubmit) {
+  const form = m.el.querySelector("#campForm");
+  m.el.querySelector("[data-close]").onclick = m.close;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const dados = {
+      name: form.name.value.trim(),
+      product: form.product.value.trim(),
+      vibe: form.vibe.value.trim(),
+      aspect_ratio: (form.querySelector('input[name="aspect"]:checked') || {}).value || "16:9",
+    };
+    if (!dados.name) { toast("Dê um nome à campanha"); form.name.focus(); return; }
+    const btn = form.querySelector('button[type="submit"]');
+    btn.classList.add("loading"); btn.disabled = true;
+    try {
+      await onSubmit(dados, m);
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      btn.classList.remove("loading"); btn.disabled = false;
+    }
+  };
+}
+function openWizard() {
+  const m = window.Studio.ui.modal({
+    title: "Nova campanha",
+    subtitle: "O básico para começar a etapa 1 — o resto o Studio descobre no caminho.",
+    html: campanhaForm({}, "Criar campanha"),
+  });
+  ligaForm(m, async (dados, modal) => {
+    const p = await api("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ name: dados.name, product: dados.product, vibe: dados.vibe }),
+    });
+    // O formato vive em `project.json` e é aplicado por PATCH (a criação não recebe o campo).
+    await api(`/api/projects/${encodeURIComponent(p.id)}`, {
+      method: "PATCH", body: JSON.stringify({ aspect_ratio: dados.aspect_ratio }),
+    }).catch(() => null);
+    modal.close();
+    toast(`Campanha ${p.name} criada`);
+    await loadProjects(p.id);
+  });
+}
+function openEdit() {
+  if (!pid) return;
+  const atual = project || projects.find((p) => p.id === pid) || {};
+  const m = window.Studio.ui.modal({
+    title: "Editar campanha",
+    subtitle: `Muda só os dados da campanha — os artefatos já produzidos ficam onde estão (${pid}).`,
+    html: campanhaForm(atual, "Salvar alterações"),
+  });
+  ligaForm(m, async (dados, modal) => {
+    project = await api(`/api/projects/${encodeURIComponent(pid)}`, { method: "PATCH", body: JSON.stringify(dados) });
+    const na = projects.find((p) => p.id === pid);
+    if (na) na.name = project.name;
+    $("#projSel").innerHTML = projects.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+    $("#projSel").value = pid;
+    modal.close();
+    toast("Campanha atualizada");
+    renderTopbar();
+    if (view === "overview") renderOverview();
+  });
+}
+
+// ---------- tema ----------
+const TEMA_LABEL = { auto: "tema: sistema", light: "tema: claro", dark: "tema: escuro" };
+function aplicaTema(t) {
+  if (t === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  store.set("studio.theme", t);
+  $("#themeLabel").textContent = TEMA_LABEL[t];
+  $("#btnTheme").title = `Tema: ${TEMA_LABEL[t].replace("tema: ", "")} (clique para alternar)`;
+}
+
+// ---------- bootstrap ----------
+$("#projSel").addEventListener("change", (e) => { if (e.target.value) navigate("overview", { pid: e.target.value }); });
+$("#btnNewProj").onclick = openWizard;
+$("#btnEditCamp").onclick = openEdit;
+$("#btnOverview").onclick = () => navigate("overview");
+$("#btnContinue").onclick = () => { const c = guideAll && guideAll.current; if (c) navigate(c); };
+$("#btnTheme").onclick = () => {
+  const ordem = ["auto", "light", "dark"];
+  aplicaTema(ordem[(ordem.indexOf(store.get("studio.theme") || "auto") + 1) % ordem.length]);
+};
+$("#steps").addEventListener("click", (e) => { const li = e.target.closest("li.ready"); if (li) navigate(li.dataset.id); });
+$("#steps").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const li = e.target.closest("li.ready");
+  if (li) { e.preventDefault(); navigate(li.dataset.id); }
+});
+
 (async () => {
-  const steps = await api("/api/steps");
-  const ol = $("#steps");
-  ol.innerHTML = steps.map(s =>
-    `<li class="${s.status}" data-id="${s.id}" title="${s.desc}" ${s.status === "ready" ? 'tabindex="0"' : ""}><span class="n">${String(s.n).padStart(2, "0")}</span><span><span class="t">${s.title}</span><span class="a">aula ${s.aula}${s.status === "soon" ? " · em breve" : ""}</span></span></li>`).join("");
-  ol.addEventListener("click", e => { const li = e.target.closest("li.ready"); if (li) showView(li.dataset.id); });
-  ol.addEventListener("keydown", e => { if (e.key === "Enter") { const li = e.target.closest("li.ready"); if (li) showView(li.dataset.id); } });
+  aplicaTema(store.get("studio.theme") || "auto");
+  steps = await api("/api/steps").catch(() => []);
+  steps.filter((s) => s.status === "ready").forEach((s) => readySteps.add(s.id));
+  renderMenu();
   await loadProjects();
-  const ready = new Set(steps.filter(s => s.status === "ready").map(s => s.id));
-  const want = localStorage.getItem("studio.view");
-  showView(ready.has(want) ? want : steps.find(s => s.status === "ready").id);
 })();

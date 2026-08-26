@@ -27,7 +27,7 @@ sequenceDiagram
     end
 
     %% --- 2. Montagem da instrução (uma por vez) ---
-    user->>ui: escolhe o tipo (draw_to_edit | edit | multishot), escreve o texto e clica "gerar 4" ou "gerar 1"
+    user->>ui: escolhe o tipo (draw_to_edit | edit | multishot), escreve o texto e clica "montar instrução — gere 4/1 na Higgsfield"
     ui->>api: POST /api/projects/{pid}/storyboard/instructions {kind, text, count}
     api->>svc: build_instruction(pid, kind, text, count)
     svc->>fs: verifica base/base_final.png
@@ -35,7 +35,7 @@ sequenceDiagram
     alt sem base/base_final.png
         svc-->>api: Precondition
         api-->>ui: 409 "Imagem base ausente: conclua a etapa 3 (base)"
-    else texto com 2 ou mais instruções, count fora de {1, 4}, kind ou tamanho inválidos
+    else lista numerada com 2+ itens OU 2+ frases no imperativo (heurística), count fora de {1, 4}, kind ou tamanho inválidos
         svc-->>api: Invalid
         api-->>ui: 422 "Uma instrução por vez (aula 010)"
     else pedido válido

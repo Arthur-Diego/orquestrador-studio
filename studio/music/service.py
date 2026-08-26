@@ -1,10 +1,17 @@
-"""Etapa 7 — Trilha (aula 013): a música vem ANTES da montagem.
+"""Etapa 7 — Trilha (aula 013): assistir a história inteira e só então escolher a música.
 
-O curso manda baixar de 3 a 5 candidatas na biblioteca (YouTube Audio Library, Artlist,
-Epidemic), ouvir até "sentir" a certa e usar as batidas fortes como marcação de onde algo
-acontece. Aqui isso vira: reunir candidatas (upload / Downloads / histórico do CLI / geração
-paga por `sonilo_music`) → ouvir na UI → escolher UMA, declarando a origem/licença → detectar
-batidas e impactos em `audio/beats.json`, que a etapa 8 consome.
+A aula começa ANTES da trilha: "colocar todas as cenas em ordem na timeline, sem cortar nada…
+o objetivo não é editar, é enxergar a história como um todo" e decidir se a história fecha ou se
+falta uma cena (um encerramento mais forte ou mais comercial). Isso é o passo 0 desta etapa:
+`audio/rough_sequence.mp4` (concat dos takes com like, na ordem do storyboard, sem música) e a
+decisão gravada em `audio/story_check.json`.
+
+Só depois vem a trilha — "não para editar ainda, mas para sentir a energia". O curso manda ouvir
+várias músicas na biblioteca (YouTube Audio Library, Artlist, Epidemic; a aula não fixa número),
+escolher "sentindo" e usar as batidas fortes como marcação de onde algo acontece. Aqui isso vira:
+reunir candidatas (upload / Downloads / histórico do CLI / geração paga por `sonilo_music`) →
+ouvir na UI → escolher UMA → detectar batidas e impactos em `audio/beats.json`, que a etapa 8
+consome. A origem/licença da faixa é um campo opcional `[extensão]` — a aula não fala em licença.
 """
 from __future__ import annotations
 
@@ -36,11 +43,18 @@ AUDIO_EXT = ingest.MEDIA_EXT[KIND]
 AUDIO_URL_RE = re.compile(r"https?://[^\s\"']+\.(?:wav|mp3|m4a|ogg)(?:\?[^\s\"']*)?", re.I)
 GENERATE_TIMEOUT = 600
 INSTRUCTIONS = (
-    "Baixe de 3 a 5 músicas na biblioteca (YouTube Audio Library, Artlist, Epidemic) e importe aqui. "
-    "Ouça cada uma inteira antes de decidir: a trilha é escolhida no sentimento, e é ela que dita o ritmo "
-    "da montagem. Em cada batida forte tem que acontecer alguma coisa no vídeo — por isso a trilha vem "
-    "antes do corte, nunca depois."
+    "Baixe várias músicas na biblioteca (YouTube Audio Library, Artlist, Epidemic) e importe aqui — "
+    "a aula não fixa número. Ouça cada uma inteira antes de decidir: a trilha é escolhida no sentimento, "
+    "e é ela que dita o ritmo da montagem. Em cada batida forte tem que acontecer alguma coisa no vídeo. "
+    "Você não deve editar antes de escolher a trilha."
 )
+
+# Passo 0 da aula 013 (assistir a história inteira, sem cortar nada).
+STORY_VIDEO = "rough_sequence.mp4"          # em audio/ — a sequência bruta, sem música
+STORY_CHECK = "story_check.json"            # {closed, note, decided}
+STORY_TIMEOUT = 1800                        # concat de todos os takes em 1080p é lento
+STORY_QUESTION = ("A história fecha? Assista a sequência inteira e diga se falta cena — em especial "
+                  "um encerramento mais forte ou mais comercial, com o produto em evidência.")
 
 
 # ---------- prompt derivado do mood ----------
@@ -179,11 +193,15 @@ def _write_beats(root: Path, data: dict) -> dict:
     return data
 
 
-def select(pid: str, cand_id: str, license: str) -> dict:
-    """Escolhe UMA candidata: copia para audio/music.<ext>, grava a licença declarada e detecta as batidas."""
+def select(pid: str, cand_id: str, license: str = "") -> dict:
+    """Escolhe UMA candidata: copia para audio/music.<ext>, detecta as batidas e, se o usuário
+    tiver declarado a origem, grava `audio/license.txt`.
+
+    A origem/licença é **opcional** `[extensão]`: nenhuma transcrição da aula 013 fala em licença
+    (auditoria 7.4). Declarar continua sendo recomendado — é o que permite recuperar depois de onde
+    veio a faixa —, mas não bloqueia a escolha da trilha.
+    """
     declared = (license or "").strip()
-    if not declared:
-        raise ValueError("Declare a origem/licença da trilha (a aula 013 exige saber de onde veio a música).")
     root = project_dir(pid)
     cands = ingest.load_candidates(root, STEP)
     chosen = next((c for c in cands if c["id"] == cand_id), None)
@@ -202,11 +220,16 @@ def select(pid: str, cand_id: str, license: str) -> dict:
         old.unlink()
     dst = root / STEP / f"music{ext}"
     shutil.copy2(src, dst)
-    (root / STEP / "license.txt").write_text(
-        f"Arquivo: {STEP}/music{ext}\n"
-        f"Candidata: {chosen['id']} ({chosen.get('name') or chosen['file']}, origem: {chosen.get('source', '?')})\n"
-        f"Origem/licença declarada: {declared}\n"
-        f"Declarado em: {datetime.now().isoformat(timespec='seconds')}\n")
+    lic = root / STEP / "license.txt"
+    if declared:
+        lic.write_text(
+            f"Arquivo: {STEP}/music{ext}\n"
+            f"Candidata: {chosen['id']} ({chosen.get('name') or chosen['file']}, origem: {chosen.get('source', '?')})\n"
+            f"Origem/licença declarada: {declared}\n"
+            f"Declarado em: {datetime.now().isoformat(timespec='seconds')}\n")
+    else:
+        # Sem declaração, o arquivo da trilha anterior não pode sobrar dizendo outra origem.
+        lic.unlink(missing_ok=True)
     log.info("select pid=%s id=%s ext=%s license_len=%s", pid, cand_id, ext, len(declared))
 
     # Invariante da seção 6 do FDD: `beats.json`, quando existe, é SEMPRE o da trilha atual.
@@ -226,7 +249,8 @@ def select(pid: str, cand_id: str, license: str) -> dict:
             _beats_file(root).unlink(missing_ok=True)
             warning = f"não foi possível detectar as batidas: {e}"
             log.warning("beats failed pid=%s reason=%s", pid, e)
-    return {"selected": chosen, "music": f"{STEP}/music{ext}", "beats": beats, "warning": warning}
+    return {"selected": chosen, "music": f"{STEP}/music{ext}", "beats": beats, "warning": warning,
+            "license": declared}
 
 
 def recompute_beats(pid: str, k: float = beats_mod.K) -> dict:
@@ -245,3 +269,113 @@ def read_beats(pid: str) -> dict:
     if not f.exists():
         raise FileNotFoundError("beats.json ainda não existe (escolha uma trilha primeiro)")
     return json.loads(f.read_text())
+
+
+# ---------- passo 0: assistir a história inteira (aula 013) ----------
+_story_registry = JobRegistry()
+
+
+def _story_video(root: Path) -> Path:
+    return root / STEP / STORY_VIDEO
+
+
+def _story_check_file(root: Path) -> Path:
+    return root / STEP / STORY_CHECK
+
+
+def read_story_check(pid: str) -> dict | None:
+    """A decisão gravada: `{closed, note, decided}` — `None` enquanto o usuário não decidiu."""
+    f = _story_check_file(project_dir(pid))
+    if not f.exists():
+        return None
+    try:
+        return json.loads(f.read_text())
+    except json.JSONDecodeError:
+        return None
+
+
+def set_story_check(pid: str, closed: bool, note: str = "") -> dict:
+    """Grava a resposta da aula: a história fecha, ou falta um encerramento mais forte/comercial?"""
+    root = project_dir(pid)
+    data = {"closed": bool(closed), "note": (note or "").strip(),
+            "decided": datetime.now().isoformat(timespec="seconds")}
+    _story_check_file(root).write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    log.info("story_check pid=%s closed=%s note_len=%s", pid, data["closed"], len(data["note"]))
+    return data
+
+
+def _product_scene(root: Path) -> dict | None:
+    """A cena extra do produto vive na etapa 5 (ADR-011); aqui só se mostra se ela existe."""
+    f = root / "shots" / "storyboard.json"
+    if not f.exists():
+        return None
+    try:
+        extra = (json.loads(f.read_text()) or {}).get("product_scene")
+    except json.JSONDecodeError:
+        return None
+    return extra if isinstance(extra, dict) and extra.get("id") else None
+
+
+def _story_timeline(pid: str) -> dict:
+    """Sequência bruta: os takes com like na ordem do storyboard, sem música, sem corte nenhum.
+
+    Reaproveita a etapa 8 (`edit.initial_timeline`) em modo leitura — nada é gravado em
+    `edit/timeline.json`: a aula 013 é explícita em que aqui ainda não se edita.
+    """
+    from ..edit import service as edit_svc
+    root = project_dir(pid)
+    base = edit_svc.initial_timeline(pid)
+    return edit_svc.validate_timeline(root, {**base, "blacks": [], "sfx": [],
+                                             "music": {"file": None, "offset": 0.0}, "fade_out": 0.0})
+
+
+def story_status(pid: str) -> dict:
+    """Estado do passo 0 para a tela: vídeo, decisão, cena do produto e quantas cenas entram."""
+    root = project_dir(pid)
+    video = _story_video(root)
+    out: dict = {"video": f"{STEP}/{STORY_VIDEO}" if video.exists() else None,
+                 "check": read_story_check(pid), "question": STORY_QUESTION,
+                 "product_scene": _product_scene(root) is not None,
+                 "ffmpeg": ff.available(), "clips": 0, "duration": 0.0, "warning": None}
+    try:
+        timeline = _story_timeline(pid)
+    except (FileNotFoundError, ValueError) as e:
+        out["warning"] = str(e)
+        return out
+    from ..edit import service as edit_svc
+    out["clips"] = len(timeline["clips"])
+    out["duration"] = edit_svc.timeline_duration(timeline)
+    return out
+
+
+def start_story_render(pid: str) -> dict:
+    """Renderiza `audio/rough_sequence.mp4` num job em thread (ADR-006): concat puro, sem música."""
+    root = project_dir(pid)
+    if not ff.available():
+        raise RuntimeError("ffmpeg indisponível: não dá para montar a sequência bruta")
+    from ..edit import render as edit_render
+    timeline = _story_timeline(pid)
+    final = _story_video(root)
+    part = Path(f"{final}.part")
+    args, duration = edit_render.build_filtergraph(root, timeline, "rough", out=final)
+    n = len(timeline["clips"])
+
+    def run(job: dict) -> None:
+        job["log"].append(f"{n} cena(s) na ordem do storyboard, sem música — {duration:.2f}s previstos")
+        job["done"] += 1
+        try:
+            ff.run(args, timeout=STORY_TIMEOUT)
+            part.replace(final)
+        except Exception:
+            part.unlink(missing_ok=True)
+            raise
+        job["log"].append(f"ok {STEP}/{STORY_VIDEO} — assista inteiro antes de escolher a trilha")
+        job["added"] = 1
+        job["done"] += 1
+
+    log.info("story render start pid=%s clips=%s duration=%.2f", pid, n, duration)
+    return _story_registry.start(pid, 2, run, output=f"{STEP}/{STORY_VIDEO}", duration=duration)
+
+
+def story_job(pid: str) -> dict:
+    return _story_registry.status(pid)

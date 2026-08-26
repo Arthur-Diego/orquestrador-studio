@@ -11,10 +11,22 @@ WEB_DIR = ROOT / "studio" / "web"
 for d in (PROJECTS_DIR, STATE_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-# Subpastas de um projeto (espelha a organização da aula 009/011 do curso)
+# Subpastas de um projeto, inspirado na aula 009 (brainstorming / mood / imagem base / vídeos):
+# `candidates`, `assets`, `jobs`, `edit` e `export` são infraestrutura do Studio `[extensão]` —
+# a aula não nomeia essas pastas. As pastas por etapa existem desde a criação do projeto para o
+# guia (`studio/common/guide.py`) poder ler o projeto inteiro sem precisar criar nada.
 PROJECT_LAYOUT = [
-    "refs/candidates",       # tudo que o scraper trouxe (ainda não escolhido)
+    "refs/candidates",       # tudo que o scraper trouxe (ainda não escolhido) [extensão]
     "refs/candidates/thumbs",
     "refs/brainstorming",    # o que VOCÊ escolheu (aula 009: "só vai salvando o que você gosta")
-    "mood", "assets", "images", "videos", "audio", "edit", "export", "jobs",
+    "mood",                  # etapa 2 — a vibe única da campanha
+    "mood/vibe",             # imagens de onde a vibe é "encontrada" (aula 009)
+    "base",                  # etapa 3 — produto na situação da referência
+    "storyboard",            # etapa 4 — ideias de cena e as 5 cenas em texto
+    "storyboard/ideas",      # só as ideias selecionadas (decisão #7 da wave 1)
+    "shots",                 # etapa 5 — ângulos por cena
+    "animate",               # etapa 6 — plano de takes
+    "publish",               # etapa 10 — log de posts e portfólio
+    "prospect",              # etapa 11 — leads, teasers e pitch
+    "assets", "images", "videos", "audio", "edit", "export", "jobs",
 ]

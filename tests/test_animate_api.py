@@ -57,6 +57,20 @@ def test_step_is_registered_as_ready(client):
     assert client.get("/steps/animate/view.js").status_code == 200
 
 
+def test_view_follows_the_wave_2_screen_contract(client):
+    """Convenção da wave 2: painel do guia na tela, `Studio.ui` e `destroy()` sem timer órfão."""
+    html = client.get("/steps/animate/view.html").text
+    assert "Etapa 6 · aula 012" in html, "string fixada: não mexer"
+    assert '<section id="guide" class="guide">' in html
+    assert "O que fazer aqui:" in html and "O que a aula manda:" in html
+    js = client.get("/steps/animate/view.js").text
+    assert 'Studio.register("animate"' in js
+    assert "destroy()" in js and "job.stop()" in js, "o polling não pode sobreviver à troca de tela"
+    assert "Studio.ui" in js and 'ui.renderGuide("animate")' in js
+    assert "an-end" in js, "campo de end frame do modo start/end (correção 6.1)"
+    assert 'endrow.style.display' in js, "`.row {display:flex}` vence o atributo `hidden` (smoke Playwright)"
+
+
 # ---------- plano ----------
 def test_get_shots_returns_the_plan_and_404_without_storyboard(client, studio_env, project):
     r = client.get(f"/api/projects/{project}/animate/shots")
@@ -83,6 +97,40 @@ def test_put_shot_updates_and_validates(client, project):
     assert r.status_code == 200 and r.json()["fallback_black"] is True
     plan = client.get(f"/api/projects/{project}/animate/shots").json()
     assert plan["shots"][0]["fallback_black"] is True and plan["ready"] == 1
+
+
+def test_put_shot_start_end_mode_saves_the_pair_over_http(client, project):
+    """6.1: a UI salva o modo e o par nasce pronto — `takes.json` registra start e end."""
+    client.get(f"/api/projects/{project}/animate/shots")
+    url = f"/api/projects/{project}/animate/shots/cena01/shot01"
+    r = client.put(url, json={"mode": "start_end", "prompt": "slow dramatic camera"})
+    assert r.status_code == 200
+    assert r.json()["start_end"] == {"start": "shots/cena01/shot01_final.png",
+                                     "end": "shots/cena01/shot02_final.png"}
+    assert r.json()["next_image"] == "shots/cena01/shot02_final.png"
+    assert client.put(url, json={"mode": "simple"}).json()["start_end"] is None
+
+
+def test_put_shot_validates_the_extension_overrides(client, project):
+    """6.7: proporção e modo do CLI são `[extensão]` com override; valor inválido é 422."""
+    client.get(f"/api/projects/{project}/animate/shots")
+    url = f"/api/projects/{project}/animate/shots/cena01/shot01"
+    assert client.put(url, json={"aspect_ratio": "9:16"}).json()["aspect_ratio"] == "9:16"
+    assert client.put(url, json={"cli_mode": "fast"}).json()["cli_mode"] == "fast"
+    assert client.put(url, json={"aspect_ratio": "21:9"}).status_code == 422
+    assert client.put(url, json={"cli_mode": "turbo"}).status_code == 422
+    r = client.put(url, json={"prompt": "walk"})
+    assert r.json()["aspect_ratio"] == "9:16" and r.json()["cli_mode"] == "fast", "campo ausente não apaga"
+    assert client.put(url, json={"aspect_ratio": None}).json()["aspect_ratio"] is None
+
+
+def test_get_shots_carries_the_screen_notes(client, project):
+    """6.3, 6.5 e as opções de end frame chegam à tela pelo próprio plano."""
+    body = client.get(f"/api/projects/{project}/animate/shots").json()
+    assert "Kling 2.6" in body["model_note"] and "Kling 3.0" in body["model_note"]
+    assert "paralelo" in body["parallel_hint"] and body["last_frames"] == []
+    assert body["aspect_ratio"] == "16:9" and body["adapt_threshold"] == 6
+    assert set(body["mode_tips"]) == {"simple", "elaborate", "start_end"}
 
 
 def test_get_prompt_suggests_by_mode(client, project):

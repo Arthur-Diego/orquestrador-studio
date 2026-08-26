@@ -122,10 +122,11 @@ def test_propose_cuts_and_apply(client, project, root):
     r = client.post(url(project, "/propose-cuts"), json={"offset": 0.0, "black_dur": 0.2, "apply": False})
     assert r.status_code == 200
     assert r.json()["impacts_used"] == [1.0, 2.5, 4.0] and r.json()["applied"] is False
+    assert [b["at"] for b in r.json()["timeline"]["blacks"]] == [1.0, 2.5], "preto só quando pedido"
     applied = client.post(url(project, "/propose-cuts"), json={"apply": True}).json()
     assert applied["applied"] is True
     stored = client.get(url(project, "/timeline")).json()["timeline"]
-    assert [b["at"] for b in stored["blacks"]] == [1.0, 2.5]
+    assert stored["blacks"] == [], "sem black_dur o corte é seco (auditoria 8.1)"
 
 
 def test_propose_cuts_rejects_negative_offset(client, project, root):
@@ -251,3 +252,44 @@ def test_render_master_end_to_end(client, project, root):
     assert job["output"] == "edit/master.mp4" and job["done"] == job["total"]
     assert (root / "edit" / "master.mp4").exists()
     assert client.get(f"/files/{project}/edit/master.mp4").status_code == 200
+
+
+# ---------- fidelidade à aula (wave 2) ----------
+def test_master_without_track_is_409(client, project, root):
+    """Auditoria 8.2: o master não sai sem a trilha da etapa 7; o rough continua liberado."""
+    if not has_ffmpeg():
+        pytest.skip("ffmpeg não disponível")
+    seed(root, music=False)
+    client.get(url(project, "/timeline"))
+    r = client.post(url(project, "/render"), json={"target": "master"})
+    assert r.status_code == 409 and "etapa 7" in r.json()["detail"]
+    assert client.post(url(project, "/render"), json={"target": "rough"}).status_code == 200
+
+
+def test_timeline_accepts_zoom_and_loudnorm(client, project, root):
+    seed(root)
+    tl = body(client.get(url(project, "/timeline")).json()["timeline"])
+    assert all(c["zoom"] == 1.0 for c in tl["clips"])
+    tl["clips"][0]["zoom"] = 1.15
+    tl["loudnorm"] = False
+    r = client.put(url(project, "/timeline"), json=tl)
+    assert r.status_code == 200, r.text
+    stored = client.get(url(project, "/timeline")).json()["timeline"]
+    assert stored["clips"][0]["zoom"] == 1.15 and stored["loudnorm"] is False
+
+    tl["clips"][0]["zoom"] = 1.9
+    assert client.put(url(project, "/timeline"), json=tl).status_code == 422
+
+
+def test_step_screen_carries_the_lesson_texts(client):
+    """Auditoria 8.5, 8.9, 8.10 + convenção de tela da wave 2."""
+    html = client.get("/steps/edit/view.html").text
+    js = client.get("/steps/edit/view.js").text
+    assert "Etapa 8 · aula 014" in html
+    assert '<section id="guide" class="guide"></section>' in html
+    assert "gelo, ambiência, respiração e impacto" in html, "lista literal da aula (8.9)"
+    assert "publique o seu trabalho, mesmo imperfeito" in html, "dever de casa da aula (8.10)"
+    assert "pequeno zoom" in html and "[extensão]" in html
+    assert 'id="editRuler"' in html and "marcador ▾" in html, "régua de impactos sobre a timeline (8.5)"
+    assert "corte seco" in html, "o preto deixou de ser regra de todo corte (8.1)"
+    assert "Studio.ui" in js and "destroy()" in js and "ctx.guide()" in js

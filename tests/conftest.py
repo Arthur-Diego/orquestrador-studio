@@ -64,3 +64,12 @@ def make_audio(path: Path, seconds: float = 3, bpm: int = 120) -> Path:
     ff.run(["-f", "lavfi", "-i", f"sine=frequency=220:duration={seconds}",
             "-af", f"volume='if(lt(mod(t,{period}),0.08),1,0.05)':eval=frame", str(path)])
     return path
+
+
+@pytest.fixture()
+def ffmpeg_or_skip(studio_env):
+    """Pula o teste quando não há ffmpeg (fixtures de áudio/vídeo dependem do lavfi)."""
+    from studio.common import ffmpeg as ff
+    if not ff.available():
+        pytest.skip("ffmpeg indisponível")
+    return ff

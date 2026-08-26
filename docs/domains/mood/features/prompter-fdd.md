@@ -1,6 +1,13 @@
 ### FDD: prompter (o "bot" de prompts do curso, com Claude) — OS-012
 
-Versão: 1.0 · Data: 2026-08-25 · Domínios: `mood` (consumidor inicial) + `common` (serviço transversal)
+Versão: 1.1 · Data: 2026-08-25 · Domínios: `mood` (consumidor inicial) + `common` (serviço transversal)
+
+> **Correção de fidelidade (wave 2, OS-014).** O critério de aceite 4 desta versão dizia que todo
+> prompt de mood devia sair "sem produto, sem pessoas, sem texto (aula 009)". A auditoria mostrou que
+> a aula **não** diz isso: o mood board do instrutor tem o produto. O papel `ROLES["mood"]` perdeu
+> "NO product, NO people, NO text, NO logos", `MOOD_GUARDS` ficou só com `("no people",)` e
+> `enforce_mood_rules(result, no_people=True)` só acrescenta essa linha quando o usuário mantém o
+> checkbox "sem pessoas" marcado. Ver `mood-guia-fidelidade-fdd.md` (OS-014).
 
 ### 1. Contexto e motivação técnica
 Nas aulas 007, 009 e 012 o instrutor usa um GPT customizado ("Abrahub Creative Engine") para
@@ -55,7 +62,9 @@ inválido → 502 com o texto bruto; UI oferece o template como fallback.
 1. Com CLI fakeado, `from_images` monta o comando com `-p`, `--allowedTools Read`, caminhos das imagens e devolve o JSON parseado.
 2. `from_brief` sem CLI cai no template e marca `source: "template"`.
 3. `POST /mood/prompts/generate` modo `images` sem ids → 422; com CLI ausente → 409.
-4. Prompt gerado (qualquer modo) obedece à aula 009: sem produto, sem pessoas, sem texto (validação por palavras-chave no serviço; se o Claude devolver algo fora, o serviço acrescenta os negativos).
+4. ~~Prompt gerado (qualquer modo) obedece à aula 009: sem produto, sem pessoas, sem texto.~~
+   **Substituído em 1.1 (OS-014):** o prompt de mood **não** recebe negativo nenhum por conta própria;
+   com `no_people` marcado (padrão da tela, sugestão da aula), o serviço garante "No people." e nada mais.
 5. Imagens de vibe importadas aparecem em `mood/vibe/` e são selecionáveis (≤ 4).
 6. Histórico persiste e é listado.
 

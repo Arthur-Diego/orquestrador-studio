@@ -2,9 +2,13 @@
 
 A aula monta no CapCut; aqui o mesmo processo é reproduzido com ffmpeg (regra 3 do CLAUDE.md:
 trocar ferramenta não é desvio). O que a aula ensina e esta etapa executa: cortar nos impactos
-da trilha, speed ramp com mistura de quadros, quadros pretos nos impactos, cortar a música para
-o ápice (offset humano), fade de opacidade no fim, SFX por upload e exportar o último frame de
-um clipe para virar start frame de uma transição colada na etapa 6.
+da trilha, speed ramp com mistura de quadros, pequenos zooms, quadros pretos onde a transição
+quebra a fluidez (escolha por corte, nunca em todos), cortar a música para o ápice (offset
+humano), fade de opacidade no fim, SFX por upload e exportar o último frame de um clipe para
+virar start frame de uma transição colada na etapa 6.
+
+A trilha vem antes da montagem (aula 013): o `rough_cut` sai sem música com aviso, o `master`
+não sai (`render.NO_MUSIC`).
 
 A timeline é o único estado da etapa: `projects/<pid>/edit/timeline.json` (ADR-003).
 """
@@ -20,13 +24,18 @@ from ..refs.service import project_dir
 # Padrão de saída da wave (decisão 5 do lote): master 1920x1080 / 30 fps / H.264 + AAC.
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
 DEFAULT_FADE_OUT = 1.5
-DEFAULT_BLACK_DUR = 0.2
+DEFAULT_BLACK_DUR = 0.2     # duração de UM quadro preto quando o usuário decide colocar um
+PROPOSE_BLACK_DUR = 0.0     # a proposta corta seco: o preto é escolha por corte (auditoria 8.1)
 MIN_CLIP = 0.5          # nenhum corte proposto produz clipe menor que isso
 TOL = 0.05              # tolerância de duração (s)
+BEAT_TOL = 0.067        # 2 frames a 30 fps: "o corte caiu na batida" (auditoria 8, validação §5)
 SPEED_RANGE = (0.25, 4.0)
+ZOOM_RANGE = (1.0, 1.3)     # aula 014: "pequenos zooms"
 GAIN_RANGE = (-40.0, 12.0)
 FADE_RANGE = (0.0, 5.0)
 BLACK_RANGE = (0.0, 1.0)
+BLACK_SNAP = 0.25       # quadro preto cola no limite de clipe mais próximo dentro disso
+AUDIO_EXT = (".wav", ".mp3", ".m4a", ".ogg")
 
 INSTRUCTION = (
     "Volte à etapa 6 e use esta imagem como start frame do próximo shot (start/end frame). "
@@ -112,6 +121,15 @@ def take_durations(root: Path) -> dict[tuple[str, str, str], float]:
     return out
 
 
+def music_path(root: Path) -> Path | None:
+    """A trilha escolhida na etapa 7 (`audio/music.*`), ou `None`. Leitura pura."""
+    for ext in AUDIO_EXT:
+        p = root / "audio" / f"music{ext}"
+        if p.exists():
+            return p
+    return None
+
+
 def _resolve_music(root: Path) -> str | None:
     """Candidata `selected` de audio/candidates.json; senão o primeiro audio/music.*; senão nada."""
     for cand in ingest.load_candidates(root, "audio"):
@@ -140,14 +158,14 @@ def initial_timeline(pid: str) -> dict:
                 continue
             duration = float(take.get("duration") or 0)
             clip = {"scene": scene, "shot": shot, "take": take.get("id", ""), "file": take.get("file", ""),
-                    "in": 0.0, "out": round(duration, 3), "speed": 1.0, "blend": True}
+                    "in": 0.0, "out": round(duration, 3), "speed": 1.0, "blend": True, "zoom": 1.0}
             rows.append((order.get((scene, shot), (len(order) + ei, ei)), take.get("id", ""), clip))
     if not rows:
         raise ValueError("nenhum take marcado como liked na etapa 6")
     rows.sort(key=lambda r: (r[0], r[1]))
     return {"clips": [r[2] for r in rows], "blacks": [],
             "music": {"file": _resolve_music(root), "offset": 0.0},
-            "sfx": [], "fade_out": DEFAULT_FADE_OUT}
+            "sfx": [], "fade_out": DEFAULT_FADE_OUT, "loudnorm": True}
 
 
 def load_timeline(pid: str) -> dict | None:
@@ -177,13 +195,17 @@ def validate_timeline(root: Path, timeline: dict) -> dict:
             raise ValueError(f"{label}: out ({end}) precisa ser maior que in ({start})")
         if not SPEED_RANGE[0] <= speed <= SPEED_RANGE[1]:
             raise ValueError(f"{label}: speed {speed} fora de {SPEED_RANGE[0]}–{SPEED_RANGE[1]}")
+        zoom = _f(raw.get("zoom", 1.0), f"{label}.zoom")
+        if not ZOOM_RANGE[0] <= zoom <= ZOOM_RANGE[1]:
+            raise ValueError(f"{label}: zoom {zoom} fora de {ZOOM_RANGE[0]}–{ZOOM_RANGE[1]} "
+                             f"(a aula 014 fala em PEQUENOS zooms)")
         source = durations.get((scene, shot, take))
         if source and end > source + TOL:
             raise ValueError(f"{label}: out ({end}) passa da duração do take ({source})")
         _resolve(root, raw.get("file", ""), label)
         clips.append({"scene": scene, "shot": shot, "take": take, "file": raw["file"],
                       "in": round(start, 3), "out": round(end, 3), "speed": round(speed, 3),
-                      "blend": bool(raw.get("blend", True))})
+                      "blend": bool(raw.get("blend", True)), "zoom": round(zoom, 3)})
 
     blacks = []
     for i, raw in enumerate(timeline.get("blacks") or []):
@@ -219,15 +241,61 @@ def validate_timeline(root: Path, timeline: dict) -> dict:
         raise ValueError(f"fade_out {fade_out} fora de {FADE_RANGE[0]}–{FADE_RANGE[1]} s")
 
     return {"clips": clips, "blacks": blacks, "music": {"file": mfile, "offset": round(offset, 3)},
-            "sfx": sfx, "fade_out": round(fade_out, 3)}
+            "sfx": sfx, "fade_out": round(fade_out, 3),
+            "loudnorm": bool(timeline.get("loudnorm", True))}   # [extensão]: a aula não fala de loudness
+
+
+def clip_length(clip: dict) -> float:
+    """Duração do clipe já com a velocidade aplicada."""
+    return round((float(clip["out"]) - float(clip["in"])) / max(float(clip.get("speed", 1.0)), 0.01), 3)
 
 
 def timeline_duration(timeline: dict) -> float:
     """Duração prevista: soma dos clipes já com a velocidade aplicada + os quadros pretos."""
-    total = sum((float(c["out"]) - float(c["in"])) / max(float(c.get("speed", 1.0)), 0.01)
-                for c in timeline.get("clips") or [])
+    total = sum(clip_length(c) for c in timeline.get("clips") or [])
     total += sum(float(b.get("dur", 0)) for b in timeline.get("blacks") or [])
     return round(total, 3)
+
+
+def cut_positions(timeline: dict) -> list[float]:
+    """Instante de cada corte no vídeo montado (fim de cada clipe, menos o último).
+
+    Os quadros pretos colados num limite empurram tudo que vem depois — a mesma regra que
+    `render.place_blacks` usa no encode. Leitura pura: o guia da etapa usa isto.
+    """
+    clips = timeline.get("clips") or []
+    blacks = timeline.get("blacks") or []
+    raw, shift, cuts = 0.0, 0.0, []
+    for i, clip in enumerate(clips):
+        raw = round(raw + clip_length(clip), 3)
+        for black in blacks:
+            if abs(float(black.get("at", -1e9)) - raw) <= BLACK_SNAP and float(black.get("dur", 0)) > 0:
+                shift = round(shift + float(black["dur"]), 3)
+        if i < len(clips) - 1:
+            cuts.append(round(raw + shift, 3))
+    return cuts
+
+
+def cuts_on_beats(timeline: dict, beats: dict, tol: float = BEAT_TOL) -> dict:
+    """Quantos cortes caem numa batida da trilha (aula 014: "cada impacto visual… nas batidas").
+
+    O corte em `t` do vídeo cai no instante `t + offset` da música (o offset é o trecho da faixa
+    que foi cortado fora). Devolve `{total, on_beat, off}` — `off` são os cortes fora do ritmo.
+    """
+    cuts = cut_positions(timeline)
+    marks = sorted({round(float(t), 3) for t in (beats.get("impacts") or [])} |
+                   {round(float(t), 3) for t in (beats.get("beats") or [])})
+    if not cuts or not marks:
+        return {"total": len(cuts), "on_beat": 0, "off": list(cuts)}
+    offset = float((timeline.get("music") or {}).get("offset", 0.0) or 0.0)
+    on, off = 0, []
+    for cut in cuts:
+        t = cut + offset
+        if min(abs(t - m) for m in marks) <= tol:
+            on += 1
+        else:
+            off.append(cut)
+    return {"total": len(cuts), "on_beat": on, "off": off}
 
 
 def write_timeline(root: Path, timeline: dict) -> None:
@@ -264,9 +332,14 @@ def get_timeline(pid: str, force_new: bool = False) -> dict:
 
 
 # ---------- cortes nos impactos (aula 014) ----------
-def propose_cuts(pid: str, offset: float | None = None, black_dur: float = DEFAULT_BLACK_DUR,
+def propose_cuts(pid: str, offset: float | None = None, black_dur: float = PROPOSE_BLACK_DUR,
                  apply: bool = False) -> dict:
-    """Alinha o fim de cada clipe a um impacto da trilha e põe um quadro preto em cada corte usado."""
+    """Alinha o fim de cada clipe a um impacto da trilha (corte seco, por padrão).
+
+    A aula 014 lista a tela preta como UM dos recursos para quando "a mudança de movimento entre
+    cenas quebra a fluidez" — não como regra de todo corte (auditoria 8.1). Por isso `black_dur`
+    nasce em 0: o quadro preto é uma ação por corte, marcada na tela.
+    """
     root = project_dir(pid)
     timeline = load_timeline(pid)
     if timeline is None:

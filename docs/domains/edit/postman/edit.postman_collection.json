@@ -1,232 +1,608 @@
 {
   "info": {
     "name": "Orquestrador Studio — edit (etapa 8, aula 014)",
-    "description": "Contratos públicos da seção 5 do FDD `docs/domains/edit/features/edit-fdd.md`. O projeto apontado por {{pid}} precisa ter os artefatos das etapas 5, 6 e 7 (shots/storyboard.json, animate/takes.json, audio/music.* e audio/beats.json).",
+    "description": "Contratos públicos da seção 5 do FDD `docs/domains/edit/features/edit-fdd.md`. O projeto apontado por {{pid}} precisa ter os artefatos das etapas 5, 6 e 7 (shots/storyboard.json, animate/takes.json, audio/music.* e audio/beats.json). Wave 2 (OS-018): `zoom` por clipe e `loudnorm` na timeline, `black_dur` default 0 na proposta de cortes, master exige a trilha da etapa 7 (409) e o guia da etapa (`/api/projects/{pid}/guide/edit`).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    {"key": "baseUrl", "value": "http://127.0.0.1:8765"},
-    {"key": "pid", "value": "2026-08-gelo-zero"}
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8765"
+    },
+    {
+      "key": "pid",
+      "value": "2026-08-gelo-zero"
+    }
   ],
   "item": [
     {
       "name": "ffmpeg disponível (chip da UI)",
-      "request": {"method": "GET", "url": "{{baseUrl}}/api/edit/ffmpeg"},
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "pm.test('available booleano', () => pm.expect(pm.response.json().available).to.be.a('boolean'));",
-        "pm.collectionVariables.set('ffmpeg', pm.response.json().available);"
-      ]}}]
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/edit/ffmpeg"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('available booleano', () => pm.expect(pm.response.json().available).to.be.a('boolean'));",
+              "pm.collectionVariables.set('ffmpeg', pm.response.json().available);"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "GET timeline (cria a inicial na primeira chamada)",
-      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"},
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "const b = pm.response.json();",
-        "pm.test('created é booleano', () => pm.expect(b.created).to.be.a('boolean'));",
-        "pm.test('duration numérica', () => pm.expect(b.duration).to.be.a('number'));",
-        "pm.test('clips com o schema da wave', () => {",
-        "  pm.expect(b.timeline.clips).to.be.an('array').that.is.not.empty;",
-        "  const c = b.timeline.clips[0];",
-        "  ['scene','shot','take','file','in','out','speed','blend'].forEach(k => pm.expect(c).to.have.property(k));",
-        "});",
-        "pm.test('music, blacks, sfx e fade_out presentes', () => {",
-        "  pm.expect(b.timeline.music).to.have.property('offset');",
-        "  pm.expect(b.timeline.blacks).to.be.an('array');",
-        "  pm.expect(b.timeline.sfx).to.be.an('array');",
-        "  pm.expect(b.timeline.fade_out).to.be.a('number');",
-        "});",
-        "pm.collectionVariables.set('timeline', JSON.stringify({clips: b.timeline.clips.map(({duration, ...c}) => c), blacks: b.timeline.blacks, music: b.timeline.music, sfx: b.timeline.sfx, fade_out: b.timeline.fade_out}));"
-      ]}}]
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('created é booleano', () => pm.expect(b.created).to.be.a('boolean'));",
+              "pm.test('duration numérica', () => pm.expect(b.duration).to.be.a('number'));",
+              "pm.test('clips com o schema da wave', () => {",
+              "  pm.expect(b.timeline.clips).to.be.an('array').that.is.not.empty;",
+              "  const c = b.timeline.clips[0];",
+              "  ['scene','shot','take','file','in','out','speed','blend'].forEach(k => pm.expect(c).to.have.property(k));",
+              "});",
+              "pm.test('music, blacks, sfx e fade_out presentes', () => {",
+              "  pm.expect(b.timeline.music).to.have.property('offset');",
+              "  pm.expect(b.timeline.blacks).to.be.an('array');",
+              "  pm.expect(b.timeline.sfx).to.be.an('array');",
+              "  pm.expect(b.timeline.fade_out).to.be.a('number');",
+              "});",
+              "pm.collectionVariables.set('timeline', JSON.stringify({clips: b.timeline.clips.map(({duration, ...c}) => c), blacks: b.timeline.blacks, music: b.timeline.music, sfx: b.timeline.sfx, fade_out: b.timeline.fade_out}));",
+              "pm.collectionVariables.set('hasMusic', String(!!(pm.response.json().timeline.music || {}).file));",
+              "pm.collectionVariables.set('timelineJson', JSON.stringify(pm.response.json().timeline));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "GET timeline de novo (created=false)",
-      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"},
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "pm.test('não recria', () => pm.expect(pm.response.json().created).to.eql(false));"
-      ]}}]
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('não recria', () => pm.expect(pm.response.json().created).to.eql(false));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "PUT timeline (grava a montagem)",
       "request": {
         "method": "PUT",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{{timeline}}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{timeline}}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "pm.test('created=false na gravação', () => pm.expect(pm.response.json().created).to.eql(false));",
-        "pm.test('devolve duração calculada', () => pm.expect(pm.response.json().duration).to.be.above(0));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('created=false na gravação', () => pm.expect(pm.response.json().created).to.eql(false));",
+              "pm.test('devolve duração calculada', () => pm.expect(pm.response.json().duration).to.be.above(0));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "PUT timeline inválida (speed fora da faixa) -> 422",
       "request": {
         "method": "PUT",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"clips\":[{\"scene\":\"cena01\",\"shot\":\"shot01\",\"take\":\"take1\",\"file\":\"videos/cena01/shot01_take1.mp4\",\"in\":0,\"out\":1,\"speed\":8,\"blend\":true}],\"blacks\":[],\"music\":{\"file\":null,\"offset\":0},\"sfx\":[],\"fade_out\":1.5}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"clips\":[{\"scene\":\"cena01\",\"shot\":\"shot01\",\"take\":\"take1\",\"file\":\"videos/cena01/shot01_take1.mp4\",\"in\":0,\"out\":1,\"speed\":8,\"blend\":true}],\"blacks\":[],\"music\":{\"file\":null,\"offset\":0},\"sfx\":[],\"fade_out\":1.5}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('422', () => pm.response.to.have.status(422));",
-        "pm.test('detail aponta o clipe', () => pm.expect(pm.response.json().detail).to.include('clipe 1'));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test('detail aponta o clipe', () => pm.expect(pm.response.json().detail).to.include('clipe 1'));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "PUT timeline com caminho fora do projeto -> 422",
       "request": {
         "method": "PUT",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"clips\":[{\"scene\":\"cena01\",\"shot\":\"shot01\",\"take\":\"take1\",\"file\":\"../../../etc/passwd\",\"in\":0,\"out\":1,\"speed\":1,\"blend\":true}],\"blacks\":[],\"music\":{\"file\":null,\"offset\":0},\"sfx\":[],\"fade_out\":1.5}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"clips\":[{\"scene\":\"cena01\",\"shot\":\"shot01\",\"take\":\"take1\",\"file\":\"../../../etc/passwd\",\"in\":0,\"out\":1,\"speed\":1,\"blend\":true}],\"blacks\":[],\"music\":{\"file\":null,\"offset\":0},\"sfx\":[],\"fade_out\":1.5}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('422', () => pm.response.to.have.status(422));",
-        "pm.test('recusa caminho fora do projeto', () => pm.expect(pm.response.json().detail).to.include('fora do projeto'));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test('recusa caminho fora do projeto', () => pm.expect(pm.response.json().detail).to.include('fora do projeto'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "PUT timeline com zoom e loudnorm (aula 014: pequenos zooms)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{timelineComZoom}}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const tl = JSON.parse(pm.collectionVariables.get('timelineJson') || '{}');",
+              "if (tl.clips && tl.clips.length) { tl.clips[0].zoom = 1.15; }",
+              "tl.loudnorm = false;",
+              "pm.collectionVariables.set('timelineComZoom', JSON.stringify(tl));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const tl = pm.response.json().timeline;",
+              "pm.test('zoom preservado', () => pm.expect(tl.clips[0].zoom).to.eql(1.15));",
+              "pm.test('loudnorm é [extensão] desligável', () => pm.expect(tl.loudnorm).to.eql(false));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "PUT timeline com zoom fora de 1.0–1.3 -> 422",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{timelineZoomInvalido}}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const tl = JSON.parse(pm.collectionVariables.get('timelineJson') || '{}');",
+              "if (tl.clips && tl.clips.length) { tl.clips[0].zoom = 1.9; }",
+              "pm.collectionVariables.set('timelineZoomInvalido', JSON.stringify(tl));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test('a mensagem cita o zoom', () => pm.expect(pm.response.json().detail).to.include('zoom'));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST propose-cuts (proposta, sem gravar)",
       "request": {
         "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"offset\": 0.0, \"black_dur\": 0.2, \"apply\": false}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"offset\": 0.0, \"black_dur\": 0.2, \"apply\": false}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/propose-cuts"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200 (404 quando a etapa 7 não gerou beats.json)', () => pm.expect([200, 404]).to.include(pm.response.code));",
-        "if (pm.response.code === 200) {",
-        "  const b = pm.response.json();",
-        "  pm.test('não grava com apply=false', () => pm.expect(b.applied).to.eql(false));",
-        "  pm.test('impacts_used é lista', () => pm.expect(b.impacts_used).to.be.an('array'));",
-        "  pm.test('todo quadro preto cai num impacto usado', () => b.timeline.blacks.forEach(bl => pm.expect(b.impacts_used).to.include(bl.at)));",
-        "}"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 (404 quando a etapa 7 não gerou beats.json)', () => pm.expect([200, 404]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('não grava com apply=false', () => pm.expect(b.applied).to.eql(false));",
+              "  pm.test('impacts_used é lista', () => pm.expect(b.impacts_used).to.be.an('array'));",
+              "  pm.test('todo quadro preto cai num impacto usado', () => b.timeline.blacks.forEach(bl => pm.expect(b.impacts_used).to.include(bl.at)));",
+              "}"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST propose-cuts (apply=true)",
       "request": {
         "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"apply\": true}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"apply\": true}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/propose-cuts"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200 ou 404 sem beats.json', () => pm.expect([200, 404]).to.include(pm.response.code));",
-        "if (pm.response.code === 200) pm.test('aplicado', () => pm.expect(pm.response.json().applied).to.eql(true));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 ou 404 sem beats.json', () => pm.expect([200, 404]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) pm.test('aplicado', () => pm.expect(pm.response.json().applied).to.eql(true));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST propose-cuts com offset negativo -> 422",
       "request": {
         "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"offset\": -1}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"offset\": -1}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/propose-cuts"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('422 (ou 404 sem beats.json)', () => pm.expect([422, 404]).to.include(pm.response.code));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('422 (ou 404 sem beats.json)', () => pm.expect([422, 404]).to.include(pm.response.code));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "GET sfx (biblioteca)",
-      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/edit/sfx"},
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "pm.test('lista', () => pm.expect(pm.response.json()).to.be.an('array'));"
-      ]}}]
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/sfx"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('lista', () => pm.expect(pm.response.json()).to.be.an('array'));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST sfx/upload (multipart — anexe um wav no Postman)",
       "request": {
         "method": "POST",
-        "body": {"mode": "formdata", "formdata": [
-          {"key": "files", "type": "file", "src": []},
-          {"key": "prompt", "value": "respiração do astronauta", "type": "text"}
-        ]},
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "files",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "prompt",
+              "value": "respiração do astronauta",
+              "type": "text"
+            }
+          ]
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/sfx/upload"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "// Sem arquivo anexado a rota responde 422 (campo obrigatório). O caminho feliz (added, dedupe,",
-        "// extensão inválida) está coberto em tests/test_edit_api.py::test_sfx_upload_dedupe_and_extension.",
-        "pm.test('rota existe e valida a entrada', () => pm.expect([200, 413, 422]).to.include(pm.response.code));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Sem arquivo anexado a rota responde 422 (campo obrigatório). O caminho feliz (added, dedupe,",
+              "// extensão inválida) está coberto em tests/test_edit_api.py::test_sfx_upload_dedupe_and_extension.",
+              "pm.test('rota existe e valida a entrada', () => pm.expect([200, 413, 422]).to.include(pm.response.code));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST last-frame (transição colada)",
       "request": {
         "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"scene\": \"cena01\", \"shot\": \"shot01\"}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"scene\": \"cena01\", \"shot\": \"shot01\"}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/last-frame"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200 com ffmpeg, 409 sem', () => pm.expect([200, 409]).to.include(pm.response.code));",
-        "if (pm.response.code === 200) {",
-        "  const b = pm.response.json();",
-        "  pm.test('grava em edit/last_frames', () => pm.expect(b.file).to.match(/^edit\\/last_frames\\/.+_last\\.png$/));",
-        "  pm.test('instrução da aula para a etapa 6', () => pm.expect(b.instruction).to.include('etapa 6'));",
-        "}"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 com ffmpeg, 409 sem', () => pm.expect([200, 409]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('grava em edit/last_frames', () => pm.expect(b.file).to.match(/^edit\\/last_frames\\/.+_last\\.png$/));",
+              "  pm.test('instrução da aula para a etapa 6', () => pm.expect(b.instruction).to.include('etapa 6'));",
+              "}"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST last-frame de shot inexistente -> 404",
       "request": {
         "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"scene\": \"cena99\", \"shot\": \"shot99\"}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"scene\": \"cena99\", \"shot\": \"shot99\"}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/last-frame"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('404 (409 sem ffmpeg)', () => pm.expect([404, 409]).to.include(pm.response.code));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('404 (409 sem ffmpeg)', () => pm.expect([404, 409]).to.include(pm.response.code));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST render com target inválido -> 422",
       "request": {
         "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"target\": \"4k\"}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"target\": \"4k\"}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/render"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('422 (409 sem ffmpeg)', () => pm.expect([422, 409]).to.include(pm.response.code));"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('422 (409 sem ffmpeg)', () => pm.expect([422, 409]).to.include(pm.response.code));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "POST render (rough cut)",
       "request": {
         "method": "POST",
-        "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\"target\": \"rough\"}"},
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"target\": \"rough\"}"
+        },
         "url": "{{baseUrl}}/api/projects/{{pid}}/edit/render"
       },
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200 com ffmpeg, 409 sem (ou job em andamento)', () => pm.expect([200, 409]).to.include(pm.response.code));",
-        "if (pm.response.code === 200) {",
-        "  const b = pm.response.json();",
-        "  pm.test('job disparado', () => pm.expect(b.state).to.eql('running'));",
-        "  pm.test('saída anunciada', () => pm.expect(b.output).to.eql('edit/rough_cut.mp4'));",
-        "}"
-      ]}}]
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 com ffmpeg, 409 sem (ou job em andamento)', () => pm.expect([200, 409]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('job disparado', () => pm.expect(b.state).to.eql('running'));",
+              "  pm.test('saída anunciada', () => pm.expect(b.output).to.eql('edit/rough_cut.mp4'));",
+              "}"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "GET render/job (polling da UI)",
-      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/{{pid}}/edit/render/job"},
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('200', () => pm.response.to.have.status(200));",
-        "pm.test('estado conhecido', () => pm.expect(['idle','running','done','error']).to.include(pm.response.json().state));"
-      ]}}]
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/render/job"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('estado conhecido', () => pm.expect(['idle','running','done','error']).to.include(pm.response.json().state));"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "GET timeline de projeto inexistente -> 404",
-      "request": {"method": "GET", "url": "{{baseUrl}}/api/projects/nao-existe/edit/timeline"},
-      "event": [{"listen": "test", "script": {"exec": [
-        "pm.test('404 pelo núcleo', () => pm.response.to.have.status(404));"
-      ]}}]
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/nao-existe/edit/timeline"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('404 pelo núcleo', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST render (master) — exige a trilha da etapa 7 (auditoria 8.2)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"target\": \"master\"\n}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/render"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const temTrilha = pm.collectionVariables.get('hasMusic') === 'true';",
+              "if (temTrilha) {",
+              "  pm.test('com trilha: 200 (ou 409 se já houver render em andamento)', () => pm.expect([200, 409]).to.include(pm.response.code));",
+              "} else {",
+              "  pm.test('sem trilha: 409', () => pm.response.to.have.status(409));",
+              "  pm.test('a mensagem manda voltar à etapa 7', () => pm.expect(pm.response.json().detail).to.include('etapa 7'));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET guide/edit — o que a aula manda fazer aqui",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/{{pid}}/guide/edit"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const g = pm.response.json();",
+              "pm.test('é a etapa 8 da aula 014', () => { pm.expect(g.id).to.eql('edit'); pm.expect(g.n).to.eql(8); pm.expect(g.aula).to.eql('014'); });",
+              "pm.test('a trilha é entrada bloqueante', () => pm.expect(g.inputs.map(i => i.id)).to.include('music'));",
+              "pm.test('saídas: ritmo primeiro, refinamento depois', () => pm.expect(g.outputs.map(o => o.id)).to.eql(['rough','master']));",
+              "pm.test('validação de cortes no ritmo presente', () => pm.expect(g.validations.map(v => v.id)).to.include('cuts_on_beats'));"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

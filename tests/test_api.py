@@ -67,9 +67,130 @@ def test_mood_prompter_endpoints(client, monkeypatch):
     monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
     monkeypatch.setattr(prompter, "from_brief", lambda kind, brief: {"prompt": "Icy", "negative": "", "camera": "", "notes_pt": "", "source": "claude", "seconds": 2})
     r = client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "brief", "tone": "épico"})
-    assert r.status_code == 200 and r.json()["source"] == "claude" and "No product" in r.json()["prompt"]
+    # Aula 009: o mood pode ter o produto — só "sem pessoas" é acrescentado, e por escolha do usuário.
+    assert r.status_code == 200 and r.json()["source"] == "claude" and "No people" in r.json()["prompt"]
+    assert "No product" not in r.json()["prompt"]
     t = client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "template"}).json()
     assert t["source"] == "template"
     assert len(client.get(f"/api/projects/{pid}/mood/prompts/history").json()) == 2
     monkeypatch.setattr(prompter, "from_brief", lambda kind, brief: (_ for _ in ()).throw(RuntimeError("Claude falhou: x")))
     assert client.post(f"/api/projects/{pid}/mood/prompts/generate", json={"mode": "brief"}).status_code == 502
+
+
+def test_project_detail_and_patch(client):
+    pid = client.post("/api/projects", json={"name": "Detalhe", "product": "energy drink"}).json()["id"]
+    p = client.get(f"/api/projects/{pid}").json()
+    assert p["id"] == pid and p["product"] == "energy drink"
+    assert p["progress"] == 0.0 and p["current"] == "refs", "projeto vazio começa na etapa 1"
+
+    r = client.patch(f"/api/projects/{pid}", json={"vibe": "snow neon", "aspect_ratio": "9:16", "brand": "Gelo Zero"})
+    assert r.status_code == 200
+    assert r.json()["vibe"] == "snow neon" and r.json()["aspect_ratio"] == "9:16" and r.json()["brand"] == "Gelo Zero"
+    assert r.json()["name"] == "Detalhe", "campo ausente no PATCH não é apagado"
+    assert client.get(f"/api/projects/{pid}").json()["vibe"] == "snow neon", "gravado em project.json"
+    assert client.get("/api/projects").json()[0]["aspect_ratio"] == "9:16"
+
+    assert client.patch(f"/api/projects/{pid}", json={"aspect_ratio": "4:3"}).status_code == 422
+    assert client.get(f"/api/projects/{pid}").json()["aspect_ratio"] == "9:16", "422 não altera nada"
+    assert client.patch("/api/projects/nao-existe", json={"name": "x"}).status_code == 404
+    assert client.get("/api/projects/nao-existe").status_code == 404
+
+
+def test_project_can_be_created_without_vibe(client):
+    """Aula 009: a vibe é encontrada na etapa 2 — não se pede na criação do projeto."""
+    r = client.post("/api/projects", json={"name": "Sem vibe", "product": "soda"})
+    assert r.status_code == 200 and r.json()["vibe"] == ""
+    pid = r.json()["id"]
+    termos = client.get("/api/suggest-terms", params={"product": "soda"}).json()
+    assert "soda ad campaign" in termos and all(t.strip() for t in termos)
+    p = client.patch(f"/api/projects/{pid}", json={"vibe": "ice"}).json()
+    assert p["vibe"] == "ice", "a etapa 2 grava a vibe depois"
+
+
+def test_higgsfield_status_is_cached_and_refreshable(client, monkeypatch):
+    from studio import higgsfield as hf
+    calls = []
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (calls.append(args), (0, '{"credits": 7}', ""))[1])
+    hf.reset_status_cache()
+
+    assert client.get("/api/higgsfield/status").json()["credits"] == 7
+    client.get("/api/higgsfield/status")
+    assert len(calls) == 1, "a 2ª chamada em menos de 60 s vem do cache"
+    assert client.get("/api/higgsfield/status", params={"refresh": 1}).json()["logged_in"] is True
+    assert len(calls) == 2, "?refresh=1 ignora o cache"
+
+
+# ---------- shell (OS-013): asserts HTTP e de string, sem navegador (ADR-008) ----------
+def test_shell_index_carrega_os_estaticos_na_ordem(client):
+    """O `index.html` monta a casca inteira: tema, sidebar, topo da campanha e os estáticos."""
+    index = client.get("/").text
+    for asset in ("/static/style.css", "/static/ui.css", "/static/ui.js", "/static/app.js"):
+        assert asset in index, asset
+    assert index.index("/static/ui.js") < index.index("/static/app.js"), "ui.js antes do app.js"
+    assert index.index("/static/style.css") < index.index("/static/ui.css"), "ui.css depende das vars de style.css"
+    for el in ('id="projSel"', 'id="steps"', 'id="main"', 'id="toast"', 'id="tbName"',
+               'id="tbBar"', 'id="btnContinue"', 'id="btnOverview"', 'id="btnNewProj"',
+               'id="btnEditCamp"', 'id="btnTheme"'):
+        assert el in index, el
+    assert "studio.theme" in index, "o tema salvo é aplicado antes do primeiro paint"
+    assert "fonts.googleapis.com" in index and index.count("http") == index.count("https"), "sem CDN além das fontes"
+    for estatico in ("/static/style.css", "/static/ui.css", "/static/ui.js", "/static/app.js"):
+        assert client.get(estatico).status_code == 200, estatico
+
+
+def test_shell_tem_visao_geral_wizard_e_roteamento(client):
+    """Visão geral, wizard de campanha e roteamento por hash são a espinha do shell."""
+    app_js = client.get("/static/app.js").text
+    # visão geral: cards das 11 etapas com status, o que falta e a próxima ação
+    assert "Visão geral da campanha" in app_js and "ovgrid" in app_js and "ovcard" in app_js
+    assert "Faltando:" in app_js and "next_action" in app_js and "etapa atual" in app_js
+    # wizard e edição rápida da campanha
+    assert "Nova campanha" in app_js and "Editar campanha" in app_js
+    assert "(será encontrada na etapa 2)" in app_js, "aula 009: a vibe é encontrada na etapa 2"
+    for destino in ("YouTube, tela cheia", "Reels, TikTok, Shorts", "Feed quadrado"):
+        assert destino in app_js, f"aula 007: formato pelo destino ({destino})"
+    assert '"16:9"' in app_js and '"9:16"' in app_js and '"1:1"' in app_js
+    assert 'method: "PATCH"' in app_js and "aspect_ratio" in app_js
+    # roteamento por hash com localStorage de fallback
+    assert "hashchange" in app_js and "#/${encodeURIComponent(p)}/${encodeURIComponent(target)}" in app_js
+    assert "studio.pid" in app_js and "studio.view" in app_js
+    # o estado das etapas vem do guia do backend, nunca de cálculo no frontend
+    assert "/guide" in app_js and "guideById" in app_js
+    assert "Continuar de onde parei" in app_js
+
+
+def test_shell_traz_o_painel_como_o_studio_segue_o_curso(client):
+    """Texto da auditoria §4.3 — o painel inicial explica a fidelidade ao curso (ADR-004)."""
+    app_js = client.get("/static/app.js").text
+    assert "Como o Studio segue o curso" in app_js
+    for trecho in ("fique preso ao processo, não à plataforma",
+                   "o bot da comunidade vira o Claude local",
+                   "Prompts de imagem em inglês, com intenção (mood, ângulo, câmera, estilo)",
+                   "na aula 008 o custo é o principal critério"):
+        assert trecho in app_js, trecho
+
+
+def test_shell_preserva_as_classes_que_as_telas_de_etapa_usam(client):
+    """As 11 `view.html` dependem destas classes: o redesenho não pode derrubar nenhuma."""
+    css = client.get("/static/style.css").text + client.get("/static/ui.css").text
+    for classe in (".stephead", ".eyebrow", ".lede", ".panel", ".panel-head", ".grid2", ".row",
+                   ".row.wrap", ".col", ".inline", ".chip", ".chip.ok", ".chip.warn", ".status",
+                   ".progress", ".log", ".fine", ".gallery", ".card", ".card.sel", ".drop",
+                   ".drop.over", ".prompt", ".prompts", ".cli", ".palette", ".empty", ".hidden",
+                   ".mono", "button.primary", "button.ghost", "button.link", ".guide", ".toast"):
+        assert classe in css, f"classe {classe} sumiu do CSS"
+    assert ":root[data-theme=\"dark\"]" in css and "prefers-color-scheme:dark" in css
+    assert "max-width:900px" in css, "responsivo: a sidebar vira topo em telas estreitas"
+
+
+def test_studio_ui_mantem_o_contrato_e_ganha_extensoes(client):
+    """`Studio.ui` é consumida pelos 11 plugins: dá para estender, nunca remover."""
+    js = client.get("/static/ui.js").text
+    for fn in ("esc", "chip", "hfChip", "drop", "upload", "confirmCost", "poll", "guide", "renderGuide"):
+        assert f"{fn}(" in js, f"Studio.ui.{fn} ausente"
+    for novo in ("modal(", "fmtPct(", "STATUS_KIND", "STATUS_LABEL", "ITEM_LABEL"):
+        assert novo in js, f"extensão {novo} ausente"
+    assert "guide-toggle" in js and "guide-missing" in js, "painel de guia colapsável com o que falta"
+    assert "aria-modal" in js and "Escape" in js, "modal acessível"
+    assert "Studio.onGuide" in js, "o shell é avisado quando uma etapa recarrega o guia"

@@ -1,6 +1,6 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.1 (wave 1: 11 etapas como plugins)
+Versão: 1.3 (wave 2: shell profissional — visão geral, guia por etapa na tela e roteamento)
 Data: 2026-08-25
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
@@ -12,6 +12,10 @@ curso "O Orquestrador — Iniciante" na ordem das aulas. O módulo `studio` é a
 etapas (`steps.py`), caminhos e layout de projeto (`config.py`), roteamento HTTP (`app.py`) e a
 SPA estática (`web/`). A lógica de cada etapa vive nos domínios `refs`, `mood` e, futuramente,
 um domínio por etapa.
+
+Desde a wave 2 o núcleo responde também **o que fazer em cada etapa**: o guia (`common/guide.py`)
+calcula, lendo os artefatos do projeto, o que a aula manda fazer, o que falta, o que as validações
+dizem e qual é a próxima ação — sem estado novo em `project.json` (ADR-010).
 
 Dependências com outros sistemas
 - Um domínio por etapa (`refs`, `mood`, `base`, `storyboard`, `shots`, `animate`, `music`, `edit`, `export`, `publish`, `prospect`): serviços chamados pelos routers dos plugins. Contratos de handoff entre etapas em `docs/domains/studio/waves/wave-1.md`.
@@ -50,18 +54,61 @@ Padrões adotados
 | `steps.py` | Catálogo das 11 etapas: id, ordem, aula, status `ready`/`soon`, descrição | nenhuma |
 | `etapas/` (plugins) | Uma pasta por etapa implementada: `META` (id, n, aula), `router.py` (APIRouter com as rotas da etapa), `view.html` e `view.js`; descobertas por `etapas.discover()` e montadas pelo `app.py`; servidas em `/steps/<id>/view.{html,js}` | serviços do domínio da etapa |
 | `common/` | Ingestão de mídia por etapa com dedupe e thumbs; `JobRegistry` (um job por projeto por serviço); ffmpeg (`run`, `probe`, `last_frame`, `video_thumb`) | Pillow, ffmpeg, `higgsfield.py` |
-| `web/` | Núcleo da SPA: seleção de projeto, menu de etapas, carregamento sob demanda do `view.html`/`view.js` da etapa e contexto (`Studio.ctx`: `api`, `toast`, `pid()`, `project()`, `files()`) | API `/api/*`, `/steps/*`, `localStorage` |
+| `common/guide.py` | Contrato do **guia por etapa**: `Guide(META)` (`.text`, `.input`, `.output`, `.check`, `.build`), helpers de leitura pura (`exists`, `read_json`, `count_files`), derivação de `status`/`progress`/`missing` e `generic_guide` (fallback `unknown`) | `refs.service.project_dir`, `steps.SOON` |
+| `higgsfield.py` | Ponte com o CLI; `status()` cacheado por 60 s (`STATUS_TTL`), `reset_status_cache()` para descartar | subprocess |
+| `web/` | Shell da SPA: campanha atual, menu das 11 etapas **com estado real**, topo com progresso da campanha, visão geral (`#/<pid>/overview`), wizard de campanha, roteamento por hash, carregamento sob demanda do `view.html`/`view.js` da etapa, `destroy()` na troca de tela, `Studio.go(target)` e contexto (`Studio.ctx`: `api`, `toast`, `pid()`, `project()`, `files()`, `guide()`) | API `/api/*`, `/steps/*`, `localStorage` |
+| `web/ui.js` + `web/ui.css` | `Studio.ui`: componentes compartilhados das telas — `esc`, `chip`, `hfChip`, `drop`, `upload`, `confirmCost`, `poll`, `guide`, `renderGuide` (+ `modal`, `fmtPct`, `STATUS_KIND` desde a v1.3). Carregados antes do `app.js` e dos plugins | `/api/*`, `style.css` |
+| `web/style.css` | Design system: tokens (cores semânticas ok/warn/fail/info, espaçamentos em múltiplos de 4, escala tipográfica, raios e sombras), tema claro/escuro automático **e** fixável em `[data-theme]`, estados de botão e responsivo (≤ 900 px a sidebar vira topo) | fontes do Google |
 
 Regra de extensão (desde 2026-08-25): uma etapa nova **cria só `studio/etapas/<id>/`** e sua
 pasta de serviço; nunca edita `app.py`, `index.html`, `app.js` nem `steps.py` (o catálogo
 `SOON` já lista as 11 etapas e a descoberta promove a etapa a `ready`). Isso permite frentes
 paralelas sem conflito nos arquivos únicos.
 
+**Quem pode editar o núcleo (v1.2):** os arquivos únicos `studio/app.py`, `studio/steps.py`,
+`studio/config.py`, `studio/higgsfield.py`, `studio/etapas/__init__.py` e `studio/web/*` são
+editados **somente** pelas frentes de *preparo* e *shell* de uma wave. Uma frente de etapa que
+precise de algo no núcleo pede à frente de preparo — nunca edita esses arquivos, nem para
+"uma linha só". Simetricamente, a frente shell nunca edita plugins (`studio/etapas/<id>/`,
+`studio/<id>/service.py`). Registro: ADR-010.
+
+**Shell (v1.3):** `studio/web/` deixou de ser um menu e virou o painel de condução da
+campanha. (1) **Roteamento**: o hash é a fonte de verdade — `#/<pid>/<step>` e
+`#/<pid>/overview`; `localStorage` (`studio.pid`, `studio.view`) é só fallback quando o hash
+está vazio ou inválido, e a etapa anterior sempre recebe `destroy()` antes da troca.
+(2) **Estado por etapa**: menu, barra de progresso da campanha e visão geral leem
+`GET /api/projects/{pid}/guide` — o frontend **nunca** calcula prontidão; `unknown` (etapa sem
+`guide.py`) é estado de primeira classe e continua navegável. (3) **Visão geral**
+(`#/<pid>/overview`, tela padrão ao abrir uma campanha): 11 cards com status, `missing`
+resumido, `next_action` e atalho, mais o painel colapsado "Como o Studio segue o curso"
+(texto da auditoria §4.3 — ADR-004). (4) **Campanha**: wizard em modal (nome, produto, vibe
+opcional "encontrada na etapa 2", formato pelo destino — aula 007) que cria por
+`POST /api/projects` e aplica o formato por `PATCH`; a mesma tela edita a campanha.
+(5) **Guia na tela**: `Studio.ui.guide` virou painel colapsável com resumo (status, progresso,
+"faltando" e próxima ação) sempre visível; `ensureGuideSlot()` garante o
+`<section id="guide">` mesmo em `view.html` que ainda não migrou. (6) **Contrato preservado**:
+nenhuma função de `Studio.ui` foi removida ou renomeada e todas as classes usadas pelos 11
+`view.html` continuam no CSS — há teste de string cobrindo as duas coisas
+(`tests/test_api.py`). Detalhe do fluxo em
+`docs/domains/studio/diagrams/mermaid/shell-navegacao.md`; FDD em
+`docs/domains/studio/features/shell-fdd.md`.
+
+**Guia por etapa (v1.2):** cada plugin pode exportar `studio/etapas/<id>/guide.py` com
+`guide(pid) -> dict`, descoberto por `etapas.discover()` na chave `guide` (opcional). O hook é
+**puro**: só lê arquivos do projeto — nunca cria/regrava artefato, nunca chama CLI, ffprobe ou
+rede (atenção: `edit.get_timeline` e `animate.load_plan` gravam ao ler; o guia usa
+`edit.load_timeline` e lê `animate/takes.json` direto). Etapa sem `guide.py`, ou hook que
+levanta exceção, recebe `generic_guide(META)` com `status: "unknown"` e `detail` do erro — o
+guia é informativo e nunca vira 500. Derivação: entrada `fail` → `blocked`; nenhuma saída ok →
+`todo`; todas ok → `done`; senão `in_progress`; `progress` = saídas ok / saídas; validações
+(`ok|warn|fail|todo`) nunca bloqueiam. Referência de uso para as frentes:
+`docs/domains/studio/waves/wave-2-api-transversal.md`.
+
 ---
 
 ### Fluxo de requisições e de dados
 **Fluxo de requisição**
-- Browser carrega `/` → `app.js` chama `/api/steps` e `/api/projects` → renderiza menu e tela.
+- Browser carrega `/` → `app.js` chama `/api/steps` e `/api/projects`, resolve o hash e, com uma campanha selecionada, busca `/api/projects/{pid}` + `/api/projects/{pid}/guide` (uma requisição alimenta menu, topo e visão geral).
 - Ação do usuário → `fetch` JSON → `app.py` valida → serviço do domínio → resposta JSON.
 - Jobs longos: `POST .../search|generate` retorna imediatamente; `GET .../job` a cada 2–3 s.
 
@@ -72,7 +119,11 @@ paralelas sem conflito nos arquivos únicos.
 
 ### Modelo de dados (alto nível)
 Entidades principais
-- `Project` (`project.json`: id, name, product, vibe, created).
+- `Project` (`project.json`: id, name, product, vibe, created; opcionais `aspect_ratio` e
+  `brand`, ambos `[extensão]`). `vibe` nasce vazio: a aula 009 **encontra** a vibe na etapa 2,
+  não na criação do projeto. `aspect_ratio` ∈ `16:9` (default) | `9:16` | `1:1` — a aula 007
+  manda escolher o formato pelo destino. Escrita sempre atômica (tmp + `os.replace`).
+- `Guide` por etapa — **não é persistido**: é derivado a cada request dos artefatos do projeto.
 - `Step` (catálogo estático em código).
 - Artefatos por etapa (definidos nos HLDs de `refs` e `mood`).
 
@@ -87,9 +138,14 @@ Fonte de verdade
 ### Interfaces públicas
 | Nome | Tipo | Protocolo | Exposição | SLAs/Limites |
 | ---- | ---- | ---------- | --------- | ------------- |
-| `/api/steps`, `/api/projects` | API | REST/JSON | Interna (loopback) | respostas < 100 ms |
-| `/api/projects/{pid}/refs/*`, `/mood/*` | API | REST/JSON, multipart (upload ≤ 25 MB) | Interna | ver HLDs dos domínios |
-| `/files/{pid}/…`, `/static/…` | Estáticos | HTTP | Interna | somente leitura |
+| `/api/steps`, `GET|POST /api/projects` | API | REST/JSON | Interna (loopback) | respostas < 100 ms |
+| `GET /api/projects/{pid}` | API | REST/JSON | Interna | `project.json` + `{progress, current}` |
+| `PATCH /api/projects/{pid}` | API | REST/JSON | Interna | `{name?, product?, vibe?, aspect_ratio?, brand?}`; 422 em `aspect_ratio` inválido |
+| `GET /api/projects/{pid}/guide` | API | REST/JSON | Interna | `{steps[11], done, total, progress, current}`; só leitura de arquivos |
+| `GET /api/projects/{pid}/guide/{step}` | API | REST/JSON | Interna | `Guide`; 404 se a etapa não existe |
+| `GET /api/higgsfield/status` | API | REST/JSON | Interna | cache de 60 s; `?refresh=1` força |
+| `/api/projects/{pid}/<etapa>/*` | API | REST/JSON, multipart (upload ≤ 25 MB; 200 MB na etapa 6) | Interna | ver HLDs dos domínios |
+| `/files/{pid}/…`, `/static/…` | Estáticos | HTTP | Interna | somente leitura (`/static/ui.js`, `/static/ui.css` = `Studio.ui`; `/static/app.js`, `/static/style.css` = shell) |
 
 ---
 
@@ -148,6 +204,9 @@ Dashboards e alertas
 ---
 
 ### ADRs associados e próximos passos
-- ADRs gerados pelo pipeline `/adr-*` em `docs/adrs/generated/STUDIO/`; ADR-009 (batidas com numpy + ffmpeg) em `MUSIC/`.
-- Pastas de etapa (`base/`, `storyboard/`, `shots/`, `publish/`, `prospect/`) são criadas pelo próprio serviço; `PROJECT_LAYOUT` continua listando só as da aula 009/011 (decisão da integração: não tocar `config.py`).
+- ADRs gerados pelo pipeline `/adr-*` em `docs/adrs/generated/STUDIO/`; ADR-009 (batidas com numpy + ffmpeg) em `MUSIC/`; ADR-010 (guia por leitura pura + núcleo editável só pelo preparo/shell) em `STUDIO/`.
+- `PROJECT_LAYOUT` (v1.2) cobre todas as pastas de etapa (`base`, `storyboard`, `storyboard/ideas`, `shots`, `animate`, `publish`, `prospect`, `mood/vibe`), para o guia ler o projeto inteiro sem precisar criar nada. `candidates`, `assets`, `jobs`, `edit` e `export` são infraestrutura do Studio `[extensão]` — a aula 009 não nomeia essas pastas.
 - Próximos passos: FDD por etapa nova (domínio próprio), `JobRegistry` único, logging estruturado.
+- Verificação de UI (v1.3): o CI continua sem navegador (ADR-008) — a tela é coberta por asserts
+  HTTP/strings; a checagem visual (Playwright 1440×900, claro e escuro) é ferramenta do
+  desenvolvedor e fica registrada por prints no PR.

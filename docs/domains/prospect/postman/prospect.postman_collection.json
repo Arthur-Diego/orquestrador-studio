@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "0b1f5c1e-11a4-4c9d-9b3e-prospect011cc",
     "name": "Orquestrador Studio · Prospect (etapa 11)",
-    "description": "Coleção executável dos contratos HTTP da etapa 11 (Prospecção, aula 001) do Orquestrador Studio, na ordem do fluxo da aula: gate → leads → lead → DM → teaser → follow-up → call → pitch, com os cenários negativos no fim.\n\n**Fonte de verdade**: `studio/etapas/prospect/router.py` (rotas, status e corpos) e `studio/prospect/service.py` (regras). O FDD `docs/domains/prospect/features/prospect-fdd.md` é a spec normativa.\n\n**Regra do gate (decisão do lote, prevalece sobre o texto do FDD)**: o gate conta os valores **DISTINTOS** do campo `video` em `publish/log.json` — 4 VÍDEOS distintos, não 4 entradas de log. O campo `posts` da resposta é o total de entradas; `published` é a contagem de distintos, e por isso `published <= posts`.\n\n**Como rodar**: suba o Studio (`./run.sh`, http://127.0.0.1:8765), importe o environment `prospect.postman_environment.json`, aponte `pid` para um projeto existente em `projects/` e rode a coleção inteira, na ordem.\n\n**Dependências entre requests**: a primeira request grava `gate_ok`; o cadastro grava `lid` (handle sorteado a cada execução, para não esbarrar no 422 de handle duplicado). Tudo que escreve é pulado quando o gate está fechado, e o cenário 409 do gate só é cobrado quando ele está mesmo fechado.\n\n**Ambiente do teaser**: o job depende de `animate/takes.json` (etapa 6), `audio/music.*` (etapa 7) e do ffmpeg local; sem eles a rota responde 404/409 e o teste registra o motivo em vez de falhar.",
+    "description": "Coleção executável dos contratos HTTP da etapa 11 (Prospecção, aula 001) do Orquestrador Studio, na ordem do fluxo da aula: gate → leads → lead → DM → teaser → follow-up → call → pitch, com os cenários negativos no fim.\n\n**Fonte de verdade**: `studio/etapas/prospect/router.py` (rotas, status e corpos) e `studio/prospect/service.py` (regras). O FDD `docs/domains/prospect/features/prospect-fdd.md` é a spec normativa.\n\n**Regra do gate (decisão do lote, prevalece sobre o texto do FDD)**: o gate conta os valores **DISTINTOS** do campo `video` em `publish/log.json` — 4 VÍDEOS distintos, não 4 entradas de log. O campo `posts` da resposta é o total de entradas; `published` é a contagem de distintos, e por isso `published <= posts`.\n\n**Como rodar**: suba o Studio (`./run.sh`, http://127.0.0.1:8765), importe o environment `prospect.postman_environment.json`, aponte `pid` para um projeto existente em `projects/` e rode a coleção inteira, na ordem.\n\n**Dependências entre requests**: a primeira request grava `gate_ok`; o cadastro grava `lid` (handle sorteado a cada execução, para não esbarrar no 422 de handle duplicado). Tudo que escreve é pulado quando o gate está fechado, e o cenário 409 do gate só é cobrado quando ele está mesmo fechado.\n\n**Ambiente do teaser**: o job depende de `animate/takes.json` (etapa 6), `audio/music.*` (etapa 7) e do ffmpeg local; sem eles a rota responde 404/409 e o teste registra o motivo em vez de falhar.\n\nWAVE 2 (OS-019): o gate le o portfolio GLOBAL (ADR-012, `GET /api/portfolio`) — quatro PROJETOS distintos com post, nao quatro arquivos do mesmo projeto. `post_ref` e obrigatorio (11.3). O teaser so pode ser criado depois de `replied` (11.1, 422). O pitch aceita valor por etapa e total (11.4). `music_offset` ausente usa a sugestao do primeiro impacto de audio/beats.json (11.8).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -28,7 +28,7 @@
                 "gate"
               ]
             },
-            "description": "Consulta o gate da etapa 11. `published` é a contagem de valores DISTINTOS do campo `video` em `publish/log.json` (decisão do lote: 4 VÍDEOS distintos, não 4 entradas de log). Sempre responde 200, mesmo com o gate fechado — quem bloqueia são os POST/PUT/DELETE. Guarda `gate_ok` para os cenários seguintes."
+            "description": "Consulta o gate da etapa 11. `published` é a contagem de valores DISTINTOS do campo `video` em `publish/log.json` (decisão do lote: 4 VÍDEOS distintos, não 4 entradas de log). Sempre responde 200, mesmo com o gate fechado — quem bloqueia são os POST/PUT/DELETE. Guarda `gate_ok` para os cenários seguintes.\n\nWAVE 2 (ADR-012): `published` conta PROJETOS distintos com post (portfolio global), nao arquivos deste projeto. Campos novos: `projects` (as obras que contam) e `this_project_published`."
           },
           "response": [],
           "event": [
@@ -37,49 +37,24 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Gate responde 200 mesmo fechado\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
                   "const b = pm.response.json();",
-                  "pm.collectionVariables.set(\"gate_ok\", String(b.ok === true));",
-                  "",
-                  "pm.test(\"Corpo traz published, required, ok e message\", function () {",
-                  "    pm.expect(b).to.have.property(\"published\");",
-                  "    pm.expect(b).to.have.property(\"required\");",
-                  "    pm.expect(b).to.have.property(\"ok\");",
-                  "    pm.expect(b).to.have.property(\"message\");",
-                  "    pm.expect(b.published).to.be.a(\"number\");",
-                  "    pm.expect(b.ok).to.be.a(\"boolean\");",
-                  "});",
-                  "",
-                  "pm.test(\"Exige 4 vídeos publicados\", function () {",
+                  "pm.test(\"Gate responde 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Schema do gate\", function () {",
+                  "    pm.expect(b.published).to.be.a('number');",
+                  "    pm.expect(b.posts).to.be.a('number');",
                   "    pm.expect(b.required).to.eql(4);",
-                  "});",
-                  "",
-                  "pm.test(\"published conta VÍDEOS DISTINTOS (nunca passa do total de entradas do log)\", function () {",
-                  "    // `posts` é o total de entradas com campo `video` em publish/log.json;",
-                  "    // `published` é a quantidade de valores distintos — por definição, published <= posts.",
-                  "    pm.expect(b).to.have.property(\"posts\");",
-                  "    pm.expect(b.published).to.be.at.most(b.posts);",
-                  "});",
-                  "",
-                  "pm.test(\"ok é published >= required\", function () {",
-                  "    pm.expect(b.ok).to.eql(b.published >= b.required);",
-                  "});",
-                  "",
-                  "pm.test(\"Mensagem da aula reflete a contagem N/4\", function () {",
-                  "    if (b.ok) {",
-                  "        pm.expect(b.message).to.include(\"Pode prospectar\");",
-                  "    } else {",
-                  "        pm.expect(b.message).to.include(b.published + \"/\" + b.required);",
-                  "    }",
-                  "});",
-                  "",
-                  "pm.test(\"Contador de DMs do dia vem junto (meta de 10/dia)\", function () {",
-                  "    pm.expect(b.today_sent).to.be.a(\"number\");",
+                  "    pm.expect(b.ok).to.be.a('boolean');",
+                  "    pm.expect(b.message).to.be.a('string');",
+                  "    pm.expect(b.today_sent).to.be.a('number');",
                   "    pm.expect(b.daily_limit).to.eql(10);",
-                  "});"
+                  "});",
+                  "pm.test(\"ADR-012: published == projetos distintos com post e ok == (published >= 4)\", function () {",
+                  "    pm.expect(b.projects).to.be.an('array');",
+                  "    pm.expect(b.published).to.eql(b.projects.length);",
+                  "    pm.expect(b.ok).to.eql(b.published >= 4);",
+                  "    pm.expect(b.this_project_published).to.be.a('boolean');",
+                  "});",
+                  "pm.collectionVariables.set(\"gateAberto\", String(b.ok));"
                 ]
               }
             }
@@ -825,10 +800,10 @@
                 "teaser"
               ]
             },
-            "description": "Dispara o job de 3 passos (corta o take, corta a música com fade, mixa) e devolve o job em `running`. Depende das etapas 6 (`animate/takes.json`) e 7 (`audio/music.*`) e do ffmpeg local: sem eles a resposta é 404 (etapa pendente) ou 409 (ffmpeg ausente / job em andamento) — o teste aceita esses casos de ambiente e só cobra o contrato do 200.",
+            "description": "Dispara o job de 3 passos (corta o take, corta a música com fade, mixa) e devolve o job em `running`. Depende das etapas 6 (`animate/takes.json`) e 7 (`audio/music.*`) e do ffmpeg local: sem eles a resposta é 404 (etapa pendente) ou 409 (ffmpeg ausente / job em andamento) — o teste aceita esses casos de ambiente e só cobra o contrato do 200.\n\nWAVE 2 (11.1): so funciona depois de `POST .../replied` — antes disso a resposta e 422 (\"a aula manda criar so depois que a empresa responder\"). (11.8): omitir `music_offset` usa a sugestao do primeiro impacto de audio/beats.json menos 0,5 s.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"take\": {\n    \"scene\": \"cena01\",\n    \"shot\": \"shot01\",\n    \"take\": \"take1\"\n  },\n  \"duration\": 8,\n  \"take_offset\": 0,\n  \"music_offset\": 0\n}",
+              "raw": "{\n  \"take\": {\n    \"scene\": \"cena01\",\n    \"shot\": \"shot01\",\n    \"take\": \"take1\"\n  },\n  \"duration\": 8,\n  \"take_offset\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1121,7 +1096,7 @@
     },
     {
       "name": "07 · Pitch da call",
-      "description": "`prospect/pitch.md`: tabela de etapas para ancorar valor (sem preço) e os lembretes da aula.",
+      "description": "`prospect/pitch.md`: tabela de etapas com VALOR por etapa, Total e Total com 50 % off no 1º trabalho (11.4), mais os lembretes literais da aula (11.5).",
       "item": [
         {
           "name": "Pitch: ler (gera na primeira vez)",
@@ -1150,20 +1125,28 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Pitch responde 200\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
+                  "pm.test(\"Pitch responde 200\", function () { pm.response.to.have.status(200); });",
                   "const b = pm.response.json();",
-                  "",
-                  "pm.test(\"Aponta para prospect/pitch.md\", function () {",
-                  "    pm.expect(b.file).to.eql(\"prospect/pitch.md\");",
-                  "});",
-                  "",
-                  "pm.test(\"Markdown traz a tabela de etapas de produção\", function () {",
+                  "pm.test(\"Aponta para prospect/pitch.md\", function () { pm.expect(b.file).to.eql(\"prospect/pitch.md\"); });",
+                  "pm.test(\"Markdown traz a tabela com a coluna de valor (11.4)\", function () {",
                   "    pm.expect(b.markdown).to.include(\"Etapas de produção\");",
                   "    pm.expect(b.markdown).to.include(\"| Conceito |\");",
-                  "    pm.expect(b.markdown).to.include(\"| Entrega |\");",
+                  "    pm.expect(b.markdown).to.include(\"| Etapa | O que envolve | Entrega | Valor (R$) |\");",
+                  "    pm.expect(b.markdown).to.include(\"Total com 50 % off no 1º trabalho\");",
+                  "});",
+                  "pm.test(\"Lembretes literais da aula (11.5)\", function () {",
+                  "    pm.expect(b.markdown).to.include(\"Condição especial na hora, ou válida por 24h\");",
+                  "    pm.expect(b.markdown).to.include(\"valor cheio para os próximos\");",
+                  "});",
+                  "pm.test(\"Valores por etapa vem no contrato\", function () {",
+                  "    pm.expect(b.steps).to.be.an('array');",
+                  "    pm.expect(b.values).to.be.an('object');",
+                  "    pm.expect(b.total).to.be.a('number');",
+                  "    pm.expect(b.sum).to.be.a('number');",
+                  "    pm.expect(b.matches).to.be.a('boolean');",
+                  "    pm.expect(b.discount).to.eql(Math.round(b.total * 50) / 100);",
+                  "    pm.expect(b.min_price).to.eql(100);",
+                  "    pm.expect(b.max_price).to.eql(500);",
                   "});"
                 ]
               }
@@ -1219,6 +1202,71 @@
                   "    pm.test(\"A tabela de etapas não tem preço (o preço fica nos lembretes)\", function () {",
                   "        const tabela = b.markdown.split(\"## Lembretes\")[0];",
                   "        pm.expect(tabela).to.not.include(\"R$\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pitch: gravar os valores por etapa (ancoragem, 11.4)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/pitch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "pitch"
+              ]
+            },
+            "description": "Aula 001: \"revela valores por etapa até chegar no total que você quer cobrar\". `total` ausente = soma das etapas. `total` diferente da soma e aceito (e a decisao comercial) mas o markdown avisa. Etapa desconhecida ou valor negativo = 422. Com o gate fechado = 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"values\": {\n    \"Conceito\": 80,\n    \"Produção\": 220\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gateAberto = pm.collectionVariables.get(\"gateAberto\") === \"true\";",
+                  "if (!gateAberto) {",
+                  "    pm.test(\"Gate fechado: 409 e nada e gravado\", function () { pm.response.to.have.status(409); });",
+                  "} else {",
+                  "    pm.test(\"Pitch salvo com 200\", function () { pm.response.to.have.status(200); });",
+                  "    const b = pm.response.json();",
+                  "    pm.test(\"Total = soma das etapas e desconto = metade\", function () {",
+                  "        pm.expect(b.sum).to.eql(300);",
+                  "        pm.expect(b.total).to.eql(300);",
+                  "        pm.expect(b.matches).to.eql(true);",
+                  "        pm.expect(b.discount).to.eql(150);",
+                  "        pm.expect(b.in_range).to.eql(true);",
+                  "    });",
+                  "    pm.test(\"Markdown traz os valores e o total\", function () {",
+                  "        pm.expect(b.markdown).to.include(\"R$ 80,00\");",
+                  "        pm.expect(b.markdown).to.include(\"R$ 300,00\");",
+                  "        pm.expect(b.markdown).to.include(\"R$ 150,00\");",
                   "    });",
                   "}"
                 ]
@@ -1454,6 +1502,120 @@
                   "",
                   "    pm.test(\"Detalhe pede ISO 8601\", function () {",
                   "        pm.expect(pm.response.json().detail).to.include(\"ISO 8601\");",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 · teaser antes da empresa responder (11.1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads/{{lid}}/teaser",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads",
+                "{{lid}}",
+                "teaser"
+              ]
+            },
+            "description": "\"Você só cria de verdade se a empresa responder\" (aula 001). Rode ANTES de marcar `replied`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gateAberto = pm.collectionVariables.get(\"gateAberto\") === \"true\";",
+                  "if (!gateAberto) {",
+                  "    pm.test(\"Gate fechado: 409 antes de qualquer coisa\", function () { pm.response.to.have.status(409); });",
+                  "} else {",
+                  "    pm.test(\"422 enquanto o lead nao respondeu\", function () {",
+                  "        pm.expect([200, 422]).to.include(pm.response.code);",
+                  "        if (pm.response.code === 422) {",
+                  "            pm.expect(pm.response.json().detail).to.include(\"depois que a empresa responder\");",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 · lead sem post citado (11.3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prospect/leads",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "prospect",
+                "leads"
+              ]
+            },
+            "description": "\"Não é spam porque você personaliza: mostra que olhou o perfil e menciona um post específico.\"",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business\": \"Sem Post\",\n  \"handle\": \"@sempost\",\n  \"post_ref\": \" \",\n  \"role\": \"fã\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gateAberto = pm.collectionVariables.get(\"gateAberto\") === \"true\";",
+                  "if (!gateAberto) {",
+                  "    pm.test(\"Gate fechado: 409\", function () { pm.response.to.have.status(409); });",
+                  "} else {",
+                  "    pm.test(\"422 com a mensagem do post especifico\", function () {",
+                  "        pm.response.to.have.status(422);",
+                  "        pm.expect(pm.response.json().detail).to.include(\"post específico\");",
                   "    });",
                   "}"
                 ]

@@ -4,6 +4,8 @@
   <p class="lede">Cada frame da etapa 5 vira take de vídeo. Prompt simples para cena simples; movimento de câmera elaborado quando não; start/end frame entre dois frames seguidos da mesma cena; 10 s para mudanças lentas. Áudio do modelo sempre OFF, dois takes por shot, like no usável. Três falhas no mesmo shot? Troque de modelo. Sem jeito? Corte para preto na montagem.</p>
 </header>
 
+<section id="guide" class="guide"></section>
+
 <section class="panel">
   <div class="panel-head">
     <h3>1. Takes por shot</h3>
@@ -13,6 +15,8 @@
       <button id="anReload" class="ghost">Recarregar plano</button>
     </div>
   </div>
+  <p class="fine"><strong>O que fazer aqui:</strong> para cada frame do storyboard, escreva o movimento, gere as variações (na UI da Higgsfield ou pelo CLI), importe, dê like na usável. <strong>O que a aula manda:</strong> descrever o movimento com clareza, áudio do modelo OFF, 5 s (10 s quando a mudança é lenta), 2 takes antes de escolher. <strong>O que falta</strong> aparece no painel do guia, acima.</p>
+  <p id="anModelNote" class="fine"></p>
   <p id="anWarnings" class="fine"></p>
   <div id="anShots" class="col"></div>
 </section>
@@ -22,6 +26,7 @@
     <h3>2. Importar os vídeos que você gerou na UI</h3>
     <span id="anCandCount" class="chip mode">0 vídeos</span>
   </div>
+  <p class="fine"><strong>O que fazer aqui:</strong> traga para o Studio os mp4 que você gerou na interface da Higgsfield. <strong>Dica da aula:</strong> <span id="anParallel">enquanto um take gera, dispare os outros shots em paralelo na UI da Higgsfield e importe os mp4 aqui depois</span> — a geração pelo CLI é serial, um job por vez.</p>
   <div class="row wrap">
     <label class="drop" id="anDrop">Arraste os mp4 aqui ou <input id="anUpload" type="file" accept="video/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col">

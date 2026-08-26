@@ -435,3 +435,72 @@ refletido em `MOOD::suggest_prompts` (comentário explícito no código sobre a 
 ## Atualização 2026-08-25 (wave 1)
 
 Novos módulos/domínios após a wave 1 (todos plugins em `studio/etapas/<id>/` + `studio/<id>/service.py`): BASE, STORYBOARD, SHOTS, ANIMATE, MUSIC, EDIT, EXPORT, PUBLISH, PROSPECT; e o transversal COMMON (`studio/common/`). As rotas deixaram `app.py` e vivem nos routers dos plugins. ADR nova: ADR-009 (MUSIC).
+
+## Atualização 2026-08-25 (wave 2, preparo)
+
+Correções ao "Project Overview" acima, que descrevia o estado do repositório antes da wave 1:
+o projeto está em **v0.3.0** e as **11 etapas** estão implementadas como plugins (não só as duas
+primeiras); `studio/app.py` não concentra mais as rotas de etapa — cada plugin traz o seu
+`router.py`.
+
+Novidades do módulo **STUDIO** nesta wave:
+
+- `studio/common/guide.py` — contrato transversal do **guia por etapa**: `Guide(META)` com
+  `.text/.input/.output/.check/.build`, helpers de leitura pura (`exists`, `read_json`,
+  `count_files`), derivação de `status`/`progress`/`missing` e `generic_guide` (fallback
+  `unknown`). Cada plugin pode exportar `studio/etapas/<id>/guide.py::guide(pid)`, descoberto por
+  `etapas.discover()` na chave `guide` (opcional).
+- Rotas novas no núcleo: `GET|PATCH /api/projects/{pid}`, `GET /api/projects/{pid}/guide` e
+  `GET /api/projects/{pid}/guide/{step}`; `GET /api/higgsfield/status` passou a ser cacheada
+  (60 s, `?refresh=1` força).
+- `studio/web/ui.js` + `ui.css` — `Studio.ui`, camada de componentes compartilhados do frontend
+  (`esc`, `chip`, `hfChip`, `drop`, `upload`, `confirmCost`, `poll`, `guide`, `renderGuide`),
+  substituindo o código duplicado nas 11 views. `app.js` ganhou `Studio.go(step)`, `destroy()` na
+  troca de tela e tratamento de erro em `showView`.
+- `PROJECT_LAYOUT` passou a cobrir as pastas de todas as etapas.
+
+**ADR nova: ADR-010** (STUDIO) — guia por etapa calculado por leitura pura de artefatos; núcleo
+(`app.py`, `steps.py`, `config.py`, `higgsfield.py`, `etapas/__init__.py`, `web/*`) editável
+somente pelas frentes de preparo/shell de uma wave.
+
+## Atualização 2026-08-25 (wave 2, frente music+edit · OS-018)
+
+Correções de fidelidade das etapas 7 e 8 (auditoria `wave-2-auditoria-etapas-7-11.md`):
+
+- **MUSIC** ganhou o passo 0 da aula 013 — `audio/rough_sequence.mp4` (sequência bruta, sem
+  música) e `audio/story_check.json` (a decisão "a história fecha?") — e a origem/licença da
+  trilha virou campo opcional `[extensão]` (`audio/license.txt` só nasce quando declarada).
+- **EDIT** passou a exigir a trilha para o `master` (409), a propor cortes secos (quadro preto
+  vira ação por corte), a aceitar `zoom` por clipe (1,0–1,3) e a tratar `loudnorm` como
+  `[extensão]` desligável; `service.py` ganhou `music_path`, `clip_length`, `cut_positions` e
+  `cuts_on_beats` (leitura pura, usados pelo guia).
+- Guias das duas etapas em `studio/etapas/{music,edit}/guide.py` (contrato do ADR-010).
+
+**ADR nova: ADR-011** (MUSIC) — a cena do produto permanece na etapa 5, mas a decisão sobre ela
+acontece na etapa 7, onde a aula 013 a coloca.
+## Atualização 2026-08-25 (wave 2, frente OS-019 — etapas 9, 10 e 11)
+
+Correções de fidelidade das etapas 9 (export), 10 (publish) e 11 (prospect), a partir de
+`docs/domains/studio/waves/wave-2-auditoria-etapas-7-11.md`:
+
+- **PUBLISH** ganhou o portfólio **global**: `publish.global_portfolio()` varre `PROJECTS_DIR` e
+  conta **projetos distintos** com pelo menos um post, exposto em `GET /api/portfolio` (router do
+  plugin `publish`). `publish.portfolio_status(pid)` passou a devolver as duas leituras (a do
+  projeto e a global) e ganhou o checklist de comunidade (`publish/community.json`,
+  `GET|POST /api/projects/{pid}/publish/community`).
+- **PROSPECT** consome esse portfólio em `gate()`; `start_teaser` passou a exigir `replied`
+  (422); `post_ref` virou obrigatório; o pitch ganhou valor por etapa, total e 50 % off
+  (`prospect/pitch.json`, `GET|POST /api/projects/{pid}/prospect/pitch` com `values`/`total`);
+  `music_offset` do teaser é sugerido a partir do primeiro impacto de `audio/beats.json`.
+- **EXPORT**: o QA passou a ter checagem **bloqueante** (veredito `BLOQUEIO` quando falta áudio);
+  textos de tela deixaram de atribuir o formato de vídeo à aula 007 (é plano §1.4) e thumb, QA,
+  1:1 e reframe estão rotulados `[extensão]`.
+- Os três plugins ganharam `studio/etapas/<id>/guide.py` (contrato do ADR-010).
+
+**ADR nova: ADR-012** (PUBLISH) — portfólio global conta projetos distintos (obras), não arquivos
+do mesmo projeto; o gate da etapa 11 passa a ler o portfólio do aluno, não o do projeto do lead.
+
+> **Nota da integração (W5):** este bloco e o da frente OS-018 (ADR-011, MUSIC) foram apensados
+> no fim deste arquivo em worktrees paralelas. O conflito de merge foi resolvido no rebase da
+> frente OS-019 sobre `develop` mantendo os **dois** blocos, na ordem de integração
+> (ADR-011 e depois ADR-012). A numeração das ADRs não colidiu.

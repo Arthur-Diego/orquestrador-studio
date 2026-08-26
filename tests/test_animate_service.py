@@ -70,7 +70,7 @@ def test_plan_follows_storyboard_order_and_creates_takes_json(svc, studio_env, p
         ("cena01", "shot01"), ("cena01", "shot02"), ("cena02", "shot03")], "ordem do storyboard, não do JSON"
     assert [s["next_in_scene"] for s in plan["shots"]] == ["shot02", None, None]
     assert plan["total"] == 3 and plan["ready"] == 0
-    assert plan["model_order"] == ["kling3_0", "seedance_2_0", "veo3_1_lite"]
+    assert plan["model_order"] == ["kling3_0", "seedance_2_0"], "modelos da aula; veo3_1_lite é [extensão]"
     data = json.loads((_root(studio_env, project) / "animate" / "takes.json").read_text())
     assert [s["shot"] for s in data["shots"]] == ["shot01", "shot02", "shot03"]
 
@@ -142,7 +142,119 @@ def test_start_end_requires_an_existing_end_frame(svc, studio_env, project):
     assert svc.update_shot(project, "cena01", "shot01", start_end=None)["start_end"] is None
 
 
+def test_start_end_mode_records_the_pair_with_the_next_shot(svc, project):
+    """6.1 (alta): escolher start/end grava `{start, end}` — antes o CLI ia sem end frame."""
+    svc.load_plan(project)
+    out = svc.update_shot(project, "cena01", "shot01", mode="start_end")
+    assert out["start_end"] == {"start": "shots/cena01/shot01_final.png",
+                                "end": "shots/cena01/shot02_final.png"}
+    assert out["next_in_scene"] == "shot02" and out["next_image"] == "shots/cena01/shot02_final.png"
+    plan = svc.load_plan(project)
+    assert plan["shots"][0]["start_end"]["end"] == "shots/cena01/shot02_final.png", "persistido"
+
+
+def test_leaving_start_end_mode_clears_the_pair(svc, project):
+    svc.load_plan(project)
+    svc.update_shot(project, "cena01", "shot01", mode="start_end")
+    out = svc.update_shot(project, "cena01", "shot01", mode="simple")
+    assert out["start_end"] is None, "cena simples não pode sair do CLI com end_image"
+
+
+def test_start_end_mode_without_a_next_shot_asks_for_a_manual_end(svc, studio_env, project):
+    svc.load_plan(project)
+    out = svc.update_shot(project, "cena02", "shot03", mode="start_end")
+    assert out["start_end"] is None, "sem próximo shot o par fica vazio (a tela pede o end)"
+    make_image(_root(studio_env, project) / "edit" / "last_frames" / "shot03_last.png")
+    out = svc.update_shot(project, "cena02", "shot03", mode="start_end",
+                          start_end={"end": "edit/last_frames/shot03_last.png"})
+    assert out["start_end"] == {"start": "shots/cena02/shot03_final.png",
+                                "end": "edit/last_frames/shot03_last.png"}
+
+
+def test_generate_in_start_end_mode_sends_the_end_image(svc, studio_env, project, monkeypatch):
+    """O teste que a auditoria pediu: start/end no plano ⇒ `end_image` no CLI."""
+    root = _root(studio_env, project)
+    svc.load_plan(project)
+    svc.update_shot(project, "cena01", "shot01", mode="start_end", prompt="slow dramatic camera")
+    sent = {}
+    monkeypatch.setattr(svc.hf, "generate",
+                        lambda model, params, timeout_s=600: sent.update(params) or {"raw": {}, "urls": [], "id": "j"})
+    svc.start_generate(project, "cena01", "shot01", "kling3_0", 1)
+    _wait(svc, project)
+    assert sent["end_image"].endswith("shots/cena01/shot02_final.png")
+    assert sent["start_image"].endswith("shots/cena01/shot01_final.png")
+    assert sent["end_image"].startswith(str(root)) and sent["sound"] is False
+
+
+@needs_ffmpeg
+def test_the_take_registers_the_pair_used(svc, studio_env, project, tmp_path):
+    svc.load_plan(project)
+    svc.update_shot(project, "cena01", "shot01", mode="start_end")
+    cid = _candidate(svc, studio_env, project, tmp_path, "t1.mp4")
+    take = svc.attach_take(project, "cena01", "shot01", cid)["take"]
+    assert take["start_end"]["end"] == "shots/cena01/shot02_final.png"
+    assert take["prompt_mode"] == "start_end" and take["aspect_ratio"] == "16:9"
+
+
+def test_six_failures_suggest_adapting_the_idea(svc, project):
+    """6.6: a aula manda "saber quando parar de iterar" e adaptar a ideia."""
+    assert svc.ADAPT_THRESHOLD == 6
+    plan = svc.load_plan(project)
+    assert plan["shots"][0]["adapt_idea"] is False and plan["adapt_threshold"] == 6
+    assert svc.failures_of({"cli_failures": 6, "takes": []}) >= svc.ADAPT_THRESHOLD
+    assert svc.suggested_model(6) is None, "ordem esgotada: nem trocar de modelo resolve"
+
+
+def test_aspect_ratio_defaults_to_the_project_and_accepts_a_shot_override(svc, studio_env, project):
+    """6.7: `16:9` era fixo. Agora vem do projeto (núcleo) e o shot pode sobrescrever."""
+    root = _root(studio_env, project)
+    meta = json.loads((root / "project.json").read_text())
+    (root / "project.json").write_text(json.dumps({**meta, "aspect_ratio": "9:16"}))
+    assert svc.project_aspect_ratio(root) == "9:16"
+    svc.load_plan(project)
+    entry = {"image": "shots/cena01/shot01_final.png", "prompt": "walk", "duration": 5, "start_end": None}
+    assert svc.build_params(entry, "kling3_0", aspect_ratio="9:16")["aspect_ratio"] == "9:16"
+    assert svc.update_shot(project, "cena01", "shot01", aspect_ratio="1:1")["aspect_ratio"] == "1:1"
+    assert svc.build_params({**entry, "aspect_ratio": "1:1"}, "kling3_0",
+                            aspect_ratio="9:16")["aspect_ratio"] == "1:1", "o shot manda"
+    assert svc.update_shot(project, "cena01", "shot01", aspect_ratio=None)["aspect_ratio"] is None
+    with pytest.raises(ValueError):
+        svc.update_shot(project, "cena01", "shot01", aspect_ratio="21:9")
+
+
+def test_cli_mode_is_an_extension_with_env_and_shot_override(svc, project, monkeypatch):
+    assert svc.default_cli_mode() == "pro"
+    entry = {"image": "a.png", "prompt": "walk", "duration": 5, "start_end": None}
+    monkeypatch.setenv("STUDIO_ANIMATE_CLI_MODE", "fast")
+    assert svc.build_params(entry, "kling3_0")["mode"] == "fast"
+    monkeypatch.delenv("STUDIO_ANIMATE_CLI_MODE")
+    svc.load_plan(project)
+    assert svc.update_shot(project, "cena01", "shot01", cli_mode="fast")["cli_mode"] == "fast"
+    assert svc.build_params({**entry, "cli_mode": "fast"}, "kling3_0")["mode"] == "fast"
+    with pytest.raises(ValueError):
+        svc.update_shot(project, "cena01", "shot01", cli_mode="turbo")
+
+
+def test_the_plan_carries_the_screen_hints_and_the_last_frames(svc, studio_env, project):
+    """6.4, 6.5 e 6.8: Creative Engine, paralelismo e Seedance saem do serviço para a tela."""
+    make_image(_root(studio_env, project) / "edit" / "last_frames" / "shot01_last.png")
+    plan = svc.load_plan(project)
+    assert plan["last_frames"] == ["edit/last_frames/shot01_last.png"]
+    assert any("Creative Engine" in t for t in plan["mode_tips"]["elaborate"])
+    assert any("Seedance" in t for t in plan["mode_tips"]["elaborate"])
+    assert any("edit/last_frames/" in t for t in plan["mode_tips"]["start_end"])
+    assert "paralelo" in plan["parallel_hint"]
+    assert plan["aspect_ratio"] == "16:9" and plan["cli_mode"] == "pro"
+
+
 # ---------- sugestão de prompt ----------
+def test_suggest_prompt_carries_the_tips_of_the_mode(svc, project):
+    r = svc.suggest_prompt(project, "cena01", "shot01", mode="elaborate")
+    assert any("Creative Engine" in t for t in r["tips"]) and any("Seedance" in t for t in r["tips"])
+    assert "paralelo" in r["parallel_hint"] and "Kling 2.6" in r["model_note"]
+    assert svc.suggest_prompt(project, "cena01", "shot01")["tips"], "todo modo tem orientação da aula"
+
+
 def test_suggest_prompt_covers_the_three_modes_of_the_lesson(svc, project):
     simple = svc.suggest_prompt(project, "cena01", "shot01")
     assert simple["prompt"] == "the astronaut walks through the blizzard, realistic, natural motion"
@@ -250,8 +362,25 @@ def test_model_suggestion_walks_the_order_then_gives_up(svc):
     assert svc.suggested_model(0) == "kling3_0"
     assert svc.suggested_model(2) == "kling3_0"
     assert svc.suggested_model(3) == "seedance_2_0", "aula 012: após 3 falhas, troque de modelo"
+    assert svc.suggested_model(6) is None, "esgotada a ordem da aula: adaptar a ideia ou corte para preto"
+
+
+def test_veo_is_an_extension_outside_the_default_order(svc, monkeypatch):
+    """A aula 012 cita Kling e Seedance. `veo3_1_lite` só entra por env, marcado [extensão]."""
+    assert "veo3_1_lite" not in svc.MODEL_ORDER and "veo3_1_lite" in svc.EXTENSION_MODELS
+    monkeypatch.setenv("STUDIO_ANIMATE_MODELS", "kling3_0,seedance_2_0,veo3_1_lite")
     assert svc.suggested_model(6) == "veo3_1_lite"
-    assert svc.suggested_model(9) is None, "esgotada a ordem: corte para preto na montagem"
+    se = {"image": "a.png", "prompt": "walk", "duration": 5,
+          "start_end": {"start": "a.png", "end": "b.png"}}
+    assert svc.build_params(se, "veo3_1_lite")["duration"] == 8, "ressalva do CLI mantida"
+    assert svc.build_params(se, "kling3_0")["duration"] == 5
+
+
+def test_the_lesson_model_note_is_published_with_the_plan(svc, project):
+    """Gate 4 do CLAUDE.md: a troca 2.6/2.5 Turbo → 3.0 é registrada, não silenciosa."""
+    plan = svc.load_plan(project)
+    assert "Kling 2.6" in plan["model_note"] and "2.5 Turbo" in plan["model_note"]
+    assert "Kling 3.0" in plan["model_note"]
 
 
 def test_model_order_is_configurable_by_env(svc, monkeypatch):

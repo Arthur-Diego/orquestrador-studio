@@ -40,7 +40,14 @@ class GenerateReq(BaseModel):
 
 class SelectReq(BaseModel):
     id: str = Field(min_length=1)
-    license: str = Field(min_length=1)
+    # origem/licença é opcional `[extensão]`: a aula 013 não fala em licença (auditoria 7.4).
+    license: str = ""
+
+
+class StoryCheckReq(BaseModel):
+    """A resposta da aula 013: a história fecha, ou falta um encerramento mais forte/comercial?"""
+    closed: bool
+    note: str = ""
 
 
 class BeatsReq(BaseModel):
@@ -124,6 +131,38 @@ def music_select(pid: str, req: SelectReq):
         raise HTTPException(422, str(e)) from e
     except FileNotFoundError as e:
         raise HTTPException(404, str(e)) from e
+
+
+# ---------- passo 0: assistir a história inteira (aula 013) ----------
+@router.get("/api/projects/{pid}/music/story")
+def music_story(pid: str):
+    """Estado do passo 0: a sequência bruta existe? a decisão foi tomada? há cena do produto?"""
+    return music.story_status(pid)
+
+
+@router.post("/api/projects/{pid}/music/story/render", status_code=202)
+def music_story_render(pid: str):
+    """Monta `audio/rough_sequence.mp4` (takes com like, na ordem do storyboard, sem música)."""
+    refs.project_dir(pid)
+    try:
+        return music.start_story_render(pid)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@router.get("/api/projects/{pid}/music/story/job")
+def music_story_job(pid: str):
+    refs.project_dir(pid)
+    return music.story_job(pid)
+
+
+@router.post("/api/projects/{pid}/music/story/check")
+def music_story_check(pid: str, req: StoryCheckReq):
+    return music.set_story_check(pid, req.closed, req.note)
 
 
 @router.get("/api/projects/{pid}/music/beats")

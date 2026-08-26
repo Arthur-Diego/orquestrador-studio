@@ -40,6 +40,30 @@ MAX_SCENE_TEXT = 500    # texto de uma cena
 COUNTS = {"uncertain": 4, "tweak": 1}
 SUFFIX = "Keep everything else identical, realistic."
 
+# A aula 010 termina em "selecionar, fazer upscale, corrigir elementos"; no Studio o upscale mora
+# na etapa 5 (auditoria 4.1) — a etapa 4 avisa em vez de fingir que faz.
+UPSCALE_NOTE = "O upscale das ideias acontece na etapa 5 (aula 011), depois de escolher os ângulos."
+
+# Modelos do caminho pago (CLI). A aula e o plano só citam o Nano Banana; o GPT Image 2 é
+# alternativa aprovada na wave 2 e entra marcada `[extensão]` (auditoria 4.4), nunca como padrão.
+MODELS = [
+    {"id": "nano_banana_2", "label": "Nano Banana Pro", "default": True},
+    {"id": "gpt_image_2", "label": "GPT Image 2 [extensão]", "default": False},
+]
+
+# Aula 010: a história é organizada em "começo, descoberta, ação e desfecho". Com ~5 cenas a ação
+# ocupa o miolo; o Studio só sugere o momento de cada cena (o texto continua sendo do usuário).
+SCENE_ARC = [
+    {"id": "comeco", "label": "começo",
+     "hint": "onde a história começa: o cenário e o produto em cena"},
+    {"id": "descoberta", "label": "descoberta",
+     "hint": "o personagem descobre o produto (ou o problema que ele resolve)"},
+    {"id": "acao", "label": "ação",
+     "hint": "o que acontece de fato: o movimento, o esforço, o clímax da cena"},
+    {"id": "desfecho", "label": "desfecho",
+     "hint": "como a história fecha: o produto entregue, a recompensa"},
+]
+
 # Os três modos de ideação da aula 010. `cli` marca os que têm equivalente no CLI da Higgsfield:
 # Draw to Edit depende do desenho feito na interface, então não tem (plano-higgsfield §2).
 KINDS = [
@@ -64,6 +88,17 @@ PRESETS = [
 
 _registry = JobRegistry()
 _NUMBERED = re.compile(r"\b\d+[.)]\s")
+
+# Verbos que abrem uma edição na aula 010 ("make it smaller", "remove the character", "add a rope").
+# Servem à HEURÍSTICA de "uma instrução por vez": duas frases começando com um deles são dois
+# pedidos; "Make him smaller. Realistic." é um pedido só (auditoria 4.6).
+IMPERATIVES = {
+    "add", "adjust", "blur", "brighten", "bring", "change", "convert", "crop", "darken", "delete",
+    "draw", "duplicate", "eliminate", "enlarge", "erase", "expand", "extend", "fill", "fix",
+    "flip", "follow", "generate", "give", "hide", "increase", "inpaint", "keep", "lower", "make",
+    "move", "paint", "place", "put", "raise", "reduce", "remove", "render", "replace", "reposition",
+    "resize", "rotate", "set", "shift", "show", "shrink", "swap", "transform", "turn", "zoom",
+}
 
 
 class Invalid(ValueError):
@@ -120,9 +155,20 @@ def status(pid: str) -> dict:
 
 
 # ---------- instruções (o que o usuário cola na Higgsfield) ----------
+def scene_arc(n: int, total: int) -> dict:
+    """Momento da estrutura da aula 010 que a cena `n` (1-based) ocupa em um storyboard de `total`."""
+    comeco, descoberta, acao, desfecho = SCENE_ARC
+    if n <= 1:
+        return comeco
+    if n >= total:
+        return desfecho
+    return descoberta if n == 2 else acao
+
+
 def presets() -> dict:
     return {"kinds": [{k: v for k, v in kind.items() if k != "cli"} for kind in KINDS],
-            "presets": PRESETS, "suffix": SUFFIX, "counts": dict(COUNTS)}
+            "presets": PRESETS, "suffix": SUFFIX, "counts": dict(COUNTS),
+            "models": MODELS, "arc": SCENE_ARC, "upscale_note": UPSCALE_NOTE}
 
 
 def _sentences(text: str) -> list[str]:
@@ -138,10 +184,33 @@ def _first_instruction(text: str) -> str:
     return parts[0] if parts else text.strip()
 
 
+def _imperatives(text: str) -> list[str]:
+    """Frases que começam com verbo de edição — os "pedidos" dentro do texto."""
+    out = []
+    for s in _sentences(text):
+        head = re.split(r"[^A-Za-z']+", s.strip(), maxsplit=1)[0].lower()
+        if head in IMPERATIVES:
+            out.append(s)
+    return out
+
+
+def _refuse(reason: str, first: str) -> None:
+    raise Invalid(
+        f"Uma instrução por vez (aula 010): {reason} — envie apenas '{first}'. "
+        "Isto é uma heurística (lista numerada ou duas frases no imperativo); se for mesmo um "
+        "pedido só, junte as frases com 'and' ou com ponto-e-vírgula.")
+
+
 def _check_single_instruction(text: str) -> None:
-    """Aula 010: uma instrução por vez. Lista numerada com 2+ itens ou 2+ frases é recusada."""
-    if len(_NUMBERED.findall(text)) >= 2 or len(_sentences(text)) >= 2:
-        raise Invalid(f"Uma instrução por vez (aula 010): envie apenas '{_first_instruction(text)}'")
+    """Aula 010: uma instrução por vez — mas a regra é sobre *edições*, não sobre pontuação.
+
+    Recusa só o que é claramente mais de um pedido: lista numerada com 2+ itens ou 2+ frases
+    começando com verbo no imperativo. "Make him smaller. Realistic." passa (auditoria 4.6)."""
+    if len(_NUMBERED.findall(text)) >= 2:
+        _refuse("isto é uma lista numerada com 2 ou mais itens", _first_instruction(text))
+    imp = _imperatives(text)
+    if len(imp) >= 2:
+        _refuse(f"parecem {len(imp)} pedidos diferentes", imp[0])
 
 
 def build_instruction(pid: str, kind: str, text: str, count: int = 4) -> dict:
@@ -167,7 +236,8 @@ def build_instruction(pid: str, kind: str, text: str, count: int = 4) -> dict:
     else:
         instruction = f"Another point of view of this exact scene: {core}. Same subject, same lighting, realistic."
     hint = next(k["ui_hint"] for k in KINDS if k["kind"] == kind)
-    hint += " Gere 4 variações (incerto)." if count == COUNTS["uncertain"] else " Gere 1 variação (tweak)."
+    hint += (" Na Higgsfield, gere 4 variações (você está incerto)." if count == COUNTS["uncertain"]
+             else " Na Higgsfield, gere 1 variação (é só um tweak).")
     log.info("instruction_built %s", {"pid": pid, "kind": kind, "count": count})
     return {"kind": kind, "count": count, "instruction": instruction, "ui_hint": hint, "base_image": rel}
 
@@ -320,13 +390,15 @@ def _write_md(root: Path, scenes: list[dict]) -> str:
     meta = _read_json(root / "project.json", {}) or {}
     lines = [f"# Storyboard: {meta.get('name') or root.name}", "",
              f"Produto: {meta.get('product') or '—'} · Vibe: {meta.get('vibe') or '—'}", ""]
+    total = len(scenes)
     for s in scenes:
-        lines += [f"## Cena {s['n']}", ""]
+        # A estrutura da aula 010 (começo → descoberta → ação → desfecho) fica visível no documento.
+        lines += [f"## Cena {s['n']} — {scene_arc(s['n'], total)['label']}", ""]
         lines += [s["text"] or "_(sem texto)_", ""]
         if s["image"]:
             lines += [f"![{s['id']}](ideas/{Path(s['image']).name})", ""]
     lines += ["---", "", f"Gerado em {datetime.now():%Y-%m-%d %H:%M}.",
-              f"Imagem base: {base_rel(root) or 'ausente (etapa 3)'}"]
+              f"Imagem base: {base_rel(root) or 'ausente (etapa 3)'}", UPSCALE_NOTE]
     f = root / MD_FILE
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("\n".join(lines) + "\n")

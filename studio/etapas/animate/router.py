@@ -20,6 +20,8 @@ class ShotUpdateReq(BaseModel):
     duration: int | None = None
     start_end: dict | None = None
     fallback_black: bool | None = None
+    aspect_ratio: str | None = None    # [extensão] null = herda project.aspect_ratio
+    cli_mode: str | None = None        # [extensão] null = herda STUDIO_ANIMATE_CLI_MODE (pro)
 
 
 class TakeReq(BaseModel):
@@ -80,8 +82,10 @@ def animate_shots(pid: str):
 @router.put("/api/projects/{pid}/animate/shots/{scene}/{shot}")
 def animate_update_shot(pid: str, scene: str, shot: str, req: ShotUpdateReq):
     fields = req.model_dump(exclude_unset=True)
-    if "start_end" not in fields:
-        fields["start_end"] = animate._UNSET
+    # Campo ausente no corpo = "não mexa"; campo com `null` = "volte ao padrão".
+    for optional in ("start_end", "aspect_ratio", "cli_mode"):
+        if optional not in fields:
+            fields[optional] = animate._UNSET
     return _call(animate.update_shot, pid, scene, shot, **fields)
 
 

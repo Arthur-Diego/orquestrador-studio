@@ -41,18 +41,45 @@ def prepare(studio_env, pid, n_refs=2, colors=("#0ff0ff", "#1a1a2e"), note="neon
     return root
 
 
-# ---------- prompts (passo 5 da aula) ----------
-def test_prompts_are_deterministic_and_one_per_selected_ref(studio_env, svc, project):
+def _fake_claude(svc, monkeypatch, prompt="A cinematic can in the snow", negative="text", camera="RED, 50mm"):
+    """O bot da aula (Claude CLI) fakeado como em tests/test_prompter.py — sem rede (ADR-008)."""
+    import subprocess
+    calls = []
+    payload = {"prompt": prompt, "negative": negative, "camera": camera, "notes_pt": "ok"}
+
+    def run(args, capture_output, text, timeout):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "```json\n" + json.dumps(payload) + "\n```", "")
+
+    monkeypatch.setattr(svc.prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(svc.prompter.subprocess, "run", run)
+    return calls
+
+
+# ---------- prompts (passos 2 a 5 da aula) ----------
+def test_prompts_fallback_is_deterministic_and_one_per_selected_ref(studio_env, svc, project):
+    """Sem Claude, o template de fallback é determinístico (B1: o critério de igualdade da wave 1
+    vale para o fallback; o prompt da aula vem do bot e varia)."""
     prepare(studio_env, project)
     a, b = svc.prompts(project), svc.prompts(project)
-    assert a == b, "mesmo insumo, mesmo prompt"
+    assert a == b, "mesmo insumo, mesmo prompt de fallback"
     assert len(a["refs"]) == 2, "um prompt de situação por referência escolhida"
     for r in a["refs"]:
         assert "energetico Gelo Zero" in r["prompt"] and "#0ff0ff" in r["prompt"]
-        assert "exact same situation" in r["prompt"]
-        assert "No people unless they appear in the reference image" in r["prompt"]
-        assert "identical to this one" in r["prompt_no_bias"], "aula 009: prompt sem viés em aba nova"
+        assert "exact same situation" in r["prompt"] and r["prompt_source"] == "template"
+        assert "identical to this one" in r["bot_instruction"], "B2: instrução para o bot, não prompt"
+        assert r["bot_instruction"] != r["prompt"]
+        assert "No people" not in r["prompt"], "B11: a frase é opcional na etapa 3"
     assert a["aspect_ratio"] == "16:9" and a["mood_files"] == ["mood/selected/mood0.jpg", "mood/selected/mood1.jpg"]
+
+
+def test_hints_say_the_new_tab_is_the_bots(studio_env, svc, project):
+    """B2: a 'aba nova' da aula é do bot; a Higgsfield só recebe o prompt pronto."""
+    prepare(studio_env, project)
+    p = svc.prompts(project)
+    assert "aba nova" in p["bot_hint"] and "bot" in p["bot_hint"].lower()
+    assert "aba nova" not in p["ui_hint"] and "Higgsfield" in p["ui_hint"]
+    assert "mood" in p["ui_hint"] and "16:9" in p["ui_hint"]
 
 
 def test_prompts_ignore_refs_without_file_and_unselected(studio_env, svc, project):
@@ -61,27 +88,98 @@ def test_prompts_ignore_refs_without_file_and_unselected(studio_env, svc, projec
     assert len(svc.prompts(project)["refs"]) == 1
 
 
-def test_prompts_require_refs_and_mood(studio_env, svc, project):
+def test_prompts_require_refs_and_mood_images(studio_env, svc, project):
+    """B3: o mood entra como IMAGEM (o print que a aula mostra ao bot); os hex são opcionais."""
+    import shutil
     root = studio_env["refs"].project_dir(project)
     with pytest.raises(ValueError, match="etapa 1"):
         svc.prompts(project)
     prepare(studio_env, project)
     (root / "mood" / "palette.json").write_text(json.dumps({"colors": [], "note": ""}))
+    p = svc.prompts(project)
+    assert p["palette"] == {"colors": [], "note": ""}, "paleta vazia não bloqueia mais"
+    assert "campaign mood" not in p["refs"][0]["prompt"]
+    shutil.rmtree(root / "mood" / "selected")
     with pytest.raises(ValueError, match="etapa 2"):
         svc.prompts(project)
 
 
-def test_brand_unlocks_label_prompt(studio_env, svc, project):
-    prepare(studio_env, project)
-    assert svc.prompts(project)["label_prompt"] is None
-    assert svc.prompts(project)["label_prompt_ready"] is False
-    with pytest.raises(ValueError):
-        svc.brand_set(project, "  ")
-    svc.brand_set(project, "Gelo Zero", "lightning bolt logo with neon effect")
-    assert svc.brand_get(project) == {"name": "Gelo Zero", "description": "lightning bolt logo with neon effect"}
+def test_generate_prompt_calls_the_bot_with_reference_and_mood(studio_env, svc, project, monkeypatch):
+    """B1: o prompt de situação nasce do bot olhando a referência + o mood da campanha."""
+    root = prepare(studio_env, project)
+    calls = _fake_claude(svc, monkeypatch, "A giant can on a snowy ridge, RED Komodo, 50mm")
+    e = svc.generate_prompt(project, "0f8e7d6c5b4a", "images", "a lata está gigante")
+    assert e["source"] == "claude" and e["prompt"].startswith("A giant can")
+    assert e["mode"] == "images" and e["ref_id"] == "0f8e7d6c5b4a" and e["no_bias"] is False
+    cmd = calls[0][2]
+    assert str(root / "refs" / "brainstorming" / "0f8e7d6c5b4a.jpg") in cmd
+    assert str(root / "mood" / "selected" / "mood0.jpg") in cmd, "o bot vê o mood (o 'print' da aula)"
+    assert "a lata está gigante" in cmd and "energetico Gelo Zero" in cmd, "instrução + brief da campanha"
+    # o prompt gerado passa a ser o prompt daquela referência
     p = svc.prompts(project)
-    assert p["label_prompt_ready"] and "Gelo Zero" in p["label_prompt"]
-    assert "lightning bolt logo" in p["label_prompt"] and "identical" in p["label_prompt"]
+    ref = next(r for r in p["refs"] if r["ref_id"] == "0f8e7d6c5b4a")
+    assert ref["prompt"] == e["prompt"] and ref["prompt_source"] == "claude"
+    assert p["refs"][1]["prompt_source"] == "template", "a outra referência continua no fallback"
+    assert svc.prompt_history(project)[0]["prompt"] == e["prompt"]
+
+
+def test_generate_prompt_without_bias_sends_only_the_reference(studio_env, svc, project, monkeypatch):
+    """B2/aula 009: sessão nova sem contexto — só a referência, sem brief e sem mood."""
+    root = prepare(studio_env, project)
+    calls = _fake_claude(svc, monkeypatch, "An identical image, but on a snowy mountain")
+    e = svc.generate_prompt(project, "0f8e7d6c5b4a", "images", "o energético gigante numa montanha de neve",
+                            no_bias=True)
+    cmd = calls[0][2]
+    assert e["no_bias"] is True
+    assert str(root / "refs" / "brainstorming" / "0f8e7d6c5b4a.jpg") in cmd
+    assert "mood/selected" not in cmd, "sem mood: o bot não pode saber da campanha"
+    assert "snow neon" not in cmd, "sem a vibe do projeto (brief) — é isso que tira o viés"
+    assert "neon frio" not in cmd and "#0ff0ff" not in cmd, "sem a nota e a paleta do mood"
+    assert "Vibe:" not in cmd and "Aesthetic reference" not in cmd, "nenhum campo do brief"
+    assert "energetico Gelo Zero" in cmd, "o PRODUTO vai: a aula pede 'o energético gigante está…'"
+    assert "identical to this one" in cmd and "montanha de neve" in cmd
+
+
+def test_generate_prompt_modes_template_and_no_people(studio_env, svc, project, monkeypatch):
+    """B11: 'No people' vira opcional; sem Claude o modo template continua funcionando."""
+    prepare(studio_env, project)
+    monkeypatch.setattr(svc.prompter, "BIN", None)
+    t = svc.generate_prompt(project, "0f8e7d6c5b4a", "template")
+    assert t["source"] == "template" and "No people" not in t["prompt"]
+    t2 = svc.generate_prompt(project, "0f8e7d6c5b4a", "template", no_people=True)
+    assert "No people unless they appear in the reference image" in t2["prompt"]
+    with pytest.raises(RuntimeError, match="indisponível"):
+        svc.generate_prompt(project, "0f8e7d6c5b4a", "images")
+    with pytest.raises(ValueError, match="mode"):
+        svc.generate_prompt(project, "0f8e7d6c5b4a", "magico")
+    with pytest.raises(ValueError, match="referência inexistente"):
+        svc.generate_prompt(project, "naoexiste", "template")
+
+
+def test_generate_prompt_brief_mode_has_no_images(studio_env, svc, project, monkeypatch):
+    prepare(studio_env, project)
+    calls = _fake_claude(svc, monkeypatch, "A cinematic can in the snow")
+    e = svc.generate_prompt(project, None, "brief", "sem imagens")
+    assert e["images"] == [] and "--allowedTools" not in calls[0]
+    assert e["ref_id"] == "0f8e7d6c5b4a", "sem ref_id usa a primeira referência escolhida"
+
+
+def test_project_aspect_ratio_drives_prompts_and_cli(studio_env, svc, project, monkeypatch):
+    """G3: o formato vem do projeto (aula 007 manda escolher pelo destino), não fixo em 16:9."""
+    root = prepare(studio_env, project)
+    meta = json.loads((root / "project.json").read_text())
+    meta["aspect_ratio"] = "9:16"
+    (root / "project.json").write_text(json.dumps(meta))
+    p = svc.prompts(project)
+    assert p["aspect_ratio"] == "9:16" and "9:16" in p["ui_hint"]
+    seen = []
+    monkeypatch.setattr(svc.hf, "cost", lambda model, params: seen.append(params) or {"credits": 1})
+    svc.estimate_cost(project, "situation")
+    assert seen[0]["aspect_ratio"] == "9:16"
+    meta["aspect_ratio"] = "coisa-errada"
+    (root / "project.json").write_text(json.dumps(meta))
+    assert svc.prompts(project)["aspect_ratio"] == "16:9", "valor inválido cai no default"
+
 
 
 # ---------- importação ----------
@@ -120,7 +218,7 @@ def test_import_history_uses_cli_bridge(studio_env, svc, project, monkeypatch):
     payloads = iter([image_bytes(color=(10, 10, 10)), image_bytes(color=(20, 20, 20))])
     monkeypatch.setattr(svc.ingest, "urlopen", lambda *a, **k: type("R", (), {"read": lambda self: next(payloads)})())
     r = svc.import_history(project, kind="label", ref_id="0f8e7d6c5b4a")
-    assert r == {"added": 2, "jobs": 1}
+    assert r == {"added": 2, "jobs": 1, "warnings": []}
     assert all(c["kind"] == "label" and c["job_id"] == "j1" for c in svc.load(project))
 
 
@@ -284,7 +382,7 @@ def test_generate_total_failure_is_an_error_job(studio_env, svc, project, monkey
 
 def test_generate_label_requires_situation_and_brand(studio_env, svc, project, monkeypatch):
     prepare(studio_env, project)
-    calls = _fake_cli(svc, monkeypatch, [["http://x/l.png"]])
+    calls = _fake_cli(svc, monkeypatch, [["http://x/l1.png"], ["http://x/l2.png"], ["http://x/l3.png"]])
     with pytest.raises(ValueError, match="situação"):
         svc.start_generate(project, "label")
     s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
@@ -292,13 +390,14 @@ def test_generate_label_requires_situation_and_brand(studio_env, svc, project, m
     with pytest.raises(ValueError, match="marca"):
         svc.start_generate(project, "label")
     svc.brand_set(project, "Gelo Zero", "raio neon")
-    svc.start_generate(project, "label")
+    j = svc.start_generate(project, "label")
+    assert j["total"] == 3, "B4: a aula gera 3 variações do rótulo por vez"
     job = _wait(svc, project)
-    assert job["state"] == "done" and job["added"] == 1
+    assert job["state"] == "done" and job["added"] == 3 and len(calls) == 3
     assert calls[0]["params"]["image_references"] == [str(studio_env["refs"].project_dir(project)
                                                          / [c for c in svc.load(project) if c["id"] == s][0]["file"])]
     assert "Gelo Zero" in calls[0]["params"]["prompt"] and "raio neon" in calls[0]["params"]["prompt"]
-    assert [c["kind"] for c in svc.load(project) if c["source"] == "cli"] == ["label"]
+    assert [c["kind"] for c in svc.load(project) if c["source"] == "cli"] == ["label"] * 3
 
 
 def test_generate_upscale_uses_the_most_advanced_selection(studio_env, svc, project, monkeypatch):
@@ -316,3 +415,114 @@ def test_generate_upscale_uses_the_most_advanced_selection(studio_env, svc, proj
     assert calls[0]["model"] == svc.DEFAULT_MODEL_UPSCALE
     assert calls[0]["params"]["image_references"] == [str(root / [c for c in svc.load(project) if c["id"] == lbl][0]["file"])]
     assert "prompt" not in calls[0]["params"]
+
+
+# ---------- correções da wave 2 (auditoria de fidelidade, etapa 3) ----------
+def _png(w, h, color=(200, 40, 40)):
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_upscale_import_warns_when_it_is_not_2x(studio_env, svc, project):
+    """B6: a aula manda '2x, preset High Fidelity V2' — o import confere e avisa."""
+    prepare(studio_env, project)
+    svc.import_upload(project, [("s.png", _png(1024, 576))], "situation", "0f8e7d6c5b4a")
+    sit = [c for c in svc.load(project) if c["kind"] == "situation"][0]
+    svc.select(project, sit["id"])
+    r = svc.import_upload(project, [("u1.png", _png(1130, 640, (10, 20, 30)))], "upscale")
+    assert r["added"] == 1 and len(r["warnings"]) == 1
+    assert "2x" in r["warnings"][0] and "1.1x" in r["warnings"][0]
+    r2 = svc.import_upload(project, [("u2.png", _png(2048, 1152, (40, 50, 60)))], "upscale")
+    assert r2["added"] == 1 and r2["warnings"] == [], "2x exato não avisa"
+    assert svc.import_upload(project, [("s2.png", _png(800, 600, (7, 7, 7)))], "situation")["warnings"] == []
+
+
+def test_upscale_ratio_reads_the_selected_chain(studio_env, svc, project):
+    root = prepare(studio_env, project)
+    svc.import_upload(project, [("s.png", _png(1024, 576))], "situation", "0f8e7d6c5b4a")
+    svc.import_upload(project, [("u.png", _png(2048, 1152, (10, 20, 30)))], "upscale")
+    cands = svc.load(project)
+    svc.select(project, [c for c in cands if c["kind"] == "situation"][0]["id"])
+    svc.select(project, [c for c in cands if c["kind"] == "upscale"][0]["id"])
+    ratio, w0, w1 = svc.upscale_ratio(root, svc.load(project))
+    assert (ratio, w0, w1) == (2.0, 1024, 2048)
+
+
+def test_label_defaults_to_three_variations(studio_env, svc, project, monkeypatch):
+    """B4: a aula reescreve a instrução do rótulo e gera 3 variações."""
+    prepare(studio_env, project)
+    svc.brand_set(project, "Gelo Zero", "raio neon")
+    s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+    svc.select(project, s)
+    seen = []
+    monkeypatch.setattr(svc.hf, "cost", lambda model, params: seen.append(params) or {"credits": 2})
+    assert svc.estimate_cost(project, "label")["count"] == 3
+    assert svc.estimate_cost(project, "label", count=1)["count"] == 1
+    assert svc.estimate_cost(project, "situation")["count"] == 2, "situação continua 1 por referência"
+
+
+def test_edited_prompt_wins_over_history_and_template(studio_env, svc, project, monkeypatch):
+    """B4: o texto editado na tela é o que vai ao CLI."""
+    prepare(studio_env, project)
+    seen = []
+    monkeypatch.setattr(svc.hf, "cost", lambda model, params: seen.append(params) or {"credits": 1})
+    svc.estimate_cost(project, "situation", prompt="  A totally custom prompt  ")
+    assert seen[0]["prompt"] == "A totally custom prompt"
+
+
+def test_base_md_keeps_the_whole_prompt_and_the_bot_instruction(studio_env, svc, project, monkeypatch):
+    """B4/B10: base.md guarda a instrução usada inteira — é o que o dever de casa pede."""
+    root = prepare(studio_env, project)
+    _fake_claude(svc, monkeypatch, "A giant can on a snowy ridge shot on RED Komodo with a 50mm lens " * 3)
+    svc.generate_prompt(project, "0f8e7d6c5b4a", "images", "a lata está gigante")
+    svc.brand_set(project, "Gelo Zero", "raio neon")
+    long_prompt = svc.prompts(project)["refs"][0]["prompt"]
+    svc.import_upload(project, [("s.png", _png(1024, 576))], "situation", "0f8e7d6c5b4a", long_prompt)
+    sit = [c for c in svc.load(project) if c["kind"] == "situation"][0]
+    svc.select(project, sit["id"])
+    md = (root / "base" / "base.md").read_text()
+    assert "## Prompts e instruções usados" in md and long_prompt in md, "prompt inteiro, não truncado"
+    assert "Instrução ao bot (sessão nova, sem viés)" in md and "a lata está gigante" in md
+    assert "Dever de casa (aula 009)" in md and "comunidade" in md
+
+
+def test_generate_situation_uses_the_prompt_the_bot_wrote(studio_env, svc, project, monkeypatch):
+    prepare(studio_env, project)
+    _fake_claude(svc, monkeypatch, "Bot written prompt for ref zero")
+    svc.generate_prompt(project, "0f8e7d6c5b4a", "images")
+    calls = _fake_cli(svc, monkeypatch, [["http://x/1.png"], ["http://x/2.png"]])
+    svc.start_generate(project, "situation")
+    _wait(svc, project)
+    prompts = {c["params"]["prompt"] for c in calls}
+    assert "Bot written prompt for ref zero" in prompts, "a referência com prompt do bot usa o do bot"
+    assert any("exact same situation" in p for p in prompts), "a outra continua no fallback"
+
+
+def test_generate_sends_the_project_aspect_ratio_to_the_cli(studio_env, svc, project, monkeypatch):
+    """G3 no caminho pago: `start_generate` sem aspect_ratio usa o formato da campanha."""
+    root = prepare(studio_env, project)
+    meta = json.loads((root / "project.json").read_text())
+    meta["aspect_ratio"] = "9:16"
+    (root / "project.json").write_text(json.dumps(meta))
+    calls = _fake_cli(svc, monkeypatch, [["http://x/1.png"], ["http://x/2.png"]])
+    svc.start_generate(project, "situation")
+    _wait(svc, project)
+    assert {c["params"]["aspect_ratio"] for c in calls} == {"9:16"}
+
+
+def test_base_md_keeps_the_label_instruction_in_full(studio_env, svc, project):
+    """§13.5: a instrução de rótulo usada aparece inteira em base.md (o dever de casa pede o prompt)."""
+    root = prepare(studio_env, project)
+    svc.brand_set(project, "Gelo Zero", "raio neon")
+    instrucao = ("Replace the product label. Keep the can colors, but add a lightning bolt logo with a "
+                 "neon effect, exactly like the sketch, keeping every other element identical.")
+    s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+    svc.import_upload(project, [("l.png", image_bytes(color=(40, 200, 40)))], "label", None, instrucao)
+    svc.select(project, s)
+    svc.select(project, [c for c in svc.load(project) if c["kind"] == "label"][-1]["id"])
+    md = (root / "base" / "base.md").read_text()
+    assert "### Rótulo" in md and instrucao in md, "instrução de rótulo inteira, não truncada"

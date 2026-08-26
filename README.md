@@ -30,7 +30,7 @@ Se não houver Chromium em `~/.cache/ms-playwright`: `. .venv/bin/activate && pl
 ## Etapas
 
 ### 1 · Referências (aula 009)
-Crie um projeto (nome, produto, vibe). "Sugerir termos" → "Buscar e baixar": o scraper
+Crie um projeto (nome, produto; a **vibe é opcional** — a aula 009 encontra a vibe na etapa 2). "Sugerir termos" → "Buscar e baixar": o scraper
 Playwright percorre o Pinterest em ritmo humano com a sua sessão (login opcional; perfil em
 `~/.orquestrador-studio/pinterest-profile`), baixa as imagens em maior resolução para
 `projects/<id>/refs/candidates/` e você marca as que gosta. "Salvar seleção" copia para
@@ -51,9 +51,11 @@ pela pasta **Downloads do Windows** ou pelo **histórico do CLI**; escolha até 
 mesmo mood → `mood/selected/`, `mood/palette.json`, `mood/mood.md`.
 
 ### 3 · Imagem base (aula 009)
-Para cada referência escolhida, prompt "o produto na exata mesma situação da referência, com o
-mood"; troca de rótulo pela sua marca (campo `brand`, `[extensão]`); upscale importado →
-`base/base_final.png`.
+Para cada referência escolhida, o **bot da aula** (Claude CLI, `common/prompter.py`) escreve o
+prompt olhando a referência e as imagens do mood: "o produto na exata mesma situação da
+referência, com o mood"; "sessão nova sem viés" quando o prompt não entregou a ideia; troca de
+rótulo pela sua marca (campo `brand`, `[extensão]`, 3 variações); upscale 2x importado e
+conferido → `base/base_final.png` + `base/base.md` com a cadeia situação → rótulo → upscale.
 
 ### 4 · Storyboard (aula 010)
 Instruções de edição uma por vez (presets literais da aula, "gerar 4 / gerar 1"), Draw to Edit
@@ -94,13 +96,21 @@ studio/
   steps.py            catálogo das 11 etapas (ordem, aula); `ready` vem dos plugins
   etapas/<id>/        plugin da etapa: META, router.py, view.html, view.js (descoberta automática)
   config.py           caminhos e layout        higgsfield.py  ponte com o CLI (subprocess --json)
-  common/             ingest (imagem/vídeo/áudio), JobRegistry, ffmpeg — API transversal das etapas
+  common/             ingest (imagem/vídeo/áudio), JobRegistry, ffmpeg, guide — API transversal das etapas
   <etapa>/service.py  serviço de cada etapa (refs, mood, base, storyboard, shots, animate, music, edit, export, publish, prospect)
-  web/                shell da SPA: index.html, style.css, app.js (carrega as views das etapas)
+  web/                shell da SPA: index.html, style.css, app.js + ui.js/ui.css (Studio.ui: componentes compartilhados)
 tests/                pytest sem rede/navegador (serviços, API, ponte, plugins)
 docs/                 contexto do projeto — ver CLAUDE.md (gitflow, dd, guidelines, adrs, domains, agents, plano)
 projects/             dados dos projetos de vídeo (local, ignorado pelo git)
 ```
+
+**Guia por etapa:** cada tela diz o que a aula manda fazer, o que falta e qual é a próxima ação —
+calculado no backend lendo os artefatos do projeto (`studio/common/guide.py`, hook opcional
+`studio/etapas/<id>/guide.py`). Rotas: `GET|PATCH /api/projects/{pid}` (campos `name, product,
+vibe, aspect_ratio` `[extensão]`, `brand` `[extensão]`), `GET /api/projects/{pid}/guide` (as 11
+etapas + progresso da campanha), `GET /api/projects/{pid}/guide/{etapa}` e
+`GET /api/higgsfield/status?refresh=1` (cache de 60 s). Contrato para quem implementa etapa:
+`docs/domains/studio/waves/wave-2-api-transversal.md`.
 
 Variáveis: `STUDIO_PROJECTS`, `STUDIO_STATE`, `STUDIO_DOWNLOADS`, `PORT`.
 
@@ -110,6 +120,8 @@ Variáveis: `STUDIO_PROJECTS`, `STUDIO_STATE`, `STUDIO_DOWNLOADS`, `PORT`.
 - Gitflow: `docs/gitflow.md` — branch a partir de `develop`, PR para `develop`, trailer
   `Task-Id` (`OS-NNN` ou `ADH-OS-<data>-<seq>`), promoção `develop → main` por PR.
 - CI: `.github/workflows/ci.yml` (ruff + pytest) e `task-id-check.yml`.
+- Smoke visual fora do CI (ADR-008): `python scripts/smoke_ui.py http://127.0.0.1:8765 <pid> <pasta> [dark] [--timers]`
+  — prints das 11 telas, erros de JS e prova de que nenhum timer sobrevive à troca de tela.
 - Fidelidade ao curso: gates em `CLAUDE.md`. Melhorias fora do roteiro são sugeridas, não
   implementadas sem aprovação.
 

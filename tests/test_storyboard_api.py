@@ -215,3 +215,75 @@ def test_unknown_project_is_404_on_every_storyboard_route(client):
     ]:
         r = getattr(client, method)(path, **kw)
         assert r.status_code == 404, (path, r.status_code, r.text)
+
+
+# ---------- wave 2: guia na tela e correções da auditoria (4.1–4.6) ----------
+def test_view_follows_the_wave2_screen_contract(client):
+    """A tela expõe o painel de guia, para os polls ao sair e usa os componentes compartilhados."""
+    html = client.get("/steps/storyboard/view.html").text
+    js = client.get("/steps/storyboard/view.js").text
+    assert '<section id="guide" class="guide"></section>' in html
+    assert "Etapa 4 · aula 010" in html
+    assert 'Studio.register("storyboard"' in js
+    assert 'Studio.ui.renderGuide("storyboard")' in js.replace("ui.renderGuide", "Studio.ui.renderGuide")
+    assert "destroy()" in js and "job.stop()" in js
+
+
+def test_generate_buttons_say_where_the_generation_happens(client):
+    """4.3: os botões só MONTAM a instrução — quem gera é a Higgsfield."""
+    html = client.get("/steps/storyboard/view.html").text
+    assert "Montar instrução — gere 4 na Higgsfield (incerto)" in html
+    assert "Montar instrução — gere 1 na Higgsfield (tweak)" in html
+    assert "Gerar 4 (estou incerto)" not in html and "Gerar 1 (é só um tweak)" not in html
+
+
+def test_screen_mentions_the_narrative_arc_and_the_upscale_step(client):
+    """4.1 e 4.5: a estrutura da história e o lugar do upscale ficam na tela."""
+    html = client.get("/steps/storyboard/view.html").text
+    assert "começo, descoberta, ação e desfecho" in html or "começo → descoberta → ação → desfecho" in html
+    assert "etapa 5" in html
+
+
+def test_gallery_offers_the_chained_edit_source(client):
+    """4.2: a edição encadeia no resultado anterior — a galeria oferece "usar como origem"."""
+    html = client.get("/steps/storyboard/view.html").text
+    js = client.get("/steps/storyboard/view.js").text
+    assert "usar como origem" in html or "usar como origem" in js
+    assert "source_id" in js
+
+
+def test_cli_generate_chains_on_the_selected_idea(client, pid, base, root, monkeypatch):
+    """4.2: com `source_id`, o CLI parte da ideia escolhida, não de base/base_final.png."""
+    import studio.higgsfield as hf
+    seen = []
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    monkeypatch.setattr(hf, "cost", lambda model, params: (seen.append(params), {"credits": 1})[-1])
+    client.post(f"/api/projects/{pid}/storyboard/import/upload",
+                files=[("files", ("a.png", image_bytes(), "image/png"))])
+    idea = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"][0]
+    body = {"model": "nano_banana_2", "kind": "edit", "text": "Make it smaller", "count": 1}
+    client.post(f"/api/projects/{pid}/storyboard/cost", json=body)
+    assert seen[-1]["image_references"][0].endswith("base_final.png")
+    client.post(f"/api/projects/{pid}/storyboard/cost", json={**body, "source_id": idea["id"]})
+    assert "storyboard/candidates" in seen[-1]["image_references"][0].replace("\\", "/")
+    bad = client.post(f"/api/projects/{pid}/storyboard/cost", json={**body, "source_id": "nao-existe"})
+    assert bad.status_code == 422
+
+
+def test_model_options_come_from_the_backend_with_the_extension_mark(client, pid):
+    """4.4: a aula só cita o Nano Banana; o GPT Image 2 é `[extensão]` e não é o padrão."""
+    models = client.get(f"/api/projects/{pid}/storyboard/instructions").json()["models"]
+    assert [m["id"] for m in models] == ["nano_banana_2", "gpt_image_2"]
+    assert "[extensão]" in dict((m["id"], m["label"]) for m in models)["gpt_image_2"]
+    js = client.get("/steps/storyboard/view.js").text
+    assert "meta.models" in js, "a tela renderiza o select a partir do backend"
+
+
+def test_two_sentence_instruction_is_accepted_over_http(client, pid, base):
+    """4.6 pela API: "Make it smaller. Realistic." deixou de ser 422."""
+    url = f"/api/projects/{pid}/storyboard/instructions"
+    ok = client.post(url, json={"kind": "edit", "text": "Make it smaller. Realistic.", "count": 1})
+    assert ok.status_code == 200
+    two = client.post(url, json={"kind": "edit", "text": "Make it smaller. Remove the rope.", "count": 1})
+    assert two.status_code == 422 and "heurística" in two.json()["detail"].lower()

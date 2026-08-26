@@ -1,8 +1,10 @@
 <header class="stephead">
   <span class="eyebrow">Etapa 8 · aula 014</span>
   <h2>Montagem no ritmo</h2>
-  <p class="lede">A trilha dita o ritmo: cada corte cai num impacto da música, com quadro preto no impacto, speed ramp com mistura de quadros, SFX de formiguinha e fade de opacidade no fim. Os takes com <em>like</em> da etapa 6 já entram na ordem do storyboard.</p>
+  <p class="lede">A trilha dita o ritmo: cada impacto visual cai numa batida forte da música. O ritmo vem primeiro, o refinamento depois. Quando a mudança de movimento quebra a fluidez, resolva com recursos simples — mistura de quadros, um pequeno zoom, um corte estratégico ou uma tela preta. As camadas de som (SFX, ambiência, respiração, gelo, impacto) entram por último. Os takes com <em>like</em> da etapa 6 já entram na ordem do storyboard.</p>
 </header>
+
+<section id="guide" class="guide"></section>
 
 <section class="panel">
   <div class="panel-head">
@@ -14,21 +16,28 @@
       <button id="btnSave" class="primary">Salvar timeline</button>
     </div>
   </div>
+  <div class="row wrap">
+    <span id="rulerChip" class="chip mode">sem batidas</span>
+    <span class="fine">régua da trilha: risco alto = impacto, marcador ▾ = onde cada corte cai</span>
+  </div>
+  <div id="editRuler" class="progress" style="position:relative;height:30px;margin:8px 0"></div>
   <div id="clips" class="col"></div>
-  <p class="fine">Corte por clipe com <code>in</code>/<code>out</code> em segundos; <code>speed</code> acima de 1 acelera (o speed ramp da aula); <em>mistura de quadros</em> é o frame blending — desligue se ficar borrado demais.</p>
+  <p class="fine">Corte por clipe com <code>in</code>/<code>out</code> em segundos; <code>speed</code> acima de 1 acelera (o speed ramp da aula); <em>mistura de quadros</em> é o frame blending — desligue se ficar borrado demais; <em>zoom</em> é o "pequeno zoom" da aula (1,0 a 1,3) para salvar uma transição que quebrou a fluidez; <em>preto aqui</em> insere uma tela preta naquele corte, para dar impacto e respiração.</p>
 </section>
 
 <section class="panel">
   <div class="panel-head">
     <h3>2. Cortes no ritmo</h3>
     <div class="row wrap">
-      <label class="inline">quadro preto <input id="blackDur" type="number" value="0.2" min="0" max="1" step="0.05"> s</label>
+      <label class="inline"><input id="blackOn" type="checkbox"> preto nos impactos</label>
+      <label class="inline">duração do preto <input id="blackDur" type="number" value="0.2" min="0" max="1" step="0.05" disabled> s</label>
       <button id="btnPropose" class="ghost">Propor cortes nos impactos</button>
       <button id="btnApply" class="primary">Aplicar proposta</button>
     </div>
   </div>
   <p id="cutsInfo" class="fine">Precisa de <code>audio/beats.json</code> da etapa 7. Sem ele, monte os cortes na mão.</p>
   <div id="blacks" class="row wrap"></div>
+  <p class="fine">O padrão é <strong>corte seco</strong> no impacto. A aula 014 usa a tela preta como um dos recursos para quando a mudança de movimento quebra a fluidez — não em todo corte; por isso a caixa nasce desmarcada e você pode inserir o preto corte a corte na lista acima.</p>
 </section>
 
 <section class="panel">
@@ -37,11 +46,12 @@
     <div class="row wrap">
       <label class="inline">cortar a música em <input id="musicOffset" type="number" value="0" min="0" step="0.1"> s</label>
       <label class="inline">fade final <input id="fadeOut" type="number" value="1.5" min="0" max="5" step="0.1"> s</label>
+      <label class="inline"><input id="loudnorm" type="checkbox" checked> normalizar volume <em>[extensão]</em></label>
     </div>
   </div>
   <p id="musicInfo" class="fine mono"></p>
   <audio id="musicPlay" controls class="hidden"></audio>
-  <p class="fine">O offset é a escolha humana da aula: ouça a trilha e comece no trecho que leva ao ápice. Os cortes propostos usam esse mesmo offset.</p>
+  <p class="fine">O offset é a escolha humana da aula: ouça a trilha e comece no trecho que leva ao ápice. Os cortes propostos usam esse mesmo offset. A normalização de volume (<code>loudnorm</code>) é uma <strong>[extensão]</strong> do Studio — a aula não fala de loudness.</p>
 </section>
 
 <section class="panel">
@@ -54,7 +64,7 @@
   </div>
   <div id="sfxLib" class="col"></div>
   <div id="sfxTimeline" class="col"></div>
-  <p class="fine">Trabalho de formiguinha da aula 014: respiração do astronauta, ambiente, impacto. wav, mp3, m4a ou ogg, até 25 MB.</p>
+  <p class="fine">As camadas sonoras entram por último — a aula lista <strong>gelo, ambiência, respiração e impacto</strong>. É trabalho de formiguinha, mas é o que transforma o vídeo em algo vivo. wav, mp3, m4a ou ogg, até 25 MB.</p>
 </section>
 
 <section class="panel">
@@ -67,6 +77,7 @@
   </div>
   <p id="lfInfo" class="fine"></p>
   <img id="lfImg" class="hidden" alt="último frame" style="max-width:320px;border-radius:8px">
+  <p class="fine">Nem tudo precisa ser resolvido com IA: algumas transições funcionam melhor na edição. Quando a colagem pede continuidade, exporte o último frame e use como <em>start frame</em> do próximo shot na etapa 6.</p>
 </section>
 
 <section class="panel">
@@ -81,4 +92,5 @@
   <div class="progress"><div id="renderBar" class="bar" style="width:0%"></div></div>
   <div id="renderLog" class="log"></div>
   <video id="preview" class="hidden" controls style="max-width:100%;border-radius:8px"></video>
+  <p class="fine">O <em>rough cut</em> é o ritmo (sem SFX e sem fade); o <em>master</em> é o refinamento — e só sai com a trilha escolhida na etapa 7. Dever de casa da aula: <strong>publique o seu trabalho, mesmo imperfeito. O primeiro projeto sempre será o pior.</strong></p>
 </section>

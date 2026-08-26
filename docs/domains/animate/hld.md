@@ -1,8 +1,16 @@
 ### HLD: animate (etapa 6 — animação, aula 012)
 
-Versão: 1.0
+Versão: 1.1
 Data: 2026-08-25
-Responsável: frente OS-006 (wave 1, `/dd-parallel`)
+Responsável: frente OS-006 (wave 1) · frente OS-017 (wave 2, `/dd-parallel`)
+
+> **v1.1 (wave 2, OS-017)** — fidelidade ao roteiro e guia da etapa. O par start/end passou a ser
+> gravado no plano e enviado ao CLI (`end_image`), fechando a divergência de gravidade **alta** da
+> auditoria; a ordem de modelos ficou só com os da aula (`kling3_0`, `seedance_2_0`), com
+> `veo3_1_lite` como `[extensão]` por env; proporção e modo do CLI deixaram de ser literais e
+> passaram a sair do projeto/env com override por shot, marcados `[extensão]`; a etapa ganhou
+> `studio/etapas/animate/guide.py`, hook **puro** do contrato transversal do guia (nunca chama
+> `load_plan`, que grava). Detalhe por correção: FDD `animate-fdd.md` §12.
 
 ---
 
@@ -12,8 +20,8 @@ vídeo**. Por take: prompt simples para cena simples, prompt de movimento elabor
 ação) quando não, **start/end frame** entre dois frames seguidos da mesma cena, 10 s para
 mudanças lentas, **áudio do modelo OFF**, dois takes por shot, "like" no usável, download e
 nome na convenção da wave. Após 3 falhas no mesmo shot o Studio **sugere** o próximo modelo da
-ordem (Kling → Seedance → Veo); esgotada a ordem, sugere o corte para preto que a montagem usa
-como fallback. Em "modo UI" o usuário gera na interface da Higgsfield (onde vale o ilimitado do
+ordem (Kling → Seedance); esgotada a ordem (6 falhas), sugere adaptar a ideia — novo frame na
+etapa 5 — ou o corte para preto que a montagem usa como fallback. Em "modo UI" o usuário gera na interface da Higgsfield (onde vale o ilimitado do
 plano) e importa o mp4; o caminho pago pelo CLI é opcional e sempre precedido de estimativa.
 
 Dependências com outros sistemas
@@ -42,7 +50,13 @@ Tecnologias principais
 
 Padrões adotados
 - Regra da aula codificada: `sound: False` sempre, durações {5, 10} (8 só internamente para
-  `veo3_1_lite` com start+end), 2 takes por padrão, 3 falhas = troca de modelo **sugerida**.
+  `veo3_1_lite` `[extensão]` com start+end), 2 takes por padrão, 3 falhas = troca de modelo
+  **sugerida**, 6 falhas = adaptar a ideia.
+- O que a aula não fixa vive fora do código de regra e marcado `[extensão]`: proporção
+  (`project.aspect_ratio` → override por shot), modo do CLI (`STUDIO_ANIMATE_CLI_MODE` → override
+  por shot) e modelos extras (`STUDIO_ANIMATE_MODELS`).
+- Leitura de estado sem efeito colateral: `load_plan` **grava** `takes.json`; quem só precisa ler
+  (o guia, o dashboard) usa `storyboard_entries`/`stored_takes`.
 - Ingestão idempotente por SHA-1 do conteúdo (reimportar o mesmo mp4 não cria take duplicado).
 - IDs de modelo fora do código-fonte de rotas: `MODEL_ORDER` com override por
   `STUDIO_ANIMATE_MODELS` (ADR-002, catálogo vivo).
@@ -58,7 +72,8 @@ Padrões adotados
 | `import_upload` / `import_downloads` / `import_history` | ingestão de mp4 com dedupe, thumb e duração | `common/ingest.py` (`kind="video"`), `hf.history_media("video")` |
 | `attach_take` / `set_like` | candidato → `videos/cenaNN/shotMM_takeK.mp4`; like grava `shotMM_final.mp4` (um por shot) | `common/ingest.py` |
 | `suggested_model` / `failures_of` | contagem de falhas (rejeições + erros do CLI) e sugestão do próximo modelo | — |
-| `build_params` | params do `generate create` (sempre `sound: False`; 8 s para `veo3_1_lite` com start+end) | — |
+| `build_params` | params do `generate create` (sempre `sound: False`; `end_image` quando há par start/end; proporção e modo `[extensão]`; 8 s para `veo3_1_lite` `[extensão]` com start+end) | `project.json` (proporção) |
+| `guide` (`studio/etapas/animate/guide.py`) | guia da etapa: o que a aula manda, entradas que faltam, validações V6.1–V6.10 e próxima ação — **leitura pura** | `storyboard_entries`, `stored_takes`, `common/guide.py` |
 | `cost` / `start_generate` / `job_status` | estimativa antes de gastar; job por projeto com log por take; falha de take não derruba o job | `hf.cost/generate/download`, `JobRegistry` |
 
 ---

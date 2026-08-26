@@ -15,27 +15,32 @@ from pathlib import Path
 from ..common import ffmpeg as ff
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
-from .service import FPS, HEIGHT, WIDTH, load_timeline, validate_timeline
+from .service import (
+    BLACK_SNAP,
+    FPS,
+    HEIGHT,
+    WIDTH,
+    clip_length,
+    load_timeline,
+    music_path,
+    validate_timeline,
+)
 
 logger = logging.getLogger("studio.edit")
 registry = JobRegistry()
 
 RENDER_TIMEOUT = 1800          # minterpolate em 1080p é lento; 600 s da API transversal é pouco
-BLACK_SNAP = 0.25              # quadro preto cola no limite de clipe mais próximo dentro disso
 TARGETS = {"rough": {"name": "rough_cut.mp4", "crf": "23", "preset": "veryfast"},
            "master": {"name": "master.mp4", "crf": "18", "preset": "medium"}}
 AFORMAT = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
+NO_MUSIC = ("escolha a trilha na etapa 7 antes de montar: o master não sai sem música "
+            "(aula 013 — a montagem é guiada pelo som)")
 
 
 def _num(value: float) -> str:
     """Número curto para linha de comando: 1.6 e não 1.600000."""
     s = f"{float(value):.4f}".rstrip("0").rstrip(".")
     return s or "0"
-
-
-def clip_length(clip: dict) -> float:
-    """Duração do clipe já com a velocidade aplicada."""
-    return round((float(clip["out"]) - float(clip["in"])) / max(float(clip.get("speed", 1.0)), 0.01), 3)
 
 
 def place_blacks(clips: list[dict], blacks: list[dict]) -> tuple[list[tuple[str, int]], list[int]]:
@@ -69,8 +74,13 @@ def expected_duration(timeline: dict, segments: list[tuple[str, int]]) -> float:
     return round(total, 3)
 
 
-def build_filtergraph(root: Path, timeline: dict, target: str = "master") -> tuple[list[str], float]:
-    """Argumentos completos do ffmpeg (sem o binário) + duração prevista. Não executa nada."""
+def build_filtergraph(root: Path, timeline: dict, target: str = "master",
+                      out: Path | str | None = None) -> tuple[list[str], float]:
+    """Argumentos completos do ffmpeg (sem o binário) + duração prevista. Não executa nada.
+
+    `out` troca só o arquivo de destino (a escrita continua atômica, em `<out>.part`): a etapa 7
+    reusa este mesmo grafo em modo `rough` para gerar `audio/rough_sequence.mp4`.
+    """
     if target not in TARGETS:
         raise ValueError(f"target inválido: {target} (use 'rough' ou 'master')")
     clips = timeline.get("clips") or []
@@ -119,6 +129,11 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master") -> tup
         speed = float(clip.get("speed", 1.0))
         chain = [f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease",
                  f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2", "setsar=1"]
+        zoom = float(clip.get("zoom", 1.0) or 1.0)
+        if zoom > 1.0:
+            # aula 014: "pequenos zooms" para resolver a quebra de fluidez entre duas cenas.
+            chain.append(f"scale=iw*{_num(zoom)}:ih*{_num(zoom)}")
+            chain.append(f"crop={WIDTH}:{HEIGHT}")
         if speed != 1.0:
             chain.append(f"setpts=PTS/{_num(speed)}")
             # aula 014: speed ramp com mistura de quadros
@@ -150,7 +165,9 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master") -> tup
     has_audio = bool(audio_labels)
     if has_audio and master:
         filters.append(f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:normalize=0[amix]")
-        tail = ["loudnorm=I=-14:TP=-1.5"]
+        # `loudnorm` é [extensão]: a aula 014 não fala de loudness (auditoria 8.4). Fica ligado por
+        # padrão porque o vídeo vai para redes que normalizam, e desligável na tela.
+        tail = ["loudnorm=I=-14:TP=-1.5"] if timeline.get("loudnorm", True) else []
         if fade_out > 0:
             tail.append(f"afade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}")
         tail.append("apad")
@@ -161,9 +178,10 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master") -> tup
     args += ["-filter_complex", ";".join(filters), "-map", "[vout]"]
     if has_audio:
         args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
+    dest = Path(out) if out else root / "edit" / conf["name"]
     args += ["-c:v", "libx264", "-preset", conf["preset"], "-crf", conf["crf"], "-pix_fmt", "yuv420p",
              "-r", str(FPS), "-movflags", "+faststart", "-t", _num(duration), "-f", "mp4",
-             str(root / "edit" / f"{conf['name']}.part")]
+             f"{dest}.part"]
     return args, duration
 
 
@@ -200,6 +218,10 @@ def start_render(pid: str, target: str = "master") -> dict:
     timeline = validate_timeline(root, stored)
     if not timeline["clips"]:
         raise ValueError("timeline sem clipes")
+    if target == "master" and music_path(root) is None:
+        # Aula 013: "Você não deve editar antes de escolher a trilha sonora." O rough continua
+        # liberado (é a prévia de ritmo), o master não sai sem música (auditoria 8.2).
+        raise RuntimeError(NO_MUSIC)
     conf = TARGETS[target]
     rel = f"edit/{conf['name']}"
     final = root / rel
@@ -230,8 +252,8 @@ def start_render(pid: str, target: str = "master") -> dict:
             job["log"].append(f"mix: música offset {_num((working.get('music') or {}).get('offset', 0))}, "
                               f"sfx {n_sfx}{', loudnorm' if target == 'master' else ''}")
         else:
-            job["log"].append("aviso: sem trilha escolhida na etapa 7 — render sem música")
-            logger.warning("edit: render sem música em %s", pid)
+            job["log"].append("aviso: prévia de ritmo sem trilha — escolha a música na etapa 7 antes do master")
+            logger.warning("edit: rough sem música em %s", pid)
         job["done"] += 1
 
         job["log"].append(f"encode libx264 crf {conf['crf']} preset {conf['preset']}")

@@ -1,38 +1,44 @@
 // Etapa 5 — Ângulos por cena (aula 011) + cena do produto (aula 013).
 // Caminho principal: gerar na UI da Higgsfield e importar; o CLI é opcional e gasta créditos.
+// Ordem da aula: acertar a BASE da cena (edição numerada) → promover o resultado a base →
+// Multi Shot → escolher → upscale → ordenar. Componentes compartilhados vêm de `Studio.ui`.
 Studio.register("shots", (ctx) => {
   const { $, api, toast } = ctx;
+  const ui = Studio.ui;
+  const esc = (s) => ui.esc(s);
   const base = () => `/api/projects/${ctx.pid()}/shots`;
   let scenes = [], scene = null, cands = [], order = [], prod = [], loggedIn = false;
+  let cameras = [], job = null;
 
-  // ---------- CLI ----------
-  async function hfStatus() {
-    const s = await api("/api/higgsfield/status"), el = $("#shotsHf");
-    loggedIn = !!s.logged_in;
-    if (!s.installed) { el.textContent = "CLI: não instalado — gere na UI e importe"; el.className = "chip warn"; }
-    else if (!s.logged_in) { el.textContent = "CLI: sem login (higgsfield auth login)"; el.className = "chip warn"; }
-    else { el.textContent = `CLI: ${s.plan || "logado"} · ${s.credits ?? "?"} créditos`; el.className = "chip ok"; }
-    $("#btnShotsGen").disabled = !loggedIn;
-  }
+  // `.card` do shell tem `overflow:hidden` e a imagem ocupa 100% da altura: um botão em fluxo
+  // normal ficaria fora do recorte. A tela não pode editar `style.css` (é da frente shell), então
+  // o botão do card é posicionado aqui, logo acima da faixa `.term`.
+  const CARD_BTN = "position:absolute;right:6px;bottom:26px;z-index:2;font-size:10px;padding:2px 6px";
 
   // ---------- cenas ----------
   async function loadScenes() {
     if (!ctx.pid()) return;
     let r;
     try { r = await api(`${base()}/scenes`); }
-    catch (err) { $("#sceneList").innerHTML = `<div class="empty">${err.message}</div>`; return; }
+    catch (err) { $("#sceneList").innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
     scenes = r.scenes;
     $("#shotsWarn").textContent = r.warning;
-    $("#shotsPalette").innerHTML = (r.palette.colors || []).map(c => `<span style="background:${c}" title="${c}"></span>`).join("")
+    $("#shotsRatio").textContent = `proporção: ${r.aspect_ratio || "16:9"}`;
+    if (r.product_note) $("#prodNote").textContent = r.product_note;
+    $("#shotsPalette").innerHTML = (r.palette.colors || []).map(c => `<span style="background:${esc(c)}" title="${esc(c)}"></span>`).join("")
       || `<span class="fine">sem mood/palette.json ainda (etapa 2)</span>`;
     $("#prodStatus").textContent = r.product_scene.selected ? "cena do produto salva"
       : r.product_scene.ref_ready ? "imagem 1 enviada" : "sem imagem de referência";
     $("#prodStatus").className = "chip " + (r.product_scene.selected ? "ok" : "mode");
     $("#sceneList").innerHTML = scenes.map(s =>
-      `<div class="card ${scene === s.id ? "sel" : ""}" data-scene="${s.id}" tabindex="0" title="${(s.text || "").replace(/"/g, "'")}">
-         ${s.base_ready ? `<img loading="lazy" src="${ctx.files(s.base)}" alt="">` : `<div class="empty">sem base</div>`}
-         <span class="src">${s.id}</span>
-         <span class="term">${s.candidates} cand. · ${s.selected} shot(s)</span></div>`).join("");
+      `<div class="card ${scene === s.id ? "sel" : ""}" data-scene="${esc(s.id)}" tabindex="0" title="${esc(s.text || "")}">
+         ${s.base_ready ? `<img loading="lazy" src="${esc(ctx.files(s.base))}" alt="">` : `<div class="empty">sem base</div>`}
+         <span class="src">${esc(s.id)}</span>
+         <span class="term">${s.candidates} cand. · ${s.selected} shot(s) · ${s.upscaled}/${s.selected} upscalados</span></div>`).join("");
+    const md = $("#shotsMd");
+    const anySel = scenes.some(s => s.selected);
+    md.classList.toggle("hidden", !anySel);
+    if (anySel) md.href = ctx.files("shots/storyboard.md");
   }
 
   function sceneMeta() { return scenes.find(s => s.id === scene) || null; }
@@ -50,17 +56,16 @@ Studio.register("shots", (ctx) => {
     await prompts();
   }
 
-  async function prepareBase(source, file) {
+  async function prepareBase(source, file, id) {
     if (!scene) return toast("Abra uma cena primeiro.");
     try {
       if (file) {
-        const fd = new FormData(); fd.append("file", file);
-        const r = await fetch(`${base()}/scenes/${scene}/base/upload`, { method: "POST", body: fd });
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+        await ui.upload(`${base()}/scenes/${scene}/base/upload`, [file], "file");
       } else {
-        await api(`${base()}/scenes/${scene}/base`, { method: "POST", body: JSON.stringify({ source }) });
+        await api(`${base()}/scenes/${scene}/base`, { method: "POST", body: JSON.stringify({ source, id: id || null }) });
       }
-      toast("Base da cena pronta"); await loadScenes(); await openScene(scene);
+      toast(source === "candidate" ? "Este resultado é a nova base da cena" : "Base da cena pronta");
+      await loadScenes(); await openScene(scene); ctx.guide();
     } catch (err) { toast(err.message); }
   }
 
@@ -76,14 +81,26 @@ Studio.register("shots", (ctx) => {
       realism: $("#promptRealism").checked, lens: $("#promptLens").value, aperture: $("#promptAperture").value,
       count: $("#shotsCount").value,
     });
+    // O bloco de câmera é padrão no ângulo e opt-in na edição (aula 011 · auditoria 5.3):
+    // mandamos `camera` só quando ele está ligado, e o backend decide onde entra.
+    if ($("#promptRealism").checked && $("#promptCamera").value) q.set("camera", $("#promptCamera").value);
     if ($("#promptSubject").value.trim()) q.set("subject", $("#promptSubject").value.trim());
     if (kind === "edit") { const e = editLines(); if (!e.length) { $("#shotsPrompts").innerHTML = `<div class="empty">Escreva ao menos uma modificação.</div>`; return; } e.forEach(v => q.append("edits", v)); }
     try {
       const r = await api(`${base()}/scenes/${scene}/prompts?${q}`);
+      renderCameras(r.cameras, r.camera);
+      if (r.focus_examples) $("#focusExamples").textContent = "Enquadramentos da aula: " + r.focus_examples.join(" · ");
       $("#shotsHint").textContent = `${r.ui_hint} Proporção ${r.aspect_ratio}. ${r.warning}`;
       $("#shotsPrompts").innerHTML = r.prompts.map((p, i) =>
-        `<div class="prompt"><div class="row"><span class="eyebrow">${p.label}</span><button class="ghost copy" data-i="${i}">Copiar</button><span class="ok"></span></div><textarea data-i="${i}">${p.text}</textarea></div>`).join("");
+        `<div class="prompt"><div class="row"><span class="eyebrow">${esc(p.label)}</span><button class="ghost copy" data-i="${i}">Copiar</button><span class="ok"></span></div><textarea data-i="${i}">${esc(p.text)}</textarea></div>`).join("");
     } catch (err) { toast(err.message); }
+  }
+  function renderCameras(list, current) {
+    if (!list || !list.length) return;
+    if (cameras.length === list.length && $("#promptCamera").options.length) return;   // não recria a cada prompt
+    cameras = list;
+    $("#promptCamera").innerHTML = list.map(c =>
+      `<option value="${esc(c.id)}" ${c.id === current ? "selected" : ""}>${esc(c.label)}</option>`).join("");
   }
   const promptTexts = () => [...document.querySelectorAll("#shotsPrompts textarea")].map(t => t.value.trim()).filter(Boolean);
 
@@ -96,37 +113,44 @@ Studio.register("shots", (ctx) => {
     renderCands();
   }
   function renderCands() {
-    $("#shotsCounts").textContent = `${cands.length} candidatos · ${order.length} escolhidos`;
+    const faltam = order.filter(id => { const c = cands.find(x => x.id === id); return c && !c.upscaled; }).length;
+    $("#shotsCounts").textContent = `${cands.length} candidatos · ${order.length} escolhidos`
+      + (order.length ? ` · ${order.length - faltam}/${order.length} upscalados` : "");
     $("#btnShotsUpscale").disabled = !loggedIn || !order.length;
     $("#shotsGallery").innerHTML = cands.length ? cands.map(c => {
       const pos = order.indexOf(c.id);
-      return `<div class="card ${pos >= 0 ? "sel" : ""}" data-id="${c.id}" tabindex="0" title="${(c.prompt || c.name || "").replace(/"/g, "'")}">
-         <img loading="lazy" src="${ctx.files(c.thumb || c.file)}" alt="">
-         <span class="src">${pos >= 0 ? "ordem " + (pos + 1) : c.source}</span>
-         <span class="term">${c.role === "upscale" ? "upscale" : (c.upscaled ? "upscalado" : (c.model || c.name || ""))}</span></div>`;
+      return `<div class="card ${pos >= 0 ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt || c.name || "")}">
+         <img loading="lazy" src="${esc(ctx.files(c.thumb || c.file))}" alt="">
+         <span class="src">${pos >= 0 ? "ordem " + (pos + 1) : esc(c.source)}</span>
+         <span class="term">${c.upscaled ? "upscalado ✓" : "sem upscale"}</span>
+         <button class="ghost asBase" data-base="${esc(c.id)}" style="${CARD_BTN}">Usar como base da cena</button></div>`;
     }).join("") : `<div class="empty">Nenhum candidato — gere na UI da Higgsfield e importe.</div>`;
   }
 
-  async function upload(url, files, reload) {
+  async function importFiles(url, files, reload) {
     if (!files.length) return;
-    const fd = new FormData(); [...files].forEach(f => fd.append("files", f));
-    const r = await fetch(url, { method: "POST", body: fd });
-    if (!r.ok) return toast((await r.json().catch(() => ({}))).detail || r.statusText);
-    const added = (await r.json()).added;
-    toast(added ? `${added} imagem(ns) importada(s)` : "Nada novo: já estavam importadas");
-    await reload();
+    try {
+      const r = await ui.upload(url, files);
+      toast(r.added ? `${r.added} imagem(ns) importada(s)` : "Nada novo: já estavam importadas");
+      await reload(); ctx.guide();
+    } catch (err) { toast(err.message); }
   }
 
   // ---------- job do CLI ----------
-  async function pollJob() {
-    const j = await api(`${base()}/job`);
-    const pct = j.total ? Math.round((j.done / j.total) * 100) : 0;
-    $("#shotsProgress").querySelector(".bar").style.width = pct + "%";
-    $("#shotsLog").textContent = (j.log || []).join("\n");
-    $("#shotsGenLog").textContent = j.state === "running" ? `${j.op || "job"} ${j.done}/${j.total} · ${j.added} imagens`
-      : j.state === "error" ? "erro: " + j.error : j.state === "done" ? `concluído · ${j.added} imagens` : "";
-    if (j.state === "running") setTimeout(pollJob, 3000);
-    else { $("#btnShotsGen").disabled = !loggedIn; await loadCands(); await loadScenes(); }
+  function watchJob() {
+    if (job) job.stop();
+    job = ui.poll(async () => {
+      const j = await api(`${base()}/job`);
+      const pct = j.total ? Math.round((j.done / j.total) * 100) : 0;
+      $("#shotsProgress").querySelector(".bar").style.width = pct + "%";
+      $("#shotsLog").textContent = (j.log || []).join("\n");
+      $("#shotsGenLog").textContent = j.state === "running" ? `${j.op || "job"} ${j.done}/${j.total} · ${j.added} imagens`
+        : j.state === "error" ? "erro: " + j.error : j.state === "done" ? `concluído · ${j.added} imagens` : "";
+      if (j.state === "running") return;
+      $("#btnShotsGen").disabled = !loggedIn;
+      await loadCands(); await loadScenes(); ctx.guide();
+      return false;
+    }, 3000);
   }
 
   // ---------- cena do produto ----------
@@ -135,21 +159,21 @@ Studio.register("shots", (ctx) => {
     try { prod = (await api(`${base()}/product/candidates`)).candidates; }
     catch { prod = []; }
     $("#prodGallery").innerHTML = prod.length ? prod.map(c =>
-      `<div class="card ${c.selected ? "sel" : ""}" data-id="${c.id}" tabindex="0" title="${(c.prompt || "").replace(/"/g, "'")}">
-         <img loading="lazy" src="${ctx.files(c.thumb || c.file)}" alt=""><span class="src">${c.source}</span>
-         <span class="term">clique para salvar como cena do produto</span></div>`).join("")
+      `<div class="card ${c.selected ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt || "")}">
+         <img loading="lazy" src="${esc(ctx.files(c.thumb || c.file))}" alt=""><span class="src">${esc(c.source)}</span>
+         <span class="term">${c.upscaled ? "upscalado ✓ · " : ""}clique para salvar como cena do produto</span></div>`).join("")
       : `<div class="empty">Envie a imagem 1, rode as duas instruções na Higgsfield e importe o resultado.</div>`;
   }
 
   return {
     init() {
-      $("#btnShotsReload").onclick = () => { loadScenes(); loadProd(); };
+      $("#btnShotsReload").onclick = () => { loadScenes(); loadProd(); ctx.guide(); };
       $("#sceneList").addEventListener("click", e => { const c = e.target.closest(".card"); if (c) { openScene(c.dataset.scene); loadScenes(); } });
       $("#btnPrepBase").onclick = () => prepareBase("storyboard");
       $("#btnPrepBaseCampaign").onclick = () => prepareBase("base");
-      $("#baseUpload").addEventListener("change", e => prepareBase("upload", e.target.files[0]));
+      $("#baseUpload").addEventListener("change", e => { if (e.target.files[0]) prepareBase("upload", e.target.files[0]); });
 
-      ["#promptKind", "#promptScale", "#promptAngle", "#promptRealism", "#promptLens", "#promptAperture"]
+      ["#promptKind", "#promptScale", "#promptAngle", "#promptRealism", "#promptLens", "#promptAperture", "#promptCamera"]
         .forEach(sel => $(sel).addEventListener("change", prompts));
       $("#btnPrompts").onclick = prompts;
       $("#shotsPrompts").addEventListener("click", async e => {
@@ -159,36 +183,35 @@ Studio.register("shots", (ctx) => {
         setTimeout(() => b.parentElement.querySelector(".ok").textContent = "", 1500);
       });
 
-      const drop = $("#shotsDrop");
-      drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
-      drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-      drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); upload(`${base()}/scenes/${scene}/import/upload`, e.dataTransfer.files, loadCands); });
-      $("#shotsUpload").addEventListener("change", e => upload(`${base()}/scenes/${scene}/import/upload`, e.target.files, loadCands));
+      ui.drop($("#shotsDrop"), files => importFiles(`${base()}/scenes/${scene}/import/upload`, files, loadCands));
       $("#btnShotsDownloads").onclick = async () => {
-        try { const r = await api(`${base()}/scenes/${scene}/import/downloads`, { method: "POST", body: JSON.stringify({ since_minutes: +$("#shotsDlMinutes").value }) }); toast(`${r.added} novas de ${r.scanned} recentes`); loadCands(); }
+        try { const r = await api(`${base()}/scenes/${scene}/import/downloads`, { method: "POST", body: JSON.stringify({ since_minutes: +$("#shotsDlMinutes").value }) }); toast(`${r.added} novas de ${r.scanned} recentes`); await loadCands(); ctx.guide(); }
         catch (err) { toast(err.message); }
       };
       $("#btnShotsHistory").onclick = async () => {
-        try { const r = await api(`${base()}/scenes/${scene}/import/history`, { method: "POST", body: JSON.stringify({}) }); toast(`${r.added} imagens de ${r.jobs} jobs`); loadCands(); }
+        try { const r = await api(`${base()}/scenes/${scene}/import/history`, { method: "POST", body: JSON.stringify({}) }); toast(`${r.added} imagens de ${r.jobs} jobs`); await loadCands(); ctx.guide(); }
         catch (err) { toast(err.message); }
       };
 
       $("#btnShotsGen").onclick = async () => {
         const ps = promptTexts(); if (!ps.length) return toast("Gere o prompt antes.");
         const count = +$("#shotsCount").value;
-        let est = "Estimativa indisponível.";
-        try { const c = await api(`${base()}/scenes/${scene}/cost`, { method: "POST", body: JSON.stringify({ prompts: ps, count }) }); if (c.total != null) est = `Estimativa: ${c.total} créditos.`; } catch { /* mantém indisponível */ }
-        if (!confirm(`Gerar ${ps.length} prompt(s) × ${count} imagens via CLI? ${est} Isso gasta créditos. Na interface da Higgsfield é ilimitado.`)) return;
-        try { await api(`${base()}/scenes/${scene}/generate`, { method: "POST", body: JSON.stringify({ prompts: ps, count }) }); $("#btnShotsGen").disabled = true; pollJob(); }
+        const ok = await ui.confirmCost(
+          () => api(`${base()}/scenes/${scene}/cost`, { method: "POST", body: JSON.stringify({ prompts: ps, count }) }),
+          `Gerar ${ps.length} prompt(s) × ${count} imagens via CLI`);
+        if (!ok) return;
+        try { await api(`${base()}/scenes/${scene}/generate`, { method: "POST", body: JSON.stringify({ prompts: ps, count }) }); $("#btnShotsGen").disabled = true; watchJob(); }
         catch (err) { toast(err.message); }
       };
       $("#btnShotsUpscale").onclick = async () => {
         const id = order[order.length - 1]; if (!id) return;
-        try { await api(`${base()}/scenes/${scene}/upscale`, { method: "POST", body: JSON.stringify({ id }) }); pollJob(); }
+        try { await api(`${base()}/scenes/${scene}/upscale`, { method: "POST", body: JSON.stringify({ id }) }); watchJob(); }
         catch (err) { toast(err.message); }
       };
 
       $("#shotsGallery").addEventListener("click", e => {
+        const asBase = e.target.closest("button.asBase");
+        if (asBase) return prepareBase("candidate", null, asBase.dataset.base);
         const card = e.target.closest(".card"); if (!card) return;
         const id = card.dataset.id, i = order.indexOf(id);
         i >= 0 ? order.splice(i, 1) : order.push(id);
@@ -201,42 +224,48 @@ Studio.register("shots", (ctx) => {
       $("#btnShotsSave").onclick = async () => {
         if (!scene) return toast("Abra uma cena primeiro.");
         try {
+          // O upscale do CLI já marca o candidato; o checkbox cobre quem fez o upscale na UI.
           const up = $("#shotsUpscaled").checked;
-          const r = await api(`${base()}/scenes/${scene}/select`, { method: "POST", body: JSON.stringify({ shots: order.map(id => ({ id, upscaled: up })) }) });
-          toast(`${r.shots.length} frame(s) salvos em ${scene}`); loadCands(); loadScenes();
+          const shots = order.map(id => {
+            const c = cands.find(x => x.id === id);
+            return { id, upscaled: !!(c && c.upscaled) || up };
+          });
+          const r = await api(`${base()}/scenes/${scene}/select`, { method: "POST", body: JSON.stringify({ shots }) });
+          toast(r.warning || `${r.shots.length} frame(s) salvos em ${scene} · storyboard.md atualizado`);
+          await loadCands(); await loadScenes(); ctx.guide();
         } catch (err) { toast(err.message); }
       };
 
       $("#prodRefUpload").addEventListener("change", async e => {
         const f = e.target.files[0]; if (!f) return;
-        const fd = new FormData(); fd.append("file", f);
-        const r = await fetch(`${base()}/product/ref`, { method: "POST", body: fd });
-        if (!r.ok) return toast((await r.json().catch(() => ({}))).detail || r.statusText);
-        toast("Imagem 1 salva"); loadScenes(); prodPrompts();
+        try {
+          await ui.upload(`${base()}/product/ref`, [f], "file");
+          toast("Imagem 1 salva"); await loadScenes(); prodPrompts(); ctx.guide();
+        } catch (err) { toast(err.message); }
       });
       const prodPrompts = async () => {
         try {
           const r = await api(`${base()}/product/prompts`);
-          $("#prodPrompts").innerHTML = `<p class="fine">${r.ui_hint}</p>` + r.prompts.map((p, i) =>
-            `<div class="prompt"><div class="row"><span class="eyebrow">${p.label}</span></div><textarea data-i="${i}">${p.text}</textarea></div>`).join("");
-        } catch (err) { $("#prodPrompts").innerHTML = `<div class="empty">${err.message}</div>`; }
+          $("#prodPrompts").innerHTML = `<p class="fine">${esc(r.note || "")}</p><p class="fine">${esc(r.ui_hint)}</p>` + r.prompts.map((p, i) =>
+            `<div class="prompt"><div class="row"><span class="eyebrow">${esc(p.label)}</span></div><textarea data-i="${i}">${esc(p.text)}</textarea></div>`).join("");
+        } catch (err) { $("#prodPrompts").innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
       };
       $("#btnProdPrompts").onclick = prodPrompts;
-      const pdrop = $("#prodDrop");
-      pdrop.addEventListener("dragover", e => { e.preventDefault(); pdrop.classList.add("over"); });
-      pdrop.addEventListener("drop", e => { e.preventDefault(); pdrop.classList.remove("over"); upload(`${base()}/product/import/upload`, e.dataTransfer.files, loadProd); });
-      $("#prodUpload").addEventListener("change", e => upload(`${base()}/product/import/upload`, e.target.files, loadProd));
+      ui.drop($("#prodDrop"), files => importFiles(`${base()}/product/import/upload`, files, loadProd));
       $("#btnProdDownloads").onclick = async () => {
-        try { const r = await api(`${base()}/product/import/downloads`, { method: "POST", body: JSON.stringify({}) }); toast(`${r.added} novas`); loadProd(); }
+        try { const r = await api(`${base()}/product/import/downloads`, { method: "POST", body: JSON.stringify({}) }); toast(`${r.added} novas`); await loadProd(); ctx.guide(); }
         catch (err) { toast(err.message); }
       };
       $("#prodGallery").addEventListener("click", async e => {
         const card = e.target.closest(".card"); if (!card) return;
-        try { await api(`${base()}/product/select`, { method: "POST", body: JSON.stringify({ id: card.dataset.id }) }); toast("Cena do produto salva"); loadProd(); loadScenes(); }
-        catch (err) { toast(err.message); }
+        const c = prod.find(x => x.id === card.dataset.id);
+        try {
+          await api(`${base()}/product/select`, { method: "POST", body: JSON.stringify({ id: card.dataset.id, upscaled: !!(c && c.upscaled) }) });
+          toast("Cena do produto salva"); await loadProd(); await loadScenes(); ctx.guide();
+        } catch (err) { toast(err.message); }
       });
       $("#btnProdClear").onclick = async () => {
-        try { await api(`${base()}/product/select`, { method: "POST", body: JSON.stringify({ id: null }) }); toast("Cena do produto removida"); loadProd(); loadScenes(); }
+        try { await api(`${base()}/product/select`, { method: "POST", body: JSON.stringify({ id: null }) }); toast("Cena do produto removida"); await loadProd(); await loadScenes(); ctx.guide(); }
         catch (err) { toast(err.message); }
       };
 
@@ -248,11 +277,14 @@ Studio.register("shots", (ctx) => {
     },
     async onProject() {
       if (!ctx.pid()) return;
-      scene = null; order = [];
-      hfStatus(); await loadScenes(); loadProd();
+      scene = null; order = []; cameras = [];
+      ui.hfChip($("#shotsHf")).then(s => { loggedIn = !!s.logged_in; $("#btnShotsGen").disabled = !loggedIn; });
+      await loadScenes(); loadProd();
       const d = await api("/api/shots/downloads-folder");
       $("#shotsDlFolder").textContent = d.folder + (d.exists ? "" : " (não encontrada)");
-      if (scenes.length) openScene(scenes[0].id);
+      if (scenes.length) await openScene(scenes[0].id);
+      ui.renderGuide("shots");
     },
+    destroy() { if (job) { job.stop(); job = null; } },
   };
 });

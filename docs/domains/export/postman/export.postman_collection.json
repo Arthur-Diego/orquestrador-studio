@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "os009-export-collection",
     "name": "Export e QA (etapa 9 · OS-009)",
-    "description": "Coleção executável dos 9 contratos públicos da etapa 9 (Export e QA).\n\nFonte: `docs/domains/export/features/export-fdd.md` — seção 5 \"Contratos públicos\" (linhas 124-333), ordem dos fluxos pela seção 4 (linhas 67-95) e casos negativos pela matriz de erros da seção 6 (linhas 341-355).\n\nPré-condições: serviço FastAPI local no ar em `{{base_url}}`, um projeto existente em `{{pid}}` com `edit/master.mp4` produzido pela etapa 8, e ffmpeg/ffprobe em `~/.local/bin`.\n\nSem autenticação: a API é local e não tem auth (FDD seção 5, linha 126 — \"Sem headers próprios\").\n\nDivergências entre o FDD e `studio/etapas/export/router.py`: ver `divergencias.md` nesta pasta.\n\nAuditoria feita sobre o commit `f049d45`. Duas divergências apontadas na primeira rodada (500 em `status`/`list` com arquivo ilegível; 409 antes do 422 nas rotas de reframe) já foram corrigidas nesse commit e as asserções desta coleção refletem o comportamento novo.",
+    "description": "Coleção executável dos 9 contratos públicos da etapa 9 (Export e QA).\n\nFonte: `docs/domains/export/features/export-fdd.md` — seção 5 \"Contratos públicos\" (linhas 124-333), ordem dos fluxos pela seção 4 (linhas 67-95) e casos negativos pela matriz de erros da seção 6 (linhas 341-355).\n\nPré-condições: serviço FastAPI local no ar em `{{base_url}}`, um projeto existente em `{{pid}}` com `edit/master.mp4` produzido pela etapa 8, e ffmpeg/ffprobe em `~/.local/bin`.\n\nSem autenticação: a API é local e não tem auth (FDD seção 5, linha 126 — \"Sem headers próprios\").\n\nDivergências entre o FDD e `studio/etapas/export/router.py`: ver `divergencias.md` nesta pasta.\n\nAuditoria feita sobre o commit `f049d45`. Duas divergências apontadas na primeira rodada (500 em `status`/`list` com arquivo ilegível; 409 antes do 422 nas rotas de reframe) já foram corrigidas nesse commit e as asserções desta coleção refletem o comportamento novo.\n\nWAVE 2 (OS-019): a etapa 9 e da aula 014 (\"publique mesmo imperfeito\"); a escolha 16:9 / 9:16 pelo destino vem do plano 1.4, NAO da aula 007. Thumb, QA, 1:1 e reframe sao [extensao]. O QA passou a ter veredito BLOQUEIO quando falta audio (a trilha da etapa 7 e obrigatoria).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -695,10 +695,10 @@
                   "  pm.expect(j.items.length).to.be.above(0);",
                   "});",
                   "pm.test('primeiro item e o master (FDD linha 253)', () => pm.expect(j.items[0].file).to.eql('edit/master.mp4'));",
-                  "pm.test('cada item tem checks e verdict OK|ATENCAO (FDD linhas 253-255)', () => {",
+                  "pm.test('cada item tem checks e verdict OK|ATENCAO|BLOQUEIO (FDD linhas 253-255 + wave 2)', () => {",
                   "  j.items.forEach(it => {",
                   "    pm.expect(it.checks).to.be.an('array');",
-                  "    pm.expect(['OK','ATENCAO']).to.include(it.verdict);",
+                  "    pm.expect(['OK','ATENCAO','BLOQUEIO']).to.include(it.verdict);   // wave 2 (9.5): audio ausente vira BLOQUEIO",
                   "    it.checks.forEach(c => {",
                   "      pm.expect(c.name).to.be.a('string');",
                   "      pm.expect(c.ok).to.be.a('boolean');",
@@ -711,7 +711,9 @@
                   "});",
                   "pm.test('verdict deriva das checagens (FDD linha 280)', () => {",
                   "  j.items.forEach(it => {",
-                  "    const esperado = it.checks.every(c => c.ok) ? 'OK' : 'ATENCAO';",
+                  "    const falhas = it.checks.filter(c => !c.ok);",
+                  "    const bloqueante = falhas.some(c => c.blocking);   // wave 2 (9.5)",
+                  "    const esperado = falhas.length === 0 ? 'OK' : (bloqueante ? 'BLOQUEIO' : 'ATENCAO');",
                   "    pm.expect(it.verdict).to.eql(esperado);",
                   "  });",
                   "});",
@@ -719,7 +721,16 @@
                   "  const txt = JSON.stringify(j).toLowerCase();",
                   "  ['bonito','feio','ritmo','hook','legenda'].forEach(w => pm.expect(txt).to.not.include(w));",
                   "});",
-                  "pm.collectionVariables.set('qa_generated', j.generated);"
+                  "pm.collectionVariables.set('qa_generated', j.generated);",
+                  "pm.test('wave 2 (9.5): blocking no topo e coerente com os vereditos', () => {",
+                  "  pm.expect(j.blocking).to.be.a('boolean');",
+                  "  pm.expect(j.blocking).to.eql(j.items.some(it => it.verdict === 'BLOQUEIO'));",
+                  "});",
+                  "pm.test('wave 2 (9.5): so a checagem de audio e bloqueante', () => {",
+                  "  j.items.forEach(it => it.checks.forEach(c => {",
+                  "    if (c.blocking) pm.expect(c.name).to.eql('audio');",
+                  "  }));",
+                  "});"
                 ]
               }
             }
@@ -740,7 +751,7 @@
                 "qa"
               ]
             },
-            "description": "Contrato 6 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 242). Sincrono; grava export/qa_report.md e devolve {file, generated, items}."
+            "description": "Contrato 6 do FDD (docs/domains/export/features/export-fdd.md, secao 5, linha 242). Sincrono; grava export/qa_report.md e devolve {file, generated, items}.\n\nWAVE 2 (auditoria 9.5): o QA e [extensao] (a aula 014 so manda publicar) e ganhou checagem BLOQUEANTE. Falha de `audio` marca `blocking: true` no item de checagem e leva o veredito a BLOQUEIO; a resposta traz `blocking: bool` no topo. Todas as demais falhas continuam ATENCAO."
           },
           "response": []
         },

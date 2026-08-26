@@ -1,0 +1,12 @@
+%% storyboard (OS-016) - Etapa 4 - guia da etapa (wave 2)
+%% Fonte: docs/domains/storyboard/features/storyboard-fdd.md (secao 12)
+%%         studio/etapas/storyboard/guide.py + studio/common/guide.py
+flowchart LR
+    G["GET /api/projects/{pid}/guide/storyboard"] --> H["guide(pid) - leitura pura dos artefatos"]
+    H --> IN{"base/base_final.png existe?"}
+    IN -- nao --> BL["status: blocked<br/>atalho para a etapa 3"]
+    IN -- sim --> OUT["saidas: storyboard/ideas/ ·<br/>scenes.json (~5 cenas com texto e imagem) ·<br/>storyboard.md"]
+    OUT --> ST{"todas as saidas ok?"}
+    ST -- sim --> D["status: done -> etapa 5"]
+    ST -- nao --> P["status: in_progress<br/>progress = saidas ok / saidas"]
+    H --> V["validacoes V4.1-V4.6 + nota do upscale (etapa 5)<br/>(atencao - nunca bloqueiam)"]

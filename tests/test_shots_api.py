@@ -248,3 +248,70 @@ def test_upscale_route_404_for_unknown_candidate(client, project, with_cli):
     scene = f"/api/projects/{project}/shots/scenes/cena01"
     client.post(f"{scene}/base", json={})
     assert client.post(f"{scene}/upscale", json={"id": "naoexiste"}).status_code == 404
+
+
+# ---------- wave 2: guia na tela e correções da auditoria (5.1–5.8) ----------
+def test_view_follows_the_wave2_screen_contract(client):
+    html = client.get("/steps/shots/view.html").text
+    js = client.get("/steps/shots/view.js").text
+    assert '<section id="guide" class="guide"></section>' in html
+    assert "Etapa 5 · aula 011" in html
+    assert 'Studio.register("shots"' in js
+    assert 'renderGuide("shots")' in js
+    assert "destroy()" in js and "job.stop()" in js
+
+
+def test_promote_candidate_to_scene_base_over_http(client, project):
+    """5.2: POST .../base {source:"candidate", id} promove o resultado a base da cena."""
+    scene = f"/api/projects/{project}/shots/scenes/cena01"
+    client.post(f"{scene}/base", json={})
+    client.post(f"{scene}/import/upload", files=_png("a.png", (7, 7, 7)))
+    cid = client.get(f"{scene}/candidates").json()["candidates"][0]["id"]
+    r = client.post(f"{scene}/base", json={"source": "candidate", "id": cid})
+    assert r.status_code == 200 and r.json()["source"] == "candidate" and r.json()["candidate"] == cid
+    assert client.post(f"{scene}/base", json={"source": "candidate"}).status_code == 422
+    assert client.post(f"{scene}/base", json={"source": "candidate", "id": "zzz"}).status_code == 404
+    assert "Usar como base da cena" in client.get("/steps/shots/view.html").text \
+        or "Usar como base da cena" in client.get("/steps/shots/view.js").text
+
+
+def test_prompt_route_accepts_a_camera_preset(client, project):
+    """5.3 e 5.7: bloco de câmera oferecido também na edição; presets trocáveis."""
+    url = f"/api/projects/{project}/shots/scenes/cena01/prompts"
+    body = client.get(url, params={"kind": "edit", "edits": ["Remove the can"], "camera": "documentario"}).json()
+    assert "Documentary style" in body["prompts"][0]["text"]
+    assert [c["id"] for c in body["cameras"]] == ["red", "documentario", "wide"]
+    angle = client.get(url, params={"kind": "angle", "camera": "wide"}).json()
+    assert "Anamorphic lens" in angle["prompts"][0]["text"]
+
+
+def test_scenes_route_publishes_aspect_ratio_and_upscale_count(client, project, studio_env):
+    """5.1 e 5.6: a tela lê a proporção do projeto e o N/M de upscalados por cena."""
+    body = client.get(f"/api/projects/{project}/shots/scenes").json()
+    assert body["aspect_ratio"] == "16:9" and body["scenes"][0]["upscaled"] == 0
+    assert "trilha" in body["product_note"]
+    client.patch(f"/api/projects/{project}", json={"aspect_ratio": "9:16"})
+    assert client.get(f"/api/projects/{project}/shots/scenes").json()["aspect_ratio"] == "9:16"
+
+
+def test_select_route_returns_the_upscale_warning_and_the_document(client, project, studio_env):
+    """5.1 e 5.4: o `select` avisa o que falta upscalar e regrava shots/storyboard.md."""
+    scene = f"/api/projects/{project}/shots/scenes/cena01"
+    client.post(f"{scene}/base", json={})
+    a, b = _import_two(client, project)
+    r = client.post(f"{scene}/select", json={"shots": [{"id": a, "upscaled": True}, {"id": b}]}).json()
+    assert "sem upscale" in r["warning"] and r["storyboard_md"] == "shots/storyboard.md"
+    root = studio_env["refs"].project_dir(project)
+    assert (root / "shots" / "storyboard.md").exists()
+    ok = client.post(f"{scene}/select",
+                     json={"shots": [{"id": a, "upscaled": True}, {"id": b, "upscaled": True}]}).json()
+    assert ok["warning"] is None
+
+
+def test_screen_shows_the_lesson_focus_examples_and_the_base_order(client, project):
+    """5.5 e 5.2: exemplos de enquadramento e a ordem "base primeiro" ficam na tela."""
+    html = client.get("/steps/shots/view.html").text
+    assert "close no rosto" in html
+    assert "Usar como base da cena" in html
+    body = client.get(f"/api/projects/{project}/shots/scenes/cena01/prompts").json()
+    assert any("rosto" in e for e in body["focus_examples"])

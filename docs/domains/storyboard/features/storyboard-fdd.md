@@ -480,3 +480,65 @@ Invariantes:
 | 5 | Rotas de cenas e render no router + UI completa (painéis Ideação, Galeria, Cenas) | 3, 4 | `router.py` (`GET/PUT scenes`, `render`, `GET /storyboard`), `view.html`, `view.js` | status; PUT/GET scenes via API; render 422 |
 | 6 | Alternativa paga por CLI: `cost`, `generate` com `JobRegistry`, `job` | 3, 4 | `service.py` (`registry`, `cost`, `start_generate`), `router.py`, `view.js` (chip de status, confirm, polling 3 s), `tests/test_storyboard_service.py` | job done/added; 409 concorrente; 422 draw_to_edit |
 | 7 | Erros, logs e fechamento | 5, 6 | `service.py` (logger `studio.storyboard`, JSON corrompido tratado), `docs/domains/storyboard/diagrams/mermaid/storyboard-flow.mmd`, final report com auto-aceites | ruff + pytest verdes; nenhum arquivo do núcleo alterado |
+
+---
+
+### 12. Wave 2 — fidelidade e guia (OS-016)
+
+Escrito em **modo batch** (Gate 1 pré-aprovado em lote pelo dono do produto; auto-aceites
+rotulados abaixo). Fonte normativa: `docs/domains/studio/waves/wave-2.md` e a auditoria
+`wave-2-auditoria-etapas-4-6.md` §4.3 (divergências), §4.4 (textos) e §4.5 (validações).
+
+#### 12.1 O guia da etapa — `studio/etapas/storyboard/guide.py`
+
+Hook `guide(pid) -> dict` do contrato transversal (`studio/common/guide.py`), **puro**: só lê
+arquivos do projeto, nunca grava, nunca chama CLI. Servido pelo núcleo em
+`GET /api/projects/{pid}/guide/storyboard` e no agregado `GET /api/projects/{pid}/guide`.
+
+- **`what` / `checklist`**: texto literal da auditoria §4.4 (aula 010).
+- **Entradas** (bloqueiam): `base/base_final.png` (etapa 3, com atalho `step: "base"`).
+- **Saídas** (definem progresso): `storyboard/ideas/` com ideia escolhida; `storyboard/scenes.json`
+  com as ~5 cenas escritas **e** com imagem; `storyboard/storyboard.md`.
+- **Validações** (nunca bloqueiam) — §4.5:
+
+| id | Regra | Estado |
+| --- | --- | --- |
+| `v41_cinco_cenas` | V4.1 `scenes_with_text >= 5` (ou = total quando o usuário reduziu) | ok/warn/todo |
+| `v42_cena_com_imagem` | V4.2 toda cena aponta para uma ideia de `storyboard/ideas/` | ok/warn/todo |
+| `v43_ordem` | V4.3 ordem contígua `n = 1..N` | ok/fail |
+| `v44_instrucao_unica` | V4.4 nenhuma instrução importada com lista numerada ≥ 2 | ok/warn |
+| `v45_count` | V4.5 `count` do CLI ∈ {4, 1} (garantido pelo contrato) | ok |
+| `v46_md_atualizado` | V4.6 `storyboard.md` mais novo que `scenes.json` | ok/warn/todo |
+| `v47_upscale_etapa5` | 4.1 — nota: o upscale das ideias acontece na etapa 5 | ok |
+
+#### 12.2 Correções de fidelidade
+
+| # | Correção | Onde |
+| --- | --- | --- |
+| 4.1 | Nota "o upscale das ideias acontece na etapa 5 (aula 011)" na tela, no `storyboard.md` e no guia (`UPSCALE_NOTE`, publicado em `GET /storyboard/instructions.upscale_note`) | `service.py`, `view.html`, `guide.py` |
+| 4.2 | `source_id` passa a ser usado: botão **"usar como origem"** por ideia na galeria preenche `source_id` no corpo de `/cost` e `/generate` — a edição encadeia no resultado anterior em vez de sempre partir de `base_final.png` | `view.html`, `view.js` |
+| 4.3 | Botões renomeados para **"Montar instrução — gere 4 na Higgsfield (incerto)"** / **"… gere 1 (tweak)"**; o texto da tela explica que montar não gasta crédito | `view.html`, `service.py` (`ui_hint`) |
+| 4.4 | `gpt_image_2` marcado `[extensão]` e publicado em `instructions.models` (a tela não escolhe mais o catálogo); `nano_banana_2` continua o padrão | `service.py` (`MODELS`), `view.js` |
+| 4.5 | Estrutura **começo → descoberta → ação → desfecho** (`SCENE_ARC` + `scene_arc(n, total)`): rótulo e placeholder por cena, título de cada cena no `storyboard.md` e texto do guia | `service.py`, `view.js`, `guide.py` |
+| 4.6 | `_check_single_instruction` relaxado: recusa só lista numerada ≥ 2 **ou** 2+ frases começando com verbo no imperativo (`IMPERATIVES`); a mensagem de erro diz que é heurística e sugere juntar as frases | `service.py` |
+
+#### 12.3 Contrato ampliado
+
+`GET /api/projects/{pid}/storyboard/instructions` ganha três campos aditivos (nenhum campo
+existente mudou de forma): `models[]` (`{id, label, default}`), `arc[]` (`{id, label, hint}`) e
+`upscale_note`. `POST /storyboard/{cost,generate}` já aceitava `source_id` — agora a UI o envia.
+
+#### 12.4 Tela (contrato de wave 2)
+
+`<section id="guide" class="guide"></section>` logo após o `stephead`; `Studio.ui` para `esc`,
+chip do CLI (`hfChip`), drag&drop (`drop`), custo (`confirmCost`) e polling (`poll`); `ctx.guide()`
+depois de toda ação que muda artefato; `destroy()` para o poll do job ao trocar de tela.
+
+#### 12.5 Auto-aceites desta frente
+
+1. Os textos da aula (o que fazer, checklist, arco narrativo, nota do upscale, catálogo de
+   modelos) moram no **backend** e são publicados pela API — a tela não duplica texto de aula.
+2. A saída `scenes.json` só fica `ok` quando **todas** as cenas têm texto e imagem (a §4.4 lista
+   as duas coisas como saída esperada); a cobrança mais branda de cada uma vive em V4.1/V4.2.
+3. `storyboard.md` passa a carregar o rótulo do arco em cada cena (`## Cena 1 — começo`), o que
+   preserva a string fixada por teste `## Cena 1`.

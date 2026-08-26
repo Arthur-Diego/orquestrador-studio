@@ -1,12 +1,13 @@
 """Rotas da etapa 1 — Referências (aula 009)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from ...refs import service
 
 router = APIRouter(tags=["refs"])
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 class SearchReq(BaseModel):
@@ -21,8 +22,9 @@ class SelectReq(BaseModel):
 
 
 @router.get("/api/suggest-terms")
-def suggest(product: str, vibe: str = ""):
-    return service.suggest_terms(product, vibe)
+def suggest(product: str, vibe: str = "", brand: str = ""):
+    """`brand` (aula 009): a busca começa por uma marca já validada do segmento."""
+    return service.suggest_terms(product, vibe, brand)
 
 
 @router.post("/api/pinterest/login")
@@ -52,6 +54,19 @@ def refs_job(pid: str):
 @router.get("/api/projects/{pid}/refs/candidates")
 def refs_candidates(pid: str):
     return service.candidates(pid)
+
+
+@router.post("/api/projects/{pid}/refs/import/upload")
+async def refs_upload(pid: str, files: list[UploadFile] = File(...)):  # noqa: B008
+    """`[extensão]` Referências salvas à mão (Explore do Midjourney, print, download avulso)."""
+    service.project_dir(pid)
+    payload = []
+    for f in files:
+        data = await f.read()
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"{f.filename}: arquivo acima de 25 MB")
+        payload.append((f.filename or "ref.jpg", data))
+    return service.import_upload(pid, payload)
 
 
 @router.post("/api/projects/{pid}/refs/select")

@@ -1,14 +1,18 @@
 """Etapa 3 — Imagem base (aula 009), em "modo UI".
 
-A aula manda, para cada referência escolhida na etapa 1: pedir "o produto na exata mesma
-situação da imagem de referência, com o mood da campanha" (aba nova, sem viés), escolher a
-melhor, trocar o rótulo pela marca própria com o Nano Banana (uma instrução por vez) e fazer
-upscale 2x High Fidelity. Aqui isso vira:
+A aula manda, para cada referência escolhida na etapa 1: mostrar ao BOT o mood da campanha e a
+referência e pedir "o prompt do meu produto na exata mesma situação desta imagem, com a vibe da
+minha campanha"; gerar com o mood anexado; escolher a melhor; trocar o rótulo pela marca própria
+com o Nano Banana (uma instrução por vez, reescrevendo se ficar simples demais) e fazer upscale
+2x High Fidelity V2. Aqui isso vira:
 
-1. `prompts()` monta os prompts da aula (em inglês) a partir de `refs/`, `mood/` e `project.json`;
-2. o usuário gera na UI da Higgsfield (ilimitado) — ou via CLI, pagando créditos — e importa
+1. `generate_prompt()` chama o bot (`common/prompter.py`, Claude CLI) com a referência + as
+   imagens de `mood/selected/`; sem Claude, cai no template determinístico (`situation_prompt`);
+2. `prompts()` monta a tela: a **instrução para o bot** (sessão nova, sem viés — a "aba nova" da
+   aula é do bot, não da Higgsfield) e o **prompt para gerar** (a resposta do bot, editável);
+3. o usuário gera na UI da Higgsfield (ilimitado) — ou via CLI, pagando créditos — e importa
    (upload, pasta Downloads, histórico do CLI) dizendo o `kind` (situation|label|upscale);
-3. `select()` marca a candidata escolhida, copia para `base/base_final.png` e regrava `base.md`.
+4. `select()` marca a candidata escolhida, copia para `base/base_final.png` e regrava `base.md`.
 
 O campo `brand` (nome/descrição do rótulo) é `[extensão]` aprovada na wave 1: sem ele não há
 como escrever o prompt de troca de rótulo que a aula dita.
@@ -24,7 +28,7 @@ from pathlib import Path
 from PIL import Image
 
 from .. import higgsfield as hf
-from ..common import ingest
+from ..common import ingest, prompter
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -33,6 +37,7 @@ log = logging.getLogger("studio.base")
 STEP = "base"
 KINDS = ("situation", "label", "upscale")
 RANK = {"situation": 0, "label": 1, "upscale": 2}
+KIND_LABEL = {"situation": "situação", "label": "rótulo", "upscale": "upscale 2x"}
 FINAL_REL = "base/base_final.png"
 
 # IDs sugeridos pelo plano-higgsfield; o catálogo vivo ainda não pôde ser conferido (CLI sem
@@ -43,7 +48,22 @@ DEFAULT_MODEL_UPSCALE = "bytedance_image_upscale"
 DEFAULT_MODELS = {"situation": DEFAULT_MODEL, "label": DEFAULT_MODEL_LABEL, "upscale": DEFAULT_MODEL_UPSCALE}
 
 MOOD_REFS_MAX = 3          # a aula anexa a referência + algumas imagens do mood, não o mood inteiro
+#: B11 (wave 2): a aula 009 põe "no people" no MOOD, não na base (ela até imagina "um mini ser
+#: humano em perspectiva"). Aqui a frase é opcional — checkbox na tela, `no_people` nos contratos.
 NO_PEOPLE = "No people unless they appear in the reference image."
+
+#: Modos do bot de prompts, os mesmos da etapa 2 (aula 007: modo simplificado × guiado).
+PROMPT_MODES = ("images", "brief", "template")
+PROMPT_IMAGES_MAX = 4      # o prompter corta em 4: a referência + até 3 imagens do mood
+#: B4 (wave 2): a aula reescreve a instrução do rótulo e gera 3 variações.
+DEFAULT_COUNT = {"situation": 1, "label": 3, "upscale": 1}
+#: G3 (wave 2): o formato vem do projeto (aula 007 manda escolher pelo destino).
+ASPECT_RATIOS = ("16:9", "9:16", "1:1")
+ASPECT_DEFAULT = "16:9"
+#: B6 (wave 2): a aula manda upscale 2x (preset High Fidelity V2); ±10 % de folga.
+UPSCALE_MIN, UPSCALE_MAX = 1.8, 2.2
+#: §3.5 da auditoria: prompt vindo do bot é longo ("até o tipo de câmera").
+PROMPT_MIN_WORDS = 40
 
 _registry = JobRegistry()
 
@@ -57,6 +77,13 @@ def _meta(root: Path) -> dict:
 def _product(root: Path) -> str:
     meta = _meta(root)
     return (meta.get("product") or meta.get("name") or "the product").strip()
+
+
+def project_aspect(root: Path) -> str:
+    """`project.aspect_ratio` (G3) — formato escolhido pelo destino na aula 007. Default 16:9.
+    Valor inválido (project.json editado à mão) cai no default: o núcleo já valida no PATCH."""
+    v = (_meta(root).get("aspect_ratio") or "").strip()
+    return v if v in ASPECT_RATIOS else ASPECT_DEFAULT
 
 
 def selected_refs(root: Path) -> list[dict]:
@@ -98,6 +125,24 @@ def mood_files(root: Path) -> list[str]:
             if p.is_file() and p.suffix.lower() in ingest.MEDIA_EXT["image"]]
 
 
+def mood_paths(root: Path) -> list[Path]:
+    """As imagens do mood como caminhos absolutos — é o "print do mood" que a aula mostra ao bot."""
+    return [root / m for m in mood_files(root)]
+
+
+def _require_inputs(root: Path) -> tuple[list[dict], list[str]]:
+    """Insumos das etapas 1 e 2 sem os quais a aula 009 não começa (B3: o mood entra como IMAGEM;
+    os hex de `mood/palette.json` são opcionais)."""
+    refs = selected_refs(root)
+    if not refs:
+        raise ValueError("Volte à etapa 1 e escolha ao menos uma referência (ela vira o 'brainstorming').")
+    mood = mood_files(root)
+    if not mood:
+        raise ValueError("Volte à etapa 2 e salve o mood da campanha: o bot precisa ver as imagens de "
+                         "mood/selected/ antes de escrever o prompt (aula 009).")
+    return refs, mood
+
+
 # ---------- marca (extensão aprovada) ----------
 def brand_get(pid: str) -> dict:
     f = project_dir(pid) / STEP / "brand.json"
@@ -115,7 +160,7 @@ def brand_set(pid: str, name: str, description: str = "") -> dict:
     (root / STEP).mkdir(parents=True, exist_ok=True)
     brand = {"name": name, "description": (description or "").strip()}
     (root / STEP / "brand.json").write_text(json.dumps(brand, ensure_ascii=False, indent=1))
-    if _chain(load(pid))["final"]:
+    if chain(load(pid))["final"]:
         _write_md(root)      # o base.md carrega a marca; regrava quando ela muda
     return brand
 
@@ -130,15 +175,126 @@ def _mood_clause(pal: dict) -> str:
     return ", ".join(parts)
 
 
-def situation_prompt(product: str, pal: dict) -> str:
-    return (f"The product ({product}) in the exact same situation as the reference image, "
-            f"with the campaign mood: {_mood_clause(pal)}. {NO_PEOPLE} Photorealistic.")
+def situation_prompt(product: str, pal: dict | None, no_people: bool = False) -> str:
+    """Fallback determinístico (sem Claude). Na aula quem escreve este prompt é o BOT olhando a
+    referência e o mood (B1) — este texto é a rede de segurança quando o Claude CLI não existe."""
+    mood = _mood_clause(pal) if pal else ""
+    txt = (f"The product ({product}) in the exact same situation as the reference image"
+           + (f", with the campaign mood: {mood}" if mood else "") + ". ")
+    if no_people:
+        txt += NO_PEOPLE + " "
+    return txt + "Photorealistic."
 
 
-def no_bias_prompt(product: str) -> str:
-    """Aula 009: em uma aba nova, sem histórico, pedir o prompt da imagem idêntica — sem viés."""
-    return (f"Write the prompt for an image identical to this one, but the {product} is the subject. "
-            f"{NO_PEOPLE}")
+def bot_instruction(product: str, instruction: str = "") -> str:
+    """B2: a INSTRUÇÃO que se dá ao bot em uma sessão nova, sem contexto da campanha (aula 009:
+    "vou criar uma outra aba do meu GPT […] sem que ele saiba nada sobre a minha campanha").
+
+    Não é o prompt de imagem: o prompt é a resposta que o bot devolve, e é ela que vai para a
+    Higgsfield com a referência e o mood anexados.
+    """
+    extra = (instruction or "").strip()
+    return ("I will show you a reference image. Write the prompt for an image identical to this one, "
+            f"but the subject is: {product}."
+            + (f" Change only this: {extra}." if extra else "")
+            + " Be very detailed: composition, light, materials, camera body, lens and aperture. "
+              "Answer in English, with the prompt only.")
+
+
+#: Texto do painel: a "aba nova" da aula é do bot, não da Higgsfield (B2).
+BOT_HINT = ("A \"aba nova\" da aula é do BOT, não da Higgsfield: abra uma sessão nova do bot (sem "
+            "nada sobre a sua campanha), mande a instrução abaixo junto com a imagem de referência e "
+            "traga de volta o prompt que ele escrever. O botão \"sem viés\" faz isso aqui pelo Claude.")
+
+
+def _ui_hint(ar: str) -> str:
+    return (f"Na UI da Higgsfield: anexe a referência e 1 a 3 imagens do mood, cole o prompt e gere um "
+            f"grid de 4 em {ar} (sem o mood anexado \"sai coisa muito estranha\"). Escolha a melhor e "
+            "importe aqui como \"situação\". Ignore a marca e os textos que saírem na embalagem — o "
+            "rótulo vem no passo seguinte.")
+
+
+def _brief(root: Path, instruction: str = "") -> dict:
+    """Brief da campanha para o bot (aula 007: propósito, tom, referência em uma frase)."""
+    pal = _palette(root) or {"colors": [], "note": ""}
+    meta = _meta(root)
+    b = {"product": _product(root), "vibe": (meta.get("vibe") or pal["note"] or "").strip(),
+         "hints": _mood_clause(pal), "instruction": (instruction or "").strip()}
+    return {k: v for k, v in b.items() if v}
+
+
+def _template_result(product: str, pal: dict | None, no_people: bool) -> dict:
+    return {"prompt": situation_prompt(product, pal, no_people), "negative": "text, logos, watermark",
+            "camera": "", "notes_pt": "Template fixo (sem Claude): na aula quem escreve o prompt é o bot "
+                                      "olhando a referência e o mood.",
+            "source": "template", "seconds": 0.0, "images": []}
+
+
+# ---------- o bot da aula escrevendo o prompt (B1) ----------
+def prompt_history(pid: str) -> list[dict]:
+    return _prompt_hist(project_dir(pid))
+
+
+def _prompt_hist(root: Path) -> list[dict]:
+    f = root / STEP / "prompts.json"
+    if not f.exists():
+        return []
+    try:
+        data = json.loads(f.read_text())
+    except json.JSONDecodeError:
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _last_prompt(hist: list[dict], ref_id: str | None) -> dict | None:
+    """Último prompt gerado para a referência (o histórico já vem do mais novo para o mais velho)."""
+    return next((e for e in hist if e.get("ref_id") == ref_id and e.get("prompt")), None)
+
+
+def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", instruction: str = "",
+                    no_bias: bool = False, no_people: bool = False, model: str | None = None) -> dict:
+    """B1/B2 (aula 009): o prompt de situação nasce do BOT olhando a referência e o mood.
+
+    `mode`: `images` (o bot lê a referência + até 3 imagens do mood), `brief` (só texto) ou
+    `template` (fallback determinístico, sem Claude). `no_bias=True` reproduz a aba nova da aula:
+    só a referência, **sem** o brief da campanha e **sem** o mood, para o bot não ter viés.
+    """
+    if mode not in PROMPT_MODES:
+        raise ValueError(f"mode deve ser {', '.join(PROMPT_MODES)}")
+    root = project_dir(pid)
+    refs, _ = _require_inputs(root)
+    ref = next((r for r in refs if r["ref_id"] == ref_id), None) if ref_id else refs[0]
+    if ref is None:
+        raise ValueError(f"referência inexistente ou não escolhida na etapa 1: {ref_id}")
+    product = _product(root)
+    pal = _palette(root)
+    brief = None if no_bias else _brief(root, instruction)
+    if mode == "template":
+        res = _template_result(product, pal, no_people)
+    elif not prompter.available():
+        raise RuntimeError("Claude CLI indisponível — use o modo template ou instale o Claude Code")
+    elif mode == "brief":
+        res = {**prompter.from_brief("base", brief or {"product": product}), "images": []}
+    elif no_bias:
+        res = prompter.from_images("base", [ref["path"]], bot_instruction(product, instruction))
+    else:
+        images = [ref["path"], *mood_paths(root)][:PROMPT_IMAGES_MAX]
+        res = prompter.from_images("base", images, instruction, brief)
+    text = (res.get("prompt") or "").strip()
+    if no_people and "no people" not in text.lower():
+        text = text.rstrip(". ") + ". " + NO_PEOPLE
+    entry = {"ref_id": ref["ref_id"], "ref_file": ref["file"], "mode": mode,
+             "instruction": (instruction or "").strip(), "no_bias": bool(no_bias),
+             "no_people": bool(no_people), "model": model or DEFAULT_MODEL,
+             "aspect_ratio": project_aspect(root),
+             "created": datetime.now().isoformat(timespec="seconds"), **res, "prompt": text}
+    hist = _prompt_hist(root)
+    hist.insert(0, entry)
+    (root / STEP).mkdir(parents=True, exist_ok=True)
+    (root / STEP / "prompts.json").write_text(json.dumps(hist[:50], ensure_ascii=False, indent=1))
+    log.info("base: prompt pid=%s ref=%s mode=%s no_bias=%s fonte=%s", pid, ref["ref_id"], mode,
+             no_bias, res.get("source"))
+    return entry
 
 
 def label_prompt(brand: dict) -> str | None:
@@ -151,32 +307,40 @@ def label_prompt(brand: dict) -> str | None:
 
 
 def prompts(pid: str, model: str | None = None) -> dict:
-    """Prompts determinísticos da aula 009: um de situação por referência escolhida (+ variante
-    sem viés), o de troca de rótulo (quando há marca) e a instrução de upscale."""
+    """O que a tela da etapa 3 precisa mostrar: por referência escolhida, a **instrução para o bot**
+    (sessão nova, sem viés) e o **prompt para gerar** — o último que o bot escreveu para aquela
+    referência, ou o template de fallback enquanto ninguém gerou (B1/B2)."""
     root = project_dir(pid)
-    refs = selected_refs(root)
-    if not refs:
-        raise ValueError("Volte à etapa 1 e escolha ao menos uma referência (ela vira o 'brainstorming').")
+    refs, mood = _require_inputs(root)
     pal = _palette(root)
-    if pal is None:
-        raise ValueError("Volte à etapa 2 e salve o mood da campanha (mood/palette.json).")
     product = _product(root)
-    brand = brand_get(pid)
-    lp = label_prompt(brand)
+    lp = label_prompt(brand_get(pid))
+    hist = _prompt_hist(root)
+    ar = project_aspect(root)
+    out = []
+    for r in refs:
+        last = _last_prompt(hist, r["ref_id"])
+        out.append({"ref_id": r["ref_id"], "file": r["file"],
+                    "prompt": last["prompt"] if last else situation_prompt(product, pal),
+                    "prompt_source": (last.get("source") or "claude") if last else "template",
+                    "prompt_mode": last.get("mode") if last else None,
+                    "bot_instruction": bot_instruction(product)})
     return {
         "model": model or DEFAULT_MODEL,
-        "ui_hint": ("Abra uma aba nova na Higgsfield (sem histórico), anexe a referência e 1 a 3 imagens do "
-                    "mood, e cole o prompt. Gere, escolha a melhor e importe aqui como 'situação'."),
-        "aspect_ratio": "16:9",
+        "aspect_ratio": ar,
+        "bot_hint": BOT_HINT,
+        "ui_hint": _ui_hint(ar),
         "product": product,
-        "palette": pal,
-        "mood_files": mood_files(root),
-        "refs": [{"ref_id": r["ref_id"], "file": r["file"],
-                  "prompt": situation_prompt(product, pal),
-                  "prompt_no_bias": no_bias_prompt(product)} for r in refs],
+        "palette": pal or {"colors": [], "note": ""},
+        "mood_files": mood,
+        "claude": prompter.available(),
+        "modes": list(PROMPT_MODES),
+        "refs": out,
         "label_prompt": lp,
         "label_prompt_ready": lp is not None,
-        "upscale_hint": "Upscale 2x High Fidelity V2 na UI (ou modelo bytedance_image_upscale via CLI).",
+        "label_count": DEFAULT_COUNT["label"],
+        "upscale_hint": "Upscale 2x, preset High Fidelity V2 na UI (a mesma imagem, com mais qualidade) "
+                        "— ou o modelo bytedance_image_upscale via CLI.",
     }
 
 
@@ -204,10 +368,60 @@ def load(pid: str) -> list[dict]:
     return _normalize(ingest.load_candidates(project_dir(pid), STEP))
 
 
-def _finish_import(root: Path, before: set[str], kind: str, ref_id: str | None) -> None:
+def _finish_import(root: Path, before: set[str], kind: str, ref_id: str | None) -> list[str]:
     cands = ingest.load_candidates(root, STEP)
     new_ids = {c["id"] for c in cands} - before
-    ingest.save_candidates(root, STEP, _normalize(cands, kind, ref_id, new_ids))
+    cands = _normalize(cands, kind, ref_id, new_ids)
+    ingest.save_candidates(root, STEP, cands)
+    return upscale_warnings(root, cands, new_ids) if kind == "upscale" else []
+
+
+def _image_size(path: Path) -> tuple[int, int] | None:
+    try:
+        with Image.open(path) as im:
+            return im.size
+    except Exception:  # noqa: BLE001  — arquivo sumiu ou não é imagem: sem dimensão, sem aviso
+        return None
+
+
+def cand_size(root: Path, c: dict | None) -> tuple[int, int]:
+    """Dimensões da candidata: `width`/`height` do `ingest` e, só se faltarem, o arquivo."""
+    if not c:
+        return 0, 0
+    w, h = int(c.get("width") or 0), int(c.get("height") or 0)
+    if w and h:
+        return w, h
+    size = _image_size(root / c["file"]) if c.get("file") else None
+    return size if size else (0, 0)
+
+
+def upscale_warnings(root: Path, cands: list[dict], new_ids: set[str]) -> list[str]:
+    """B6: a aula manda "2x, preset High Fidelity V2". Compara a largura da candidata importada
+    como `upscale` com a da candidata de origem selecionada. Aviso — nunca recusa o import."""
+    src = most_advanced([c for c in cands if c.get("kind") in ("situation", "label")])
+    base_w = cand_size(root, src)[0]
+    if not base_w:
+        return []
+    out = []
+    for c in cands:
+        if c["id"] not in new_ids or c.get("kind") != "upscale":
+            continue
+        w = cand_size(root, c)[0]
+        if not w:
+            continue
+        ratio = w / base_w
+        if not (UPSCALE_MIN <= ratio <= UPSCALE_MAX):
+            out.append(f"{c['id']}: a aula pede upscale 2x — esta ficou {ratio:.1f}x "
+                       f"({base_w}px → {w}px). Refaça com 2x, preset High Fidelity V2.")
+    return out
+
+
+def upscale_ratio(root: Path, cands: list[dict]) -> tuple[float | None, int, int]:
+    """Razão entre a largura do upscale escolhido e a da candidata de origem da cadeia."""
+    up = _selected(cands, "upscale")
+    src = _selected(cands, "label") or _selected(cands, "situation")
+    w0, w1 = cand_size(root, src)[0], cand_size(root, up)[0]
+    return (round(w1 / w0, 2) if w0 and w1 else None), w0, w1
 
 
 def _check_kind(kind: str) -> str:
@@ -222,8 +436,7 @@ def import_upload(pid: str, files: list[tuple[str, bytes]], kind: str = "situati
     root = project_dir(pid)
     before = {c["id"] for c in ingest.load_candidates(root, STEP)}
     res = ingest.import_upload(root, STEP, files, prompt)
-    _finish_import(root, before, kind, ref_id)
-    return res
+    return {**res, "warnings": _finish_import(root, before, kind, ref_id)}
 
 
 def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 120, limit: int = 40,
@@ -232,8 +445,7 @@ def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 1
     root = project_dir(pid)
     before = {c["id"] for c in ingest.load_candidates(root, STEP)}
     res = ingest.import_downloads(root, STEP, folder, since_minutes, limit, prompt=prompt)
-    _finish_import(root, before, kind, ref_id)
-    return res
+    return {**res, "warnings": _finish_import(root, before, kind, ref_id)}
 
 
 def import_history(pid: str, kind: str = "situation", ref_id: str | None = None, size: int = 50,
@@ -242,18 +454,18 @@ def import_history(pid: str, kind: str = "situation", ref_id: str | None = None,
     root = project_dir(pid)
     before = {c["id"] for c in ingest.load_candidates(root, STEP)}
     res = ingest.import_history(root, STEP, "image", size, prompt_filter)
-    _finish_import(root, before, kind, ref_id)
-    return res
+    return {**res, "warnings": _finish_import(root, before, kind, ref_id)}
 
 
 # ---------- seleção, base_final.png e base.md ----------
-def _chain(cands: list[dict]) -> dict:
-    chain: dict = {k: None for k in KINDS}
+def chain(cands: list[dict]) -> dict:
+    """Ids escolhidos em cada passo da cadeia da aula + o passo mais avançado (`final`)."""
+    out: dict = {k: None for k in KINDS}
     for c in cands:
         if c.get("selected") and c.get("kind") in KINDS:
-            chain[c["kind"]] = c["id"]
-    final = next((k for k in reversed(KINDS) if chain[k]), None)
-    return {**chain, "final": final}
+            out[c["kind"]] = c["id"]
+    final = next((k for k in reversed(KINDS) if out[k]), None)
+    return {**out, "final": final}
 
 
 def _selected(cands: list[dict], kind: str) -> dict | None:
@@ -279,7 +491,7 @@ def _write_final(root: Path, cand: dict) -> None:
 
 def _write_md(root: Path, note: str = "") -> None:
     cands = _normalize(ingest.load_candidates(root, STEP))
-    chain = _chain(cands)
+    ch = chain(cands)
     brand = json.loads((root / STEP / "brand.json").read_text()) if (root / STEP / "brand.json").exists() \
         else {"name": "", "description": ""}
     pal = _palette(root) or {"colors": [], "note": ""}
@@ -288,14 +500,13 @@ def _write_md(root: Path, note: str = "") -> None:
     if brand.get("name"):
         desc = f" — {brand['description']}" if brand.get("description") else ""
         lines.append(f"**Marca [extensão]:** {brand['name']}{desc}")
-    lines += ["", f"**Arquivo final:** `{FINAL_REL}`" if chain["final"] else "**Arquivo final:** ainda não escolhido",
+    lines += ["", f"**Arquivo final:** `{FINAL_REL}`" if ch["final"] else "**Arquivo final:** ainda não escolhido",
               "", "| Etapa | id | origem | referência | prompt |", "| --- | --- | --- | --- | --- |"]
-    rotulo = {"situation": "situação", "label": "rótulo", "upscale": "upscale 2x"}
     for kind in KINDS:
         c = _selected(cands, kind)
         if not c:
             continue
-        lines.append(f"| {rotulo[kind]} | `{c['id']}` | {c.get('source', '')} | "
+        lines.append(f"| {KIND_LABEL[kind]} | `{c['id']}` | {c.get('source', '')} | "
                      f"{c.get('ref_id') or '—'} | {(c.get('prompt') or '').replace('|', '/')[:200]} |")
     if pal["colors"]:
         lines += ["", "**Paleta usada:** " + ", ".join(pal["colors"])]
@@ -303,8 +514,38 @@ def _write_md(root: Path, note: str = "") -> None:
         lines += ["", f"**Mood:** {pal['note']}"]
     if note:
         lines += ["", f"**Notas:** {note}"]
+    lines += _md_prompts(root, cands)
+    lines += ["", "## Dever de casa (aula 009)", "",
+              "Poste a imagem base e o prompt acima na aba de compartilhamento de prompts da "
+              "comunidade — é o dever de casa que o instrutor pede no fim da aula."]
     (root / STEP).mkdir(parents=True, exist_ok=True)
     (root / STEP / "base.md").write_text("\n".join(lines) + "\n")
+
+
+def _md_prompts(root: Path, cands: list[dict]) -> list[str]:
+    """B4/B10: a instrução de cada passo fica gravada por inteiro — o dever de casa da aula pede o
+    prompt junto da imagem, e o texto truncado da tabela não serve para copiar."""
+    hist = _prompt_hist(root)
+    lines = ["", "## Prompts e instruções usados", ""]
+    for kind in KINDS:
+        c = _selected(cands, kind)
+        if not c:
+            continue
+        lines += [f"### {KIND_LABEL[kind].capitalize()}", ""]
+        if kind == "situation":
+            entry = _last_prompt(hist, c.get("ref_id"))
+            lines.append("- **Instrução ao bot (sessão nova, sem viés):** " + bot_instruction(_product(root)))
+            if entry:
+                lines.append(f"- **Modo do bot:** {entry.get('mode')} · fonte: {entry.get('source')}"
+                             + (" · sem viés" if entry.get("no_bias") else ""))
+                if entry.get("instruction"):
+                    lines.append(f"- **Instrução do usuário:** {entry['instruction']}")
+        if kind == "upscale":
+            ratio, w0, w1 = upscale_ratio(root, cands)
+            lines.append(f"- **Upscale:** {ratio}x ({w0}px → {w1}px)" if ratio
+                         else "- **Upscale:** dimensões indisponíveis")
+        lines += [f"- **Prompt/instrução:** {(c.get('prompt') or '—').strip()}", ""]
+    return lines
 
 
 def select(pid: str, cid: str, note: str = "") -> dict:
@@ -327,10 +568,10 @@ def select(pid: str, cid: str, note: str = "") -> dict:
     if final:
         _write_final(root, final)
     _write_md(root, note)
-    chain = _chain(cands)
-    log.info("base: select pid=%s id=%s kind=%s final=%s", pid, cid, kind, chain["final"])
+    ch = chain(cands)
+    log.info("base: select pid=%s id=%s kind=%s final=%s", pid, cid, kind, ch["final"])
     return {"final": FINAL_REL if final else None, "kind": final["kind"] if final else None,
-            "chain": {k: chain[k] for k in KINDS}}
+            "chain": {k: ch[k] for k in KINDS}}
 
 
 def final_file(pid: str) -> str | None:
@@ -338,28 +579,34 @@ def final_file(pid: str) -> str | None:
 
 
 # ---------- geração via CLI (paga créditos) ----------
-def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int) -> tuple[list[dict], str]:
-    """Itens do job (um por chamada ao CLI) + o prompt/instrução que cada um usa."""
+def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
+          prompt: str = "") -> tuple[list[dict], str]:
+    """Itens do job (um por chamada ao CLI) + o prompt/instrução que cada um usa.
+    `prompt` não vazio é o texto EDITADO na tela (B4) e vence o histórico/template."""
     _check_kind(kind)
     cands = _normalize(ingest.load_candidates(root, STEP))
-    mood = [str(root / m) for m in mood_files(root)][:MOOD_REFS_MAX]
+    mood = [str(m) for m in mood_paths(root)][:MOOD_REFS_MAX]
     if kind == "situation":
-        refs = selected_refs(root)
+        refs, _ = _require_inputs(root)
         if ref_ids:
             refs = [r for r in refs if r["ref_id"] in set(ref_ids)]
         if not refs:
             raise ValueError("Nenhuma referência escolhida na etapa 1 com arquivo em refs/brainstorming/.")
-        pal = _palette(root)
-        if pal is None:
-            raise ValueError("Volte à etapa 2 e salve o mood da campanha (mood/palette.json).")
-        text = situation_prompt(_product(root), pal)
-        return [{"ref_id": r["ref_id"], "prompt": text,
-                 "image_references": [str(r["path"]), *mood]} for r in refs], text
+        pal, product, hist = _palette(root), _product(root), _prompt_hist(root)
+        items = []
+        for r in refs:
+            # B1: o prompt que vai ao CLI é o que o bot escreveu para AQUELA referência; sem
+            # histórico, o template de fallback.
+            last = _last_prompt(hist, r["ref_id"])
+            text = prompt.strip() or (last["prompt"] if last else situation_prompt(product, pal))
+            items.append({"ref_id": r["ref_id"], "prompt": text,
+                          "image_references": [str(r["path"]), *mood]})
+        return items, items[0]["prompt"]
     if kind == "label":
         base = _selected(cands, "situation")
         if base is None:
             raise ValueError("Escolha primeiro a melhor imagem de situação (aula 009).")
-        text = label_prompt(_brand_from_disk(root))
+        text = prompt.strip() or label_prompt(_brand_from_disk(root))
         if not text:
             raise ValueError("Informe a marca antes de trocar o rótulo (campo 'brand').")
         item = {"ref_id": base.get("ref_id"), "prompt": text,
@@ -377,10 +624,14 @@ def _brand_from_disk(root: Path) -> dict:
 
 
 def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,
-                  count: int = 1, aspect_ratio: str = "16:9", resolution: str = "2k") -> dict:
-    """Estimativa de créditos SEM gerar (a UI mostra e pede `confirm()` antes de gastar)."""
+                  count: int | None = None, aspect_ratio: str | None = None, resolution: str = "2k",
+                  prompt: str = "") -> dict:
+    """Estimativa de créditos SEM gerar (a UI mostra e pede `confirm()` antes de gastar).
+    `count` ausente usa o default do passo (B4: 3 no rótulo); `aspect_ratio` ausente, o do projeto (G3)."""
     root = project_dir(pid)
-    items, text = _plan(root, kind, ref_ids, count)
+    count = count or DEFAULT_COUNT[_check_kind(kind)]
+    aspect_ratio = aspect_ratio or project_aspect(root)
+    items, text = _plan(root, kind, ref_ids, count, prompt)
     n = len(items) * (count if kind == "situation" else 1)
     model = model or DEFAULT_MODELS[kind]
     params: dict = {}
@@ -395,10 +646,13 @@ def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[s
 
 
 def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,
-                   count: int = 1, aspect_ratio: str = "16:9", resolution: str = "2k") -> dict:
+                   count: int | None = None, aspect_ratio: str | None = None, resolution: str = "2k",
+                   prompt: str = "") -> dict:
     """Caminho pago: o Studio chama o CLI por item e importa o resultado. Sem retry automático."""
     root = project_dir(pid)
-    items, _ = _plan(root, kind, ref_ids, count)
+    count = count or DEFAULT_COUNT[_check_kind(kind)]
+    aspect_ratio = aspect_ratio or project_aspect(root)
+    items, _ = _plan(root, kind, ref_ids, count, prompt)
     model = model or DEFAULT_MODELS[kind]
 
     log.info("base: job início pid=%s kind=%s itens=%s model=%s", pid, kind, len(items), model)
@@ -456,7 +710,9 @@ def _ingest_job(root: Path, res: dict, kind: str, item: dict, model: str, job: d
         if ingest.ingest_bytes(root, STEP, data, "cli", name, item["prompt"],
                                {"job_id": res.get("id"), "model": model}):
             added += 1
-    _finish_import(root, before, kind, item.get("ref_id"))
+    for w in _finish_import(root, before, kind, item.get("ref_id")):
+        if job is not None:
+            job["log"].append(w)
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return added
 

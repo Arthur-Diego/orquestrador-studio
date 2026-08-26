@@ -8,6 +8,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -52,10 +53,32 @@ def _json(out: str) -> Any:
         return items or out
 
 
-def status() -> dict:
-    """{'installed', 'logged_in', 'plan', 'credits', 'email', 'raw'|'error'}"""
+STATUS_TTL = 60.0            # segundos; `account status` é subprocess de até 30 s
+_STATUS_CACHE: dict = {"at": 0.0, "data": None}
+
+
+def reset_status_cache() -> None:
+    """Descarta o resultado cacheado de `status()` (usado por `?refresh=1` e pelos testes)."""
+    _STATUS_CACHE.update(at=0.0, data=None)
+
+
+def status(refresh: bool = False) -> dict:
+    """{'installed', 'logged_in', 'plan', 'credits', 'email', 'raw'|'error'}
+
+    O resultado fica em cache por `STATUS_TTL` segundos: a tela de cada etapa pede o chip do CLI
+    a cada troca de projeto e o comando é um subprocess caro. `refresh=True` ignora o cache.
+    """
     if not BIN:
-        return {"installed": False, "logged_in": False}
+        return {"installed": False, "logged_in": False}   # sem subprocess: não vale cachear
+    now = time.monotonic()
+    if not refresh and _STATUS_CACHE["data"] is not None and now - _STATUS_CACHE["at"] < STATUS_TTL:
+        return _STATUS_CACHE["data"]
+    data = _status_uncached()
+    _STATUS_CACHE.update(at=now, data=data)
+    return data
+
+
+def _status_uncached() -> dict:
     code, out, err = _run(["account", "status"], timeout=30)
     if code != 0:
         return {"installed": True, "logged_in": False, "error": (err or out).strip()[:300]}

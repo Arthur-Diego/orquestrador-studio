@@ -65,7 +65,14 @@ class TeaserIn(BaseModel):
     take: dict | None = None
     duration: float = prospect.DEFAULT_TEASER
     take_offset: float = 0.0
-    music_offset: float = 0.0
+    #: Ausente = sugestão do primeiro impacto da trilha (11.8); número explícito manda.
+    music_offset: float | None = None
+
+
+class PitchIn(BaseModel):
+    """Ancoragem da call: valor por etapa e o total que você quer cobrar (aula 001)."""
+    values: dict[str, float] | None = None
+    total: float | None = None
 
 
 class CallIn(BaseModel):
@@ -94,7 +101,9 @@ def prospect_leads(pid: str):
     with _translated():
         leads = prospect.load_leads(root)
         return {"leads": leads, "today_sent": prospect.today_sent(leads), "daily_limit": prospect.DAILY_LIMIT,
-                "by_status": prospect.by_status(leads), "gate": prospect.gate(root)}
+                "by_status": prospect.by_status(leads), "gate": prospect.gate(root),
+                "segments": list(prospect.SEGMENTS),
+                "teaser_hint": prospect.suggest_music_offset(root)}
 
 
 @router.post("/api/projects/{pid}/prospect/leads")
@@ -187,13 +196,21 @@ def prospect_call(pid: str, lid: str, req: CallIn):
 def prospect_pitch(pid: str):
     root, meta = _project(pid)
     with _translated():
-        return {"file": "prospect/pitch.md", "markdown": prospect.read_pitch(root, meta)}
+        markdown = prospect.read_pitch(root, meta)
+        return {"file": "prospect/pitch.md", "markdown": markdown, **prospect.load_pitch_values(root),
+                "steps": prospect.PITCH_STEPS, "min_price": prospect.MIN_PRICE, "max_price": prospect.MAX_PRICE}
 
 
 @router.post("/api/projects/{pid}/prospect/pitch")
-def prospect_write_pitch(pid: str):
+def prospect_write_pitch(pid: str, req: PitchIn | None = None):
+    """Grava os valores por etapa (quando vierem) e regrava `prospect/pitch.md`."""
     root, meta = _project(pid)
+    body = req or PitchIn()
     with _translated():
         prospect.require_gate(root)
+        if body.values is not None or body.total is not None:
+            prospect.save_pitch_values(root, body.values, body.total)
         prospect.write_pitch(root, meta)
-        return {"file": "prospect/pitch.md", "markdown": prospect.pitch_markdown(meta)}
+        pitch = prospect.load_pitch_values(root)
+        return {"file": "prospect/pitch.md", "markdown": prospect.pitch_markdown(meta, pitch), **pitch,
+                "steps": prospect.PITCH_STEPS, "min_price": prospect.MIN_PRICE, "max_price": prospect.MAX_PRICE}
