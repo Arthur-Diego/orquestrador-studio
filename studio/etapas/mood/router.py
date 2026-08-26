@@ -110,7 +110,8 @@ def mood_prompt_history(pid: str):
 
 @router.get("/api/projects/{pid}/mood/candidates")
 def mood_candidates(pid: str):
-    return mood.load(pid)
+    """Wave 4: cada candidata carrega `batch`/`batch_index` (legenda "grid_01 · img 1")."""
+    return mood.candidates(pid)
 
 
 @router.post("/api/projects/{pid}/mood/import/upload")

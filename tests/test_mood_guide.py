@@ -36,6 +36,12 @@ def test_guide_of_an_empty_project_is_todo_and_does_not_require_step_1(client, p
     assert _checks(g)["refs_from_step1"] == "todo"
     assert "sentimento" in g["what"] and "o produto em si pode aparecer" in g["what"]
     assert any("meio-termo" in c or "mesmo mood" in c for c in g["checklist"])
+    # Wave 4: a tela não desenha mais `details.lesson` — o texto de aula vive aqui.
+    for frase in ("copiar o prompt dessa pessoa", "Produto, texto e logo não são proibidos",
+                  "2K e 16:9 são sugestão do Studio", "meio-termo"):
+        assert frase in g["what"], frase
+    assert g["next_action"] == "Importar o grid gerado na UI da Higgsfield e escolher até 8 no mesmo mood"
+    assert g["summary"] is None, "a faixa compacta do protótipo desta tela não tem chip extra"
 
 
 def test_guide_is_done_after_selecting_the_mood(client, project):

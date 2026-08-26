@@ -63,16 +63,22 @@ def guide(pid: str) -> dict:
     refs = read_json(pid, "refs/candidates/candidates.json", default=[]) or []
     n_refs = sum(1 for c in refs if isinstance(c, dict) and c.get("selected"))
 
+    # Wave 4: o protótipo não desenha `details.lesson` nesta tela — o texto de aula que a etapa 2
+    # exibia nos três painéis vive aqui (ADR-004: o texto não se perde; a tela é que não o mostra).
     g = Guide(META).text(
         "Referências soltas geram uma campanha incoerente; ela precisa de um mood. Ache uma imagem "
         "cujo sentimento você gosta — não precisa ter a ver com o produto (a aula usou \"snow neon "
-        "commercial\" no Explore do Midjourney). Copie o prompt dela ou peça ao bot um prompt com "
-        "essa vibe (anexe a imagem de vibe e, se quiser, uma referência que você gostou; a aula "
-        "pediu \"sem pessoas\" porque o foco é o produto — o produto em si pode aparecer). Gere um "
-        "grid de 4; se saírem parecidas demais, aumente a estilização (no meio-termo: extremos "
-        "alucinam); se não pegou a vibe, pegue a melhor imagem como referência de estilo e gere "
-        "mais 4 com o mesmo prompt. Salve as que estão no mesmo mood: esse conjunto vira o filtro "
-        "de tudo o que você gerar daqui em diante.",
+        "commercial\" no Explore do Midjourney, porque lá vem o prompt junto). A aula começa "
+        "\"copiar o prompt dessa pessoa e criar ali pra mim\": se você tem esse prompt, cole-o no "
+        "campo do Explore — ele vira a base e o Studio só acrescenta a estilização. Sem ele, peça "
+        "ao bot um prompt com essa vibe (anexe a imagem de vibe e, se quiser, uma referência que "
+        "você gostou; a aula pediu \"sem pessoas\" porque o foco é o produto — o produto em si pode "
+        "aparecer, e Produto, texto e logo não são proibidos aqui: o mood da aula tem a lata). Gere "
+        "um grid de 4; se saírem parecidas demais, aumente a estilização (no meio-termo: extremos "
+        "alucinam); se não pegou a vibe, pegue a melhor imagem do grid como referência de estilo e "
+        "gere mais 4 com o mesmo prompt. Salve as que estão no mesmo mood: esse conjunto vira o "
+        "filtro de tudo o que você gerar daqui em diante. 2K e 16:9 são sugestão do Studio, não "
+        "regra da aula.",
         ["Escolhi a vibe pelo sentimento, não pelo assunto",
          "Um único prompt de vibe (variações só de estilização)",
          "Evitei imagens focadas em rosto/pessoas — o produto é o foco",
@@ -147,7 +153,18 @@ def guide(pid: str) -> dict:
             "ok" if (meta.get("vibe") or "").strip() else "todo",
             detail=meta.get("vibe") or "escreva a vibe em 3 palavras ao salvar o mood")
 
-    return g.build()
+    # `next_action` no estilo imperativo curto do protótipo (a faixa compacta desenha
+    # "→ Importar o grid gerado na UI da Higgsfield e escolher até 8 no mesmo mood").
+    if not product:
+        proxima = None                                   # blocked: o texto padrão explica o que falta
+    elif not n_selected:
+        proxima = "Importar o grid gerado na UI da Higgsfield e escolher até 8 no mesmo mood"
+    elif not has_md:
+        proxima = "registrar o prompt de vibe no mood.md"
+    else:
+        proxima = "montar a imagem base do produto"
+    # Sem `summary`: a faixa compacta do protótipo desta tela não tem chip extra.
+    return g.build(next_action=proxima)
 
 
 def _count_prompts(pid: str) -> int:

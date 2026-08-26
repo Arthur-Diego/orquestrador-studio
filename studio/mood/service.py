@@ -178,6 +178,25 @@ def load(pid: str) -> list[dict]:
     return ingest.load_candidates(project_dir(pid), "mood")
 
 
+def candidates(pid: str) -> list[dict]:
+    """Candidatas do mood com o lote de origem, para a legenda do protótipo ("grid_01 · img 1").
+
+    O lote não é estado novo (wave 4, regra 5 — o backend só expõe o que a tela mostra): é
+    derivado do job do CLI (`job_id`) ou do minuto da importação, que é como um grid inteiro
+    entra de uma vez (upload de 4 arquivos, pasta Downloads, histórico). `batch_index` é a
+    posição da imagem dentro do lote.
+    """
+    lotes: dict[str, int] = {}
+    dentro: dict[str, int] = {}
+    out = []
+    for c in load(pid):
+        chave = str(c.get("job_id") or (c.get("imported") or "")[:16] or c.get("source") or "?")
+        lotes.setdefault(chave, len(lotes) + 1)
+        dentro[chave] = dentro.get(chave, 0) + 1
+        out.append({**c, "batch": f"grid_{lotes[chave]:02d}", "batch_index": dentro[chave]})
+    return out
+
+
 def _save(root: Path, cands: list[dict]) -> None:
     ingest.save_candidates(root, "mood", cands)
 
