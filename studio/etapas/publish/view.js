@@ -47,24 +47,24 @@ Studio.register("publish", (ctx) => {
     const c = status.community || { done: 0, total: 3 };
     document.querySelectorAll("#pubCommunity input[data-com]").forEach((el) => { el.checked = !!c[el.dataset.com]; });
     const chip = $("#pubComChip");
-    chip.textContent = `${c.done}/${c.total}`;
+    // Chip único do painel 02 no redesign: "N publicações · comunidade n/3".
+    chip.textContent = `${status.count} ${status.count === 1 ? "publicação" : "publicações"} · comunidade ${c.done}/${c.total}`;
     chip.className = "chip " + (c.done === c.total ? "ok" : c.done ? "warn" : "mode");
   }
 
   function renderLog() {
     $("#pubLog").innerHTML = posts.length ? posts.map((p) => {
       const orfao = exports_.length && !exports_.some((f) => f.file === p.video);
-      return `<div class="prompt" data-id="${esc(p.id)}">
-        <div class="row wrap">
-          <span class="eyebrow">${esc(p.network)} · ${esc(p.posted_at)}</span>
-          <button class="ghost del" data-id="${esc(p.id)}">Remover</button>
-        </div>
-        <div class="fine mono">${esc(p.video)}${orfao ? " — arquivo não está mais em export/" : ""}</div>
-        <a class="fine" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>
-        ${p.note ? `<div class="fine">${esc(p.note)}</div>` : ""}
-        <div class="row">
+      // `.pub-row` do redesign: chip da rede, url mono, nota — e os controles de sempre.
+      return `<div class="pub-row" data-id="${esc(p.id)}">
+        <span class="chip info">${esc(p.network)}</span>
+        <a class="url" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>
+        ${p.note ? `<span class="nt">${esc(p.note)}</span>` : ""}
+        <span class="fine mono">${esc(p.posted_at)} · ${esc(p.video)}${orfao ? " — arquivo não está mais em export/" : ""}</span>
+        <div class="pb-fb">
           <input class="fb" data-id="${esc(p.id)}" placeholder="Feedback recebido (aula 014: compartilhar é o que permite feedback)" value="${esc(p.feedback)}">
-          <button class="ghost save" data-id="${esc(p.id)}">Salvar</button>
+          <button class="link save" data-id="${esc(p.id)}">Salvar</button>
+          <button class="link del" data-id="${esc(p.id)}">Remover</button>
         </div>
       </div>`;
     }).join("") : `<div class="empty">Nenhuma publicação registrada. Poste na rede e cole o link aqui.</div>`;
