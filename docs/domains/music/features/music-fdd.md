@@ -512,3 +512,10 @@ Contrato transversal do guia: `wave-2-api-transversal.md` (ADR-010).
 - `[cross-feature]` Smoke visual das telas (Playwright) depende da shell (OS-013).
 - A pendência 3 da wave 1 (numpy+ffmpeg sem ADR) foi resolvida antes desta frente pela ADR-009;
   as pendências 1, 2, 4, 5 e 6 da seção 12 continuam abertas — nenhuma delas foi tocada aqui.
+
+---
+
+**Wave 3 (redesign, `ADH-OS-20260826-07`)** — a tela desta etapa foi redesenhada para o
+catálogo de classes do shell sem alterar contrato HTTP, rota ou regra de negócio: o
+comportamento descrito acima continua valendo na íntegra. O mapa de painéis, ids e classes
+da tela vive em `docs/domains/music/features/views-music-edit-redesign-fdd.md` §5.
