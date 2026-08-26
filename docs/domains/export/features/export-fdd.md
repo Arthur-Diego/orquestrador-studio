@@ -1,5 +1,11 @@
 ### FDD: export (Etapa 9 · Export · aula 014; QA e thumb são `[extensão]`)
 
+> **Tela redesenhada pela wave 3 (`ADH-OS-20260826-08`).** A descrição de tela (markup,
+> classes e ids do `view.html`/`view.js`) deste FDD foi substituída por
+> `docs/domains/export/features/views-export-publish-prospect-redesign-fdd.md` §5, que cobre
+> as etapas 9, 10 e 11 juntas. Backend, rotas, serviços e regra de negócio deste documento
+> continuam valendo sem alteração.
+
 > **Título e §1 corrigidos pela wave 2 (OS-019, auditoria 9.2).** A atribuição original "aulas
 > 007/014" estava errada: a aula 007 fala de formato de **imagem** no Midjourney ("vertical,
 > quadrado, widescreen"), não de export de vídeo. A escolha 16:9 / 9:16 pelo destino vem do

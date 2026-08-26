@@ -71,6 +71,36 @@ def test_view_follows_the_wave_2_screen_contract(client):
     assert 'endrow.style.display' in js, "`.row {display:flex}` vence o atributo `hidden` (smoke Playwright)"
 
 
+def test_view_uses_the_wave_3_redesign_catalog(client):
+    """Wave 3: painéis numerados com `.pn`, texto de aula em `details.lesson`, shots como linhas."""
+    html = client.get("/steps/animate/view.html").text
+    assert '<span class="pn">01</span>' in html and '<span class="pn">02</span>' in html
+    assert 'details class="lesson"' in html, "texto longo da aula vai para `details.lesson`"
+    assert 'id="anShots" class="rowlist"' in html
+    assert 'id="anGallery" class="gallery sm"' in html
+    js = client.get("/steps/animate/view.js").text
+    assert 'class="shot-row"' in js, "cada shot é uma `.shot-row` (protótipo l. 540)"
+    assert '.shot-row[data-k=' in js, "o seletor acompanhou a troca de `section.panel`"
+    assert 'class="take an-like' in js and '"take empty an-gen"' in js
+    assert 'class="like-lbl"' in js, '`♥ like` no take escolhido'
+    assert "ui.tile(" in js, "galeria de candidatos usa o helper do shell"
+
+
+def test_view_keeps_every_control_of_the_step(client):
+    """Regra 1 da wave 3: o redesign não remove funcionalidade — todo hook `.an-*` continua."""
+    html = client.get("/steps/animate/view.html").text
+    for anchor in ("anReady", "anHfState", "anReload", "anModelNote", "anWarnings", "anShots",
+                   "anCandCount", "anDrop", "anUpload", "anBtnDownloads", "anDlFolder",
+                   "anDlMinutes", "anBtnHistory", "anParallel", "anGallery"):
+        assert f'id="{anchor}"' in html, f"id do contrato DOM sumiu: #{anchor}"
+    js = client.get("/steps/animate/view.js").text
+    for cls in ("an-mode", "an-camera", "an-action", "an-slow", "an-suggest", "an-endrow",
+                "an-end", "an-prompt", "an-example", "an-tips", "an-duration", "an-save",
+                "an-black", "an-assign", "an-model", "an-count", "an-gen", "an-aspect",
+                "an-climode", "an-like", "an-takes"):
+        assert cls in js, f"controle do contrato DOM sumiu: .{cls}"
+
+
 # ---------- plano ----------
 def test_get_shots_returns_the_plan_and_404_without_storyboard(client, studio_env, project):
     r = client.get(f"/api/projects/{project}/animate/shots")

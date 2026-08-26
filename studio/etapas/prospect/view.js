@@ -13,25 +13,46 @@ Studio.register("prospect", (ctx) => {
     if (btn) { const antes = btn.textContent; btn.textContent = "copiado ✓"; setTimeout(() => btn.textContent = antes, 1500); }
   }
 
+  // Faixa `.strip` do redesign: eyebrow do gate + chip + `.pipe` de uma obra por segmento.
   function renderGate() {
     const chip = $("#gateChip"), fechado = !gate.ok;
-    chip.textContent = `${gate.published}/${gate.required} vídeos publicados (global)`;
+    chip.textContent = `${gate.published}/${gate.required} obras publicadas`;
     chip.className = "chip " + (fechado ? "warn" : "ok");
+    $("#gatePanel").className = "strip" + (fechado ? " warn" : "");
+    const segmentos = Array.from({ length: gate.required || 0 }, (_, i) => (i < gate.published ? "done" : "todo"));
+    $("#gatePipe").innerHTML = Studio.ui.pipe(segmentos);
     $("#gateMsg").textContent = gate.message;
     const p = gate.projects || [];
     $("#gateProjects").innerHTML = p.length
       ? `<p>Projetos que já contam:</p><ul>${p.map((x) => `<li>${esc(x.name)} — ${x.posts} publicação(ões)</li>`).join("")}</ul>`
       : `<p>Nenhum projeto com post registrado ainda — comece pela etapa 10.</p>`;
-    $("#newLeadPanel").classList.toggle("hidden", fechado);
+    // O gate esconde o painel de leads inteiro; o formulário só abre pelo botão "+ Novo lead".
     $("#leadsPanel").classList.toggle("hidden", fechado);
+    if (fechado) $("#newLeadPanel").classList.add("hidden");
+  }
+
+  // Chip de estado da linha: novo = mode, DM enviada = info, o resto (respondeu em diante) = ok.
+  const chipKind = (s) => (s === "new" ? "mode" : s === "dm_sent" ? "info" : "ok");
+
+  // Ação principal da `.lead-row`, uma por estado da ordem da aula.
+  function acaoPrincipal(l) {
+    const id = esc(l.id);
+    if (!l.sent_at) return `<button class="ghost toggle" data-id="${id}">Gerar DM (script da aula)</button>`;
+    if (!l.replied) return `<button class="ghost act" data-act="replied" data-id="${id}">Marcar respondeu</button>`;
+    // 11.1: o teaser só existe depois que a empresa respondeu.
+    if (!l.teaser) return `<button class="primary act" data-act="teaser" data-id="${id}">Gerar teaser 5–10s</button>`;
+    return `<button class="ghost act" data-act="copyfollow" data-id="${id}">Copiar follow-up</button>`;
   }
 
   function leadCard(l) {
     const aberto = open.has(l.id);
-    const chip = `<span class="chip ${l.status === "call_done" ? "ok" : "mode"}">${esc(STATUS[l.status] || l.status)}</span>`;
-    const cab = `<div class="row wrap"><span class="eyebrow">${esc(l.business)}</span><span class="mono fine">@${esc(l.handle)}</span>${chip}
-      <button class="ghost toggle" data-id="${esc(l.id)}">${aberto ? "fechar" : "abrir"}</button></div>`;
-    if (!aberto) return `<div class="prompt" data-id="${esc(l.id)}">${cab}</div>`;
+    const chip = `<span class="chip ${chipKind(l.status)}">${esc(STATUS[l.status] || l.status)}</span>`;
+    const cab = `<div class="lead-biz"><span class="nm">${esc(l.business)}</span>
+        <span class="h">@${esc(l.handle)}${l.role ? ` · ${esc(l.role)}` : ""}</span></div>
+      <span class="lead-post" title="${esc(l.post_ref || "")}">post: ${esc(l.post_ref || "—")}</span>
+      ${chip}${acaoPrincipal(l)}
+      <button class="link toggle" data-id="${esc(l.id)}">${aberto ? "fechar" : "detalhes"}</button>`;
+    if (!aberto) return `<div class="lead-row" data-id="${esc(l.id)}">${cab}</div>`;
     const teaser = l.teaser ? `<video controls preload="metadata" style="max-width:360px" src="${ctx.files(l.teaser)}"></video>` : "";
     const follow = l.teaser ? `<div class="row wrap"><button class="ghost act" data-act="copyfollow" data-id="${esc(l.id)}">Copiar follow-up</button>
       <span class="fine">convite para a call de 15 minutinhos</span></div>` : "";
@@ -41,9 +62,9 @@ Studio.register("prospect", (ctx) => {
       : `<span class="fine">O teaser aparece depois de "respondeu" — a aula manda criar só quando a empresa responde.</span>`;
     const dica = hint && hint.music_offset != null
       ? `<p class="fine">Trilha sugerida a partir de ${hint.music_offset}s (0,5 s antes do primeiro impacto em ${hint.impact}s) — sugestão, não imposição.</p>` : "";
-    return `<div class="prompt" data-id="${esc(l.id)}">${cab}
+    return `<div class="lead-row" data-id="${esc(l.id)}">${cab}
+      <div class="pr-body">
       ${l.why ? `<p class="fine">por quê: ${esc(l.why)}</p>` : ""}
-      <p class="fine">post citado: ${esc(l.post_ref || "—")}</p>
       <textarea readonly rows="5" data-dm="${esc(l.id)}">${esc(l.dm_text)}</textarea>
       <div class="row wrap">
         <button class="ghost act" data-act="copy" data-id="${esc(l.id)}">Copiar DM</button>
@@ -59,13 +80,14 @@ Studio.register("prospect", (ctx) => {
         <input placeholder="nota da call" data-note="${esc(l.id)}" value="${esc(l.call_note || "")}">
         <label class="inline"><input type="checkbox" data-done="${esc(l.id)}" ${l.status === "call_done" ? "checked" : ""}> feita</label>
         <button class="ghost act" data-act="call" data-id="${esc(l.id)}">Registrar call</button>
-      </div></div>`;
+      </div></div></div>`;
   }
 
   function render(data) {
     const hoje = data.today_sent, limite = data.daily_limit;
     const chip = $("#todayChip");
-    chip.textContent = `${hoje}/${limite} DMs hoje`;
+    chip.textContent = `${hoje}/${limite} hoje`;
+    chip.title = "DMs marcadas como enviadas hoje — meta de disciplina da aula";
     chip.className = "chip " + (hoje > limite ? "warn" : hoje ? "ok" : "mode");
     const porStatus = Object.entries(data.by_status || {}).filter(([, n]) => n).map(([s, n]) => `${n} ${STATUS[s] || s}`).join(" · ");
     $("#statusChip").textContent = leads.length ? `${leads.length} leads · ${porStatus}` : "0 leads";
@@ -96,15 +118,17 @@ Studio.register("prospect", (ctx) => {
     }, 3000);
   }
 
+  // `.pitch-table` (valor por etapa, editável) + `.script` com o pitch gerado — layout do redesign.
   function renderPitch() {
     if (!pitch) return;
-    $("#pitchBox").textContent = pitch.markdown;
+    $("#pitchBox").innerHTML = `${esc(pitch.markdown)}\n<span class="end">→ prospect/pitch.md</span>`;
     const soma = (pitch.sum || 0).toFixed(2), total = (pitch.total || 0).toFixed(2);
-    $("#pitchValues").innerHTML = `<table><thead><tr><th>Etapa</th><th>Valor (R$)</th></tr></thead><tbody>`
-      + (pitch.steps || []).map((s) => `<tr><td>${esc(s)}</td><td><input type="number" min="0" step="10" data-pitch="${esc(s)}" value="${(pitch.values || {})[s] || 0}"></td></tr>`).join("")
-      + `</tbody><tfoot><tr><th>Total (o que você quer cobrar)</th><th><input type="number" min="0" step="10" data-pitch-total value="${total}"></th></tr>`
-      + `<tr><td>Total com 50 % off no 1º trabalho</td><td class="mono">R$ ${(pitch.discount || 0).toFixed(2)}</td></tr></tfoot></table>`
-      + `<p class="fine">Soma das etapas: R$ ${soma}${pitch.matches ? "" : " — diferente do total: a ancoragem só funciona se as contas fecharem"}.`
+    $("#pitchValues").innerHTML = `<div class="pitch-table">`
+      + (pitch.steps || []).map((s) => `<div class="tr"><span>${esc(s)}</span>`
+        + `<span class="v"><input class="mini" type="number" min="0" step="10" data-pitch="${esc(s)}" value="${(pitch.values || {})[s] || 0}"></span></div>`).join("")
+      + `<div class="total"><span>Total</span><span class="v">R$ <input class="mini" type="number" min="0" step="10" data-pitch-total value="${total}">`
+      + ` · 50% off no 1º: R$ ${(pitch.discount || 0).toFixed(2)}</span></div></div>`
+      + `<p class="note">Soma das etapas: R$ ${soma}${pitch.matches ? "" : " — diferente do total: a ancoragem só funciona se as contas fecharem"}.`
       + `${pitch.priced && !pitch.in_range ? ` No começo a aula manda cobrar entre R$ ${pitch.min_price} e R$ ${pitch.max_price}.` : ""}</p>`;
   }
 
@@ -149,13 +173,20 @@ Studio.register("prospect", (ctx) => {
 
   return {
     init() {
+      // "+ Novo lead" revela o formulário inline dentro do painel de leads (protótipo da wave 3).
+      $("#btnNewLead").onclick = () => {
+        const form = $("#newLeadPanel");
+        form.classList.toggle("hidden");
+        if (!form.classList.contains("hidden")) $("#lfBusiness").focus();
+      };
       $("#leadForm").onsubmit = async (e) => {
         e.preventDefault();
         try {
           const l = await api(`${base()}/leads`, { method: "POST", body: JSON.stringify({
             business: $("#lfBusiness").value, handle: $("#lfHandle").value, post_ref: $("#lfPostRef").value,
             why: $("#lfWhy").value, role: $("#lfRole").value }) });
-          $("#leadForm").reset(); open.add(l.id); toast(`${l.business} cadastrado — a DM já está pronta`);
+          $("#leadForm").reset(); $("#newLeadPanel").classList.add("hidden");
+          open.add(l.id); toast(`${l.business} cadastrado — a DM já está pronta`);
           await load(); ctx.guide();
         } catch (err) { toast(err.message); }
       };
@@ -165,7 +196,8 @@ Studio.register("prospect", (ctx) => {
         const b = e.target.closest("button.act");
         if (b) acao(b.dataset.act, b.dataset.id);
       });
-      $("#btnPitchCopy").onclick = () => copy($("#pitchBox").textContent, $("#btnPitchCopy"));
+      // Copia o markdown do pitch (sem o rodapé "→ prospect/pitch.md", que é rótulo da tela).
+      $("#btnPitchCopy").onclick = () => copy(pitch ? pitch.markdown : $("#pitchBox").textContent, $("#btnPitchCopy"));
       $("#btnPitchSave").onclick = async () => {
         const values = {};
         document.querySelectorAll("[data-pitch]").forEach((el) => { values[el.dataset.pitch] = +el.value || 0; });

@@ -1,5 +1,11 @@
 ### FDD: prospect (Etapa 11, Prospecção, aula 001)
 
+> **Tela redesenhada pela wave 3 (`ADH-OS-20260826-08`).** A descrição de tela (markup,
+> classes e ids do `view.html`/`view.js`) deste FDD foi substituída por
+> `docs/domains/export/features/views-export-publish-prospect-redesign-fdd.md` §5, que cobre
+> as etapas 9, 10 e 11 juntas. Backend, rotas, serviços e regra de negócio deste documento
+> continuam valendo sem alteração.
+
 Versão: 0.1.0
 Data: 2026-08-25
 Responsável: frente `prospect` da Wave 1 (Task-Id OS-011), gerado em modo batch pelo `/dd-parallel` W3

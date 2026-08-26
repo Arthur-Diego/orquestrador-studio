@@ -7,6 +7,12 @@ Responsável: frente OS-006 (wave 1) · frente OS-017 (wave 2, `/dd-parallel`, m
 > **Wave 2 (OS-017):** a seção 12 registra as correções de fidelidade 6.1–6.8 da auditoria
 > `docs/domains/studio/waves/wave-2-auditoria-etapas-4-6.md` e o guia da etapa. Onde as duas
 > seções divergirem, **vale a seção 12**.
+>
+> **Wave 3 (ADH-OS-20260826-06):** a **camada de apresentação** da etapa (`view.html` e
+> `view.js`) passou a ser especificada por
+> [`views-animate-redesign-fdd.md`](views-animate-redesign-fdd.md) — cada shot virou uma
+> `.shot-row` com tiles `.take` do redesign. Regra de negócio, rotas e serviço continuam neste
+> documento; markup e classes CSS, no FDD do redesign.
 
 ---
 

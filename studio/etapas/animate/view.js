@@ -1,15 +1,18 @@
 // Etapa 6 — Animação (aula 012): prompt de movimento por take, start/end frame gravado,
 // importar da UI da Higgsfield, like no usável. Componentes compartilhados: Studio.ui.
+// Wave 3 (redesign): cada shot é uma `.shot-row` (thumb + nome | prompt + faixa de `.take`),
+// com os controles secundários em `details.an-opts`. Nenhum controle foi removido.
 Studio.register("animate", (ctx) => {
   const { $, api, toast } = ctx;
   const ui = Studio.ui;
   const EMPTY = { shots: [], ready: 0, total: 0, model_order: [], mode_tips: {}, last_frames: [] };
+  const TAKES_DA_AULA = 2;   // a aula 012 pede 2 takes por shot antes de escolher
   let plan = { ...EMPTY }, cands = [], picked = null, jobShot = null, job = null, loggedIn = false;
 
   const esc = (s) => ui.esc(s);
   const key = (s) => `${s.scene}/${s.shot}`;
   const shotOf = (k) => plan.shots.find((s) => key(s) === k);
-  const panelOf = (k) => document.querySelector(`section.panel[data-k="${CSS.escape(k)}"]`);
+  const rowOf = (k) => document.querySelector(`.shot-row[data-k="${CSS.escape(k)}"]`);
 
   async function hfStatus() {
     const s = await ui.hfChip($("#anHfState"));
@@ -30,15 +33,46 @@ Studio.register("animate", (ctx) => {
     renderGallery();
   }
 
-  function takeRow(s, t) {
-    const liked = t.liked === true ? " sel" : "";
-    return `<div class="row wrap${liked}" data-take="${esc(t.id)}">
-      ${ui.chip(t.id)}
-      <a href="${ctx.files(t.file)}" target="_blank" class="mono fine">${esc(t.file)}</a>
-      ${ui.chip(`${t.model || ""} · ${t.duration || 5}s${t.start_end ? " · start/end" : ""}`)}
-      <button class="ghost an-like" data-k="${esc(key(s))}" data-take="${esc(t.id)}" data-liked="true">${t.liked === true ? "★ usável" : "like"}</button>
-      <button class="ghost an-like" data-k="${esc(key(s))}" data-take="${esc(t.id)}" data-liked="false">${t.liked === false ? "✕ rejeitado" : "rejeitar"}</button>
-    </div>`;
+  /** "take1" → "take 1" (rótulo do protótipo); qualquer outro id passa inalterado. */
+  const rotuloTake = (id, i) => String(id || `take${i + 1}`).replace(/^take(\d+)$/, "take $1");
+
+  /**
+   * Tile de um take existente: o próprio tile é o botão de **like** (contrato `an-like`,
+   * `data-liked="true"`); o `✕` ao lado é o **rejeitar** (`data-liked="false"`) — mesma
+   * semântica dos dois botões da wave 2, em formato de tile do protótipo.
+   */
+  function takeTile(s, t, i) {
+    const liked = t.liked === true;
+    const rejeitado = t.liked === false;
+    const detalhe = [t.model || "", t.start_end ? "start/end" : ""].filter(Boolean).join(" · ");
+    const k = esc(key(s));
+    return `<button type="button" class="take an-like${liked ? " like" : ""}"
+        data-k="${k}" data-take="${esc(t.id)}" data-liked="true"
+        title="${liked ? "take escolhido" : "dar like neste take"}${detalhe ? ` · ${esc(detalhe)}` : ""}"
+      ><span>${esc(rotuloTake(t.id, i))} · ${t.duration || 5}s</span>${
+      liked ? `<span class="like-lbl">♥ like</span>` : ""}${
+      rejeitado ? `<span class="an-rej">✕ rejeitado</span>` : ""}</button
+      ><a href="${ctx.files(t.file)}" target="_blank" class="mono an-file" title="${esc(t.file)}">${esc((t.file || "").split("/").pop())}</a
+      ><button type="button" class="ghost an-like an-x" data-k="${k}" data-take="${esc(t.id)}"
+        data-liked="false" title="rejeitar este take">✕</button>`;
+  }
+
+  /** Slot vazio do protótipo: "+ gerar take N" cai no mesmo fluxo do botão `an-gen`. */
+  function emptyTake(n) {
+    return `<button type="button" class="take empty an-gen" title="gerar mais um take pelo CLI (gasta créditos)">+ gerar take ${n}</button>`;
+  }
+
+  /**
+   * Nota ao lado da faixa de takes, derivada só do que o plano expõe (nada é inventado):
+   * like escolhido > falhas > sem take > contagem.
+   */
+  function noteFor(s) {
+    const takes = s.takes || [];
+    const i = takes.findIndex((t) => t.liked === true);
+    if (i >= 0) return `♥ ${rotuloTake(takes[i].id, i)} escolhido`;
+    if (s.failures) return `${s.failures} falha(s) — na 3ª, troque de modelo`;
+    if (!takes.length) return "sem take ainda — gere 2 e dê like no usável";
+    return `${takes.length} take(s) — dê like no usável`;
   }
 
   /** Opções de end frame: o próximo shot da cena (padrão da aula) e os últimos frames da etapa 8. */
@@ -61,10 +95,11 @@ Studio.register("animate", (ctx) => {
     return tips.map((t) => `<li>${esc(t)}</li>`).join("");
   }
 
-  function shotPanel(s) {
+  function shotRow(s) {
     const modes = [["simple", "simples"], ["elaborate", "elaborado (câmera + ação)"], ["start_end", "start/end frame"]];
     const chips = [
       s.ready ? ui.chip("pronto", "ok") : ui.chip("sem take escolhido"),
+      s.image ? "" : ui.chip("frame ausente", "warn"),
       s.failures ? ui.chip(`${s.failures} falha(s)`, "warn") : "",
       s.suggested_model && s.failures >= 3 ? ui.chip(`Tente ${s.suggested_model}`, "warn") : "",
       s.adapt_idea ? ui.chip("adapte a ideia: novo frame na etapa 5 ou corte para preto", "warn") : "",
@@ -73,38 +108,47 @@ Studio.register("animate", (ctx) => {
       s.orphan ? ui.chip("fora do storyboard", "warn") : "",
     ].join("");
     const se = s.mode === "start_end";
+    const takes = s.takes || [];
+    const tiles = takes.map((t, i) => takeTile(s, t, i)).join("");
+    const vazios = takes.length < TAKES_DA_AULA ? emptyTake(takes.length + 1) : "";
     const aspects = (plan.aspect_ratios || []).map((a) =>
       `<option value="${esc(a)}"${s.aspect_ratio === a ? " selected" : ""}>${esc(a)}</option>`).join("");
     const cliModes = (plan.cli_modes || []).map((m) =>
       `<option value="${esc(m)}"${s.cli_mode === m ? " selected" : ""}>${esc(m)}</option>`).join("");
-    return `<section class="panel" data-k="${esc(key(s))}">
-      <div class="panel-head">
-        <h3>${esc(s.scene)} · ${esc(s.shot)}</h3>
-        <div class="row wrap">${chips}</div>
+    return `<div class="shot-row" data-k="${esc(key(s))}">
+      <div class="col an-left">
+        <div class="thumb${s.image ? "" : " an-noimg"}">${s.image
+          ? `<img src="${ctx.files(s.image)}" loading="lazy" alt="">`
+          : `<span>sem frame</span>`}</div>
+        <span class="nm">${esc(s.scene)} · ${esc(s.shot)}</span>
       </div>
-      <div class="row wrap">
-        ${s.image ? `<img src="${ctx.files(s.image)}" alt="" style="width:180px;border-radius:8px">` : ui.chip("frame ausente", "warn")}
-        <div class="col" style="flex:1">
+      <div class="col an-main">
+        <textarea class="an-prompt prompt-inline" rows="2" placeholder="prompt do movimento, em inglês">${esc(s.prompt)}</textarea>
+        <div class="row wrap an-takes">${tiles}${vazios}<span class="note">${esc(noteFor(s))}</span></div>
+        <div class="row wrap an-foot">
+          ${chips}<span class="spacer"></span>
+          <button class="ghost an-save">Salvar</button>
+          <button class="ghost an-assign" ${picked ? "" : "disabled"}>Atribuir selecionado</button>
+        </div>
+        <details class="an-opts">
+          <summary>Opções de geração</summary>
           <div class="row wrap">
-            <select class="an-mode" style="min-width:210px">${modes.map(([v, l]) => `<option value="${v}"${s.mode === v ? " selected" : ""}>${l}</option>`).join("")}</select>
+            <select class="an-mode">${modes.map(([v, l]) => `<option value="${v}"${s.mode === v ? " selected" : ""}>${l}</option>`).join("")}</select>
             <input class="an-camera" placeholder="câmera (ex.: Dramatic dolly-in)">
             <input class="an-action" placeholder="ação (ex.: walking through the blizzard)">
             <label class="inline"><input type="checkbox" class="an-slow"> mudança lenta (10 s)</label>
             <button class="ghost an-suggest">Sugerir prompt</button>
           </div>
           <div class="row wrap an-endrow"${se ? "" : ` hidden style="display:none"`}>
-            <label class="inline">end frame <select class="an-end" style="min-width:240px">${endOptions(s)}</select></label>
+            <label class="inline">end frame <select class="an-end">${endOptions(s)}</select></label>
             <span class="fine">start = o frame deste shot; end = o frame de destino da transição (aula 012).</span>
           </div>
-          <textarea class="an-prompt" rows="3" placeholder="prompt do movimento, em inglês">${esc(s.prompt)}</textarea>
           <span class="fine an-example"></span>
           <ul class="fine an-tips">${tipsHtml(s.mode)}</ul>
           <div class="row wrap">
-            <select class="an-duration" style="min-width:90px">${[5, 10].map((d) => `<option value="${d}"${s.duration === d ? " selected" : ""}>${d} s</option>`).join("")}</select>
-            <button class="an-save">Salvar</button>
+            <select class="an-duration">${[5, 10].map((d) => `<option value="${d}"${s.duration === d ? " selected" : ""}>${d} s</option>`).join("")}</select>
             <label class="inline"><input type="checkbox" class="an-black"${s.fallback_black ? " checked" : ""}> corte para preto</label>
-            <button class="an-assign" ${picked ? "" : "disabled"}>Atribuir selecionado</button>
-            <select class="an-model" style="min-width:150px" title="modelo usado na geração pelo CLI">${(plan.model_order || []).map((m) => `<option value="${esc(m)}"${m === (s.suggested_model || "") ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>
+            <select class="an-model" title="modelo usado na geração pelo CLI">${(plan.model_order || []).map((m) => `<option value="${esc(m)}"${m === (s.suggested_model || "") ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>
             <label class="inline">takes <input type="number" class="an-count" value="2" min="1" max="4"></label>
             <button class="primary an-gen" ${loggedIn ? "" : "disabled"}>Gerar via CLI (gasta créditos)</button>
           </div>
@@ -116,10 +160,9 @@ Studio.register("animate", (ctx) => {
             </div>
           </details>
           <p class="fine">Na Higgsfield: Image to Video, start frame = este shot${s.next_in_scene ? `, end frame = ${esc(s.next_in_scene)} no modo start/end` : ""}, <strong>áudio do modelo OFF</strong>, gere 2, like no usável, download.</p>
-          <div class="col an-takes">${(s.takes || []).map((t) => takeRow(s, t)).join("") || `<span class="fine">nenhum take ainda</span>`}</div>
-        </div>
+        </details>
       </div>
-    </section>`;
+    </div>`;
   }
 
   function render() {
@@ -128,19 +171,22 @@ Studio.register("animate", (ctx) => {
     $("#anModelNote").textContent = plan.model_note || "";
     if (plan.parallel_hint) $("#anParallel").textContent = plan.parallel_hint;
     $("#anShots").innerHTML = plan.shots.length
-      ? plan.shots.map(shotPanel).join("")
+      ? plan.shots.map(shotRow).join("")
       : `<div class="empty">Nenhum shot — a etapa 5 precisa produzir <code>shots/storyboard.json</code> primeiro.</div>`;
     hfStatus();
   }
 
   function renderGallery() {
     $("#anCandCount").textContent = `${cands.length} vídeos`;
-    $("#anGallery").innerHTML = cands.length ? cands.map((c) => `
-      <div class="card ${picked === c.id ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt || c.name || "")}">
-        ${c.thumb ? `<img loading="lazy" src="${ctx.files(`animate/candidates/${c.thumb}`)}" alt="">` : ""}
-        <span class="src">${esc(c.source)}</span>
-        <span class="term">${esc(c.model || c.name || "")} · ${Math.round(c.duration || 0)}s</span>
-      </div>`).join("") : `<div class="empty">Nenhum vídeo ainda — gere na UI da Higgsfield e importe.</div>`;
+    $("#anGallery").innerHTML = cands.length ? cands.map((c) => ui.tile({
+      id: c.id,
+      src: c.thumb ? ctx.files(`animate/candidates/${c.thumb}`) : "",
+      badge: c.source,
+      term: `${c.model || c.name || ""} · ${Math.round(c.duration || 0)}s`,
+      sel: picked === c.id,
+      wide: true,
+      title: c.prompt || c.name || "",
+    })).join("") : `<div class="empty">Nenhum vídeo ainda — gere na UI da Higgsfield e importe.</div>`;
     document.querySelectorAll("button.an-assign").forEach((b) => { b.disabled = !picked; });
   }
 
@@ -148,8 +194,8 @@ Studio.register("animate", (ctx) => {
     if (job) job.stop();
     job = ui.poll(async () => {
       const j = await api(`/api/projects/${ctx.pid()}/animate/job`);
-      const panel = jobShot && panelOf(jobShot);
-      const el = panel && panel.querySelector(".an-takes");
+      const row = jobShot && rowOf(jobShot);
+      const el = row && row.querySelector(".an-takes");
       if (el && j.state === "running") el.innerHTML = `<span class="fine mono">gerando ${j.done}/${j.total} · ${j.added} takes…</span>`;
       if (j.state === "running") return;
       toast(j.state === "error" ? `erro: ${j.error}` : `job concluído · ${j.added} take(s)`);
@@ -161,7 +207,7 @@ Studio.register("animate", (ctx) => {
   }
 
   function fields(el) {
-    const p = el.closest("section.panel");
+    const p = el.closest(".shot-row");
     const end = p.querySelector(".an-end");
     return {
       k: p.dataset.k, panel: p,
@@ -221,7 +267,7 @@ Studio.register("animate", (ctx) => {
   /** Trocar o modo revela o end frame e as dicas daquele modo — sem ida ao servidor. */
   function onModeChange(e) {
     const sel = e.target.closest(".an-mode"); if (!sel) return;
-    const p = sel.closest("section.panel");
+    const p = sel.closest(".shot-row");
     const endrow = p.querySelector(".an-endrow"), se = sel.value === "start_end";
     endrow.hidden = !se;
     endrow.style.display = se ? "" : "none";   // `.row {display:flex}` vence o atributo `hidden`
