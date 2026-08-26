@@ -27,9 +27,9 @@ Studio.register("music", (ctx) => {
     $("#btnMusStory").disabled = !story.ffmpeg || !story.clips;
     if (!story.ffmpeg) $("#musStoryLog").textContent = "ffmpeg ausente — a sequência bruta não pode ser montada aqui";
 
-    const v = $("#musStoryVideo");
-    if (story.video) { v.src = `${ctx.files(story.video)}?t=${Date.now()}`; v.classList.remove("hidden"); }
-    else { v.classList.add("hidden"); }
+    const v = $("#musStoryVideo"), ph = $("#musStoryPlay");
+    if (story.video) { v.src = `${ctx.files(story.video)}?t=${Date.now()}`; v.classList.remove("hidden"); ph.classList.add("hidden"); }
+    else { v.classList.add("hidden"); ph.classList.remove("hidden"); }
 
     $("#musStoryQuestion").textContent = story.question || "";
     const check = story.check;
@@ -77,23 +77,31 @@ Studio.register("music", (ctx) => {
   async function load() {
     if (!ctx.pid()) { cands = []; return render(); }
     cands = await api(`/api/projects/${ctx.pid()}/music/candidates`);
-    render();
     try { beats = await api(`/api/projects/${ctx.pid()}/music/beats`); } catch (e) { beats = null; }
+    render();
     renderBeats();
+  }
+
+  /** Linha de faixa candidata (`.track-row` do catálogo do shell): play + nome/meta + audio + ação. */
+  function trackRow(c) {
+    const meta = [fmt(c.duration), c.selected && beats && beats.bpm ? `${beats.bpm} bpm` : "", c.source]
+      .filter(Boolean).join(" · ");
+    return `
+      <div class="rowcard track-row${c.selected ? " sel" : ""}" data-id="${esc(c.id)}">
+        <button class="play" data-id="${esc(c.id)}" title="ouvir / pausar">▶</button>
+        <span class="meta">
+          <span class="nm">${esc(c.name || c.file)}</span>
+          <span class="mt">${esc(meta)}</span>
+        </span>
+        <audio controls preload="none" src="${ctx.files(`audio/candidates/${c.file}`)}"></audio>
+        ${c.selected ? ui.chip("escolhida", "ok")
+                     : `<button class="pick ghost" data-id="${esc(c.id)}">Escolher</button>`}
+      </div>`;
   }
 
   function render() {
     $("#musCounts").textContent = `${cands.length} candidata${cands.length === 1 ? "" : "s"}`;
-    $("#musList").innerHTML = cands.length ? cands.map((c) => `
-      <div class="prompt ${c.selected ? "sel" : ""}" data-id="${esc(c.id)}">
-        <div class="row wrap">
-          <span class="eyebrow">${esc(c.name || c.file)}</span>
-          ${ui.chip(`${c.source}${c.duration ? " · " + fmt(c.duration) : ""}`)}
-          ${c.selected ? ui.chip("escolhida", "ok") : ""}
-          <button class="primary pick" data-id="${esc(c.id)}">Escolher esta</button>
-        </div>
-        <audio controls preload="none" style="width:100%" src="${ctx.files(`audio/candidates/${c.file}`)}"></audio>
-      </div>`).join("")
+    $("#musList").innerHTML = cands.length ? cands.map(trackRow).join("")
       : `<div class="empty">Nenhuma candidata ainda — baixe várias músicas na biblioteca e importe acima.</div>`;
     const chosen = cands.find((c) => c.selected);
     $("#musPlayer").src = chosen ? ctx.files(`audio/candidates/${chosen.file}`) : "";
@@ -108,10 +116,13 @@ Studio.register("music", (ctx) => {
     chip.textContent = `${beats.bpm ? beats.bpm + " bpm" : "bpm indefinido"} · ${beats.beats.length} batidas · ${beats.impacts.length} impactos · ${fmt(beats.duration)}`;
     chip.className = "chip ok";
     const impacts = new Set(beats.impacts);
-    ruler.innerHTML = beats.beats.map((t) => {
-      const strong = impacts.has(t);
-      return `<span title="${t}s${strong ? " (impacto)" : ""}" style="position:absolute;left:${(t / beats.duration) * 100}%;bottom:0;width:${strong ? 2 : 1}px;height:${strong ? 100 : 45}%;background:${strong ? "currentColor" : "rgba(128,128,128,.6)"}"></span>`;
-    }).join("");
+    // `.beats` do catálogo: uma barra por batida, impacto em 100% (accent); as demais variam
+    // 24–64% só como textura (a API devolve o instante da batida, não a energia dela).
+    ruler.innerHTML = ui.beats(beats.beats.map((t, i) => ({
+      h: impacts.has(t) ? 100 : 24 + ((i * 37) % 40),
+      imp: impacts.has(t),
+      title: `${t}s${impacts.has(t) ? " (impacto)" : ""}`,
+    })));
   }
 
   async function pick(id) {
@@ -175,11 +186,26 @@ Studio.register("music", (ctx) => {
           toast(`${r.added} faixas de ${r.jobs} jobs`); await load(); ctx.guide();
         } catch (err) { toast(err.message); }
       };
-      $("#musList").addEventListener("click", (e) => { const b = e.target.closest("button.pick"); if (b) pick(b.dataset.id); });
+      $("#musList").addEventListener("click", (e) => {
+        const p = e.target.closest("button.pick");
+        if (p) return pick(p.dataset.id);
+        const play = e.target.closest("button.play");
+        if (!play) return;
+        const row = play.closest(".track-row");
+        const audio = row && row.querySelector("audio");
+        if (!audio) return;
+        const tocar = audio.paused;
+        $("#musList").querySelectorAll(".track-row").forEach((r) => {
+          const a = r.querySelector("audio"), b = r.querySelector("button.play");
+          if (a && !a.paused) a.pause();
+          if (b) b.textContent = "▶";
+        });
+        if (tocar) { audio.play(); play.textContent = "❚❚"; }
+      });
       $("#btnMusBeats").onclick = async () => {
         try {
           beats = await api(`/api/projects/${ctx.pid()}/music/beats`, { method: "POST", body: JSON.stringify({}) });
-          renderBeats(); ctx.guide(); toast(`${beats.impacts.length} impactos`);
+          render(); renderBeats(); ctx.guide(); toast(`${beats.impacts.length} impactos`);
         } catch (err) { toast(err.message); }
       };
       this.onProject();
