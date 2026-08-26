@@ -194,3 +194,34 @@ def test_studio_ui_mantem_o_contrato_e_ganha_extensoes(client):
     assert "guide-toggle" in js and "guide-missing" in js, "painel de guia colapsável com o que falta"
     assert "aria-modal" in js and "Escape" in js, "modal acessível"
     assert "Studio.onGuide" in js, "o shell é avisado quando uma etapa recarrega o guia"
+
+
+def test_shell_redesign_traz_o_pipeline_segmentado_e_o_catalogo_de_classes(client):
+    """Wave 3: o redesign dark-first é o contrato visual das 6 frentes de tela da sub-wave 1."""
+    index = client.get("/").text
+    assert "12..96,500;12..96,600;12..96,700" in index, "Bricolage 600 é o peso dos títulos do redesign"
+    for el in ('id="railPipe"', 'id="railCount"', 'id="tbPipe"', 'id="hfChipSide"'):
+        assert el in index, el
+
+    css = client.get("/static/style.css").text + client.get("/static/ui.css").text
+    # catálogo de classes que as telas de etapa consomem (wave-3.md §"Contrato transversal")
+    for classe in (".pn", ".lesson", ".stepper", ".rowcard", ".rowlist", ".scene-row", ".clip-row",
+                   ".shot-row", ".take", ".beats", ".track-row", ".player", ".fmt-card", ".fmt-grid",
+                   ".checks", ".strip", ".lead-row", ".pitch", ".pub-row", ".ext", ".note",
+                   ".gallery.sm", ".gallery.xs", ".card.wide", ".prompt.sel", ".card.src-of",
+                   ".grid2.rev", ".grid2.even", ".drop.sm", ".chip.sm", ".pipe", ".rail-head",
+                   ".themebtn", ".guide-strip", ".guide-actions", ".ovcard", ".ovgrid"):
+        assert classe in css, f"classe {classe} do catálogo da wave 3 ausente"
+    assert "attr(data-ord)" in css, "etapa 5: o check do tile escolhido vira o número da ordem"
+    assert "#renderLog .warn" in css, "etapa 8: o aviso do log de render tem regra própria"
+    assert "backdrop-filter" in css, "topbar e modal com blur (handoff)"
+
+    js = client.get("/static/ui.js").text
+    assert "guide-strip" in js, "guia colapsado vira faixa compacta"
+    for helper in ("tile(", "pipe(", "beats(", "copyBtn("):
+        assert helper in js, f"helper {helper} de marcação ausente"
+
+    app_js = client.get("/static/app.js").text
+    assert "railPipe" in app_js and "tbPipe" in app_js, "os dois pipelines segmentados"
+    assert "hfChipSide" in app_js, "chip do CLI no rodapé da sidebar"
+    assert "miniprog" not in app_js, "o mini-progresso do rail foi substituído pelo pipeline"
