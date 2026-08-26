@@ -226,30 +226,36 @@ def test_view_follows_the_wave2_screen_contract(client):
     assert "Etapa 4 · aula 010" in html
     assert 'Studio.register("storyboard"' in js
     assert 'Studio.ui.renderGuide("storyboard")' in js.replace("ui.renderGuide", "Studio.ui.renderGuide")
-    assert "destroy()" in js and "job.stop()" in js
+    # Wave 4: a etapa 4 deixou de gerar pelo CLI — não há poll, e `destroy()` continua existindo.
+    assert "destroy()" in js and "ui.poll(" not in js
 
 
 def test_generate_buttons_say_where_the_generation_happens(client):
-    """4.3: os botões só MONTAM a instrução — quem gera é a Higgsfield."""
+    """4.3 + wave 4 (4.15): os rótulos são os do protótipo — os botões só MONTAM a instrução."""
     html = client.get("/steps/storyboard/view.html").text
-    assert "Montar instrução — gere 4 na Higgsfield (incerto)" in html
-    assert "Montar instrução — gere 1 na Higgsfield (tweak)" in html
+    assert "Montar instrução — gere 4 (incerto)" in html
+    assert ">gere 1 (tweak)<" in html
     assert "Gerar 4 (estou incerto)" not in html and "Gerar 1 (é só um tweak)" not in html
 
 
-def test_screen_mentions_the_narrative_arc_and_the_upscale_step(client):
-    """4.1 e 4.5: a estrutura da história e o lugar do upscale ficam na tela."""
+def test_screen_mentions_the_narrative_arc_and_the_upscale_step(client, pid, base):
+    """4.1 e 4.5: o arco fica no lede; o lugar do upscale migrou para o guia (wave 4, 4.20)."""
     html = client.get("/steps/storyboard/view.html").text
-    assert "começo, descoberta, ação e desfecho" in html or "começo → descoberta → ação → desfecho" in html
-    assert "etapa 5" in html
+    assert "começo, descoberta, ação e desfecho" in html
+    assert "etapa 5" not in html, "o `details` de aula saiu da tela (só a etapa 1 tem)"
+    g = client.get(f"/api/projects/{pid}/guide").json()
+    sb = next(x for x in g["steps"] if x["id"] == "storyboard")
+    assert any("etapa 5" in c for c in sb["checklist"])
 
 
-def test_gallery_offers_the_chained_edit_source(client):
-    """4.2: a edição encadeia no resultado anterior — a galeria oferece "usar como origem"."""
+def test_screen_dropped_the_paid_cli_path(client):
+    """Wave 4 (4.21/4.24): a aula 010 gera na UI da Higgsfield — o CLI sai da TELA, não da API."""
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    assert "usar como origem" in html or "usar como origem" in js
-    assert "source_id" in js
+    for termo in ("Gerar via CLI", "usar como origem", "source_id", "confirmCost", "hfChip"):
+        assert termo not in html and termo not in js, termo
+    # As rotas continuam publicadas para quem quiser o caminho pago.
+    assert client.get("/openapi.json").json()["paths"].get("/api/projects/{pid}/storyboard/generate")
 
 
 def test_cli_generate_chains_on_the_selected_idea(client, pid, base, root, monkeypatch):
@@ -277,7 +283,7 @@ def test_model_options_come_from_the_backend_with_the_extension_mark(client, pid
     assert [m["id"] for m in models] == ["nano_banana_2", "gpt_image_2"]
     assert "[extensão]" in dict((m["id"], m["label"]) for m in models)["gpt_image_2"]
     js = client.get("/steps/storyboard/view.js").text
-    assert "meta.models" in js, "a tela renderiza o select a partir do backend"
+    assert "meta.models" not in js, "wave 4: o select de modelo saiu da tela junto com o CLI"
 
 
 def test_two_sentence_instruction_is_accepted_over_http(client, pid, base):
@@ -291,17 +297,33 @@ def test_two_sentence_instruction_is_accepted_over_http(client, pid, base):
 
 # ---------- wave 3: redesign da tela (ADH-OS-20260826-05) ----------
 def test_view_uses_the_shell_catalog_after_the_redesign(client):
-    """Wave 3: painéis numerados com `.pn`, texto de aula em `details.lesson`, sem style inline."""
+    """Wave 4: DOIS painéis (01 ideias, 02 cenas), sem `details.lesson`, sem painel de importação."""
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    for n in ("01", "02", "03", "04"):
+    for n in ("01", "02"):
         assert f'<span class="pn">{n}</span>' in html, n
-    assert html.count('<details class="lesson">') >= 3
+    assert html.count('<span class="pn">') == 2, "o protótipo desenha só dois painéis"
+    assert '<details class="lesson">' not in html, "regra 4 da wave 4: `details` de aula só na etapa 1"
     assert '<div class="grid2 rev">' in html
-    assert '<div id="sbGallery" class="gallery sm">' in html
     assert '<div id="sbScenes" class="rowlist">' in html
     assert '<div class="card wide static sb-base">' in html, "`.card.static` do shell = tile não clicável"
     assert "CARD_BTN" not in js, "o botão do tile é posicionado por CSS escopado, não por style inline"
+    # A galeria de ideias passou a viver no picker aberto pela thumb da cena (4.23).
+    assert 'id="sbGallery" class="gallery sm"' in js and "sbGallery" not in html
+
+
+def test_prototype_shapes_of_the_wave4_screen(client):
+    """Wave 4: chip único, caixa `.prompt.sm` com texto estático e cena com thumb clicável."""
+    html = client.get("/steps/storyboard/view.html").text
+    js = client.get("/steps/storyboard/view.js").text
+    assert '<div class="prompt sm">' in html and '<p id="sbInstruction" class="txt">' in html
+    assert "<textarea id=\"sbInstruction\"" not in html, "regra 4: a instrução montada é texto estático"
+    assert 'id="sbCounts"' in html and 'id="sbBaseChip"' not in html and 'id="sbBaseWarn"' not in html
+    assert 'id="sbKindHint"' not in html and 'id="sbHint"' not in html
+    assert 'class="thumb pick sb-pick"' in js, "a thumb da cena abre o picker de ideias"
+    assert "sbImg" not in js, "o `select` de imagem por cena saiu (4.31)"
+    assert 'class="txt sbTxt"' in js, "o texto da cena é editável com cara de estático (4.33)"
+    assert "Studio.ui.modal" in js.replace("ui.modal", "Studio.ui.modal")
 
 
 def test_scenes_render_as_scene_rows_with_the_narrative_moment(client):

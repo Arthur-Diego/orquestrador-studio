@@ -1,15 +1,22 @@
 // Etapa 4 — Storyboard (aula 010): ideias a partir da imagem base (uma instrução por vez,
 // 4 gerações quando incerto / 1 quando é tweak) e a história em ~5 cenas de texto, na estrutura
-// começo → descoberta → ação → desfecho. Componentes compartilhados vêm de `Studio.ui` (wave 2).
+// começo → descoberta → ação → desfecho.
+//
+// Wave 4 (fidelidade ao protótipo): a tela tem DOIS painéis. A importação das ideias e a escolha
+// da imagem de cada cena não têm painel próprio — a importação abre pelo chip "N ideias · N
+// escolhidas" (ou por arrastar arquivos sobre o painel 01) e o picker de ideias abre pela thumb
+// da cena. Não há geração pelo CLI nesta etapa (a aula 010 gera na UI da Higgsfield); as rotas
+// `/cost`, `/generate` e `/job` continuam no backend.
 Studio.register("storyboard", (ctx) => {
   const { $, api, toast } = ctx;
   const ui = Studio.ui;
   const esc = (s) => ui.esc(s);
   let meta = { kinds: [], presets: [], models: [], arc: [], counts: { uncertain: 4, tweak: 1 } };
-  let ideas = [], sel = new Set(), scenes = [], hasBase = false, lastCount = 4;
-  let sourceId = null;   // ideia usada como origem da próxima geração pelo CLI (auditoria 4.2)
-  let job = null;        // handle do poll: parado em destroy()
+  let ideas = [], scenes = [], hasBase = false;
+  let instruction = "";      // instrução montada (o `.txt` mostra o texto de repouso quando vazia)
+  let panelDrop = null;      // <input type="file"> criado por `ui.drop` no painel 01
 
+  const EMPTY_INSTRUCTION = "a instrução montada aparece aqui — os botões não gastam crédito";
   const url = (p) => `/api/projects/${ctx.pid()}/storyboard${p || ""}`;
 
   // O rótulo do arco vira o `data-mom` que o shell colore (`.mom[data-mom="comeco|…"]`):
@@ -30,16 +37,10 @@ Studio.register("storyboard", (ctx) => {
   async function loadStatus() {
     const st = await api(url());
     hasBase = st.has_base;
-    $("#sbBaseChip").textContent = hasBase ? "base: pronta (etapa 3)" : "base: ausente";
-    $("#sbBaseChip").className = "chip " + (hasBase ? "ok" : "warn");
-    $("#sbCounts").textContent = `${st.ideas} ideias · ${st.selected} escolhidas · ${st.scenes_with_text}/${st.scenes} cenas escritas`;
+    $("#sbCounts").textContent = `${st.ideas} ideias · ${st.selected} escolhidas`;
     $("#sbBase").classList.toggle("hidden", !hasBase);
     if (hasBase) $("#sbBase").src = ctx.files(st.base_image);
-    $("#sbBaseWarn").classList.toggle("hidden", hasBase);
     $("#sbGen4").disabled = $("#sbGen1").disabled = !hasBase;
-    const md = $("#sbMd");
-    md.classList.toggle("hidden", !st.storyboard_md);
-    if (st.storyboard_md) md.href = ctx.files(st.storyboard_md);
   }
 
   async function loadPresets() {
@@ -47,104 +48,162 @@ Studio.register("storyboard", (ctx) => {
     $("#sbKind").innerHTML = meta.kinds.map((k) => `<option value="${esc(k.kind)}">${esc(k.label)}</option>`).join("");
     $("#sbPreset").innerHTML = `<option value="">— fórmulas da aula —</option>` +
       meta.presets.map((p, i) => `<option value="${i}">${esc(p.label)}</option>`).join("");
-    // O modelo padrão é o da aula; o extra vem marcado `[extensão]` pelo backend (auditoria 4.4).
-    $("#sbModel").innerHTML = (meta.models || []).map((m) =>
-      `<option value="${esc(m.id)}" ${m.default ? "selected" : ""}>${esc(m.label)}</option>`).join("");
-    if (meta.upscale_note) $("#sbUpscaleNote").textContent = meta.upscale_note;
     kindHint();
   }
+  // A dica do tipo de instrução não é desenhada pelo protótipo: vira `title` do select.
   function kindHint() {
     const k = meta.kinds.find((x) => x.kind === $("#sbKind").value);
-    $("#sbKindHint").textContent = k ? k.ui_hint : "";
-    $("#sbCliGen").title = $("#sbKind").value === "draw_to_edit" ? "Draw to Edit não existe no CLI: o desenho é feito na interface." : "";
+    $("#sbKind").title = k ? k.ui_hint : "";
   }
 
-  function renderSource() {
-    const c = ideas.find((i) => i.id === sourceId);
-    $("#sbSourceChip").textContent = c ? `origem: ${c.id}` : "origem: imagem base";
-    $("#sbSourceChip").className = "chip " + (c ? "ok" : "mode");
-    $("#sbSourceClear").classList.toggle("hidden", !c);
+  function renderInstruction() {
+    const el = $("#sbInstruction");
+    el.textContent = instruction || EMPTY_INSTRUCTION;
   }
 
   async function build(count) {
     try {
       const r = await api(url("/instructions"), { method: "POST", body: JSON.stringify({ kind: $("#sbKind").value, text: $("#sbText").value, count }) });
-      $("#sbInstruction").value = r.instruction;
-      $("#sbHint").textContent = r.ui_hint;
-      lastCount = r.count;
+      instruction = r.instruction;
+      renderInstruction();
+      if (r.ui_hint) toast(r.ui_hint);
       return r;
     } catch (err) { toast(err.message); return null; }
   }
 
+  // ---------- importação (popover; o painel 01 inteiro também aceita arrastar) ----------
   async function importFiles(files) {
     if (!files.length) return;
     try {
       const fd = new FormData();
       [...files].forEach((f) => fd.append("files", f));
-      fd.append("prompt", $("#sbInstruction").value || "");
+      fd.append("prompt", instruction);
       const r = await fetch(url("/import/upload"), { method: "POST", body: fd });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.detail || r.statusText);
       toast(`${body.added} ideias importadas${body.skipped ? ` · ${body.skipped} ignoradas` : ""}`);
-      await loadIdeas(); await loadStatus(); ctx.guide();
+      await refresh();
     } catch (err) { toast(err.message); }
   }
 
-  async function loadIdeas() {
-    if (!ctx.pid()) { ideas = []; return renderIdeas(); }
-    ideas = (await api(url("/candidates"))).ideas;
-    sel = new Set(ideas.filter((i) => i.selected).map((i) => i.id));
-    if (sourceId && !ideas.some((i) => i.id === sourceId)) sourceId = null;
-    renderIdeas(); renderScenes();
-  }
-  function renderIdeas() {
-    $("#sbGallery").innerHTML = ideas.length ? ideas.map((i) =>
-      `<div class="card ${sel.has(i.id) ? "sel" : ""} ${i.id === sourceId ? "src-of" : ""}" data-id="${esc(i.id)}" tabindex="0" title="${esc(i.prompt)}">
-         <img loading="lazy" src="${esc(ctx.files(i.thumb || i.file))}" alt=""><span class="src">${esc(i.source)}</span>
-         <button type="button" class="link sbSrc card-act" data-src="${esc(i.id)}">${i.id === sourceId ? "origem ✓" : "usar como origem"}</button></div>`).join("")
-      : `<div class="empty">Nenhuma ideia ainda — gere na Higgsfield com a instrução acima e importe.</div>`;
-    renderSource();
+  function importModal() {
+    const m = ui.modal({
+      title: "Importar ideias",
+      subtitle: "Gere na interface da Higgsfield e traga os resultados para o storyboard.",
+      html: `<div class="import-row">
+        <label class="drop" id="sbDrop">Arraste imagens aqui ou <input id="sbUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
+        <div class="col">
+          <button type="button" id="sbBtnDownloads" class="ghost">Importar da pasta Downloads</button>
+          <label class="inline">últimos <input id="sbMinutes" class="mini wide" type="number" value="120" min="5"> min</label>
+          <button type="button" id="sbBtnHistory" class="ghost">Importar do histórico Higgsfield</button>
+          <span class="fine">precisa de login no CLI</span>
+        </div>
+      </div>`,
+    });
+    ui.drop(m.el.querySelector("#sbDrop"), (files) => { m.close(); importFiles(files); });
+    m.el.querySelector("#sbBtnDownloads").onclick = async () => {
+      const minutes = +m.el.querySelector("#sbMinutes").value;
+      m.close();
+      try {
+        const r = await api(url("/import/downloads"), { method: "POST", body: JSON.stringify({ since_minutes: minutes, prompt: instruction }) });
+        toast(`${r.added} novas de ${r.scanned} imagens recentes`); await refresh();
+      } catch (err) { toast(err.message); }
+    };
+    m.el.querySelector("#sbBtnHistory").onclick = async () => {
+      m.close();
+      try {
+        const r = await api(url("/import/history"), { method: "POST", body: JSON.stringify({ size: 50 }) });
+        toast(`${r.added} imagens de ${r.jobs} jobs`); await refresh();
+      } catch (err) { toast(err.message); }
+    };
   }
 
-  const selectedIdeas = () => ideas.filter((i) => i.selected);
+  // ---------- ideias ----------
+  async function loadIdeas() {
+    if (!ctx.pid()) { ideas = []; return; }
+    ideas = (await api(url("/candidates"))).ideas;
+  }
+
+  /** Picker de ideias da cena `i` — a galeria do protótipo mora aqui, não num painel. */
+  function pickerModal(i) {
+    const atual = scenes[i] ? scenes[i].image : null;
+    const gal = ideas.length ? ideas.map((c) =>
+      `<div class="card ${c.file === atual ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt)}">
+         <img loading="lazy" src="${esc(ctx.files(c.thumb || c.file))}" alt=""></div>`).join("")
+      : `<div class="empty">Nenhuma ideia ainda — gere na Higgsfield com a instrução do painel 01 e importe.</div>`;
+    const m = ui.modal({
+      title: `Cena ${i + 1} — escolher a ideia`,
+      subtitle: "Um clique anexa a ideia à cena (ela passa a viver em storyboard/ideas/).",
+      html: `<div id="sbGallery" class="gallery sm">${gal}</div>`,
+      actions: [
+        { label: "Importar ideias…", onClick: () => setTimeout(importModal, 0) },
+        { label: "Sem imagem", onClick: () => attach(i, null) },
+      ],
+    });
+    m.el.querySelector("#sbGallery").addEventListener("click", (e) => {
+      const card = e.target.closest(".card"); if (!card) return;
+      m.close(); attach(i, card.dataset.id);
+    });
+    m.el.querySelector("#sbGallery").addEventListener("dblclick", (e) => {
+      const card = e.target.closest(".card"); if (!card) return;
+      const c = ideas.find((x) => x.id === card.dataset.id);
+      if (c) window.open(ctx.files(c.file), "_blank");
+    });
+  }
+
+  /**
+   * Anexa (ou desanexa) uma ideia à cena. Escolher deixou de ser um botão: anexar já promove a
+   * ideia para `storyboard/ideas/` (`/candidates/select`), que é onde `save_scenes` aceita a
+   * imagem. Por isso a seleção é reenviada como união do que já estava escolhido.
+   */
+  async function attach(i, ideaId) {
+    scenes = collect();
+    if (!scenes[i]) return;
+    if (!ideaId) { scenes[i].image = null; renderScenes(); return; }
+    try {
+      const alvo = ideas.find((c) => c.id === ideaId);
+      if (alvo && !alvo.selected) {
+        const ids = [...new Set(ideas.filter((c) => c.selected).map((c) => c.id).concat(ideaId))];
+        await api(url("/candidates/select"), { method: "POST", body: JSON.stringify({ ids }) });
+        await loadIdeas();
+      }
+      const escolhida = ideas.find((c) => c.id === ideaId);
+      scenes[i].image = escolhida ? escolhida.file : null;
+      renderScenes();
+      await loadStatus(); ctx.guide();
+    } catch (err) { toast(err.message); }
+  }
+
+  // ---------- cenas ----------
   async function loadScenes() {
     scenes = (await api(url("/scenes"))).scenes;
     renderScenes();
   }
   function renderScenes() {
-    const opts = (cur) => `<option value="">— sem imagem —</option>` + selectedIdeas().map((i) =>
-      `<option value="${esc(i.file)}" ${i.file === cur ? "selected" : ""}>${esc(i.id)}</option>`).join("");
     const total = scenes.length;
-    // `.scene-row` do shell: momento narrativo | thumb + select da imagem | texto e ações.
+    // `.scene-row` do shell: momento narrativo | thumb clicável | texto editável com cara estática.
     // Os botões ↑ ↓ ✕ NUNCA recebem filhos: o handler usa `e.target.classList.contains`.
     $("#sbScenes").innerHTML = scenes.map((s, i) => {
       const arc = arcOf(i + 1, total);
-      return `<div class="scene-row" data-i="${i}">
+      return `<div class="scene-row" data-i="${i}" data-image="${esc(s.image || "")}">
          <span class="mom" data-mom="${esc(momOf(arc.label))}" title="Cena ${i + 1} · ${esc(arc.label)}">${esc(arc.label)}</span>
-         <div class="media">
-           <div class="thumb">${s.image ? `<img loading="lazy" src="${esc(ctx.files(s.image))}" alt="">` : ""}</div>
-           <select class="sbImg" title="imagem da cena">${opts(s.image)}</select>
-         </div>
-         <div class="edit">
-           <textarea class="sbTxt" rows="2" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
-           <div class="acts">
-             <button type="button" class="ghost sbUp" title="subir">↑</button><button type="button" class="ghost sbDown" title="descer">↓</button><button type="button" class="ghost sbDel" title="remover">✕</button>
-           </div>
+         <div class="thumb pick sb-pick" tabindex="0" role="button" title="escolher a imagem da cena">${s.image ? `<img loading="lazy" src="${esc(ctx.files(s.image))}" alt="">` : ""}</div>
+         <textarea class="txt sbTxt" rows="1" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
+         <div class="acts">
+           <button type="button" class="ghost mini sbUp" title="subir">↑</button><button type="button" class="ghost mini sbDown" title="descer">↓</button><button type="button" class="ghost mini sbDel" title="remover">✕</button>
          </div>
        </div>`;
     }).join("");
+    ui.autosize("#sbScenes textarea.sbTxt");
   }
   function collect() {
     return [...document.querySelectorAll("#sbScenes .scene-row")].map((el) => ({
-      text: el.querySelector(".sbTxt").value, image: el.querySelector(".sbImg").value || null,
+      text: el.querySelector(".sbTxt").value, image: el.dataset.image || null,
     }));
   }
 
-  function cliBody(built) {
-    // `source_id` encadeia a edição na ideia escolhida; sem ele o CLI parte de base/base_final.png.
-    const body = { model: $("#sbModel").value, kind: built.kind, text: $("#sbText").value, count: built.count };
-    if (sourceId) body.source_id = sourceId;
-    return body;
+  async function refresh() {
+    await loadIdeas(); await loadStatus(); ctx.guide();
   }
 
   return {
@@ -158,70 +217,22 @@ Studio.register("storyboard", (ctx) => {
       $("#sbGen4").onclick = () => build(meta.counts.uncertain);
       $("#sbGen1").onclick = () => build(meta.counts.tweak);
       $("#sbCopy").onclick = async () => {
-        if (!$("#sbInstruction").value) return toast("Monte a instrução primeiro.");
-        await navigator.clipboard.writeText($("#sbInstruction").value);
+        if (!instruction) return toast("Monte a instrução primeiro.");
+        await navigator.clipboard.writeText(instruction);
         $("#sbCopied").textContent = "copiado ✓"; setTimeout(() => ($("#sbCopied").textContent = ""), 1500);
       };
-      $("#sbSourceClear").onclick = () => { sourceId = null; renderIdeas(); };
-      $("#sbCliGen").onclick = async () => {
-        const built = await build(lastCount);
-        if (!built) return;
-        const body = cliBody(built);
-        const ok = await ui.confirmCost(
-          () => api(url("/cost"), { method: "POST", body: JSON.stringify(body) }),
-          `Gerar ${body.count} imagem(ns) via CLI${sourceId ? ` a partir de ${sourceId}` : ""}`);
-        if (!ok) return;
-        try {
-          await api(url("/generate"), { method: "POST", body: JSON.stringify(body) });
-          $("#sbCliGen").disabled = true;
-          job = ui.poll(async () => {
-            const j = await api(url("/job"));
-            $("#sbJobLog").textContent = j.state === "running" ? `gerando ${j.done}/${j.total} · ${j.added} imagens`
-              : j.state === "error" ? "erro: " + j.error : j.state === "done" ? `concluído · ${j.added} imagens` : "";
-            if (j.state === "running") return;
-            $("#sbCliGen").disabled = false;
-            await loadIdeas(); await loadStatus(); ctx.guide();
-            return false;
-          }, 3000);
-        } catch (err) { toast(err.message); }
-      };
 
-      ui.drop($("#sbDrop"), importFiles);
-      $("#sbBtnDownloads").onclick = async () => {
-        try {
-          const r = await api(url("/import/downloads"), { method: "POST", body: JSON.stringify({ since_minutes: +$("#sbMinutes").value, prompt: $("#sbInstruction").value || "" }) });
-          toast(`${r.added} novas de ${r.scanned} imagens recentes`); await loadIdeas(); await loadStatus(); ctx.guide();
-        } catch (err) { toast(err.message); }
-      };
-      $("#sbBtnHistory").onclick = async () => {
-        try {
-          const r = await api(url("/import/history"), { method: "POST", body: JSON.stringify({ size: 50 }) });
-          toast(`${r.added} imagens de ${r.jobs} jobs`); await loadIdeas(); await loadStatus(); ctx.guide();
-        } catch (err) { toast(err.message); }
-      };
-      $("#sbGallery").addEventListener("click", (e) => {
-        const src = e.target.closest("button.sbSrc");
-        if (src) { sourceId = sourceId === src.dataset.src ? null : src.dataset.src; return renderIdeas(); }
-        const card = e.target.closest(".card"); if (!card) return;
-        const id = card.dataset.id;
-        sel.has(id) ? sel.delete(id) : sel.add(id);
-        card.classList.toggle("sel");
-      });
-      $("#sbGallery").addEventListener("dblclick", (e) => {
-        const card = e.target.closest(".card"); if (!card) return;
-        window.open(ctx.files(ideas.find((i) => i.id === card.dataset.id).file), "_blank");
-      });
-      $("#sbUse").onclick = async () => {
-        try {
-          const r = await api(url("/candidates/select"), { method: "POST", body: JSON.stringify({ ids: [...sel] }) });
-          toast(r.detached.length ? `${r.selected} ideias no storyboard · imagem removida de ${r.detached.join(", ")}` : `${r.selected} ideias no storyboard`);
-          await loadIdeas(); await loadScenes(); await loadStatus(); ctx.guide();
-        } catch (err) { toast(err.message); }
-      };
+      // O painel 01 inteiro é alvo de drop (`.panel.over` só enquanto arrasta) e o chip de
+      // contagem abre o popover de importação — nada visível a mais que o protótipo desenha.
+      panelDrop = ui.drop($("#sbIdeas"), importFiles);
+      if (panelDrop) panelDrop.accept = "image/*";
+      $("#sbCounts").onclick = importModal;
+
       $("#sbAdd").onclick = () => { scenes = collect().concat({ text: "", image: null }); renderScenes(); };
       $("#sbScenes").addEventListener("click", (e) => {
         const box = e.target.closest(".scene-row"); if (!box) return;
         const i = +box.dataset.i;
+        if (e.target.closest(".thumb")) return pickerModal(i);
         scenes = collect();
         if (e.target.classList.contains("sbDel")) scenes.splice(i, 1);
         else if (e.target.classList.contains("sbUp") && i > 0) scenes.splice(i - 1, 0, scenes.splice(i, 1)[0]);
@@ -229,12 +240,10 @@ Studio.register("storyboard", (ctx) => {
         else return;
         renderScenes();
       });
-      // A miniatura da cena acompanha o select sem esperar o próximo render.
-      $("#sbScenes").addEventListener("change", (e) => {
-        if (!e.target.classList.contains("sbImg")) return;
-        const box = e.target.closest(".scene-row"); if (!box) return;
-        const t = box.querySelector(".thumb"); if (!t) return;
-        t.innerHTML = e.target.value ? `<img loading="lazy" src="${esc(ctx.files(e.target.value))}" alt="">` : "";
+      $("#sbScenes").addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const t = e.target.closest(".thumb"); if (!t) return;
+        e.preventDefault(); pickerModal(+t.closest(".scene-row").dataset.i);
       });
       $("#sbSave").onclick = async () => {
         try {
@@ -243,22 +252,25 @@ Studio.register("storyboard", (ctx) => {
           toast(`${r.scenes.length} cenas salvas · storyboard.md atualizado`);
         } catch (err) { toast(err.message); }
       };
+      // Sem link permanente na tela: "Gerar storyboard.md" abre o documento ao terminar (4.27).
       $("#sbRender").onclick = async () => {
-        try { await api(url("/render"), { method: "POST" }); await loadStatus(); ctx.guide(); toast("storyboard.md gerado"); }
-        catch (err) { toast(err.message); }
+        try {
+          const r = await api(url("/render"), { method: "POST" });
+          await loadStatus(); ctx.guide(); toast("storyboard.md gerado");
+          if (r && r.storyboard_md) window.open(ctx.files(r.storyboard_md), "_blank");
+        } catch (err) { toast(err.message); }
       };
       this.onProject();
     },
     async onProject() {
       if (!ctx.pid()) return;
-      sourceId = null;
-      ui.hfChip($("#sbHfState")).then((s) => { $("#sbCliGen").disabled = !s.logged_in; });
+      instruction = ""; renderInstruction();
       await loadPresets();
       await loadStatus();
       await loadIdeas();
       await loadScenes();
       ui.renderGuide("storyboard");
     },
-    destroy() { if (job) { job.stop(); job = null; } },
+    destroy() {},
   };
 });

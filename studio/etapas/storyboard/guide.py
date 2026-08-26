@@ -43,6 +43,22 @@ def _mtime(pid: str, rel: str) -> float:
     return p.stat().st_mtime if p.exists() else 0.0
 
 
+def _next_action(has_base: bool, chosen: list, scenes: list, escritas_ok: bool, md_ok: bool) -> str | None:
+    """Próxima ação no estilo do protótipo (wave 4): imperativo curto, sem "Produza o artefato…".
+
+    `None` devolve o texto padrão do shell (etapa concluída → "siga para a etapa 5").
+    """
+    if not has_base:
+        return "Escolher a imagem base da campanha na etapa 3"
+    if not chosen or not escritas_ok:
+        return f"Gerar ideias a partir da imagem base e escrever as {DEFAULT_SCENES} cenas"
+    if any(not s.get("image") for s in scenes):
+        return "Anexar uma ideia a cada cena"
+    if not md_ok:
+        return "Gerar o storyboard.md com as cenas escritas"
+    return None
+
+
 def guide(pid: str) -> dict:
     g = Guide(META).text(WHAT, CHECKLIST)
 
@@ -105,4 +121,5 @@ def guide(pid: str) -> dict:
 
     g.check("v47_upscale_etapa5", "Upscale das ideias: etapa 5", "ok", detail=UPSCALE_NOTE)
 
-    return g.build()
+    return g.build(next_action=_next_action(
+        exists(pid, "base/base_final.png"), chosen, scenes, escritas_ok, md_ok))
