@@ -1,15 +1,24 @@
 <style>
-  /* Escopo `.pb-` da etapa 10. `.pb-form .u/.n` e `.pb-fb` viraram `.grow-lg`/`.grow` e
-     `.pub-row .fb` no shell na integração (ADH-OS-20260826-09). */
+  /* Lacunas do catálogo do shell — escopo `.pb-` da etapa 10.
+     `.rowlist` do shell tem gap 10px; o protótipo desenha a lista de publicações com 8px. */
   .pb-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
-  .pb-exports{margin-top:16px;display:flex;flex-direction:column;gap:8px}
-  .pb-com{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 4px}
+  .pb-form:last-of-type{margin-bottom:0}
+  .pb-form .grow-lg{min-width:240px}
+  #pubNetwork{width:170px}
+  .pb-com{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 0}
+  #pubLog{gap:8px;margin-bottom:14px}
+  #pubLog:empty{margin-bottom:0}
+  /* A nota da linha é texto até ser clicada: o campo herda a fonte e não desenha caixa. */
+  .pub-row .del{margin-left:auto}
+  .pub-row .nt{cursor:text}
+  .pub-row .nt-edit{width:100%;min-width:200px;background:transparent;border:0;border-bottom:1px solid var(--accent);border-radius:0;padding:0;font:inherit;font-size:var(--fs-fine);color:var(--ink-2)}
+  .pub-row .nt-edit:focus{outline:none;box-shadow:none}
 </style>
 
 <header class="stephead">
   <span class="eyebrow">Etapa 10 · aula 015</span>
   <h2>Publicar</h2>
-  <p class="lede">Publique à mão na interface de cada rede — num <strong>perfil novo ou nas redes que você já tem</strong> — e registre o link aqui. Dever de casa da aula 015: <strong>4 vídeos</strong> publicados antes de prospectar; eles não são para perfeição, são para <strong>prática, exposição e validação</strong>.</p>
+  <p class="lede">Publique à mão na interface de cada rede e registre o link. Dever de casa: <strong>4 vídeos publicados</strong> antes de prospectar — prática, exposição e validação.</p>
 </header>
 
 <section id="guide" class="guide"></section>
@@ -17,11 +26,6 @@
 <section class="panel">
   <div class="panel-head">
     <h3><span class="pn">01</span>Registrar uma publicação</h3>
-    <div class="row wrap">
-      <span id="pubCounter" class="chip mode">0/4 vídeos</span>
-      <span id="pubPosts" class="chip mode">0 publicações</span>
-      <a id="pubPortfolio" class="fine hidden" target="_blank" rel="noopener">ver portfolio.md</a>
-    </div>
   </div>
   <div class="pb-form">
     <select id="pubVideo"></select>
@@ -34,20 +38,9 @@
   </div>
   <div class="pb-form">
     <input id="pubUrl" class="grow-lg" placeholder="https://www.instagram.com/reel/…">
-    <input id="pubNote" class="grow" placeholder="nota livre (o que você testou)">
+    <input id="pubNote" class="grow-md" placeholder="nota livre (o que você testou)">
     <button id="btnPubAdd" class="primary">Registrar publicação</button>
   </div>
-  <details class="lesson">
-    <summary>O que a aula 015 manda fazer aqui</summary>
-    <p>Poste na rede, copie o link do post e cole aqui. O Studio <strong>não publica por você</strong> e não escreve legenda nem hashtag — a aula 015 publica na mão; a nota é campo livre seu.</p>
-    <p>O contador do portfólio é <strong>global</strong>: conta <strong>projetos distintos</strong> com pelo menos um post registrado, porque a aula pede quatro <strong>obras</strong> diferentes. Os formatos do mesmo comercial (16:9, 9:16, 1:1) contam como <strong>1 vídeo</strong> do portfólio — e o mesmo arquivo no Instagram e no TikTok são 2 publicações e 1 vídeo.</p>
-  </details>
-  <div class="pb-exports">
-    <span class="eyebrow">Vídeos prontos em export/</span>
-    <div id="pubExports" class="gallery sm"></div>
-    <div id="pubGlobal" class="fine"></div>
-  </div>
-  <p class="note">Clique em um arquivo para escolhê-lo no campo "vídeo" acima.</p>
 </section>
 
 <section class="panel">
@@ -55,7 +48,6 @@
     <h3><span class="pn">02</span>Publicações e comunidade</h3>
     <div class="row wrap">
       <span id="pubComChip" class="chip mode">0 publicações · comunidade 0/3</span>
-      <span id="pubReady" class="chip warn">portfólio: faltam 4 vídeos</span>
     </div>
   </div>
   <div id="pubLog" class="rowlist"></div>
@@ -64,9 +56,4 @@
     <label class="inline"><input type="checkbox" data-com="commented"> comentei no trabalho de outra pessoa</label>
     <label class="inline"><input type="checkbox" data-com="feedback"> dei feedback</label>
   </div>
-  <details class="lesson">
-    <summary>O que a aula 015 manda fazer aqui</summary>
-    <p>Compartilhar é o que permite <strong>feedback</strong> e evolução (aula 014): anote em cada post o que você ouviu sobre ele. O texto de cada um entra em <code>publish/portfolio.md</code>, regravado a cada mudança.</p>
-    <p>"Interagir, postar, comentar e dar feedback é como você aprende padrões, melhora mais rápido e passa a ser notado" — na <strong>comunidade ABRAhub</strong> isso já pode gerar oportunidades. O checklist acima <strong>não bloqueia nada</strong>: é lembrete de prática, marcado por você. O primeiro trabalho tende a ser o pior; evolução vem da repetição, não da espera.</p>
-  </details>
 </section>
