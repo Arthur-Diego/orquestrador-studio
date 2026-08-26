@@ -4,6 +4,9 @@ Studio.register("mood", (ctx) => {
   const { $, api, toast } = ctx;
   const ui = Studio.ui;
   let cands = [], sel = new Set(), variation = 0, vibe = [], vibeSel = new Set(), job = null;
+  // O rótulo da paleta é parte do markup da etapa (`.palette .lbl` do catálogo) e sobrevive
+  // à reescrita dos swatches feita ao salvar o mood.
+  const PALETTE_LBL = `<span class="lbl">palette.json · derivado técnico [extensão]</span>`;
 
   function showPrompt(r) {
     $("#moodHint").textContent = (r.ui_hint || "") + " Proporção " + (r.aspect_ratio || "16:9") +
@@ -11,11 +14,12 @@ Studio.register("mood", (ctx) => {
                                : ` · gerado pelo bot (${r.source}) em ${r.seconds ?? "?"} s.`);
     const meta = [r.camera ? `Câmera: ${r.camera}` : "", r.negative ? `Evitar: ${r.negative}` : "",
                   r.notes_pt ? `Notas: ${r.notes_pt}` : ""].filter(Boolean).join("\n");
+    // Card de prompt do catálogo do shell: eyebrow + `button.link` "Copiar" + `.ok` + textarea.
     $("#promptList").innerHTML =
-      `<div class="prompt"><div class="row"><span class="eyebrow">Vibe da campanha</span>` +
-      `<button class="ghost copy" data-i="0">Copiar</button><span class="ok"></span></div>` +
+      `<div class="prompt"><div class="row"><span class="eyebrow">Prompt gerado</span>` +
+      `<button class="link copy" data-i="0">Copiar</button><span class="ok"></span></div>` +
       `<textarea data-i="0">${ui.esc(r.prompt)}</textarea>` +
-      (meta ? `<div class="fine mono" style="white-space:pre-wrap">${ui.esc(meta)}</div>` : "") + `</div>`;
+      (meta ? `<p class="fine mono md-pre">${ui.esc(meta)}</p>` : "") + `</div>`;
   }
 
   async function genPrompts(next) {
@@ -41,9 +45,10 @@ Studio.register("mood", (ctx) => {
 
   function renderVibe() {
     $("#vibeCount").textContent = `${vibe.length} imagens · ${vibeSel.size} escolhidas (máx. 4)`;
+    // Tiles do catálogo do shell: `.card` > img + `span.src` (origem) + `span.term` (legenda).
     $("#vibeGallery").innerHTML = vibe.length ? vibe.map(c =>
       `<div class="card ${vibeSel.has(c.id) ? "sel" : ""}" data-id="${ui.esc(c.id)}" tabindex="0" title="${ui.esc(c.name || "")}">
-         <img loading="lazy" src="${ctx.files(`mood/vibe/candidates/${c.thumb}`)}" alt=""><span class="src">${ui.esc(c.source)}</span></div>`).join("")
+         <img loading="lazy" src="${ctx.files(`mood/vibe/candidates/${c.thumb}`)}" alt=""><span class="src">${ui.esc(c.source)}</span><span class="term">${ui.esc(c.name || "")}</span></div>`).join("")
       : `<div class="empty">Nenhuma imagem de vibe ainda — traga 1 a 4 imagens cujo sentimento você gosta.</div>`;
   }
 
@@ -195,7 +200,7 @@ Studio.register("mood", (ctx) => {
           const r = await api(`/api/projects/${ctx.pid()}/mood/select`, { method: "POST",
             body: JSON.stringify({ ids: [...sel], note: $("#moodNote").value }) });
           $("#palette").innerHTML = r.palette.map(c =>
-            `<span style="background:${ui.esc(c)}" title="${ui.esc(c)}"></span>`).join("");
+            `<span style="background:${ui.esc(c)}" title="${ui.esc(c)}"></span>`).join("") + PALETTE_LBL;
           toast(r.vibe ? `${r.selected} imagens salvas · vibe do projeto: ${r.vibe}`
                        : `${r.selected} imagens salvas em mood/selected`);
           await load(); ctx.guide();
