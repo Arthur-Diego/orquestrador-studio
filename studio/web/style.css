@@ -133,6 +133,18 @@ code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--bg-2)
 .col{display:flex;flex-direction:column;gap:var(--s2);min-width:0}
 .inline{display:inline-flex;gap:7px;align-items:center;font-size:var(--fs-fine);color:var(--ink-3);cursor:pointer}
 .spacer{flex:1}
+/* Utilitários de linha promovidos na integração da wave 3 (as 6 frentes de tela tinham cada
+   uma a sua versão escopada: `.bs-grow`, `.md-grow`, `.sh-grow`, `.pb-form .u`…). */
+.grow{flex:1;min-width:180px}
+.grow-sm{flex:1;min-width:120px}
+.grow-lg{flex:1.4;min-width:240px}
+.row.stretch{align-items:stretch}
+.row.stretch>.drop{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:5px}
+.row.stretch>.col{justify-content:flex-start}
+/* `.fine`/`.note` nascem com `margin-top:12px`, que desalinha a linha quando são inline. */
+.row>.fine,.row>.note,.cli>.fine,.cli>.note,.ctl>.fine,.ctl>.note,.takes>.note{margin-top:0}
+.flat{margin-top:0}
+.pre{white-space:pre-wrap}
 
 /* ================= controles ================= */
 input,textarea,select,button{font:inherit;transition:border-color .15s,background .15s,box-shadow .15s,color .15s,transform .15s}
@@ -145,7 +157,13 @@ input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:auto;pad
 input[type=date],input[type=datetime-local]{color-scheme:inherit}
 .inline input[type=number]{width:60px;padding:5px 8px;border-radius:7px;font-size:var(--fs-fine)}
 input.mini{width:48px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-chip);padding:4px 6px;font-family:"IBM Plex Mono",monospace;font-size:11px}
-input.prompt-inline{width:100%;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 11px;font-family:"IBM Plex Mono",monospace;font-size:12px}
+/* `input.mini` (0,1,1) perdia para `.inline input[type=number]` (0,2,1) e voltava a 60px, que
+   corta valores de 3 casas (ex.: `0.511`). Promovido na integração da wave 3. */
+.inline input.mini,.ctl input.mini{width:64px;padding:4px 6px;border-radius:var(--r-chip);font-family:"IBM Plex Mono",monospace;font-size:11px}
+input.mini.wide{width:76px}
+input.mini.num{text-align:right;font-variant-numeric:tabular-nums}
+input.prompt-inline,textarea.prompt-inline{width:100%;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 11px;font-family:"IBM Plex Mono",monospace;font-size:12px}
+textarea.prompt-inline{line-height:1.6;resize:vertical;min-height:56px}
 select{appearance:none;-webkit-appearance:none;background:var(--bg-2) var(--caret) no-repeat right 10px center;border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--ink-2);padding:6px 26px 6px 11px;font-size:var(--fs-fine);cursor:pointer;min-width:0;max-width:100%}
 select:hover{border-color:var(--ctl-hover);color:var(--ink)}
 select:focus{border-color:var(--accent);outline:none;box-shadow:var(--ring)}
@@ -298,6 +316,7 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 
 /* ---------- log ---------- */
 .log{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.8;color:var(--ink-4);max-height:130px;overflow:auto;white-space:pre-wrap;margin:0}
+.log:empty{display:none}
 .log .ok{color:var(--ok)}
 .log .warn,#renderLog .warn{color:var(--gate)}
 
@@ -311,7 +330,7 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .card.wide{aspect-ratio:16/9}
 .card.sq{aspect-ratio:1/1}
 .card .src{position:absolute;top:8px;left:8px;font-family:"IBM Plex Mono",monospace;font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(0,0,0,.55);color:#A7AFBA}
-.card .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(transparent,rgba(0,0,0,.72));color:#C9CFD8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.85));color:#EDEFF2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .up{position:absolute;bottom:8px;left:8px;font-family:"IBM Plex Mono",monospace;font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(0,0,0,.55);color:#8B93A0}
 .card .up.ok{color:#50CF9E}
 .card .term~.up{bottom:28px}
@@ -321,6 +340,15 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .card.src-of{border-color:var(--info);box-shadow:0 0 0 3px var(--info-soft)}
 .card:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
 .card .empty{padding:var(--s3);font-size:11px}
+/* Ação dentro do tile ("usar como origem", "Usar como base da cena"). O selo é sempre escuro,
+   como `.card .src`: a cor do texto NÃO pode seguir `--accent`, que escurece no tema claro.
+   Sobe para 30px quando o tile já tem legenda ou selo de upscale ancorado embaixo. */
+.card .card-act{position:absolute;right:8px;bottom:8px;z-index:2;max-width:calc(100% - 16px);padding:2px 7px;border:0;border-radius:5px;background:rgba(0,0,0,.55);color:#9FE3EE;font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:400;line-height:1.4;white-space:normal;text-align:right;text-decoration:none}
+.card .card-act:hover{background:rgba(0,0,0,.78);color:#D7F4F9}
+.card .term~.card-act,.card .up~.card-act{bottom:30px}
+/* Tile de exibição pura (a imagem base da etapa 4 não é escolhível). */
+.card.static{cursor:default}
+.card.static:hover{transform:none}
 
 /* ---------- prompt cards ---------- */
 .prompts{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:var(--s3);margin:var(--s3) 0}
@@ -348,6 +376,9 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--ink-2)}
 .drop u{color:var(--accent);text-decoration:underline}
 .drop.sm{padding:16px}
+/* `.drop` domina a linha (`flex:1;min-width:240px`); `.inline` é a versão compacta que cabe
+   ao lado de outros controles dentro de um `.panel-head .row`. */
+.drop.inline{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:0;padding:7px 12px;border-width:1px;font-size:var(--fs-fine);color:var(--ink-3)}
 
 /* ---------- cadeia de passos ---------- */
 .stepper{display:flex;align-items:center;flex-wrap:wrap;margin:0 0 16px}
@@ -360,9 +391,12 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 
 /* ---------- paleta de cores ---------- */
 .palette{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap;margin:0 0 14px}
-.palette>span{width:34px;height:34px;border-radius:var(--r-sm);border:1px solid var(--line-2);flex:0 0 auto}
-.palette.sm>span{width:22px;height:22px;border-radius:var(--r-chip)}
-.palette .lbl,.palette .fine,.palette .ext{width:auto;height:auto;border:0;border-radius:0;margin:0 0 0 6px;font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-5)}
+/* O `:not()` é o que impede o rótulo de herdar o quadrado do swatch: `.palette.sm>span` (0,2,1)
+   vencia `.palette .lbl` (0,2,0) e o rótulo virava um quadrado de 22px que estourava a linha
+   (3px de scroll horizontal na etapa 5). Corrigido na integração da wave 3. */
+.palette>span:not(.lbl):not(.fine):not(.ext){width:34px;height:34px;border-radius:var(--r-sm);border:1px solid var(--line-2);flex:0 0 auto}
+.palette.sm>span:not(.lbl):not(.fine):not(.ext){width:22px;height:22px;border-radius:var(--r-chip)}
+.palette .lbl,.palette .fine,.palette .ext{width:auto;height:auto;flex:0 1 auto;min-width:0;border:0;border-radius:0;margin:0 0 0 6px;font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-5)}
 
 /* ---------- linhas (publicação, lead, cena, clipe, faixa) ---------- */
 .rowlist{display:flex;flex-direction:column;gap:var(--s2)}
@@ -370,16 +404,34 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .rowcard.grid{display:grid;flex-wrap:nowrap}
 .rowcard.sel{background:var(--surface-3);border-color:var(--ok-line)}
 .rowcard.cur{border-color:var(--accent-line-2)}
+/* Card em coluna (cenas da etapa 5): thumb em cima, linha de rótulo + chip embaixo. */
+.rowcard.col{flex-direction:column;align-items:stretch;gap:var(--s2);padding:10px}
+.rowcard.col>.row{justify-content:space-between;width:100%;min-width:0}
+.rowcard.col>.thumb{width:100%}
+/* Card que é um alvo de escolha (o clique abre/seleciona). */
+.rowcard.pick{cursor:pointer;transition:border-color .15s,transform .15s}
+.rowcard.pick:hover{border-color:var(--ctl-hover);transform:translateY(-2px)}
 .thumb{position:relative;border-radius:7px;overflow:hidden;background:var(--stripes);aspect-ratio:16/9}
 .thumb img,.thumb video{width:100%;height:100%;object-fit:cover;display:block}
+/* Thumb vazia com estado textual — o listrado sozinho não diz por que não há imagem. */
+.thumb.none{display:grid;place-items:center}
+.thumb.none>span,.thumb>.empty{padding:0 var(--s1);font-family:"IBM Plex Mono",monospace;font-size:9.5px;line-height:1.4;color:var(--ink-5);text-align:center}
 .scene-row{display:grid;grid-template-columns:88px 100px minmax(0,1fr);gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
+/* Cena EDITÁVEL (etapa 4): a 2ª coluna vira thumb + select da imagem e a 3ª vira textarea +
+   ações. O catálogo original previa só texto estático nessas colunas. */
+.scene-row .media{display:flex;flex-direction:column;gap:6px;min-width:0}
+.scene-row .media select{width:100%;min-width:0;font-size:11px;padding:4px 22px 4px 8px}
+.scene-row .edit{display:flex;gap:10px;align-items:flex-start;min-width:0}
+.scene-row .edit textarea{flex:1;min-width:0;margin:0}
+.scene-row .acts{display:flex;gap:5px;flex:0 0 auto}
+.scene-row .acts button{padding:5px 9px;font-size:12px;line-height:1.2}
 .scene-row .mom,.mom{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-4)}
 .mom[data-mom="comeco"]{color:var(--accent)}
 .mom[data-mom="descoberta"]{color:var(--info)}
 .mom[data-mom="acao"]{color:var(--gate)}
 .mom[data-mom="desfecho"]{color:var(--ok)}
 .scene-row .txt{font-size:var(--fs-sm);color:var(--ink-row)}
-.clip-row{display:grid;grid-template-columns:26px 84px minmax(120px,1fr) auto;gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
+.clip-row{display:grid;grid-template-columns:26px 84px minmax(170px,1fr) auto;gap:14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
 .clip-row .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
 .clip-row .name{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip-row .ctl{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-3)}
@@ -388,14 +440,16 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .shot-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:16px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px 16px}
 .shot-row .nm{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3)}
 .shot-row .takes{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.take{display:inline-flex;align-items:center;gap:var(--s2);background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 12px;color:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-size:10px;cursor:pointer}
+/* O tile de take é um `<button>` (etapa 6): a regra zera a aparência de botão que o `button`
+   base impõe (`font-weight`, `text-align:center`, `white-space:nowrap`) e trata `:disabled`. */
+.take{display:inline-flex;align-items:center;gap:var(--s2);background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 12px;color:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:400;line-height:1.5;text-align:left;white-space:normal;cursor:pointer}
 .take:hover{border-color:var(--ctl-hover)}
 .take.like{background:var(--accent-soft);border-color:var(--accent-line-2);color:var(--ink)}
 .take .like-lbl{color:var(--accent)}
-.take.empty{background:transparent;border-style:dashed;border-color:var(--ctl);color:var(--ink-5);padding:8px 12px;text-align:left;grid-column:auto}
-.an-takes{gap:var(--s2)}
-.an-takes .row{gap:var(--s2);flex-wrap:wrap;padding:6px 10px;border:1px solid transparent;border-radius:var(--r-sm)}
-.an-takes .row.sel{background:var(--accent-soft);border-color:var(--accent-line-2);color:var(--ink)}
+.take.empty{background:transparent;border-style:dashed;border-color:var(--ctl);color:var(--ink-4);padding:8px 12px;text-align:left;grid-column:auto}
+.take.empty:hover{border-color:var(--ctl-hover);color:var(--ink-3)}
+.take:disabled,.take[disabled]{opacity:.55;cursor:not-allowed;transform:none}
+.an-takes{gap:10px}
 .track-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
 .track-row .play{width:34px;height:34px;border-radius:50%;background:var(--bg-2);border:1px solid var(--ctl);display:grid;place-items:center;color:var(--ink);font-size:12px;cursor:pointer;flex:0 0 auto;padding:0}
 .track-row .meta{display:flex;flex-direction:column;gap:2px;min-width:140px}
@@ -406,6 +460,9 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .pub-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:10px 14px}
 .pub-row .url{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis}
 .pub-row .nt{font-size:var(--fs-fine);color:var(--ink-2)}
+/* Faixa de feedback do post: quebra para a linha inteira abaixo dos metadados. */
+.pub-row .fb{display:flex;gap:var(--s2);align-items:center;flex:1 0 100%;flex-wrap:wrap}
+.pub-row .fb input{flex:1;min-width:200px}
 .lead-row{display:flex;flex-wrap:wrap;gap:12px 14px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:12px 14px}
 .lead-biz{display:flex;flex-direction:column;gap:1px;min-width:150px;flex:1}
 .lead-biz .nm{font-size:13.5px;font-weight:600;color:var(--ink)}
@@ -417,14 +474,20 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .beats i{flex:1;display:block;border-radius:1px;background:var(--ctl)}
 .beats i.imp{background:var(--accent);height:100%}
 .beats.sm{height:38px;padding:6px 12px}
-.beats .cut{position:absolute;top:1px;font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1;color:var(--accent);transform:translateX(-50%)}
+/* O ▾ do corte fica ACIMA da caixa (top:-6px): em `top:1px` ele caía sobre as barras de
+   impacto, que são 100% da altura e da mesma cor accent. Sem mudar padding nem altura da
+   `.beats`, o `.beats-axis` continua alinhado. */
+.beats .cut{position:absolute;top:-6px;z-index:2;font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1;color:var(--accent);transform:translateX(-50%);text-shadow:0 0 3px var(--surface),0 0 2px var(--surface)}
 .beats .cut.off{color:var(--fail)}
 .beats-axis{display:flex;justify-content:space-between;gap:var(--s2);font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--ink-5);margin-top:6px}
 
 /* ---------- player ---------- */
 .player{position:relative;border-radius:var(--r-tile);overflow:hidden;background:var(--stripes);aspect-ratio:16/9}
 .player video,.player img{width:100%;height:100%;object-fit:cover;display:block}
-.player .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(transparent,rgba(0,0,0,.72));color:#C9CFD8}
+/* Legenda branca sobre gradiente escuro: no tema claro o `.player` vazio é o listrado CLARO,
+   e o gradiente antigo (transparente → 72%) deixava a legenda ilegível no topo da faixa.
+   Gradiente reforçado nos dois temas — o texto continua branco sobre fundo escuro. */
+.player .term{position:absolute;left:0;right:0;bottom:0;padding:6px 9px;font-family:"IBM Plex Mono",monospace;font-size:10px;background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.85));color:#EDEFF2}
 .play-big{position:absolute;inset:0;margin:auto;width:52px;height:52px;border-radius:50%;background:rgba(11,13,16,.72);border:1px solid var(--ctl);display:grid;place-items:center;color:#EDEFF2;font-size:18px;cursor:pointer;padding:0}
 
 /* ---------- cards de formato (export, etapa 9) ---------- */
@@ -460,7 +523,7 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* ---------- pitch (etapa 11) ---------- */
 .pitch{display:grid;grid-template-columns:minmax(240px,1fr) minmax(240px,1.2fr);gap:var(--s5)}
 .pitch-table{display:flex;flex-direction:column;gap:6px}
-.pitch-table .tr{display:flex;justify-content:space-between;gap:var(--s3);align-items:center;font-size:var(--fs-sm);color:var(--ink-2);padding:6px 0;border-bottom:1px dashed var(--line)}
+.pitch-table .tr{display:flex;justify-content:space-between;gap:var(--s3);align-items:center;font-size:var(--fs-sm);color:var(--ink-2);padding:6px 0;border-bottom:1px solid var(--line)}
 .pitch-table .tr .v{font-family:"IBM Plex Mono",monospace}
 .pitch-table .total{display:flex;justify-content:space-between;gap:var(--s3);font-size:14px;font-weight:600;color:var(--ink);padding:8px 0;border-bottom:0}
 .pitch-table .total .v{font-family:"IBM Plex Mono",monospace;color:var(--accent)}
@@ -485,5 +548,8 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
   .tb-actions{margin-left:0;width:100%}
   main{padding:20px 20px 80px}
   .grid2,.grid2.rev,.grid2.even,.pitch{grid-template-columns:1fr}
-  .scene-row,.clip-row,.shot-row{grid-template-columns:1fr;gap:10px}
+  .scene-row,.clip-row{grid-template-columns:1fr;gap:10px}
+  /* `.shot-row` NÃO colapsa: em 1 coluna a thumb 16/9 ocupava a largura inteira e empurrava
+     o prompt e os takes para baixo da dobra. A coluna de 110px cabe até em 320px. */
+  .shot-row{grid-template-columns:110px minmax(0,1fr);gap:12px}
 }
