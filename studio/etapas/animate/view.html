@@ -1,32 +1,76 @@
+<style>
+  /* Escopado da etapa 6 (regra 3 da wave 3): o que o catálogo do shell ainda não cobre.
+     Lacunas registradas no FDD views-animate-redesign-fdd.md §12 para a integração (W5). */
+  .an-main textarea.prompt-inline{width:100%;background:var(--bg-2);border:1px solid var(--line-2);
+    border-radius:var(--r-sm);color:var(--ink);padding:8px 11px;font-family:"IBM Plex Mono",monospace;
+    font-size:12px;line-height:1.6;resize:vertical;min-height:56px}
+  .an-main textarea.prompt-inline:focus{border-color:var(--accent);box-shadow:var(--ring)}
+  .an-left{gap:6px}
+  .an-main{gap:10px}
+  .an-noimg{display:grid;place-items:center}
+  .an-noimg span{font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--ink-5)}
+  button.take{font:inherit;font-family:"IBM Plex Mono",monospace;font-size:10px;text-align:left;
+    border-width:1px;line-height:1.5}
+  button.take:disabled{opacity:.55;cursor:not-allowed}
+  .an-takes{gap:10px}
+  .an-takes .an-file{font-size:10px;color:var(--ink-5);text-decoration:none;max-width:20ch;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:-4px}
+  .an-takes .an-file:hover{color:var(--accent);text-decoration:underline}
+  .an-takes .note{margin:0}
+  .take .an-rej{color:var(--fail)}
+  button.an-x{padding:5px 8px;font-size:10px;font-family:"IBM Plex Mono",monospace;
+    line-height:1;margin-left:-6px}
+  .an-foot{gap:6px}
+  .an-foot button{padding:5px 11px;font-size:12px}
+  #anModelNote:empty,#anWarnings:empty{display:none}
+  details.an-opts>summary{font-size:12.5px;color:var(--ink-4);cursor:pointer}
+  details.an-opts>summary:hover{color:var(--ink-3)}
+  details.an-opts>*+*{margin-top:10px}
+  .an-mode{min-width:200px}
+  .an-end{min-width:220px}
+  .an-model{min-width:150px}
+  .an-tips{margin:0;padding-left:18px}
+  /* ≤900px o shell colapsa `.shot-row` para uma coluna: a thumb viraria 16/9 na largura
+     inteira. A etapa vira a coluna esquerda em linha e prende a thumb em 110px. */
+  @media (max-width:900px){
+    .an-mode,.an-end,.an-model{min-width:0;width:100%}
+    .an-left{flex-direction:row;align-items:center;gap:10px}
+    .an-left .thumb{flex:0 0 110px;width:110px}
+  }
+</style>
+
 <header class="stephead">
   <span class="eyebrow">Etapa 6 · aula 012</span>
   <h2>Animação</h2>
-  <p class="lede">Cada frame da etapa 5 vira take de vídeo. Prompt simples para cena simples; movimento de câmera elaborado quando não; start/end frame entre dois frames seguidos da mesma cena; 10 s para mudanças lentas. Áudio do modelo sempre OFF, dois takes por shot, like no usável. Três falhas no mesmo shot? Troque de modelo. Sem jeito? Corte para preto na montagem.</p>
+  <p class="lede">Cada frame vira take de vídeo: áudio OFF, 2 takes por shot, like no usável. Três falhas? Troque de modelo. Sem jeito? Corte para preto na montagem.</p>
 </header>
 
 <section id="guide" class="guide"></section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>1. Takes por shot</h3>
+    <h3><span class="pn">01</span>Takes por shot</h3>
     <div class="row wrap">
       <span id="anReady" class="chip mode">0/0 shots prontos</span>
       <span id="anHfState" class="chip mode">CLI: ?</span>
       <button id="anReload" class="ghost">Recarregar plano</button>
     </div>
   </div>
-  <p class="fine"><strong>O que fazer aqui:</strong> para cada frame do storyboard, escreva o movimento, gere as variações (na UI da Higgsfield ou pelo CLI), importe, dê like na usável. <strong>O que a aula manda:</strong> descrever o movimento com clareza, áudio do modelo OFF, 5 s (10 s quando a mudança é lenta), 2 takes antes de escolher. <strong>O que falta</strong> aparece no painel do guia, acima.</p>
-  <p id="anModelNote" class="fine"></p>
-  <p id="anWarnings" class="fine"></p>
-  <div id="anShots" class="col"></div>
+  <details class="lesson">
+    <summary>O que a aula 012 manda fazer aqui</summary>
+    <p><strong>O que fazer aqui:</strong> para cada frame do storyboard, escreva o movimento, gere as variações (na UI da Higgsfield ou pelo CLI), importe, dê like na usável. <strong>O que a aula manda:</strong> descrever o movimento com clareza, áudio do modelo OFF, 5 s (10 s quando a mudança é lenta), 2 takes antes de escolher. <strong>O que falta</strong> aparece no painel do guia, acima.</p>
+    <p>Prompt simples para cena simples; movimento de câmera elaborado quando não; <strong>start/end frame</strong> entre dois frames seguidos da mesma cena; 10 s para mudanças lentas. Três falhas no mesmo shot? Troque de modelo. Sem jeito? Corte para preto na montagem.</p>
+  </details>
+  <p id="anModelNote" class="note"></p>
+  <p id="anWarnings" class="note"></p>
+  <div id="anShots" class="rowlist"></div>
 </section>
 
 <section class="panel">
   <div class="panel-head">
-    <h3>2. Importar os vídeos que você gerou na UI</h3>
+    <h3><span class="pn">02</span>Importar os vídeos que você gerou na UI</h3>
     <span id="anCandCount" class="chip mode">0 vídeos</span>
   </div>
-  <p class="fine"><strong>O que fazer aqui:</strong> traga para o Studio os mp4 que você gerou na interface da Higgsfield. <strong>Dica da aula:</strong> <span id="anParallel">enquanto um take gera, dispare os outros shots em paralelo na UI da Higgsfield e importe os mp4 aqui depois</span> — a geração pelo CLI é serial, um job por vez.</p>
   <div class="row wrap">
     <label class="drop" id="anDrop">Arraste os mp4 aqui ou <input id="anUpload" type="file" accept="video/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col">
@@ -39,6 +83,10 @@
       <span class="fine">via <code>higgsfield generate list --video</code> (precisa de login no CLI)</span>
     </div>
   </div>
-  <p class="fine">Clique em um vídeo para selecioná-lo e depois use <strong>Atribuir selecionado</strong> no shot correspondente. Ele vira <code>videos/cenaNN/shotMM_takeK.mp4</code>.</p>
-  <div id="anGallery" class="gallery"></div>
+  <p class="note"><b>Dica da aula:</b> <span id="anParallel">enquanto um take gera, dispare os outros shots em paralelo na UI e importe os mp4 depois</span> — a geração pelo CLI é serial, um job por vez.</p>
+  <details class="lesson">
+    <summary>O que a aula 012 manda fazer aqui</summary>
+    <p><strong>O que fazer aqui:</strong> traga para o Studio os mp4 que você gerou na interface da Higgsfield. Clique em um vídeo para selecioná-lo e depois use <strong>Atribuir selecionado</strong> no shot correspondente. Ele vira <code>videos/cenaNN/shotMM_takeK.mp4</code>.</p>
+  </details>
+  <div id="anGallery" class="gallery sm"></div>
 </section>
