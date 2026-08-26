@@ -315,3 +315,34 @@ def test_screen_shows_the_lesson_focus_examples_and_the_base_order(client, proje
     assert "Usar como base da cena" in html
     body = client.get(f"/api/projects/{project}/shots/scenes/cena01/prompts").json()
     assert any("rosto" in e for e in body["focus_examples"])
+
+
+# ---------- wave 3: redesign da tela (ADH-OS-20260826-05) ----------
+def test_view_uses_the_shell_catalog_after_the_redesign(client):
+    """Wave 3: painéis numerados com `.pn`, texto de aula em `details.lesson`, sem style inline."""
+    html = client.get("/steps/shots/view.html").text
+    js = client.get("/steps/shots/view.js").text
+    for n in ("01", "02", "03", "04"):
+        assert f'<span class="pn">{n}</span>' in html, n
+    assert html.count('<details class="lesson">') >= 4
+    assert 'id="shotsPalette" class="palette sm' in html
+    assert '<div id="shotsGallery" class="gallery sm">' in html
+    assert '<div id="prodGallery" class="gallery sm">' in html
+    assert '<p class="note">' in html
+    assert "CARD_BTN" not in js, "o botão do tile é posicionado por CSS escopado, não por style inline"
+
+
+def test_scene_cards_and_tiles_follow_the_prototype(client):
+    """Wave 3: cenas como `.rowcard`, tiles com `data-ord` e selo `span.up`."""
+    js = client.get("/steps/shots/view.js").text
+    assert 'class="rowcard sh-scene' in js
+    assert 'data-ord=' in js, "o check do tile escolhido vira o número da ordem"
+    assert '<span class="up' in js
+    assert 'class="lbl">paleta do mood' in js
+
+
+def test_scene_title_keeps_the_panel_number_outside(client):
+    """`#sceneTitle` é reescrito por textContent: o `.pn` fica fora dele."""
+    html = client.get("/steps/shots/view.html").text
+    assert '<span class="pn">02</span><span id="sceneTitle">' in html
+    assert 'id="sceneText"' in html, "o texto da cena continua visível na tela"
