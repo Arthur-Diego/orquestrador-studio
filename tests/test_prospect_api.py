@@ -244,3 +244,16 @@ def test_view_esconde_o_teaser_ate_a_resposta_e_mostra_os_segmentos(client):
         assert segmento in html, segmento
     assert "l.replied" in js and 'data-act="teaser"' in js, "o botão do teaser depende de replied"
     assert "destroy()" in js
+
+
+def test_view_segue_o_catalogo_do_redesign(client):
+    """Wave 3: gate como `.strip.warn` com `.pipe`, leads em `.lead-row` e pitch em `.pitch-table`."""
+    html = client.get("/steps/prospect/view.html").text
+    js = client.get("/steps/prospect/view.js").text
+    assert 'class="strip warn" id="gatePanel"' in html and 'id="gatePipe"' in html
+    assert '<span class="pn">01</span>Leads' in html
+    assert '<span class="pn">02</span>Pitch da call' in html
+    assert 'details class="lesson"' in html, "o texto longo da aula vira <details class=lesson>"
+    assert '<div class="pitch">' in html and 'id="pitchBox" class="script"' in html
+    assert 'class="lead-row"' in js and '"pitch-table"' in js
+    assert "Studio.ui.pipe(" in js, "o gate desenha as quatro obras no .pipe do shell"
