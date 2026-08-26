@@ -1,8 +1,9 @@
 ### FDD: shell-redesign — redesign dark-first do frontend do Studio
 
-Versão: 1.0
-Data: 2026-08-26
-Responsável: Arthur Diego (implementação: frente `shell-redesign` da wave 3, `ADH-OS-20260826-02`)
+Versão: 1.1
+Data: 2026-08-26 (v1.0) · 2026-08-26 (v1.1 — fechamento da wave 3, `ADH-OS-20260826-09`)
+Responsável: Arthur Diego (implementação: frente `shell-redesign` da wave 3, `ADH-OS-20260826-02`;
+promoção das lacunas na integração: `ADH-OS-20260826-09`)
 
 Modo: **batch** — Gate 1 (spec) pré-aprovado em lote pelo dono do produto
 (`waves/wave-3.md` §"Decisões do lote" #1: "tome todas as decisões recomendadas e só pare
@@ -10,7 +11,7 @@ quando tiver acabado tudo"). Todo ponto que exigiria entrevista foi decidido aqu
 rotulado `[auto-aceito: …]`.
 Spec normativa: `docs/domains/studio/waves/wave-3.md` §"Contrato transversal" e
 §"Feature: shell-redesign". Terreno: `docs/domains/studio/recon-wave-3.md`.
-HLD: `docs/domains/studio/hld.md` (v1.4). FDD anterior do mesmo módulo:
+HLD: `docs/domains/studio/hld.md` (v1.5). FDD anterior do mesmo módulo:
 `docs/domains/studio/features/shell-fdd.md` (wave 2, OS-013) — este documento **substitui** a
 lista "Classes CSS preservadas" daquele FDD (§5 abaixo).
 Fonte de verdade visual (fora do repositório): `Análise de codebase/
@@ -143,6 +144,17 @@ endpoint novo; o shell continua consumindo /api/steps, /api/projects[/{pid}][/gu
 **visual**: os nomes de classe e os helpers que as 6 frentes de tela da sub-wave 1 consomem. As
 telas **consomem exatamente estes nomes**; o shell pode acrescentar, nunca renomear.
 
+**v1.1 (fechamento da wave 3).** As 6 frentes de tela registraram 8 lacunas do catálogo e as
+contornaram com `<style>` escopado (regra 3 da wave). A integração promoveu todas ao shell e
+retirou as regras equivalentes dos `view.html`; as entradas novas estão **em negrito** na tabela
+abaixo. Duas lacunas eram BUGS de especificidade e não só ausências: `.palette .lbl` (0,2,0)
+perdia para `.palette.sm>span` (0,2,1) e o rótulo virava um quadrado de 22 px que estourava a
+linha; `input.mini` (0,1,1) perdia para `.inline input[type=number]` (0,2,1) e voltava a 60 px,
+cortando valores de 3 casas. O que sobrou escopado é o que é mesmo de uma tela só
+(`.rf-why`, `.md-side`, `.md-path`, `.bs-io`, `.bs-imp`, `.bs-chain-state`, `.sb-base`,
+`.sh-wrapchip`, `.sh-scene-id`, `.sh-basethumb`, `.sh-scene-text`, `.sh-subhead`, `.an-*`,
+`.mu-*`, `.ed-*`, `.ex-*`, `.pb-*`, `.pr-*`).
+
 **Contrato 1 — tokens de tema (CSS custom properties)**
 - Tipo: CSS custom properties
 - Assinatura: `:root` (claro) · `@media (prefers-color-scheme:dark) :root:not([data-theme="light"])` · `:root[data-theme="dark"]`
@@ -162,15 +174,15 @@ telas **consomem exatamente estes nomes**; o shell pode acrescentar, nunca renom
 | Grupo | Classes | Notas de uso pelas telas |
 | --- | --- | --- |
 | Texto | `.eyebrow` (10,5 px `.12em` `--ink-5`; `.sm` = 9,5 px `.08em`), `.mono`, `.fine` (12,5 px, 74ch), `.lede` (70ch, `b` em `--ink`), `.note` (12 px `--ink-5`), `.ext` (mono 9,5 px, texto `[extensão]` em títulos) | `.ext` substitui `chip mode [extensão]` |
-| Controles | `input`/`textarea` (bg `--surface-2`, borda `--ctl`, r9, foco accent + `--ring`), `select` (bg `--bg-2`, borda `--line-2`, r8, caret próprio), `input.mini` (48 px mono 11 px), `input.prompt-inline`, `.inline input[type=number]` (60 px), `button` base/`.primary`/`.primary.cta`/`.ghost`/`.link`/`.lg`/`.icon`/`.danger`/`.mini`/`.loading`/`:disabled`, `.field`, `.row`(+`.wrap`), `.col`, `.inline`, `.spacer`, `.hidden` | `.field` = eyebrow 10 px `.1em` + controle |
+| Controles | `input`/`textarea` (bg `--surface-2`, borda `--ctl`, r9, foco accent + `--ring`), `select` (bg `--bg-2`, borda `--line-2`, r8, caret próprio), `input.mini` (48 px mono 11 px) + **`.inline input.mini`/`.ctl input.mini` (64 px)**, **`input.mini.wide` (76 px, valor em reais)**, **`input.mini.num`** (direita, tabular), **`input.prompt-inline, textarea.prompt-inline`** (`textarea` ganha `resize:vertical` + `min-height:56px`), `.inline input[type=number]` (60 px), `button` base/`.primary`/`.primary.cta`/`.ghost`/`.link`/`.lg`/`.icon`/`.danger`/`.mini`/`.loading`/`:disabled`, `.field`, `.row`(+`.wrap`, **`.stretch`**), `.col`, `.inline`, `.spacer`, `.hidden`, **`.grow`/`.grow-sm`/`.grow-lg`**, **`.flat`**, **`.pre`** | `.field` = eyebrow 10 px `.1em` + controle. `input.mini` só vence `.inline input[type=number]` por causa das regras `.inline input.mini`/`.ctl input.mini` — v1.5 |
 | Shell | `.app` (264 px), `.side`, `.brand`(+`.dot`), `.side-sec`, `#projSel`, `.navlink`(+`.active`), `.rail-head`(+`.n`), `.pipe`(+`.lg`, `i.done/.in_progress/.blocked/.todo/.unknown/.none`), `nav ol li`(+`.n`, `.body`, `.t`, `.a`, `.st`, `.active`, `.ready`, `.soon`, `.st-*`), `.side-foot`, `.themebtn`, `.topbar`(+`.vazio`), `.tb-id`, `.tb-line`, `.tb-name`, `.tb-meta`, `.tb-actions`, `.tb-prog`(+`.lbl`), `main` (34/36/96, 1360 px) | só o shell usa |
 | Guia | `.guide`, `.guide-strip`, `.guide-body[data-open]`, `.guide-toggle`(+`.caret`, `.ttl`, `.hint`), `.guide-sections`, `.guide-missing`(+`.k`, `.v`, `.all-ok`), `.guide-sec`, `.guide-what`, `.guide-items`, `.guide-check`, `.guide-fix`, `.guide-next`, `.guide-actions` | markup gerado por `Studio.ui.guide`; as telas só mantêm `<section id="guide" class="guide">` |
 | Visão geral | `.ovgrid` (auto-fill 280 px), `.ovcard`(+`.is-current`, `.st-*`, **sem** `border-left`), `.ovcard-top`(+`.n`, `.aula`, `.chip`), `.desc` (clamp 2), `.progress` 4 px, `.miss`, `.next`, `.act`, `.ov-summary`, `.course`(+`.course-body`) | só o shell usa |
-| Painéis | `.stephead`(+`.ov`), `.panel` (r12, `--surface`, `--line-2`, 20/22), `.panel-head` (+`h3 .pn` mono 11 px accent), `details.lesson`, `.grid2`(+`.rev`, `.even`), `.status`, `.progress`(+`.bar`, `.ok`), `.progress-lbl`, `.log`(+`.ok`, `.warn`), `.strip`(+`.warn`), `.checks`(+`.it.ok/.fail/.warn`, `.mark`, `.lbl`, `.det`), `.cli` | as telas numeram os painéis com `.pn` (dois dígitos) e tiram o "1." do texto |
-| Mídia | `.gallery`(+`.sm` 150, `.xs` 120/560), `.card` (3/4, r10, listras, hover −2 px) (+`.wide` 16/9, `.sq` 1/1, `.src`, `.term`, `.up[.ok]`, `.sel` com anel e `::after` ✓, `.sel[data-ord]::after{content:attr(data-ord)}`, `.src-of`, `:focus-visible`), `.thumb`, `.player`(+`.play-big`, `.term`), `.drop`(+`.sm`, `.over`, `u`), `.palette`(+`.sm`, `.lbl`) | etapa 5 põe `data-ord` no card escolhido |
+| Painéis | `.stephead`(+`.ov`), `.panel` (r12, `--surface`, `--line-2`, 20/22), `.panel-head` (+`h3 .pn` mono 11 px accent), `details.lesson`, `.grid2`(+`.rev`, `.even`), `.status`, `.progress`(+`.bar`, `.ok`), `.progress-lbl`, `.log`(+`.ok`, `.warn`, **`:empty` some**), `.strip`(+`.warn`), `.checks`(+`.it.ok/.fail/.warn`, `.mark`, `.lbl`, `.det`), `.cli` | as telas numeram os painéis com `.pn` (dois dígitos) e tiram o "1." do texto |
+| Mídia | `.gallery`(+`.sm` 150, `.xs` 120/560), `.card` (3/4, r10, listras, hover −2 px) (+`.wide` 16/9, `.sq` 1/1, `.src`, `.term`, `.up[.ok]`, `.sel` com anel e `::after` ✓, `.sel[data-ord]::after{content:attr(data-ord)}`, `.src-of`, `:focus-visible`, `.term` **branco `#EDEFF2` sobre gradiente `.25→.85`** (era `#C9CFD8` sobre `transparent→.72`, ilegível sobre foto clara), **`.static`** = tile não clicável, **`.card-act`** = ação ancorada no tile), `.thumb`(+**`.none`**, **`>.empty`** = estado textual), `.player`(+`.play-big`, `.term` — **branco `#EDEFF2` sobre gradiente `.25→.85`, legível nos dois temas**), `.drop`(+`.sm`, `.over`, `u`, **`.inline`** = compacto no `.panel-head`), `.palette`(+`.sm`, `.lbl`) | etapa 5 põe `data-ord` no card escolhido. `.palette>span` exclui `.lbl`/`.fine`/`.ext` do quadrado do swatch (v1.5). `.card .card-act` sobe para `bottom:30px` quando há `.term`/`.up` |
 | Prompt | `.prompts`, `.prompt`(+`.row`, `.eyebrow`, `button.copy`/`button.link` com `margin-left:auto`, `.ok`, `textarea` sem borda, `.fine` mono), `.prompt.sel`, `.prompt-group`(+`.sel`), `.prompt-ref`, `.refpick`, `.refgallery` | `.prompt.sel` = faixa escolhida (etapa 7) |
-| Linhas | `.rowlist`, `.rowcard`(+`.grid`, `.sel`, `.cur`), `.scene-row` (88/100/1fr) + `.mom[data-mom="comeco\|descoberta\|acao\|desfecho"]`, `.clip-row` (26/84/1fr/auto) + `.n`, `.name`, `.ctl`, `.clip`, `.sfxrow`, `.shot-row` (110/1fr) + `.nm`, `.takes`, `.take`(+`.like`, `.like-lbl`, `.empty`), `.an-takes .row.sel`, `.track-row`(+`.play`, `.meta`, `.wave`), `.pub-row`(+`.url`, `.nt`), `.lead-row`(+`.lead-biz`, `.lead-post`) | `.an-takes .row.sel` = take com like no markup atual do `animate` |
-| Específicos | `.stepper`(+`.st`, `.st.on`, `.st.done`, `.sep`), `.beats`(+`.sm`, `i`, `i.imp`, `.cut[.off]`), `.beats-axis`, `.fmt-grid`, `.fmt-card`(+`.on`, `.top`, `.box`, `.box i.on`), `.pitch`, `.pitch-table`(+`.tr`, `.total`, `.v`), `.script`(+`.end`), `#renderLog .warn` | etapas 3, 7, 8, 9, 11 |
+| Linhas | `.rowlist`, `.rowcard`(+`.grid`, `.sel`, `.cur`, **`.col`** = card em coluna, **`.pick`** = card clicável), `.scene-row` (88/100/1fr) + `.mom[data-mom="comeco\|descoberta\|acao\|desfecho"]` + **`.media`/`.edit`/`.acts`** (cena editável), `.clip-row` (26/84/**170**/auto — 120 px truncava `cena01/shot01 take1`) + `.n`, `.name`, `.ctl`, `.clip`, `.sfxrow`, `.shot-row` (110/1fr, **mantém as 2 colunas em ≤900 px**) + `.nm`, `.takes`, `.take`(+`.like`, `.like-lbl`, `.empty` **em `--ink-4`**, **reset de `<button>` e `:disabled`**), `.track-row`(+`.play`, `.meta`, `.wave`), `.pub-row`(+`.url`, `.nt`, **`.fb`** = faixa de feedback), `.lead-row`(+`.lead-biz`, `.lead-post`) | `.take` é `<button>` na etapa 6: a classe zera `font-weight`/`text-align`/`white-space` do botão. `.an-takes .row.sel` foi removido na v1.5 (o `animate` deixou de gerar esse markup) |
+| Específicos | `.stepper`(+`.st`, `.st.on`, `.st.done`, `.sep`), `.beats`(+`.sm`, `i`, `i.imp`, `.cut[.off]` — **`top:-6px`, acima das barras**), `.beats-axis`, `.fmt-grid`, `.fmt-card`(+`.on`, `.top`, `.box`, `.box i.on`), `.pitch`, `.pitch-table`(+`.tr` **com hairline sólida, como o protótipo**, `.total`, `.v`), `.script`(+`.end`), `#renderLog .warn` | etapas 3, 7, 8, 9, 11 |
 | Chips e avisos | `.chip` (mono 10,5 px, r6, kinds `ok/done/warn/fail/blocked/info/in_progress/todo/mode/unknown`) + `.chip.sm`, `.tb-meta .chip.mode`, `.empty`, `.empty-state`, `.toast` | `Studio.ui.chip(text, kind)` gera |
 | Modal | `.modal-backdrop` (scrim + blur 3), `.modal` (r14, `min(540px,100%)`), `.modal-head`(+`h3`, `.sub`), `.modal-close`, `.modal-body`, `.modal-actions`, `.fmt`(+`label`, `.box i`, `.ratio`, `.dest`) | `Studio.ui.modal` gera |
 
