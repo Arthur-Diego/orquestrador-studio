@@ -273,10 +273,14 @@ function renderOverview() {
     <h2>Visão geral da campanha</h2>
     <p class="lede">As 11 etapas do curso, na ordem das aulas, com o estado real dos artefatos. ${cur ? `Você está na <b>etapa ${esc(cur.n)} — ${esc(cur.title)}</b>.` : "Todas as etapas estão concluídas."}</p>
     <div class="ov-summary">${resumo}</div>
+    <div class="ov-actions"><button type="button" class="shell-reset ghost" id="btnResetCamp"
+      title="Apaga tudo o que as 11 etapas produziram; mantém nome, produto, vibe e formato">Resetar campanha [extensão]</button></div>
   </header>
 
   <div class="ovgrid">${steps.map(cardHtml).join("")}</div>`;
 
+  const bReset = $("#btnResetCamp");
+  if (bReset) bReset.onclick = confirmResetCampaign;
   $("#main").onclick = (ev) => {
     const b = ev.target.closest("[data-go]");
     if (b && !b.disabled) window.Studio.go(b.dataset.go);
@@ -316,6 +320,7 @@ async function showView(id) {
     if (!loaded.has(id)) { await loadScript(`/steps/${encodeURIComponent(id)}/view.js`); loaded.add(id); }
     if (!factories[id]) throw new Error(`etapa ${id}: view.js não registrou a tela`);
     ensureGuideSlot(main);
+    injectStepReset(main, id);
     currentStep = id;
     instances[id] = factories[id](window.Studio.ctx);
     instances[id].init();
@@ -338,6 +343,91 @@ function ensureGuideSlot(main) {
   sec.id = "guide"; sec.className = "guide";
   const head = main.querySelector("header.stephead");
   if (head && head.parentNode) head.after(sec); else main.prepend(sec);
+}
+
+// ---------- reset [extensão] (não é passo do curso — ADR-004) ----------
+// O SHELL desenha o controle de reset no `header.stephead` de qualquer etapa; os `view.html` das
+// telas não o conhecem (ADR-010). O reset só acontece depois do modal de confirmação.
+/** A etapa `stepId` + todas as seguintes (o que a cascata vai apagar). */
+function stepsFromHere(stepId) {
+  const i = steps.findIndex((s) => s.id === stepId);
+  return i < 0 ? [] : steps.slice(i);
+}
+/** Injeta o botão "Resetar etapa [extensão]" no stephead da etapa em exibição. */
+function injectStepReset(main, stepId) {
+  const head = main.querySelector("header.stephead");
+  if (!head || head.querySelector(".shell-reset")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "shell-reset ghost";
+  btn.textContent = "Resetar etapa [extensão]";
+  btn.title = "Apaga o que esta etapa e as seguintes produziram; mantém nome, produto, vibe e formato";
+  btn.onclick = () => confirmResetStep(stepId);
+  head.appendChild(btn);
+}
+/** Modal de confirmação da cascata — lista a etapa + as seguintes, por nome. */
+function confirmResetStep(stepId) {
+  if (!pid) return;
+  const s = steps.find((x) => x.id === stepId);
+  const lista = stepsFromHere(stepId)
+    .map((x) => `<li><b>${esc(x.n)}. ${esc(x.title)}</b></li>`).join("");
+  const html = `<p>Isto apaga, em cascata, tudo o que estas etapas produziram:</p>
+    <ul class="reset-list">${lista}</ul>
+    <p>O <b>nome</b>, o <b>produto</b>, a <b>vibe</b> e o <b>formato</b> da campanha são mantidos.</p>
+    <p class="reset-note">Reset é uma extensão do Studio, não um passo do curso.</p>`;
+  const m = window.Studio.ui.modal({
+    title: `Resetar etapa ${s ? `${s.n} — ${s.title}` : stepId} [extensão]`,
+    subtitle: "Extensão do Studio",
+    html,
+    actions: [
+      { label: "Cancelar", kind: "ghost", close: true },
+      { label: "Resetar", kind: "primary", onClick: (mm) => doResetStep(stepId, mm) },
+    ],
+  });
+  if (m.actions[1]) m.actions[1].classList.add("danger");
+}
+async function doResetStep(stepId, m) {
+  try {
+    await api(`/api/projects/${encodeURIComponent(pid)}/steps/${encodeURIComponent(stepId)}/reset`, { method: "POST" });
+    if (m) m.close();
+    toast("Etapa resetada");
+    await loadProjectState();
+    if (view === stepId) await showView(stepId);   // recarrega a tela (guia derivado volta ao inicial)
+    renderMenu(); renderTopbar();
+    if (view === "overview") renderOverview();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+/** Modal de confirmação do reset da campanha inteira (visão geral). */
+function confirmResetCampaign() {
+  if (!pid) return;
+  const html = `<p>Isto apaga tudo o que as 11 etapas produziram — referências, mood board, imagem
+    base, storyboard, ângulos, takes, trilha, montagem, export, publicação e prospecção.</p>
+    <p>O <b>nome</b>, o <b>produto</b>, a <b>vibe</b> e o <b>formato</b> da campanha são mantidos.</p>
+    <p class="reset-note">Reset é uma extensão do Studio, não um passo do curso.</p>`;
+  const m = window.Studio.ui.modal({
+    title: "Resetar campanha [extensão]",
+    subtitle: "Extensão do Studio",
+    html,
+    actions: [
+      { label: "Cancelar", kind: "ghost", close: true },
+      { label: "Resetar campanha", kind: "primary", onClick: (mm) => doResetCampaign(mm) },
+    ],
+  });
+  if (m.actions[1]) m.actions[1].classList.add("danger");
+}
+async function doResetCampaign(m) {
+  try {
+    await api(`/api/projects/${encodeURIComponent(pid)}/reset`, { method: "POST" });
+    if (m) m.close();
+    toast("Campanha resetada");
+    await loadProjectState();
+    renderMenu(); renderTopbar();
+    if (view === "overview") renderOverview();
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 // ---------- wizard e edição da campanha ----------
