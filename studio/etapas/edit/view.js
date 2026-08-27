@@ -213,28 +213,17 @@ Studio.register("edit", (ctx) => {
   }
 
   async function startRender(target) {
-    try {
-      await save(true);
-      await api(`${base()}/render`, { method: "POST", body: JSON.stringify({ target }) });
-      $("#btnRough").disabled = $("#btnMaster").disabled = true;
-      if (job) job.stop();
-      job = ui.poll(async () => {
-        const j = await api(`${base()}/render/job`);
-        const pct = j.total ? Math.round((j.done / j.total) * 100) : 0;
-        $("#renderBar").style.width = `${j.state === "done" ? 100 : pct}%`;
-        // O log só existe enquanto o job roda (e no erro): `.log:empty` some da tela.
-        $("#renderLog").innerHTML = j.state === "running"
-          ? (j.log || []).map((l) => `<div>${esc(l)}</div>`).join("")
-          : (j.error ? `<div class="warn">${esc(j.error)}</div>` : "");
-        if (j.state === "running") return;
-        $("#btnRough").disabled = false;
-        render();
-        if (j.state === "done" && j.output) toast(`${j.output} pronto — assista na etapa 9`);
-        else if (j.state === "error") toast(j.error);
-        ctx.guide();
-        return false;
-      }, 3000);
-    } catch (err) { $("#btnRough").disabled = false; render(); toast(err.message); }
+    try { await save(true); } catch (err) { return toast(err.message); }
+    // Render é um JOB (ffmpeg): modal com o `log` REAL progredindo (fonte única de polling).
+    if (job) { job.stop(); job = null; }
+    $("#btnRough").disabled = $("#btnMaster").disabled = true;
+    ui.progressJob({
+      title: target === "master" ? "Renderizar master" : "Renderizar prévia",
+      subtitle: "Montagem no ritmo (ffmpeg)",
+      start: () => api(`${base()}/render`, { method: "POST", body: JSON.stringify({ target }) }),
+      jobUrl: `${base()}/render/job`,
+      done: async (j) => { render(); if (j.output) toast(`${j.output} pronto — assista na etapa 9`); ctx.guide(); },
+    }).catch((err) => toast(err.message)).finally(() => { $("#btnRough").disabled = false; render(); });
   }
 
   return {

@@ -94,26 +94,44 @@ Studio.register("base", (ctx) => {
 
   async function gerarPrompt(noBias) {
     const btn = noBias ? $("#btnPromptNoBias") : $("#btnPrompt");
+    // O protótipo não desenha o seletor de modo: o app sempre pede com as imagens (referência +
+    // mood). Sem Claude, "Gerar prompt" cai no template — o `bot: sem claude` já avisa por que o
+    // texto não veio do bot. "Gerar sem viés" é ação do bot: sem ele, erra. Só o modo `images`
+    // chama o Claude (síncrono, lento) e merece o modal de fases; o template é instantâneo.
+    const usaBot = noBias || claudeOk;
+    const body = {
+      ref_id: refId || null,
+      mode: usaBot ? "images" : "template",
+      instruction: $("#promptInstruction").value,
+      no_bias: !!noBias,
+      no_people: false,
+      board: boardSel,   // [extensão] ADR-013: usa as imagens do board como referência
+    };
+    const gen = () => api(url("prompts/generate"), { method: "POST", body: JSON.stringify(body) });
+    const aplicar = (e) => {
+      toast(`Prompt ${e.source === "claude" ? "escrito pelo bot" : "do template"} (${e.seconds || 0}s)`);
+      Object.keys(edits).forEach((k) => delete edits[k]);   // o texto novo do bot manda
+      return loadPrompts().then(() => ctx.guide());
+    };
+    if (!usaBot) {
+      try { await aplicar(await gen()); } catch (err) { toast(err.message); }
+      return;
+    }
+    const p = ui.progress({
+      title: noBias ? "Gerar prompt sem viés" : "Gerar prompt da base",
+      subtitle: "Bot de prompts (Claude) — aula 009",
+    });
+    p.step(noBias ? "Preparando referência + mood (sessão nova, sem o prompt anterior)"
+                  : "Preparando referência + mood");
+    p.step("Consultando o Claude…");
     btn.disabled = true;
     btn.textContent = noBias ? "Perguntando ao bot (sessão nova)…" : "Perguntando ao bot…";
     try {
-      const body = {
-        ref_id: refId || null,
-        // O protótipo não desenha o seletor de modo: o app sempre pede com as imagens
-        // (referência + mood). Sem Claude, "Gerar prompt" cai no template — o `bot: sem claude`
-        // já avisa por que o texto não veio do bot. "Gerar sem viés" é ação do bot: sem ele, erra.
-        mode: (noBias || claudeOk) ? "images" : "template",
-        instruction: $("#promptInstruction").value,
-        no_bias: !!noBias,
-        no_people: false,
-        board: boardSel,   // [extensão] ADR-013: usa as imagens do board como referência
-      };
-      const e = await api(url("prompts/generate"), { method: "POST", body: JSON.stringify(body) });
-      toast(`Prompt ${e.source === "claude" ? "escrito pelo bot" : "do template"} (${e.seconds || 0}s)`);
-      Object.keys(edits).forEach((k) => delete edits[k]);   // o texto novo do bot manda
-      await loadPrompts();
-      ctx.guide();
-    } catch (err) { toast(err.message); }
+      const e = await gen();
+      p.step("Formatando no padrão do bot");
+      await aplicar(e);
+      p.ok("Pronto"); setTimeout(() => p.close(), 700);
+    } catch (err) { p.fail(err.message); toast(err.message); }
     btn.disabled = false;
     btn.textContent = noBias ? "Gerar sem viés" : "Gerar prompt";
   }

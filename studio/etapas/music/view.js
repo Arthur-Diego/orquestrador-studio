@@ -3,7 +3,7 @@
 Studio.register("music", (ctx) => {
   const { $, api, toast } = ctx;
   const ui = Studio.ui;
-  let cands = [], beats = null, story = null, storyJob = null;
+  let cands = [], beats = null, story = null;
 
   const fmt = (s) => (s == null || !isFinite(s) || s <= 0) ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
   const esc = (s) => ui.esc(s);
@@ -33,21 +33,16 @@ Studio.register("music", (ctx) => {
 
   async function renderStory() {
     const btn = $("#btnMusStory");
-    try {
-      await api(`/api/projects/${ctx.pid()}/music/story/render`, { method: "POST", body: "{}" });
-      // O único feedback de "montando…" é o próprio botão (o log de job saiu da tela).
-      btn.disabled = true; btn.classList.add("loading");
-      if (storyJob) storyJob.stop();
-      storyJob = ui.poll(async () => {
-        const j = await api(`/api/projects/${ctx.pid()}/music/story/job`);
-        if (j.state === "running") return;
-        btn.classList.remove("loading"); btn.disabled = false;
-        await loadStory(); ctx.guide();
-        toast(j.state === "done" ? "Sequência bruta pronta — assista inteira antes de escolher a trilha"
-                                 : `erro: ${j.error}`);
-        return false;
-      }, 3000);
-    } catch (err) { btn.classList.remove("loading"); btn.disabled = false; toast(err.message); }
+    // "Assistir a história" monta a sequência bruta dos takes com like (ffmpeg) — é um JOB:
+    // modal com o `log` REAL progredindo (fonte única de polling).
+    btn.disabled = true;
+    ui.progressJob({
+      title: "Montar a história inteira",
+      subtitle: "Sequência bruta dos takes com like (ffmpeg)",
+      start: () => api(`/api/projects/${ctx.pid()}/music/story/render`, { method: "POST", body: "{}" }),
+      jobUrl: `/api/projects/${ctx.pid()}/music/story/job`,
+      done: async () => { await loadStory(); ctx.guide(); toast("Sequência bruta pronta — assista inteira antes de escolher a trilha"); },
+    }).catch((err) => toast(err.message)).finally(() => { btn.disabled = false; });
   }
 
   async function saveStoryCheck() {
@@ -203,8 +198,6 @@ Studio.register("music", (ctx) => {
       await load();
       ctx.guide();
     },
-    destroy() {
-      if (storyJob) storyJob.stop();
-    },
+    destroy() { /* o modal de progresso (progressJob) para o próprio poll ao terminar/fechar */ },
   };
 });

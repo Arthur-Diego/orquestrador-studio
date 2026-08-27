@@ -135,11 +135,16 @@ Studio.register("refs", (ctx) => {
       $("#btnSearch").onclick = async () => {
         const terms = $("#terms").value.split("\n").map(s => s.trim()).filter(Boolean);
         if (!terms.length) return toast("Informe ao menos um termo");
-        try {
-          await api(`/api/projects/${ctx.pid()}/refs/search`, { method: "POST", body: JSON.stringify({
-            terms, max_per_term: +$("#maxPer").value, headless: !$("#headed").checked }) });
-          $("#btnSearch").disabled = true; $("#log").innerHTML = ""; startPoll();
-        } catch (err) { toast(err.message); }
+        // Scrape é um JOB: modal com o `log` REAL do backend progredindo (fonte única de polling).
+        $("#btnSearch").disabled = true; $("#log").innerHTML = "";
+        ui.progressJob({
+          title: "Buscar referências",
+          subtitle: `${terms.length} termo(s) no Pinterest`,
+          start: () => api(`/api/projects/${ctx.pid()}/refs/search`, { method: "POST", body: JSON.stringify({
+            terms, max_per_term: +$("#maxPer").value, headless: !$("#headed").checked }) }),
+          jobUrl: `/api/projects/${ctx.pid()}/refs/job`,
+          done: async () => { renderJob(await api(`/api/projects/${ctx.pid()}/refs/job`)); await load(); ctx.guide(); },
+        }).catch((err) => toast("Falhou: " + err.message)).finally(() => { $("#btnSearch").disabled = false; });
       };
       // O protótipo não desenha painel de upload: o painel de escolha inteiro é o alvo do drop
       // (`.panel.over`) e o `input[type=file]` é aberto pelo link discreto do cabeçalho.
@@ -175,7 +180,12 @@ Studio.register("refs", (ctx) => {
     async onProject() {
       $("#btnSearch").disabled = $("#btnSave").disabled = !ctx.pid();
       await load();
-      if (ctx.pid()) renderJob(await api(`/api/projects/${ctx.pid()}/refs/job`));
+      if (ctx.pid()) {
+        const j = await api(`/api/projects/${ctx.pid()}/refs/job`);
+        renderJob(j);
+        // Retoma o feedback em tela se um scrape já estava rodando ao abrir a etapa.
+        if (j.state === "running" && !job) { $("#btnSearch").disabled = true; startPoll(); }
+      }
       ctx.guide();
     },
     destroy() {

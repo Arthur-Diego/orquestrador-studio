@@ -65,18 +65,30 @@ Studio.register("mood", (ctx) => {
   async function generatePrompt() {
     const mode = $("#moodMode").value, btn = $("#btnMoodGenPrompt");
     if (mode === "images" && !vibeSel.size) return toast("Marque de 1 a 4 imagens de vibe");
+    // `model` aqui é o modelo de IMAGEM (Higgsfield) que segue no corpo; o modelo do BOT é uma
+    // variável de servidor (STUDIO_PROMPTER_MODEL) — por isso a fase não cita um modelo (seria o
+    // de imagem, não o do Claude), mantendo o texto honesto (FDD §0).
+    const body = { mode, instruction: $("#moodInstruction").value, image_ids: [...vibeSel],
+      purpose: $("#bfPurpose").value, tone: $("#bfTone").value, reference: $("#bfRef").value,
+      model: $("#moodModel").value, variation, no_people: $("#moodNoPeople").checked,
+      explore_prompt: $("#explorePrompt").value.trim() };
+    const gen = () => api(`/api/projects/${ctx.pid()}/mood/prompts/generate`, { method: "POST", body: JSON.stringify(body) });
+    // Modo template é instantâneo (sem Claude): não pisca o modal (FDD §0/§4).
+    if (mode === "template") {
+      try { showPrompt(await gen()); ctx.guide(); } catch (err) { toast(err.message); }
+      return;
+    }
+    // Chamada SÍNCRONA ao Claude: modal com as FASES reais + cronômetro ao vivo (progresso honesto).
+    const p = ui.progress({ title: "Gerar prompt de mood", subtitle: "Bot de prompts (Claude) — aula 009" });
+    p.step(mode === "images" ? `Preparando referência + mood (${vibeSel.size} imagem(ns))` : "Preparando o brief");
+    p.step("Consultando o Claude…");
     btn.disabled = true;
-    // `button.loading` é o único feedback de "gerando…" (10–30 s com o Claude).
-    if (mode !== "template") btn.classList.add("loading");
     try {
-      const r = await api(`/api/projects/${ctx.pid()}/mood/prompts/generate`, { method: "POST", body: JSON.stringify({
-        mode, instruction: $("#moodInstruction").value, image_ids: [...vibeSel],
-        purpose: $("#bfPurpose").value, tone: $("#bfTone").value, reference: $("#bfRef").value,
-        model: $("#moodModel").value, variation,
-        no_people: $("#moodNoPeople").checked, explore_prompt: $("#explorePrompt").value.trim() }) });
+      const r = await gen();
+      p.step("Formatando no padrão do bot");
       showPrompt(r); ctx.guide();
-    } catch (err) { toast(err.message); }
-    btn.classList.remove("loading");
+      p.ok("Pronto"); setTimeout(() => p.close(), 700);
+    } catch (err) { p.fail(err.message); toast(err.message); }
     btn.disabled = false;
   }
 
@@ -213,10 +225,15 @@ Studio.register("mood", (ctx) => {
           () => api(`/api/projects/${ctx.pid()}/mood/cost`, { method: "POST", body: JSON.stringify(body) }),
           `Gerar ${ps.length} prompt(s) × ${$("#moodCount").value} variações via CLI`);
         if (!ok) return;
-        try {
-          await api(`/api/projects/${ctx.pid()}/mood/generate`, { method: "POST", body: JSON.stringify(body) });
-          $("#btnMoodGen").disabled = true; $("#btnMoodGen").classList.add("loading"); startPoll();
-        } catch (err) { toast(err.message); }
+        // Job de geração paga → modal com o `log` REAL progredindo (fonte única de polling).
+        $("#btnMoodGen").disabled = true;
+        ui.progressJob({
+          title: "Gerar mood via CLI",
+          subtitle: `${ps.length} prompt(s) × ${$("#moodCount").value} variações (Higgsfield)`,
+          start: () => api(`/api/projects/${ctx.pid()}/mood/generate`, { method: "POST", body: JSON.stringify(body) }),
+          jobUrl: `/api/projects/${ctx.pid()}/mood/job`,
+          done: async (j) => { await load(); ctx.guide(); toast(`concluído · ${j.added} imagens`); },
+        }).catch((err) => toast(err.message)).finally(() => { $("#btnMoodGen").disabled = false; });
       };
       $("#btnDownloads").onclick = async () => {
         try {
@@ -277,6 +294,9 @@ Studio.register("mood", (ctx) => {
       const p = ctx.project();
       if (p && p.vibe && !$("#moodNote").value) $("#moodNote").value = p.vibe;
       await Promise.all([load(), loadVibe(), genPrompts(false)]);
+      // Retoma o feedback em tela se um job de geração já estava rodando ao abrir a etapa
+      // (o modal de progresso só abre na ação do usuário; aqui basta um poll leve).
+      api(`/api/projects/${ctx.pid()}/mood/job`).then((j) => { if (j.state === "running" && !job) startPoll(); }).catch(() => {});
       ctx.guide();
     },
     destroy() { if (job) { job.stop(); job = null; } },

@@ -307,9 +307,17 @@ Studio.register("animate", (ctx) => {
         () => api(`${base()}/cost`, { method: "POST", body: JSON.stringify({ scene: s.scene, shot: s.shot, model: f.model, count: f.count }) }),
         `Gerar ${f.count} take(s) de ${key(s)} com ${f.model}`);
       if (!ok) { await loadPlan(); ctx.guide(); return; }
-      await api(`${base()}/generate`, { method: "POST", body: JSON.stringify({ scene: s.scene, shot: s.shot, model: f.model, count: f.count, prompt: f.prompt, duration: f.duration }) });
+      // Geração paga é um JOB: fecha o modal "Gerar take" e abre o de progresso (um modal por vez),
+      // com o `log` REAL progredindo (fonte única de polling).
       jobShot = key(s); mod.close();
-      await loadPlan(); ctx.guide(); startPoll();
+      ui.progressJob({
+        title: `Gerar ${f.count} take(s) · ${key(s)}`,
+        subtitle: `modelo ${f.model} (Higgsfield)`,
+        start: () => api(`${base()}/generate`, { method: "POST", body: JSON.stringify({ scene: s.scene, shot: s.shot, model: f.model, count: f.count, prompt: f.prompt, duration: f.duration }) }),
+        jobUrl: `${base()}/job`,
+        done: async (j) => { await loadCandidates(); await loadPlan(); ctx.guide(); toast(`job concluído · ${j.added} take(s)`); },
+      }).catch((err) => toast(err.message)).finally(() => { jobShot = null; });
+      await loadPlan(); ctx.guide();
     } catch (err) { toast(err.message); }
   }
 
@@ -400,6 +408,8 @@ Studio.register("animate", (ctx) => {
       dl = await api("/api/animate/downloads-folder");
       $("#anBtnDownloads").title =
         `Importar da pasta Downloads — ${dl.folder}${dl.exists ? "" : " (não encontrada)"} · últimos ${DL_MINUTES} min`;
+      // Retoma o feedback em tela se uma geração já estava rodando ao abrir a etapa.
+      api(`${base()}/job`).then((j) => { if (j.state === "running" && !job) startPoll(); }).catch(() => {});
       ui.renderGuide("animate");
     },
     destroy() { if (job) { job.stop(); job = null; } if (mod) mod.close(); },
