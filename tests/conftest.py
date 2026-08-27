@@ -73,3 +73,52 @@ def ffmpeg_or_skip(studio_env):
     if not ff.available():
         pytest.skip("ffmpeg indisponível")
     return ff
+
+
+# ---------- fixtures de reset (`[extensão]`) ----------
+#: Um artefato-fake para CADA etapa, cobrindo as pastas/arquivos que a etapa escreve de verdade
+#: (conferido no `service.py` de cada uma). Usado pelos testes de reset para provar a cascata.
+RESET_FAKES: dict[str, list[str]] = {
+    "refs": ["refs/candidates/c.jpg", "refs/candidates/thumbs/c.jpg",
+             "refs/brainstorming/c.jpg", "refs/README.md", "refs/last_job.json"],
+    "mood": ["mood/mood.md", "mood/palette.json", "mood/selected/s.jpg",
+             "mood/candidates/m.jpg", "mood/vibe/candidates/v.jpg", "mood/prompts.json"],
+    "base": ["base/base_final.png", "base/brand.json", "base/base.md", "base/candidates/b.png"],
+    "storyboard": ["storyboard/scenes.json", "storyboard/storyboard.md", "storyboard/storyboard.json",
+                   "storyboard/ideas/i.jpg", "storyboard/candidates/c.jpg"],
+    "shots": ["shots/cena01/base.png", "shots/cena01/selection.json",
+              "shots/product/ref.png", "shots/storyboard.json"],
+    "animate": ["animate/takes.json", "animate/candidates/a.mp4", "videos/cena01/shot01_final.mp4"],
+    "music": ["audio/music.mp3", "audio/beats.json", "audio/license.txt",
+              "audio/rough_sequence.mp4", "audio/candidates/x.mp3"],
+    "edit": ["edit/timeline.json", "edit/master.mp4", "edit/rough_cut.mp4",
+             "edit/last_frames/f.png", "edit/candidates/s.wav"],
+    "export": ["export/9x16.mp4", "export/thumb.jpg", "export/qa_report.md",
+               "export/.state.json", "export/previews/9x16.jpg"],
+    "publish": ["publish/log.json", "publish/portfolio.md", "publish/community.json"],
+    "prospect": ["prospect/leads.json", "prospect/pitch.json", "prospect/pitch.md",
+                 "prospect/teasers/1.mp4"],
+}
+#: `jobs/<prefixo>_*.json` que as etapas com job persistido deixam no disco.
+RESET_JOB_FILES: list[str] = [
+    "jobs/mood_1.json", "jobs/base_1.json", "jobs/storyboard_1.json", "jobs/shots_1.json",
+    "jobs/animate_1.json", "jobs/music_1.json", "jobs/export_1.json",
+]
+#: Infra compartilhada que nenhuma etapa escreve hoje, mas que o reset da campanha inteira limpa.
+RESET_SHARED: list[str] = ["assets/a.bin", "images/i.png"]
+
+
+def seed_all_steps(root: Path) -> None:
+    """Escreve um artefato-fake em TODAS as etapas + jobs/ + infra compartilhada de `root`."""
+    for rel in [r for rels in RESET_FAKES.values() for r in rels] + RESET_JOB_FILES + RESET_SHARED:
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("x")
+
+
+def files_under(root: Path, rel: str) -> list[str]:
+    """Arquivos (não pastas) sob `root/rel`, em caminhos relativos a `root`."""
+    base = root / rel
+    if not base.exists():
+        return []
+    return sorted(str(p.relative_to(root)) for p in base.rglob("*") if p.is_file())

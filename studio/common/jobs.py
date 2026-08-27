@@ -31,3 +31,17 @@ class JobRegistry:
 
     def status(self, key: str) -> dict:
         return self._jobs.get(key, {"state": "idle"})
+
+    def is_running(self, key: str) -> bool:
+        """`[extensão]` Há um job 'running' para `key`? Usado pelo reset para recusar (409)."""
+        with self._lock:
+            return self._jobs.get(key, {}).get("state") == "running"
+
+    def clear(self, key: str) -> None:
+        """`[extensão]` Esquece o estado em memória de `key` (volta a 'idle').
+
+        Usado pelo reset depois de apagar as saídas da etapa: sem isso o polling ainda veria o
+        último job 'done'/'error'. A thread daemon nunca é morta — por isso o reset só é aceito
+        quando não há job 'running' (ver `is_running`)."""
+        with self._lock:
+            self._jobs.pop(key, None)

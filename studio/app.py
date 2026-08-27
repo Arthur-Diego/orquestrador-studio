@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from . import higgsfield as hf
 from .common import guide as guide_lib
+from .common import reset as reset_lib
 from .config import PROJECTS_DIR, WEB_DIR
 from .etapas import discover
 from .refs import service
@@ -105,6 +106,30 @@ def step_guide(pid: str, step: str):
         raise HTTPException(404, f"etapa inexistente: {step}")
     service.project_dir(pid)   # 404 se o projeto não existe
     return _guide_of(pid, plugin)
+
+
+@app.post("/api/projects/{pid}/steps/{step}/reset")
+def reset_step(pid: str, step: str):
+    """`[extensão]` Reset em cascata: apaga a etapa `step` e todas as seguintes; mantém `project.json`.
+
+    404 para pid inexistente ou etapa desconhecida; 409 se alguma etapa afetada tem job em andamento.
+    Reset **não é passo do curso** (ADR-004) — é uma extensão do Studio.
+    """
+    if step not in reset_lib.STEP_OUTPUTS:
+        raise HTTPException(404, f"etapa inexistente: {step}")
+    try:
+        return reset_lib.reset_step(pid, step)
+    except reset_lib.ResetBlocked as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.post("/api/projects/{pid}/reset")
+def reset_campaign(pid: str):
+    """`[extensão]` Apaga tudo o que as 11 etapas produziram; mantém `project.json` (nome/produto/vibe/formato)."""
+    try:
+        return reset_lib.reset_campaign(pid)
+    except reset_lib.ResetBlocked as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @app.get("/api/higgsfield/status")
