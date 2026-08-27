@@ -21,11 +21,10 @@ from datetime import datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from PIL import Image
-
 from .. import higgsfield as hf
 from ..common import ingest, prompter
 from ..common.jobs import JobRegistry
+from ..common.palette import palette as _palette
 from ..refs.service import project_dir
 
 DOWNLOADS_DEFAULT = ingest.DOWNLOADS_DEFAULT
@@ -280,23 +279,8 @@ def job_status(pid: str) -> dict:
 
 
 # ---------- seleção e paleta ----------
-def _palette(paths: list[Path], n: int = 6) -> list[str]:
-    from collections import Counter
-    counter: Counter = Counter()
-    for p in paths:
-        try:
-            im = Image.open(p).convert("RGB")
-            im.thumbnail((160, 160))
-            q = im.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
-            pal = q.getpalette()[: 8 * 3]
-            for cnt, idx in q.getcolors() or []:
-                r, g, b = pal[idx * 3: idx * 3 + 3]
-                counter[(r // 16 * 16, g // 16 * 16, b // 16 * 16)] += cnt
-        except Exception:
-            continue
-    return ["#%02x%02x%02x" % rgb for rgb, _ in counter.most_common(n)]
-
-
+# A derivação da paleta vive em `studio/common/palette.py` (fonte única, ADR-013): a etapa 2 e a
+# biblioteca global de mood boards usam o MESMO algoritmo. `_palette` aqui é o alias importado.
 def _write_project_vibe(root: Path, note: str) -> str:
     """Grava a vibe encontrada nesta etapa em `project.json` (G2), com escrita atômica.
 
@@ -353,3 +337,49 @@ def select(pid: str, ids: list[str], note: str = "") -> dict:
     (root / "mood" / "mood.md").write_text("\n".join(lines) + "\n")
     vibe = _write_project_vibe(root, note)
     return {"selected": len(paths), "palette": palette, "vibe": vibe}
+
+
+# ---------- puxar da biblioteca global de mood boards `[extensão]` (ADR-013) ----------
+def pull_board(pid: str, mbid: str) -> dict:
+    """Semeia o mood da campanha a partir de um board da biblioteca global.
+
+    Copia as imagens curadas do board para `mood/selected/` e grava `mood.md`/`palette.json`/
+    `project.vibe` — como o `select()`, mas a semente vem do board. Mantém o modelo de VIBE ÚNICA
+    por campanha (ADR-007): o board é só a origem. Idempotente (reexecutar sobrescreve o mood).
+    A biblioteca é global — apagar o board depois não afeta esta campanha (a cópia é independente).
+    """
+    from ..moodboards import service as mb
+    root = project_dir(pid)
+    src_paths = mb.board_image_paths(mbid)          # KeyError → 404 no router
+    if not src_paths:
+        raise ValueError("Este mood board ainda não tem imagens curadas para puxar.")
+    meta = mb.get_board(mbid)
+    note = (meta.get("vibe") or meta.get("name") or "").strip()
+    sdir = root / "mood" / "selected"
+    sdir.mkdir(parents=True, exist_ok=True)
+    for old in sdir.iterdir():
+        if old.is_file():
+            old.unlink()
+    paths = []
+    for src in src_paths:
+        dst = sdir / src.name
+        shutil.copy2(src, dst)
+        paths.append(dst)
+    palette = _palette(paths)
+    by_file = {f.name: _palette([f], 3) for f in paths}
+    (root / "mood" / "palette.json").write_text(
+        json.dumps({"colors": palette, "note": note, "by_file": by_file}, indent=1))
+    lines = ["# Mood board", "", f"Puxado do mood board **{meta.get('name')}** (biblioteca global "
+             "`[extensão]`) em " + f"{datetime.now():%Y-%m-%d %H:%M}.", "",
+             "Aula 009: um mood só para a campanha inteira. O board é a semente; a vibe continua "
+             "única por campanha (ADR-007). Copiado para a campanha — apagar o board não afeta aqui.", ""]
+    if note:
+        lines += [f"**Vibe em palavras:** {note}", ""]
+    for src in src_paths:
+        lines.append(f"- `{src.name}` — origem: mood board {mbid}")
+    if meta.get("prompt"):
+        lines += ["", f"**Prompt de vibe do board:** {meta['prompt'][:400]}"]
+    lines += ["", "Paleta dominante `[extensão]`: " + ", ".join(palette)]
+    (root / "mood" / "mood.md").write_text("\n".join(lines) + "\n")
+    vibe = _write_project_vibe(root, note)
+    return {"selected": len(paths), "palette": palette, "vibe": vibe, "board": mbid}

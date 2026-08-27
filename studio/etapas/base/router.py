@@ -47,6 +47,7 @@ class GenReq(BaseModel):
     aspect_ratio: str | None = None
     resolution: str = "2k"
     prompt: str = ""          # texto editado na tela (B4); vazio = o do histórico/template
+    board: str | None = None  # [extensão] ADR-013: referência de estilo vinda de um board
 
 
 class SelectReq(BaseModel):
@@ -62,6 +63,7 @@ class PromptGenReq(BaseModel):
     no_bias: bool = False     # sessão nova, sem o brief da campanha (a "aba nova" da aula)
     no_people: bool = False   # frase "No people…" é opcional na base (B11)
     model: str | None = None
+    board: str | None = None  # [extensão] ADR-013: usa as imagens de um board como referência
 
 
 @router.get("/api/projects/{pid}/base/prompts")
@@ -72,12 +74,18 @@ def base_prompts(pid: str, model: str | None = None):
         raise HTTPException(422, str(e)) from e
 
 
+@router.get("/api/projects/{pid}/base/mood-sources")
+def base_mood_sources(pid: str):
+    """`[extensão]` (ADR-013): mood da campanha + boards da biblioteca, para o seletor da etapa 3."""
+    return base.mood_sources(pid)
+
+
 @router.post("/api/projects/{pid}/base/prompts/generate")
 def base_prompt_generate(pid: str, req: PromptGenReq):
     """Roda o bot da aula. Sem Claude no PATH: 409 (a tela oferece o modo template)."""
     try:
         return base.generate_prompt(pid, req.ref_id, req.mode, req.instruction, req.no_bias,
-                                    req.no_people, req.model)
+                                    req.no_people, req.model, req.board)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except FileNotFoundError as e:
@@ -162,7 +170,7 @@ def base_cost(pid: str, req: GenReq):
         raise HTTPException(409, "CLI da Higgsfield não instalado")
     try:
         return base.estimate_cost(pid, req.kind, req.model, req.ref_ids, req.count,
-                                  req.aspect_ratio, req.resolution, req.prompt)
+                                  req.aspect_ratio, req.resolution, req.prompt, req.board)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 
@@ -175,7 +183,7 @@ def base_generate(pid: str, req: GenReq):
         raise HTTPException(409, "CLI da Higgsfield sem login (higgsfield auth login)")
     try:
         return base.start_generate(pid, req.kind, req.model, req.ref_ids, req.count,
-                                   req.aspect_ratio, req.resolution, req.prompt)
+                                   req.aspect_ratio, req.resolution, req.prompt, req.board)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except RuntimeError as e:

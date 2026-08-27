@@ -73,7 +73,12 @@ def test_view_follows_the_wave4_prototype(client):
     # painéis numerados com `.pn`, na ordem visual (o painel 04, do CLI pago, saiu)
     posicoes = [html.index(f'<span class="pn">{n}</span>') for n in ("01", "02", "03")]
     assert posicoes == sorted(posicoes), "os 3 painéis são numerados com .pn na ordem visual"
-    assert html.count('<section class="panel">') == 3
+    # moodboard-library `[extensão]` (ADR-013, ADH-OS-20260827-04): a etapa 3 ganhou 1 painel de
+    # "Mood de referência" (seletor campanha/board + galeria VISUAL do mood). Os 3 painéis do
+    # curso seguem intactos e numerados 01/02/03; o painel extra é o único acréscimo, marcado
+    # `[extensão]` e numerado com `.pn` "M" (não conflita com a numeração do curso).
+    assert html.count('<section class="panel">') == 4
+    assert '<span class="pn">M</span>Mood de referência' in html and 'id="moodSourceGallery"' in html
     assert '<span class="pn">04</span>' not in html and "gasta créditos" not in html
     # o texto de aula vive no guia: `<details class="lesson">` só existe na etapa 1 (regra 4)
     assert '<details class="lesson">' not in html

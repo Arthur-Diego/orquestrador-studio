@@ -18,6 +18,9 @@ Studio.register("base", (ctx) => {
   let refId = "";          // referência escolhida no painel 01: vale para o prompt E para o import
   let step = "situation";  // passo ativo do stepper = passo da importação (auditoria #36)
   let stepTouched = false; // depois do primeiro clique o recarregamento não muda mais o passo
+  // [extensão] (ADR-013): fonte do mood usada como referência de estilo — null = mood da
+  // campanha (atual), ou o mbid de um mood board da biblioteca.
+  let moodSources = null, boardSel = null;
 
   const url = (p) => `/api/projects/${ctx.pid()}/base/${p}`;
 
@@ -103,6 +106,7 @@ Studio.register("base", (ctx) => {
         instruction: $("#promptInstruction").value,
         no_bias: !!noBias,
         no_people: false,
+        board: boardSel,   // [extensão] ADR-013: usa as imagens do board como referência
       };
       const e = await api(url("prompts/generate"), { method: "POST", body: JSON.stringify(body) });
       toast(`Prompt ${e.source === "claude" ? "escrito pelo bot" : "do template"} (${e.seconds || 0}s)`);
@@ -117,6 +121,37 @@ Studio.register("base", (ctx) => {
   async function loadBrand() {
     const b = await api(url("brand"));
     $("#brandName").value = b.name || ""; $("#brandDesc").value = b.description || "";
+  }
+
+  // ---------- mood de referência [extensão] (ADR-013): campanha OU board da biblioteca ----------
+  async function loadMoodSources() {
+    try { moodSources = await api(url("mood-sources")); }
+    catch (e) { moodSources = { campaign: { files: [], count: 0 }, boards: [] }; }
+    const sel = $("#moodSource");
+    const opts = [`<option value="">Mood da campanha (${moodSources.campaign.count} img)</option>`]
+      .concat(moodSources.boards.map((b) =>
+        `<option value="${ui.esc(b.id)}">Board: ${ui.esc(b.name)} (${b.count} img) [extensão]</option>`));
+    sel.innerHTML = opts.join("");
+    if (boardSel && !moodSources.boards.some((b) => b.id === boardSel)) boardSel = null;
+    sel.value = boardSel || "";
+    await renderMoodSourceGallery();
+  }
+
+  async function renderMoodSourceGallery() {
+    const g = $("#moodSourceGallery");
+    if (!boardSel) {
+      const files = (moodSources && moodSources.campaign.files) || [];
+      g.innerHTML = files.length
+        ? files.map((f) => `<div class="card"><img loading="lazy" src="${ctx.files(f)}" alt=""></div>`).join("")
+        : `<div class="empty">Sem mood da campanha ainda — salve o mood na etapa 2, ou puxe/escolha um mood board.</div>`;
+      return;
+    }
+    try {
+      const d = await api(`/api/moodboards/${encodeURIComponent(boardSel)}`);
+      g.innerHTML = d.images.length
+        ? d.images.map((rel) => `<div class="card"><img loading="lazy" src="/mbfiles/${encodeURIComponent(boardSel)}/${ui.esc(rel)}" alt=""></div>`).join("")
+        : `<div class="empty">Este mood board não tem imagens curadas.</div>`;
+    } catch (e) { g.innerHTML = `<div class="empty">${ui.esc(e.message)}</div>`; }
   }
 
   // ---------- candidatas (painel 03) ----------
@@ -196,6 +231,7 @@ Studio.register("base", (ctx) => {
       $("#refGallery").addEventListener("keydown", (e) => { const c = e.target.closest(".card"); if (c && e.key === "Enter") selectRef(c.dataset.ref); });
       $("#btnPrompt").onclick = () => gerarPrompt(false);
       $("#btnPromptNoBias").onclick = () => gerarPrompt(true);
+      $("#moodSource").onchange = () => { boardSel = $("#moodSource").value || null; renderMoodSourceGallery(); };
       $("#basePrompts").addEventListener("click", async (e) => {
         const b = e.target.closest("button.copy"); if (!b) return;
         const ta = b.closest(".prompt").querySelector("textarea");
@@ -248,8 +284,9 @@ Studio.register("base", (ctx) => {
     },
     async onProject() {
       if (!ctx.pid()) return;
-      sel = null; stepTouched = false;
+      sel = null; stepTouched = false; boardSel = null;
       loadBrand();
+      loadMoodSources();
       await loadPrompts();
       load();
       ui.renderGuide("base");

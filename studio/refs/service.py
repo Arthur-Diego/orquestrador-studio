@@ -32,8 +32,16 @@ def list_projects() -> list[dict]:
     return out
 
 
+#: Nomes reservados que um pid de projeto NUNCA pode assumir. `moodboards` é a área global da
+#: biblioteca de mood boards `[extensão]` (ADR-013): o shell trata `#/moodboards` como área
+#: campanha-independente, então um projeto com esse id colidiria com a rota reservada.
+RESERVED_PIDS = {"moodboards"}
+
+
 def create_project(name: str, product: str = "", vibe: str = "") -> dict:
     pid = f"{date.today():%Y-%m}-{slugify(name)}"
+    if pid in RESERVED_PIDS or slugify(name) in RESERVED_PIDS:
+        raise ValueError(f"Nome reservado: {slugify(name)} é uma área do Studio, escolha outro nome.")
     root = PROJECTS_DIR / pid
     if root.exists():
         raise ValueError(f"Projeto já existe: {pid}")

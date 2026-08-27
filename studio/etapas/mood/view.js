@@ -151,6 +151,37 @@ Studio.register("mood", (ctx) => {
       : `<div class="empty">Nenhuma imagem ainda — gere na UI e importe, ou gere via CLI.</div>`;
   }
 
+  // Puxar de um mood board da biblioteca global [extensão] (ADR-013): abre um modal com os boards
+  // e copia as imagens do escolhido para mood/selected/ da campanha (semente da vibe única).
+  async function pullFromBoard() {
+    let boards = [];
+    try { boards = await api("/api/moodboards"); } catch (err) { return toast(err.message); }
+    const usable = boards.filter(b => b.count);
+    const grid = usable.length
+      ? `<div class="gallery sm mb-pick">${usable.map(b =>
+          `<div class="card" data-mb="${ui.esc(b.id)}" tabindex="0" title="${ui.esc(b.name)}">
+             ${b.cover ? `<img loading="lazy" src="/mbfiles/${encodeURIComponent(b.id)}/${ui.esc(b.cover)}" alt="">` : ""}
+             <span class="term">${ui.esc(`${b.name} · ${b.count} img`)}</span></div>`).join("")}</div>`
+      : `<div class="empty">Nenhum mood board com imagens ainda. Crie um em “Mood boards [extensão]”.</div>`;
+    const m = ui.modal({
+      title: "Puxar de um mood board [extensão]",
+      subtitle: "Copia as imagens do board para esta campanha (mood/selected). O board fica intacto.",
+      html: grid,
+    });
+    m.el.querySelectorAll("[data-mb]").forEach(card => {
+      card.onclick = async () => {
+        try {
+          const r = await api(`/api/projects/${ctx.pid()}/mood/pull/${encodeURIComponent(card.dataset.mb)}`, { method: "POST" });
+          m.close();
+          if (r.vibe && !$("#moodNote").value) $("#moodNote").value = r.vibe;
+          paintPalette(r.palette || []);
+          toast(`${r.selected} imagens puxadas do board${r.vibe ? " · vibe: " + r.vibe : ""}`);
+          await load(); ctx.guide();
+        } catch (err) { toast(err.message); }
+      };
+    });
+  }
+
   return {
     init() {
       $("#btnMoodPrompts").onclick = () => genPrompts(true);
@@ -219,6 +250,7 @@ Studio.register("mood", (ctx) => {
         const c = cands.find(x => x.id === card.dataset.id);
         window.open(ctx.files(`mood/candidates/${c.file}`), "_blank");
       });
+      $("#btnPullBoard").onclick = pullFromBoard;
       $("#btnMoodSave").onclick = async () => {
         try {
           const r = await api(`/api/projects/${ctx.pid()}/mood/select`, { method: "POST",

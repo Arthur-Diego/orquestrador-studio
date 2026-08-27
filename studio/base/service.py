@@ -130,6 +130,30 @@ def mood_paths(root: Path) -> list[Path]:
     return [root / m for m in mood_files(root)]
 
 
+def _ref_mood_paths(root: Path, board: str | None = None) -> list[Path]:
+    """`[extensão]` (ADR-013): as imagens de referência que vão ao bot como "mood".
+
+    Sem `board`, é o mood da campanha (`mood/selected/`, o comportamento de sempre). Com `board`,
+    são as imagens curadas de um board da biblioteca global — por caminho absoluto, como o
+    `mood_paths` faz. Assim a etapa 3 pode referenciar visualmente um board sem tocar na campanha.
+    """
+    if board:
+        from ..moodboards import service as mb
+        return mb.board_image_paths(board)   # KeyError → 404 no router
+    return mood_paths(root)
+
+
+def mood_sources(pid: str) -> dict:
+    """`[extensão]` (ADR-013): as fontes de mood que a etapa 3 pode usar como referência —
+    o mood da campanha (atual) e os boards da biblioteca global com imagens curadas."""
+    from ..moodboards import service as mb
+    root = project_dir(pid)
+    camp = mood_files(root)
+    boards = [{"id": b["id"], "name": b["name"], "count": b["count"], "cover": b["cover"]}
+              for b in mb.list_boards() if b["count"]]
+    return {"campaign": {"files": camp, "count": len(camp)}, "boards": boards}
+
+
 def _require_inputs(root: Path) -> tuple[list[dict], list[str]]:
     """Insumos das etapas 1 e 2 sem os quais a aula 009 não começa (B3: o mood entra como IMAGEM;
     os hex de `mood/palette.json` são opcionais)."""
@@ -252,12 +276,15 @@ def _last_prompt(hist: list[dict], ref_id: str | None) -> dict | None:
 
 
 def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", instruction: str = "",
-                    no_bias: bool = False, no_people: bool = False, model: str | None = None) -> dict:
+                    no_bias: bool = False, no_people: bool = False, model: str | None = None,
+                    board: str | None = None) -> dict:
     """B1/B2 (aula 009): o prompt de situação nasce do BOT olhando a referência e o mood.
 
     `mode`: `images` (o bot lê a referência + até 3 imagens do mood), `brief` (só texto) ou
     `template` (fallback determinístico, sem Claude). `no_bias=True` reproduz a aba nova da aula:
     só a referência, **sem** o brief da campanha e **sem** o mood, para o bot não ter viés.
+    `board` `[extensão]` (ADR-013): usa as imagens de um board da biblioteca no lugar do mood da
+    campanha como referência de estilo.
     """
     if mode not in PROMPT_MODES:
         raise ValueError(f"mode deve ser {', '.join(PROMPT_MODES)}")
@@ -278,14 +305,14 @@ def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", i
     elif no_bias:
         res = prompter.from_images("base", [ref["path"]], bot_instruction(product, instruction))
     else:
-        images = [ref["path"], *mood_paths(root)][:PROMPT_IMAGES_MAX]
+        images = [ref["path"], *_ref_mood_paths(root, board)][:PROMPT_IMAGES_MAX]
         res = prompter.from_images("base", images, instruction, brief)
     text = (res.get("prompt") or "").strip()
     if no_people and "no people" not in text.lower():
         text = text.rstrip(". ") + ". " + NO_PEOPLE
     entry = {"ref_id": ref["ref_id"], "ref_file": ref["file"], "mode": mode,
              "instruction": (instruction or "").strip(), "no_bias": bool(no_bias),
-             "no_people": bool(no_people), "model": model or DEFAULT_MODEL,
+             "no_people": bool(no_people), "model": model or DEFAULT_MODEL, "board": board or None,
              "aspect_ratio": project_aspect(root),
              "created": datetime.now().isoformat(timespec="seconds"), **res, "prompt": text}
     hist = _prompt_hist(root)
@@ -580,12 +607,13 @@ def final_file(pid: str) -> str | None:
 
 # ---------- geração via CLI (paga créditos) ----------
 def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
-          prompt: str = "") -> tuple[list[dict], str]:
+          prompt: str = "", board: str | None = None) -> tuple[list[dict], str]:
     """Itens do job (um por chamada ao CLI) + o prompt/instrução que cada um usa.
-    `prompt` não vazio é o texto EDITADO na tela (B4) e vence o histórico/template."""
+    `prompt` não vazio é o texto EDITADO na tela (B4) e vence o histórico/template.
+    `board` `[extensão]` (ADR-013): referência de estilo vinda de um board da biblioteca."""
     _check_kind(kind)
     cands = _normalize(ingest.load_candidates(root, STEP))
-    mood = [str(m) for m in mood_paths(root)][:MOOD_REFS_MAX]
+    mood = [str(m) for m in _ref_mood_paths(root, board)][:MOOD_REFS_MAX]
     if kind == "situation":
         refs, _ = _require_inputs(root)
         if ref_ids:
@@ -625,13 +653,13 @@ def _brand_from_disk(root: Path) -> dict:
 
 def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,
                   count: int | None = None, aspect_ratio: str | None = None, resolution: str = "2k",
-                  prompt: str = "") -> dict:
+                  prompt: str = "", board: str | None = None) -> dict:
     """Estimativa de créditos SEM gerar (a UI mostra e pede `confirm()` antes de gastar).
     `count` ausente usa o default do passo (B4: 3 no rótulo); `aspect_ratio` ausente, o do projeto (G3)."""
     root = project_dir(pid)
     count = count or DEFAULT_COUNT[_check_kind(kind)]
     aspect_ratio = aspect_ratio or project_aspect(root)
-    items, text = _plan(root, kind, ref_ids, count, prompt)
+    items, text = _plan(root, kind, ref_ids, count, prompt, board)
     n = len(items) * (count if kind == "situation" else 1)
     model = model or DEFAULT_MODELS[kind]
     params: dict = {}
@@ -647,12 +675,12 @@ def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[s
 
 def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,
                    count: int | None = None, aspect_ratio: str | None = None, resolution: str = "2k",
-                   prompt: str = "") -> dict:
+                   prompt: str = "", board: str | None = None) -> dict:
     """Caminho pago: o Studio chama o CLI por item e importa o resultado. Sem retry automático."""
     root = project_dir(pid)
     count = count or DEFAULT_COUNT[_check_kind(kind)]
     aspect_ratio = aspect_ratio or project_aspect(root)
-    items, _ = _plan(root, kind, ref_ids, count, prompt)
+    items, _ = _plan(root, kind, ref_ids, count, prompt, board)
     model = model or DEFAULT_MODELS[kind]
 
     log.info("base: job início pid=%s kind=%s itens=%s model=%s", pid, kind, len(items), model)

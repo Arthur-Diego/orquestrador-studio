@@ -4,11 +4,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROJECTS_DIR = Path(os.environ.get("STUDIO_PROJECTS", ROOT / "projects"))
+#: `[extensão]` — biblioteca GLOBAL de mood boards reutilizáveis (independente de campanha,
+#: ADR-013, que estende a ADR-007 de vibe única). Fica fora de PROJECTS_DIR e é gitignored.
+MOODBOARDS_DIR = Path(os.environ.get("STUDIO_MOODBOARDS", ROOT / "moodboards"))
 STATE_DIR = Path(os.environ.get("STUDIO_STATE", Path.home() / ".orquestrador-studio"))
 PINTEREST_PROFILE = STATE_DIR / "pinterest-profile"   # perfil persistente do Chromium (sessão logada)
 WEB_DIR = ROOT / "studio" / "web"
 
-for d in (PROJECTS_DIR, STATE_DIR):
+for d in (PROJECTS_DIR, MOODBOARDS_DIR, STATE_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 # Subpastas de um projeto, inspirado na aula 009 (brainstorming / mood / imagem base / vídeos):

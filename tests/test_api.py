@@ -314,3 +314,40 @@ def test_wave4_helpers_aditivos_do_studio_ui(client):
     assert "modal-actions" in js and 'a.kind === "primary" ? "primary" : "ghost"' in js
     assert "field-sizing" in js or "scrollHeight" in js, "autosize mede a altura do conteúdo"
     assert "● CLI · " in js, "chip do CLI com o texto do protótipo"
+
+
+# ---------- biblioteca de mood boards [extensão] (ADR-013): shell e telas ----------
+def test_shell_area_global_de_moodboards(client):
+    """A área/rota global da biblioteca e o item de sidebar existem (ADR-013)."""
+    index = client.get("/").text
+    assert 'id="btnMoodboards"' in index, "item de sidebar da biblioteca"
+    assert "/static/moodboards.js" in index and client.get("/static/moodboards.js").status_code == 200
+    app_js = client.get("/static/app.js").text
+    assert '"moodboards"' in app_js and "#/moodboards" in app_js and "MB_ROUTE" in app_js
+    assert 'area === "moodboards"' in app_js, "a área global é reconhecida no roteamento"
+    mbjs = client.get("/static/moodboards.js").text
+    for tok in ("Studio.moodboards", "renderList", "renderEditor", "Novo mood board",
+                "/api/moodboards", "/mbfiles/"):
+        assert tok in mbjs, tok
+
+
+def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
+    """A biblioteca é ADITIVA: os asserts do catálogo do shell continuam verdes."""
+    css = client.get("/static/style.css").text + client.get("/static/ui.css").text
+    for classe in (".navlink", ".navlink.active", ".ovcard", ".ovgrid", ".palette", ".ext"):
+        assert classe in css, classe
+    # os novos cards de capa reusam o catálogo e trazem só o que faltava
+    assert ".mb-cover" in css and ".mb-card" in css
+
+
+def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
+    """Etapa 2 puxa do board; etapa 3 tem o seletor + a galeria visual (ADR-013)."""
+    mood_html = client.get("/steps/mood/view.html").text
+    mood_js = client.get("/steps/mood/view.js").text
+    assert 'id="btnPullBoard"' in mood_html and "Puxar de um mood board" in mood_html
+    assert "/mood/pull/" in mood_js
+    base_html = client.get("/steps/base/view.html").text
+    base_js = client.get("/steps/base/view.js").text
+    assert 'id="moodSource"' in base_html and 'id="moodSourceGallery"' in base_html
+    assert "Mood de referência" in base_html
+    assert "board: boardSel" in base_js and "mood-sources" in base_js

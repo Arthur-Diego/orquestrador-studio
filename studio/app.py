@@ -18,13 +18,17 @@ from pydantic import BaseModel
 from . import higgsfield as hf
 from .common import guide as guide_lib
 from .common import reset as reset_lib
-from .config import PROJECTS_DIR, WEB_DIR
+from .config import MOODBOARDS_DIR, PROJECTS_DIR, WEB_DIR
 from .etapas import discover
+from .moodboards.router import router as moodboards_router
 from .refs import service
 from .steps import all_steps
 
 app = FastAPI(title="Orquestrador Studio")
 PLUGINS = discover()
+#: Biblioteca global de mood boards `[extensão]` (ADR-013): rotas sem pid, registradas fora do
+#: mecanismo de plugins de etapa porque a área é campanha-independente.
+app.include_router(moodboards_router)
 
 #: Formatos aceitos em `project.aspect_ratio` `[extensão]` — a aula 007 manda escolher o
 #: formato pelo destino (vertical para Reels/TikTok, wide para YouTube). Default: 16:9.
@@ -198,6 +202,8 @@ def step_asset(step_id: str, asset: str):
 
 # arquivos dos projetos (thumbs e originais) e frontend
 app.mount("/files", StaticFiles(directory=str(PROJECTS_DIR)), name="files")
+# imagens da biblioteca global de mood boards `[extensão]` (ADR-013)
+app.mount("/mbfiles", StaticFiles(directory=str(MOODBOARDS_DIR)), name="mbfiles")
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
