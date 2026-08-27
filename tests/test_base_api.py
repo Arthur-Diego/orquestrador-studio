@@ -117,6 +117,36 @@ def test_view_follows_the_wave4_prototype(client):
     assert ".bs-grow" not in html, "utilitário de crescimento é do shell, não da etapa"
 
 
+def test_view_shows_the_mood_reference_junction(client):
+    """base-prompt-provenance (FDD §3): o painel 01 ganha o cabeçalho de junção (thumb da
+    referência + thumbs do mood + paleta) e a visão anotada `[extensão]` das 5 linhas com chips de
+    proveniência — SEM remover o textarea copiável nem os 3 painéis do curso (contrato da wave 4)."""
+    html = client.get("/steps/base/view.html").text
+    js = client.get("/steps/base/view.js").text
+    # contêineres novos, dentro do painel 01 (não é um painel novo): a contagem segue 4 (ADR-013)
+    assert '<div id="baseJunction"' in html and '<div id="baseProvenance"' in html
+    assert html.count('<section class="panel">') == 4
+    # cabeçalho de junção: os dois lados rotulados + o texto que explica a junção
+    assert "🖼️ Referência (situação)" in js and "🎨 Mood (vibe/luz/cor)" in js
+    assert "funde a <b>situação da referência</b> com a <b>vibe do mood</b>" in js
+    # a visão anotada é read-only, marcada [extensão], com chip por proveniência e parágrafo "junção"
+    assert 'class="ext">[extensão]' in js
+    assert 'from-${ui.esc(p.from)}' in js and "from-join" in js
+    assert "renderJunction" in js and "renderProvenance" in js
+    # cores por token (regra 6): --accent (mood), --info (referência), --ink-4 (técnico)
+    assert ".bs-chip.from-mood{color:var(--accent)" in html
+    assert ".bs-chip.from-reference{color:var(--info)" in html
+    assert ".bs-chip.from-technical{color:var(--ink-4)" in html
+    # o textarea copiável com o prompt COMPLETO segue intacto (não pode quebrar "Copiar"/editar)
+    assert '<div id="basePrompts" class="prompts one bs-one"></div>' in html
+    assert "<textarea" in js and 'class="link copy"' in js
+    # os 3 painéis do curso e o painel M da ADR-013 permanecem
+    for pn in ("01", "02", "03"):
+        assert f'<span class="pn">{pn}</span>' in html
+    assert '<span class="pn">M</span>Mood de referência' in html
+    assert '<span class="pn">04</span>' not in html and '<details class="lesson">' not in html
+
+
 def test_view_keeps_every_id_the_script_queries(client):
     """Contrato DOM da etapa (recon-wave-3 §1): nenhum id consultado pelo view.js some do HTML."""
     import re
@@ -152,6 +182,72 @@ def test_prompts_endpoint(client, pid):
     assert ref["prompt_source"] == "template" and ref["bot_instruction"] != ref["prompt"]
     assert client.get(f"/api/projects/{pid}/base/prompts", params={"model": "gpt_image_2"}).json()["model"] == "gpt_image_2"
     assert client.get("/api/projects/nao-existe/base/prompts").status_code == 404
+
+
+#: Prompt no padrão do bot (parágrafo + 5 linhas) para exercitar a proveniência ponta a ponta.
+_FIVE_LINE_PROMPT = (
+    "Ultra-realistic product photography of an energy drink can in a snowy forest at dusk.\n\n"
+    "Camera: RED Komodo 6K, 50mm, T2.8, shallow depth of field.\n"
+    "Lighting: diffused cold key, neon rim lights on both sides.\n"
+    "Composition: clean, minimal, premium, centered hero shot.\n"
+    "Color grading: icy blues, teal shadows, neon cyan highlights.\n"
+    "Style: futuristic winter commercial, ultra-photorealistic, no illustration."
+)
+
+
+def test_prompts_endpoint_carries_provenance(client, pid):
+    """base-prompt-provenance (FDD §2/§3): cada referência já vem com a proveniência do prompt
+    exibido (o template de fallback), além dos insumos visuais da junção (mood + paleta)."""
+    body = client.get(f"/api/projects/{pid}/base/prompts").json()
+    assert body["mood_files"] == ["mood/selected/m0.jpg"]
+    assert body["palette"]["colors"] == ["#0ff0ff", "#1a1a2e"]
+    ref = body["refs"][0]
+    assert "provenance" in ref and set(ref["provenance"]) == {"paragraph", "parts"}
+    # o template da base não segue as 5 linhas → degradação graciosa: sem partes, mas com parágrafo
+    assert ref["provenance"]["parts"] == [] and ref["provenance"]["paragraph"]
+
+
+def test_generate_returns_labeled_provenance(client, pid, monkeypatch):
+    """FDD §1/§2: com um prompt no padrão do bot, o retorno traz `provenance.parts` rotuladas por
+    `from` (reference/mood/technical) + o parágrafo, e os insumos visuais (mood_refs + palette)."""
+    import json as _json
+
+    from studio.common import prompter
+
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+
+    def fake_run(args, capture_output, text, timeout):
+        import subprocess
+        payload = {"prompt": _FIVE_LINE_PROMPT, "negative": "", "camera": "", "notes_pt": ""}
+        return subprocess.CompletedProcess(args, 0, "```json\n" + _json.dumps(payload) + "\n```", "")
+
+    monkeypatch.setattr(prompter.subprocess, "run", fake_run)
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate", json={"mode": "images"})
+    assert r.status_code == 200
+    prov = r.json()["provenance"]
+    assert prov["paragraph"].startswith("Ultra-realistic")
+    by_label = {p["label"]: p["from"] for p in prov["parts"]}
+    assert by_label == {"Camera": "technical", "Lighting": "mood", "Composition": "reference",
+                        "Color grading": "mood", "Style": "mood"}
+    assert all(part["text"] for part in prov["parts"])
+    # insumos visuais da junção mood × referência, em caminhos relativos para thumbs
+    assert r.json()["mood_refs"] == [{"file": "mood/selected/m0.jpg", "board": None}]
+    assert r.json()["palette"]["colors"] == ["#0ff0ff", "#1a1a2e"]
+    # persiste no histórico (prompts.json)
+    hist = client.get(f"/api/projects/{pid}/base/prompts/history").json()
+    assert hist[0]["provenance"]["parts"][0]["from"] == "technical"
+    # e o prompts() já reflete a proveniência do prompt novo
+    ref = client.get(f"/api/projects/{pid}/base/prompts").json()["refs"][0]
+    assert {p["from"] for p in ref["provenance"]["parts"]} == {"reference", "mood", "technical"}
+
+
+def test_generate_provenance_is_robust_to_missing_lines(client, pid):
+    """Robustez (FDD §1): prompt fora do formato (template) → `provenance` com partes vazias e o
+    prompt inteiro no parágrafo, sem quebrar o retorno."""
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate", json={"mode": "template"})
+    assert r.status_code == 200
+    prov = r.json()["provenance"]
+    assert prov["parts"] == [] and prov["paragraph"]
 
 
 def test_prompts_422_without_inputs(client, studio_env):

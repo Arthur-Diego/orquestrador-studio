@@ -45,6 +45,63 @@ EXAMPLE_PROMPT = (
 #: Rótulos das linhas técnicas do padrão (na ordem).
 PROMPT_SECTIONS = ("Camera:", "Lighting:", "Composition:", "Color grading:", "Style:")
 
+#: Nome de cada seção sem os dois-pontos (chave do `split_sections`).
+SECTION_NAMES = tuple(s.rstrip(":") for s in PROMPT_SECTIONS)
+
+#: Mapa de proveniência determinístico (base-prompt-provenance, FDD §1): fiel ao papel do bot da
+#: base ("place the product in EXACTLY the same situation/composition as the reference image,
+#: keeping the campaign mood"). Composição vem da REFERÊNCIA; luz/cor/estilo vêm do MOOD; câmera é
+#: técnica. O parágrafo é a JUNÇÃO (produto da referência na vibe do mood). Não depende de o modelo
+#: "explicar" nada: mapeia as linhas do formato garantido (`PROMPT_SECTIONS`).
+PROVENANCE_MAP = {
+    "Camera": "technical",
+    "Lighting": "mood",
+    "Composition": "reference",
+    "Color grading": "mood",
+    "Style": "mood",
+}
+
+
+def split_sections(prompt: str) -> dict:
+    """Quebra o prompt do padrão do bot em `{"paragraph": str, "sections": {<nome>: <texto>}}`.
+
+    O padrão é um parágrafo denso + as cinco linhas nomeadas (`Camera:`, `Lighting:`, ...). O parser
+    é robusto: linha nomeada que falte simplesmente não entra em `sections`; texto solto antes da
+    primeira linha nomeada é o parágrafo; continuação de uma linha nomeada gruda na última seção.
+    """
+    text = (prompt or "").strip()
+    sections: dict[str, str] = {}
+    paragraph_lines: list[str] = []
+    seen_section = False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        matched = next((n for n in SECTION_NAMES if stripped.lower().startswith(n.lower() + ":")), None)
+        if matched:
+            seen_section = True
+            sections[matched] = stripped[len(matched) + 1:].strip()
+        elif not seen_section:
+            paragraph_lines.append(line)
+        elif sections and stripped:
+            last = next(reversed(sections))
+            sections[last] = (sections[last] + " " + stripped).strip()
+    return {"paragraph": "\n".join(paragraph_lines).strip(), "sections": sections}
+
+
+def provenance(prompt: str) -> dict:
+    """Proveniência do prompt da base: `{"paragraph": str, "parts": [{label, text, from}]}`.
+
+    `from ∈ {reference, mood, technical}` conforme `PROVENANCE_MAP`; as partes seguem a ordem em que
+    as linhas aparecem no prompt (`PROMPT_SECTIONS`). Degradação graciosa: linha ausente não vira
+    parte — a UI mostra o prompt inteiro + a legenda geral.
+    """
+    parsed = split_sections(prompt)
+    parts = [
+        {"label": name, "text": parsed["sections"][name], "from": PROVENANCE_MAP[name]}
+        for name in SECTION_NAMES
+        if name in parsed["sections"]
+    ]
+    return {"paragraph": parsed["paragraph"], "parts": parts}
+
 PROMPT_FORMAT = (
     "FORMAT (mandatory, this is the instructor's bot pattern): the \"prompt\" value is ONE dense paragraph of "
     "high-end advertising photography (subject and its state, environment and depth, lighting accents and how they "

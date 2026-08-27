@@ -117,6 +117,46 @@ def test_bot_uses_opus_and_the_instructor_pattern(monkeypatch):
     assert "Color grading:" not in prompter.ROLES["motion"], "vídeo tem padrão próprio (aula 012)"
 
 
+def test_split_sections_parses_paragraph_and_five_lines():
+    """base-prompt-provenance: o parser separa o parágrafo das 5 linhas nomeadas do padrão do bot."""
+    parsed = prompter.split_sections(prompter.EXAMPLE_PROMPT)
+    assert set(parsed["sections"]) == {"Camera", "Lighting", "Composition", "Color grading", "Style"}
+    assert "Ultra-realistic commercial product photography" in parsed["paragraph"]
+    assert "Camera:" not in parsed["paragraph"] and "\n" not in parsed["sections"]["Composition"]
+    assert parsed["sections"]["Camera"].startswith("Canon EOS R5")
+    assert parsed["sections"]["Composition"] == "clean, minimal, premium, centered hero shot."
+
+
+def test_split_sections_is_robust_to_missing_lines():
+    """Degradação graciosa (FDD §1): linha nomeada ausente não quebra — só não entra em `sections`."""
+    prompt = ("A dense paragraph about the product.\n\n"
+              "Camera: RED Komodo, 50mm.\nComposition: centered hero shot.")
+    parsed = prompter.split_sections(prompt)
+    assert parsed["paragraph"] == "A dense paragraph about the product."
+    assert set(parsed["sections"]) == {"Camera", "Composition"}
+    assert "Lighting" not in parsed["sections"]
+    # Prompt sem nenhuma linha nomeada: tudo vira parágrafo, `sections` vazio.
+    solto = prompter.split_sections("Just a single sentence prompt. Photorealistic.")
+    assert solto["sections"] == {} and solto["paragraph"].startswith("Just a single sentence")
+
+
+def test_provenance_maps_each_line_to_its_source():
+    """FDD §1: Composição→referência; Lighting/Color grading/Style→mood; Camera→técnico."""
+    prov = prompter.provenance(prompter.EXAMPLE_PROMPT)
+    assert prov["paragraph"].startswith("Ultra-realistic")
+    by_label = {p["label"]: p["from"] for p in prov["parts"]}
+    assert by_label == {"Camera": "technical", "Lighting": "mood", "Composition": "reference",
+                        "Color grading": "mood", "Style": "mood"}
+    # partes na ordem em que aparecem no prompt e cada uma com o seu texto
+    assert [p["label"] for p in prov["parts"]] == list(prompter.SECTION_NAMES)
+    assert all(p["text"] for p in prov["parts"])
+    froms = {p["from"] for p in prov["parts"]}
+    assert froms == {"reference", "mood", "technical"}
+    # sem as 5 linhas → sem partes, mas o retorno mantém o formato (o parágrafo é o prompt inteiro)
+    vazio = prompter.provenance("Single sentence, no named lines.")
+    assert vazio["parts"] == [] and vazio["paragraph"] == "Single sentence, no named lines."
+
+
 def test_fallback_follows_the_pattern_too():
     for kind in ("mood", "base"):
         t = prompter.fallback_template(kind, {"product": "energy drink", "vibe": "snow neon"})
