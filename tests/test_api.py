@@ -341,11 +341,12 @@ def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
 
 
 def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
-    """Etapa 2 puxa do board; etapa 3 tem o seletor + a galeria visual (ADR-013)."""
+    """Etapa 2 escolhe/aplica um board (etapa2-pick, ADR-014); etapa 3 tem seletor + galeria."""
     mood_html = client.get("/steps/mood/view.html").text
     mood_js = client.get("/steps/mood/view.js").text
-    assert 'id="btnPullBoard"' in mood_html and "Puxar de um mood board" in mood_html
-    assert "/mood/pull/" in mood_js
+    # etapa2-pick: a etapa 2 escolhe da biblioteca e aplica via pull_board
+    assert 'id="btnApplyBoard"' in mood_html and "Aplicar a esta campanha" in mood_html
+    assert '"/api/moodboards"' in mood_js and "/mood/pull/" in mood_js
     base_html = client.get("/steps/base/view.html").text
     base_js = client.get("/steps/base/view.js").text
     assert 'id="moodSource"' in base_html and 'id="moodSourceGallery"' in base_html

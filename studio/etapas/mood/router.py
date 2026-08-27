@@ -45,6 +45,17 @@ class DownloadsReq(BaseModel):
     since_minutes: int = 120
 
 
+@router.get("/api/projects/{pid}/mood")
+def mood_status(pid: str):
+    """Mood atual aplicado à campanha (imagens/paleta/vibe) — painel "Mood atual" da etapa 2.
+
+    A etapa 2 agora só ESCOLHE um board da biblioteca e o aplica (`pull_board`); este status
+    alimenta o painel que mostra o mood aplicado.
+    """
+    refs.project_dir(pid)   # 404 se o projeto não existe
+    return mood.current(pid)
+
+
 @router.get("/api/projects/{pid}/mood/prompts")
 def mood_prompts(pid: str, model: str = "nano_banana_2", variation: int = 0,
                  no_people: bool = True, explore_prompt: str = ""):

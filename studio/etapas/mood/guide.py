@@ -1,30 +1,21 @@
 """Guia da etapa 2 — Mood board (aula 009). Leitura pura dos artefatos do projeto.
 
-Textos de `what`/`checklist` conforme a auditoria de fidelidade da wave 2 (§2.4) e validações
-conforme §2.5. Nada aqui força "sem produto": o mood board da aula **tem** o produto — a única
-restrição que o instrutor enuncia é "não tenho nenhum interesse em pessoas", e é opcional.
+**A criação de mood boards migrou para a biblioteca global** (ADR-014, que estende a ADR-013/
+ADR-007). A etapa 2 agora só ESCOLHE um board da biblioteca e o aplica à campanha (`pull_board`).
+O texto de aula (achar a vibe pelo sentimento, grid de 4, teto de 8) continua aqui como CONTEXTO,
+mas a ação desta etapa é escolher da biblioteca — por isso saíram as checagens de "gerar prompt/
+importar grid". `done` = há mood aplicado (`mood/selected` não vazio).
 """
 from __future__ import annotations
 
-from ...common.guide import Guide, count_files, exists, read_json
+from ...common.guide import Guide, count_files, read_json
 from . import META
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 #: ADR-007: uma vibe só, teto de 8 imagens no mood.
 MAX_SELECTED = 8
-#: Stopwords de português que denunciam prompt fora do inglês (aula 007: prompt em inglês).
-_PT_STOPWORDS = (" com ", " para ", " uma ", " que ", " dos ", " das ", " não ", " sem ")
 #: Distância RGB média acima da qual as escolhidas "parecem moods diferentes" (aviso).
 _MOOD_DISTANCE = 130.0
-
-
-def _is_english(text: str) -> bool:
-    """Heurística da auditoria: ≥ 90 % ASCII e sem stopwords de português."""
-    if not text:
-        return False
-    ascii_ratio = sum(1 for c in text if ord(c) < 128) / len(text)
-    low = f" {text.lower()} "
-    return ascii_ratio >= 0.9 and not any(w in low for w in _PT_STOPWORDS)
 
 
 def _hex_rgb(value: str) -> tuple[int, int, int] | None:
@@ -38,7 +29,7 @@ def _hex_rgb(value: str) -> tuple[int, int, int] | None:
 
 
 def _mood_distance(by_file: dict) -> float | None:
-    """Distância média entre os tons dominantes das imagens escolhidas (None se não dá para saber)."""
+    """Distância média entre os tons dominantes das imagens aplicadas (None se não dá para saber)."""
     tones = []
     for colors in by_file.values():
         rgb = _hex_rgb((colors or [None])[0]) if isinstance(colors, list) else None
@@ -54,127 +45,71 @@ def _mood_distance(by_file: dict) -> float | None:
 def guide(pid: str) -> dict:
     meta = read_json(pid, "project.json", default={}) or {}
     product = (meta.get("product") or "").strip()
-    n_vibe = count_files(pid, "mood/vibe/candidates", IMG_EXT)
     n_selected = count_files(pid, "mood/selected", IMG_EXT)
-    has_md = exists(pid, "mood/mood.md")
     palette = read_json(pid, "mood/palette.json", default={}) or {}
-    history = read_json(pid, "mood/prompts.json", default=[]) or []
-    last = history[0] if isinstance(history, list) and history and isinstance(history[0], dict) else {}
     refs = read_json(pid, "refs/candidates/candidates.json", default=[]) or []
     n_refs = sum(1 for c in refs if isinstance(c, dict) and c.get("selected"))
 
-    # Wave 4: o protótipo não desenha `details.lesson` nesta tela — o texto de aula que a etapa 2
-    # exibia nos três painéis vive aqui (ADR-004: o texto não se perde; a tela é que não o mostra).
+    # Wave 4/etapa2-pick: a tela não cria mood — escolhe da biblioteca. O texto de aula que a etapa
+    # exibia nos painéis de criação vive aqui como contexto (ADR-004: o conhecimento não se perde).
     g = Guide(META).text(
-        "Referências soltas geram uma campanha incoerente; ela precisa de um mood. Ache uma imagem "
-        "cujo sentimento você gosta — não precisa ter a ver com o produto (a aula usou \"snow neon "
-        "commercial\" no Explore do Midjourney, porque lá vem o prompt junto). A aula começa "
-        "\"copiar o prompt dessa pessoa e criar ali pra mim\": se você tem esse prompt, cole-o no "
-        "campo do Explore — ele vira a base e o Studio só acrescenta a estilização. Sem ele, peça "
-        "ao bot um prompt com essa vibe (anexe a imagem de vibe e, se quiser, uma referência que "
-        "você gostou; a aula pediu \"sem pessoas\" porque o foco é o produto — o produto em si pode "
-        "aparecer, e Produto, texto e logo não são proibidos aqui: o mood da aula tem a lata). Gere "
-        "um grid de 4; se saírem parecidas demais, aumente a estilização (no meio-termo: extremos "
-        "alucinam); se não pegou a vibe, pegue a melhor imagem do grid como referência de estilo e "
-        "gere mais 4 com o mesmo prompt. Salve as que estão no mesmo mood: esse conjunto vira o "
-        "filtro de tudo o que você gerar daqui em diante. 2K e 16:9 são sugestão do Studio, não "
-        "regra da aula.",
-        ["Escolhi a vibe pelo sentimento, não pelo assunto",
-         "Um único prompt de vibe (variações só de estilização)",
-         "Evitei imagens focadas em rosto/pessoas — o produto é o foco",
-         "O grid \"pegou a vibe\"? Se não, referência de estilo + mesmo prompt de novo",
-         "Todas as imagens salvas estão no mesmo mood",
-         "(Opcional, aula 004/009) mood board de filme para ganhar realismo"],
+        "A etapa 2 agora só ESCOLHE um mood board pronto da biblioteca global e o aplica a esta "
+        "campanha — a criação e a curadoria de moods migraram para a tela \"Mood boards\". Escolha "
+        "o board cuja vibe você quer para a campanha inteira e clique em \"Aplicar a esta "
+        "campanha\": as imagens dele são copiadas para o mood da campanha (mood/selected) e viram "
+        "o filtro de tudo o que você gerar daqui em diante. Continua valendo o modelo da aula 009: "
+        "uma vibe só por campanha (ADR-007) — o board é a semente e não some da biblioteca ao ser "
+        "aplicado (a cópia é independente). Ainda não tem nenhum board? Crie um na biblioteca: a "
+        "vibe é encontrada numa imagem cujo sentimento você gosta (não descrita do zero), você "
+        "importa um grid e escolhe as imagens no mesmo mood — depois volte aqui para aplicá-lo. "
+        "Produto, texto e logo não são proibidos no mood (o mood da aula tem a lata); a única "
+        "restrição que a aula enuncia é \"sem pessoas\", e é opcional.",
+        ["Escolhi um mood board da biblioteca e apliquei à campanha",
+         "A vibe do board é a que eu quero para a campanha inteira (uma vibe só)",
+         "As imagens aplicadas estão em mood/selected — o filtro das próximas etapas",
+         "Sem board ainda? Crie e cure na biblioteca global e volte para aplicar",
+         "(Contexto da aula: a vibe é encontrada pelo sentimento, não descrita do zero)"],
     )
 
-    # Entradas. A aula encontra a vibe no Explore — referências da etapa 1 NÃO bloqueiam esta etapa.
+    # Entrada: o produto da campanha (a etapa 3 precisa dele). Referências da etapa 1 NÃO bloqueiam.
     g.input("product", "Produto do projeto (project.json)", bool(product),
-            detail=product or "sem produto — o prompt de vibe não se escreve sozinho",
+            detail=product or "sem produto — defina o produto da campanha",
             fix="Preencha o produto do projeto na barra lateral")
 
-    g.output("selected", f"mood/selected/ com 1 a {MAX_SELECTED} imagens no mesmo mood", n_selected > 0,
-             detail=f"{n_selected} imagens escolhidas")
-    g.output("mood_md", "mood/mood.md com o prompt de vibe", has_md)
+    g.output("selected", f"mood/selected/ com 1 a {MAX_SELECTED} imagens (aplicadas de um board)",
+             n_selected > 0, detail=f"{n_selected} imagens aplicadas")
 
-    # Validações (auditoria §2.5): atenção, nunca bloqueio.
-    g.check("vibe_images", "Imagem de vibe importada (a vibe é encontrada, não descrita)",
-            "ok" if n_vibe else "todo", detail=f"{n_vibe} em mood/vibe/",
-            fix=None if n_vibe else "Traga 1 a 4 imagens do Explore/Pinterest/frame de filme")
-
+    # Validações (atenção, nunca bloqueio).
     if not n_selected:
-        g.check("selected_range", f"Entre 1 e {MAX_SELECTED} imagens escolhidas (uma vibe só)", "todo")
+        g.check("selected_range", f"Um mood board aplicado (1 a {MAX_SELECTED} imagens)", "todo",
+                detail="nenhum mood aplicado — escolha um board da biblioteca")
     else:
-        g.check("selected_range", f"Entre 1 e {MAX_SELECTED} imagens escolhidas (uma vibe só)",
+        g.check("selected_range", f"Um mood board aplicado (1 a {MAX_SELECTED} imagens)",
                 "ok" if n_selected <= MAX_SELECTED else "warn", detail=f"{n_selected} imagens")
-
-    prompts_in_md = _count_prompts(pid)
-    if not has_md or not prompts_in_md:
-        g.check("single_vibe", "Um único prompt de vibe no mood.md (variações só de estilização)", "todo",
-                detail="mood.md ainda não existe" if not has_md
-                else "nenhum prompt de origem registrado (as imagens entraram sem prompt)")
-    else:
-        # Original + variação de estilização contam como a MESMA vibe (aula 009); mais que isso é
-        # sinal de mood board misturado.
-        g.check("single_vibe", "Um único prompt de vibe no mood.md (variações só de estilização)",
-                "ok" if prompts_in_md <= 2 else "warn", detail=f"{prompts_in_md} prompts registrados")
-
-    prompt_text = str(last.get("prompt") or "")
-    g.check("prompt_en", "Prompt de vibe em inglês (aula 007)",
-            "todo" if not prompt_text else ("ok" if _is_english(prompt_text) else "warn"),
-            detail=None if not prompt_text else prompt_text[:80])
-
-    if last.get("mode") == "images":
-        g.check("images_mode_ref", "Modo \"com imagens\": havia imagem de vibe anexada",
-                "ok" if last.get("images") else "warn",
-                detail=f"{len(last.get('images') or [])} anexadas")
-    else:
-        g.check("images_mode_ref", "Modo \"com imagens\": havia imagem de vibe anexada", "todo",
-                detail="último prompt não usou imagens de vibe")
-
-    forced = [t for t in ("no product", "no logos") if t in prompt_text.lower()]
-    g.check("no_forced_negatives", "Prompt sem negativos que a aula não pede (produto/logo)",
-            "todo" if not prompt_text else ("ok" if not forced else "warn"),
-            detail=None if not forced else f"contém: {', '.join(forced)} — o mood da aula tem o produto")
 
     dist = _mood_distance(palette.get("by_file") or {})
     if not n_selected or dist is None:
-        g.check("same_mood", "As escolhidas parecem do mesmo mood", "todo",
-                detail=None if n_selected else "nada escolhido ainda")
+        g.check("same_mood", "As imagens aplicadas parecem do mesmo mood", "todo",
+                detail=None if n_selected else "nada aplicado ainda")
     else:
-        g.check("same_mood", "As escolhidas parecem do mesmo mood",
+        g.check("same_mood", "As imagens aplicadas parecem do mesmo mood",
                 "ok" if dist <= _MOOD_DISTANCE else "warn",
                 detail=f"distância média entre os tons dominantes: {dist:.0f}")
 
     g.check("refs_from_step1", "Referências da etapa 1 disponíveis (contexto para a etapa 3)",
             "ok" if n_refs else "todo", detail=f"{n_refs} escolhidas na etapa 1",
-            fix=None if n_refs else "Opcional aqui — a vibe pode vir do Explore")
+            fix=None if n_refs else "Opcional aqui — a vibe vem do mood board")
 
-    g.check("project_vibe", "Vibe da campanha gravada no projeto (a etapa 2 grava ao salvar)",
+    g.check("project_vibe", "Vibe da campanha gravada no projeto (aplicar um board com vibe grava)",
             "ok" if (meta.get("vibe") or "").strip() else "todo",
-            detail=meta.get("vibe") or "escreva a vibe em 3 palavras ao salvar o mood")
+            detail=meta.get("vibe") or "aplique um board com vibe para gravar a vibe da campanha")
 
-    # `next_action` no estilo imperativo curto do protótipo (a faixa compacta desenha
-    # "→ Importar o grid gerado na UI da Higgsfield e escolher até 8 no mesmo mood").
+    # `next_action` no estilo imperativo curto do protótipo.
     if not product:
         proxima = None                                   # blocked: o texto padrão explica o que falta
     elif not n_selected:
-        proxima = "Importar o grid gerado na UI da Higgsfield e escolher até 8 no mesmo mood"
-    elif not has_md:
-        proxima = "registrar o prompt de vibe no mood.md"
+        proxima = "Escolha um mood board da biblioteca e aplique à campanha"
     else:
         proxima = "montar a imagem base do produto"
     # Sem `summary`: a faixa compacta do protótipo desta tela não tem chip extra.
     return g.build(next_action=proxima)
-
-
-def _count_prompts(pid: str) -> int:
-    """Quantos prompts distintos o `mood.md` registra (a aula fecha com um, no máximo dois)."""
-    from ...refs.service import project_dir
-    p = project_dir(pid) / "mood" / "mood.md"
-    if not p.is_file():
-        return 0
-    try:
-        text = p.read_text()
-    except OSError:
-        return 0
-    return len({line.split("prompt:", 1)[1].strip()[:120] for line in text.splitlines() if "prompt:" in line})

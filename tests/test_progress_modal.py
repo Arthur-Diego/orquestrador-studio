@@ -43,11 +43,11 @@ def test_progress_styles_use_catalog_tokens(client):
 
 
 def test_sync_claude_calls_open_the_progress_modal(client):
-    """As ações que POSTam num endpoint do bot (Claude) abrem `Studio.ui.progress` com fases."""
-    mood = _view(client, "mood")
-    assert "ui.progress(" in mood and "Consultando o Claude" in mood
-    assert 'mode === "template"' in mood, "o modo template (instantâneo) não pisca o modal"
+    """As ações que POSTam num endpoint do bot (Claude) abrem `Studio.ui.progress` com fases.
 
+    A etapa 2 (mood) deixou de chamar o bot (etapa2-pick, ADR-014: a criação de moods migrou para
+    a biblioteca) — a chamada síncrona ao Claude na criação de moods vive agora em `moodboards.js`.
+    """
     base = _view(client, "base")
     assert "ui.progress(" in base and "Consultando o Claude" in base
     # "Gerar prompt" e "Gerar sem viés" passam pela mesma função; só o modo `images` usa o bot.
@@ -62,7 +62,8 @@ def test_jobs_use_progressjob_as_single_source(client):
     """Cada JOB (geração/render/scrape/teaser) é ligado ao `progressJob` (log real)."""
     liga = {
         "refs": "refs/job",         # scrape
-        "mood": "mood/job",         # geração via CLI
+        # a etapa 2 (mood) não roda mais job de geração via CLI (etapa2-pick, ADR-014: criação
+        # migrou para a biblioteca — a geração paga vive em moodboards, fora do escopo da tela)
         "edit": "render/job",       # render ffmpeg
         "export": 'url("job")',     # render por formato
         "animate": "/job",          # geração paga
@@ -76,8 +77,11 @@ def test_jobs_use_progressjob_as_single_source(client):
 
 
 def test_confirm_cost_still_precedes_paid_generations(client):
-    """O modal de progresso abre DEPOIS do `confirmCost` (FDD §2B) — a confirmação não regrediu."""
-    for step in ("mood", "animate"):
+    """O modal de progresso abre DEPOIS do `confirmCost` (FDD §2B) — a confirmação não regrediu.
+
+    A etapa 2 (mood) não tem mais geração paga (etapa2-pick, ADR-014); resta `animate`.
+    """
+    for step in ("animate",):
         js = _view(client, step)
         assert "ui.confirmCost(" in js, step
         # a ordem no código: confirmCost antes do progressJob (o `if (!ok) return;` corta antes).

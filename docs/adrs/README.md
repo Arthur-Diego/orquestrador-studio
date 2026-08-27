@@ -20,6 +20,7 @@ organizadas por módulo, e mostra o grafo de relacionamentos entre elas.
 | ADR-011 | A cena do produto permanece na etapa 5, decidida na etapa 7 | MUSIC | Aceito | [ADR-011](generated/MUSIC/ADR-011-cena-do-produto-permanece-na-etapa-5.md) |
 | ADR-012 | Portfólio Global Conta Projetos Distintos (Obras), Não Arquivos do Mesmo Projeto | PUBLISH | Aceito | [ADR-012](generated/PUBLISH/ADR-012-portfolio-global-conta-projetos-distintos.md) |
 | ADR-013 | Biblioteca Global de Mood Boards Reutilizáveis (estende a ADR-007) | STUDIO | Aceito | [ADR-013](generated/STUDIO/ADR-013-biblioteca-global-de-mood-boards-reutilizaveis.md) |
+| ADR-014 | A etapa 2 da campanha só escolhe e aplica um mood board da biblioteca (criação centralizada; estende a ADR-007, complementa a ADR-013) | STUDIO | Aceito | [ADR-014](generated/STUDIO/ADR-014-etapa-2-so-escolhe-e-aplica-um-mood-board-da-biblioteca.md) |
 
 ## Grafo de relacionamentos
 
@@ -66,9 +67,16 @@ graph LR
     ADR003 --- ADR013
     ADR004 --- ADR013
     ADR010 --- ADR013
+    ADR014["ADR-014<br/>Etapa 2 só escolhe/aplica um board"]
+    ADR007 --- ADR014
+    ADR013 --- ADR014
+    ADR004 --- ADR014
+    ADR010 --- ADR014
 ```
 
 _Índice atualizado no fechamento da wave 4 (2026-08-27): ADR-010 a ADR-012, geradas nas waves 1–2, entraram na tabela e no grafo. A wave 4 (fidelidade ao protótipo) não criou ADR — suas decisões de lote foram pré-autorizadas pelo dono do produto e ficam em `docs/domains/studio/waves/wave-4.md` §"Decisões do lote" e na retro `wave-4-retro.md`._
+
+_ADR-014 (2026-08-27, ADH-OS-20260827-07): a criação de mood boards foi centralizada na biblioteca global e a etapa 2 da campanha passou a só escolher e aplicar um board — estende a ADR-007 e complementa a ADR-013._
 
 **Legenda dos agrupamentos:**
 - **Backbone STUDIO** (ADR-001, ADR-003, ADR-006): a arquitetura base de processo único, sem
