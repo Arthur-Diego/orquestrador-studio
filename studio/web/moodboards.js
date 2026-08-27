@@ -160,11 +160,14 @@
     [...mode.options].forEach((o) => { if (o.value !== "template") o.disabled = !data.available_claude; });
     if (!data.available_claude) mode.value = "template";
 
+    // Bug fix (ADH-OS-20260827-05): mutar `st.sel`, não o `sel` capturado no closure. `reload()`
+    // reatribui `st.sel = new Set(...)` a cada import; usar o `sel` antigo desincronizava a seleção
+    // do que "Salvar seleção"/"Gerar prompt" leem (`st.sel`), resultando em "0 imagem no board".
     const gal = document.querySelector("#mbGallery");
     gal.addEventListener("click", (e) => {
       const card = e.target.closest(".card"); if (!card) return;
       const id = card.dataset.id;
-      if (sel.has(id)) sel.delete(id); else sel.add(id);
+      if (st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
       card.classList.toggle("sel"); counts(st);
     });
 
