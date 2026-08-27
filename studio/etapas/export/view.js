@@ -121,8 +121,14 @@ Studio.register("export", (ctx) => {
   async function render(formats) {
     const existing = formats.filter((f) => st.outputs[f]);
     if (existing.length && !confirm(`Já existe arquivo para ${existing.join(", ")}. Renderizar de novo substitui.`)) return;
-    try { st.job = await api(url("render"), { method: "POST", body: JSON.stringify({ formats }) }); renderFormats(); renderJob(); }
-    catch (e) { toast(e.message); }
+    // Render por formato é um JOB (ffmpeg): modal com o `log` REAL progredindo (fonte única).
+    Studio.ui.progressJob({
+      title: formats.length > 1 ? "Renderizar todos os formatos" : `Renderizar ${FMT[formats[0]].ratio}`,
+      subtitle: "Export por rede (ffmpeg)",
+      start: async () => { st.job = await api(url("render"), { method: "POST", body: JSON.stringify({ formats }) }); renderFormats(); },
+      jobUrl: url("job"),
+      done: async () => { await load(); ctx.guide(); },
+    }).catch((e) => toast(e.message));
   }
 
   return {

@@ -37,6 +37,16 @@
 //   Studio.ui.drop(el, onFiles)
 //       → já aceitava qualquer elemento; a wave 4 documenta o uso com o PAINEL inteiro como
 //         alvo (`.panel.over`), que é o que o protótipo desenha (sem dropzone visível).
+//
+// ADH-OS-20260827-06 (modal de progresso honesto) — também ADITIVO:
+//   Studio.ui.progress({title, subtitle?})
+//       → modal com cronômetro `mm:ss`, lista de passos (spinner/✓/✗, `aria-live`) e ✕ desabilitado
+//         até `ok`/`fail`. Handle: `.step` `.ok` `.fail` `.note` `.count` `.close`. Usado nas
+//         chamadas SÍNCRONAS ao Claude (fases reais + cronômetro).
+//   Studio.ui.progressJob({title, subtitle?, start, jobUrl, done?, label?})
+//       → sobre `progress`+`poll`: dispara `start()`, polla `jobUrl` e renderiza cada linha nova de
+//         `log` como passo e `done/total` como progresso. Retorna Promise que resolve com o job final
+//         (rejeita no `state==="error"`). Fonte única de polling dos jobs.
 window.Studio = window.Studio || {};
 
 window.Studio.ui = {
@@ -239,6 +249,165 @@ window.Studio.ui = {
       };
     });
     return ref;
+  },
+
+  // ---------- progresso (ADH-OS-20260827-06) ----------
+  /**
+   * Modal de progresso HONESTO para ações que chamam o Claude (síncronas, com fases + cronômetro)
+   * ou que rodam um job em sequência (via `progressJob`, cada linha do `log` vira um passo).
+   * Reusa a base visual do `modal()` (`.modal-backdrop`/`.modal`), mas controla a fechabilidade:
+   * o ✕ nasce DESABILITADO e só habilita em `ok()`/`fail()` — enquanto a ação corre o modal não
+   * fecha por engano (Esc/backdrop também só valem depois de terminar). `opts = {title, subtitle}`.
+   *
+   * Devolve um handle encadeável:
+   *   `.step(label)` — marca o passo atual como ✓ e adiciona um novo passo com spinner;
+   *   `.ok(label?)`  — marca o passo atual como ✓ (e adiciona um passo final se vier `label`),
+   *                    para o cronômetro e habilita o ✕;
+   *   `.fail(msg)`   — marca o passo atual como ✗, mostra `msg` e habilita o ✕;
+   *   `.note(html)`  — área livre abaixo dos passos (ex.: mostrar o resultado);
+   *   `.count(d,t)`  — badge `d/t` no passo atual (progresso `done/total` dos jobs);
+   *   `.close()`     — fecha o modal.
+   * A lista de passos é `aria-live="polite"` (leitor de tela anuncia cada passo novo).
+   */
+  progress({ title, subtitle = "" } = {}) {
+    const esc = (s) => this.esc(s);
+    const prev = document.activeElement;
+    const back = document.createElement("div");
+    back.className = "modal-backdrop";
+    back.innerHTML = `<div class="modal progress-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="modal-head">
+        <div>
+          <h3>${esc(title)}</h3>
+          ${subtitle ? `<p class="sub">${esc(subtitle)}</p>` : ""}
+        </div>
+        <span class="prog-timer" aria-hidden="true">00:00</span>
+        <button class="modal-close" type="button" title="Fechar" aria-label="Fechar" disabled>✕</button>
+      </div>
+      <div class="modal-body">
+        <ol class="prog-steps" aria-live="polite"></ol>
+        <div class="prog-note" hidden></div>
+      </div>
+    </div>`;
+    let done = false;                       // ok/fail chamado → agora é fechável
+    const t0 = Date.now();
+    const timerEl = back.querySelector(".prog-timer");
+    const stepsEl = back.querySelector(".prog-steps");
+    const noteEl = back.querySelector(".prog-note");
+    const closeBtn = back.querySelector(".modal-close");
+    const tick = () => {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      timerEl.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    };
+    const timer = setInterval(tick, 1000); tick();
+    const close = () => {
+      if (!back.isConnected) return;
+      clearInterval(timer);
+      document.removeEventListener("keydown", onKey, true);
+      back.remove();
+      if (prev && prev.focus) prev.focus();
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape" && done) { e.preventDefault(); close(); return; }
+      if (e.key !== "Tab") return;
+      const f = [...back.querySelectorAll('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
+        .filter((n) => n.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    back.addEventListener("mousedown", (e) => { if (e.target === back && done) close(); });
+    closeBtn.onclick = close;
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(back);
+
+    const cur = () => stepsEl.querySelector('.prog-step[data-state="active"]');
+    const markDone = () => {
+      const c = cur();
+      if (c) { c.dataset.state = "done"; c.querySelector(".prog-ico").textContent = "✓"; }
+    };
+    const finish = () => { done = true; clearInterval(timer); closeBtn.disabled = false; closeBtn.focus(); };
+    const addStep = (label, state, ico) => {
+      const li = document.createElement("li");
+      li.className = "prog-step"; li.dataset.state = state;
+      li.innerHTML = `<span class="prog-ico" aria-hidden="true">${ico || ""}</span>` +
+        `<span class="prog-lbl">${esc(label)}</span>`;
+      stepsEl.appendChild(li);
+      return li;
+    };
+    const handle = {
+      el: back,
+      step(label) { markDone(); addStep(label, "active"); return handle; },
+      ok(label) { markDone(); if (label) addStep(label, "done", "✓"); finish(); return handle; },
+      fail(msg) {
+        const c = cur();
+        if (c) { c.dataset.state = "error"; c.querySelector(".prog-ico").textContent = "✗"; }
+        if (msg) { noteEl.hidden = false; noteEl.innerHTML = `<span class="prog-err">${esc(msg)}</span>`; }
+        finish();
+        return handle;
+      },
+      note(html) { noteEl.hidden = false; noteEl.innerHTML = html; return handle; },
+      count(d, t) {
+        const c = cur();
+        if (!c || !t) return handle;
+        let b = c.querySelector(".prog-count");
+        if (!b) { b = document.createElement("span"); b.className = "prog-count"; c.appendChild(b); }
+        b.textContent = `${d}/${t}`;
+        return handle;
+      },
+      close,
+    };
+    return handle;
+  },
+
+  /**
+   * Helper sobre `progress` + `poll` para JOBS (`{state, done, total, log:[…]}` — `common/jobs.py`).
+   * `opts = {title, subtitle?, start, jobUrl, done?, label?, ms?}`:
+   *   `start()` — dispara o POST que cria o job (aguardado; erro → `fail` e a Promise rejeita);
+   *   `jobUrl`  — o endpoint `/job` a pollar; cada linha NOVA do `log` vira um passo e `done/total`
+   *               vira o badge de progresso do passo atual;
+   *   `done(job)` — callback pós-conclusão (recarregar galeria/estado), rodado ANTES de fechar;
+   *   `label`   — rótulo do passo final (default "Pronto"). `ms` = intervalo do poll (default 2000).
+   * Resolve com o job final quando `state==="done"`; rejeita e mostra `error` quando `"error"`.
+   * O `confirmCost` (gerações pagas) continua ANTES: o modal só abre depois de confirmado.
+   */
+  progressJob({ title, subtitle = "", start, jobUrl, done, label, ms = 2000 } = {}) {
+    const p = this.progress({ title, subtitle });
+    p.step("Iniciando…");
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn) => { if (settled) return; settled = true; fn(); };
+      const finishOk = async (job) => {
+        p.ok(label || "Pronto");
+        try { if (done) await done(job); } catch (e) { /* pós-conclusão não trava o modal */ }
+        setTimeout(() => p.close(), 900);
+        resolve(job);
+      };
+      const go = async () => {
+        try { if (start) await start(); }
+        catch (e) { settle(() => { p.fail((e && e.message) || String(e)); reject(e); }); return; }
+        let seen = 0, fails = 0;
+        window.Studio.ui.poll(async () => {
+          let job;
+          try { job = await (await fetch(jobUrl)).json(); fails = 0; }
+          catch (e) {
+            if (++fails >= 5) { settle(() => { p.fail("Sem resposta do servidor."); reject(e); }); return false; }
+            return;
+          }
+          const log = job.log || [];
+          for (; seen < log.length; seen++) {
+            const l = log[seen];
+            p.step(typeof l === "string" ? l : (l && (l.text || l.msg)) || "…");
+          }
+          if (job.total) p.count(job.done || 0, job.total);
+          if (job.state === "running" || job.state === "idle") return;
+          if (job.state === "error") settle(() => { p.fail(job.error || "Falhou."); reject(new Error(job.error || "job error")); });
+          else settle(() => finishOk(job));
+          return false;
+        }, ms);
+      };
+      go();
+    });
   },
 
   // ---------- painel do guia ----------

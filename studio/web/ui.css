@@ -97,6 +97,33 @@
 .modal-body form{display:flex;flex-direction:column;gap:14px}
 .modal-actions{display:flex;gap:var(--s2);justify-content:flex-end;padding-top:var(--s3);border-top:1px solid var(--line)}
 
+/* ===== modal de progresso (ADH-OS-20260827-06) ===== */
+/* Reusa `.modal-backdrop`/`.modal`; só acrescenta o cronômetro, a lista de passos e a nota.
+   Tokens do catálogo (claro/escuro vêm de style.css); sem scroll horizontal (labels quebram). */
+.progress-modal .modal-head{align-items:center}
+.prog-timer{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-sm);
+  color:var(--ink-3);font-variant-numeric:tabular-nums}
+.progress-modal .modal-close{margin-left:8px}
+.progress-modal .modal-close:disabled{opacity:.35;cursor:not-allowed}
+.prog-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.prog-step{display:flex;align-items:flex-start;gap:10px;font-size:var(--fs-sm);color:var(--ink-2);min-width:0}
+.prog-step .prog-lbl{min-width:0;overflow-wrap:anywhere;line-height:1.4}
+.prog-step[data-state="done"]{color:var(--ink-3)}
+.prog-step[data-state="active"]{color:var(--ink)}
+.prog-step[data-state="error"]{color:var(--gate)}
+.prog-ico{flex:0 0 auto;width:16px;height:16px;display:inline-flex;align-items:center;
+  justify-content:center;font-size:12px;line-height:1;margin-top:1px}
+.prog-step[data-state="done"] .prog-ico{color:var(--ok)}
+.prog-step[data-state="error"] .prog-ico{color:var(--gate)}
+.prog-step[data-state="active"] .prog-ico{width:14px;height:14px;border:2px solid var(--line-2);
+  border-top-color:var(--accent);border-radius:50%;animation:prog-spin .7s linear infinite}
+.prog-count{margin-left:auto;padding-left:8px;font-family:"IBM Plex Mono",monospace;
+  font-size:var(--fs-fine);color:var(--ink-5);font-variant-numeric:tabular-nums}
+.prog-note{font-size:var(--fs-fine);color:var(--ink-3);border-top:1px solid var(--line);padding-top:10px}
+.prog-note .prog-err{color:var(--gate)}
+@keyframes prog-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.prog-step[data-state="active"] .prog-ico{animation:none}}
+
 /* picker de formato (3 cards radio com a proporção desenhada) */
 .fmt{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s2)}
 .fmt label{position:relative;display:flex;flex-direction:column;gap:6px;cursor:pointer;

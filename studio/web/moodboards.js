@@ -247,15 +247,32 @@
     const mode = document.querySelector("#mbMode").value;
     const btn = document.querySelector("#btnMbGenPrompt");
     if (mode === "images" && !st.sel.size) return toast("Salve/escolha ao menos uma imagem para o bot olhar");
-    btn.disabled = true; if (mode !== "template") btn.classList.add("loading");
-    try {
-      const r = await api(`/api/moodboards/${encodeURIComponent(st.data.id)}/prompt/generate`, { method: "POST", body: JSON.stringify({
-        mode, instruction: document.querySelector("#mbInstruction").value,
-        image_ids: [...st.sel], no_people: document.querySelector("#mbNoPeople").checked }) });
+    const gen = () => api(`/api/moodboards/${encodeURIComponent(st.data.id)}/prompt/generate`, { method: "POST", body: JSON.stringify({
+      mode, instruction: document.querySelector("#mbInstruction").value,
+      image_ids: [...st.sel], no_people: document.querySelector("#mbNoPeople").checked }) });
+    const aplicar = (r) => {
       showPrompt(r.prompt);
       toast(`Prompt ${r.source === "claude" ? "escrito pelo bot" : "do template"} (${r.seconds || 0}s)`);
-    } catch (err) { toast(err.message); }
-    btn.classList.remove("loading"); btn.disabled = false;
+    };
+    // Modo template é instantâneo (sem Claude): não pisca o modal.
+    if (mode === "template") {
+      btn.disabled = true;
+      try { aplicar(await gen()); } catch (err) { toast(err.message); }
+      btn.disabled = false;
+      return;
+    }
+    // Chamada SÍNCRONA ao Claude: modal com as FASES reais + cronômetro (progresso honesto).
+    const p = ui.progress({ title: "Gerar prompt de vibe", subtitle: "Bot de prompts (Claude) — mood board [extensão]" });
+    p.step(mode === "images" ? `Preparando as imagens do board (${st.sel.size})` : "Preparando o brief");
+    p.step("Consultando o Claude…");
+    btn.disabled = true;
+    try {
+      const r = await gen();
+      p.step("Formatando no padrão do bot");
+      aplicar(r);
+      p.ok("Pronto"); setTimeout(() => p.close(), 700);
+    } catch (err) { p.fail(err.message); toast(err.message); }
+    btn.disabled = false;
   }
 
   function renameModal(st) {

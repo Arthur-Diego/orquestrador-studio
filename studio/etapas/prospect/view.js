@@ -162,8 +162,14 @@ Studio.register("prospect", (ctx) => {
         await api(`${base()}/leads/${id}/replied`, { method: "POST", body: JSON.stringify({ replied: true }) });
       } else if (act === "teaser") {
         if (l.teaser && !confirm("Isso substitui o teaser atual deste lead. Continuar?")) return;
-        await api(`${base()}/leads/${id}/teaser`, { method: "POST", body: "{}" });
-        return startPoll();
+        // Teaser é um JOB (ffmpeg): modal com o `log` REAL progredindo (fonte única de polling).
+        return Studio.ui.progressJob({
+          title: "Gerar teaser",
+          subtitle: `${l.business} · 5–10 s com a trilha da etapa 7 (ffmpeg)`,
+          start: () => api(`${base()}/leads/${id}/teaser`, { method: "POST", body: "{}" }),
+          jobUrl: `${base()}/job`,
+          done: async () => { await load(); ctx.guide(); },
+        }).catch((err) => toast("teaser falhou: " + err.message));
       } else if (act === "del") {
         if (!confirm(`Remover ${l.business} e o teaser dele?`)) return;
         await api(`${base()}/leads/${id}`, { method: "DELETE" });
