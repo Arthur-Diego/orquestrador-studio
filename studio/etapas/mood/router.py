@@ -187,3 +187,14 @@ def mood_select(pid: str, req: MoodSelectReq):
         return mood.select(pid, req.ids, req.note)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+
+
+@router.post("/api/projects/{pid}/mood/pull/{mbid}")
+def mood_pull_board(pid: str, mbid: str):
+    """`[extensão]` (ADR-013): puxa um board da biblioteca global → semeia o mood da campanha.
+    Copia as imagens do board para `mood/selected/` e grava mood.md/palette.json/project.vibe."""
+    refs.project_dir(pid)
+    try:
+        return mood.pull_board(pid, mbid)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e

@@ -9,6 +9,9 @@ node_modules/
 
 # dados de projetos de vídeo (locais)
 projects/
+# biblioteca global de mood boards reutilizáveis [extensão] (ADR-013) — imagens ficam só locais
+# (ancorado na raiz: NÃO deve pegar docs/domains/moodboards/, que é a documentação da feature)
+/moodboards/
 
 # mídia, transcrições e material bruto do curso — ficam só locais
 *.mp4
