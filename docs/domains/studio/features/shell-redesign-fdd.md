@@ -359,6 +359,34 @@ registra a lacuna). **Só verificável na W5**, somando as lacunas registradas p
   (exatamente o que o handoff pede: "rodapé com bg opaco, empurrado por `margin-top:auto`").
 - **Plano de contingência:** reduzir o `gap` da sidebar em telas baixas.
 
+### 10.5. Wave 4 (fidelidade ao protótipo): promoções ao catálogo
+
+O catálogo da §5 é contrato aditivo: o shell **acrescenta, nunca renomeia**. A wave 4
+(`waves/wave-4.md`) exercitou esse contrato de novo — a sub-wave 0 (`shell-fidelity`) reescreveu
+os valores dos controles/botões/guia medindo o DOM do protótipo, e o fechamento
+(`ADH-OS-20260826-17`) promoveu 11 regras registradas pelas 7 frentes como "lacunas do shell".
+Nenhuma classe do catálogo foi renomeada; as promoções corrigiram **valores** ou **adicionaram**
+modificadores. Efeito no contrato da §5:
+
+- **Correções de valor com efeito global** (não mudam nomes, mudam a régua):
+  `.note` → `font-size:12px; line-height:1.55; max-width:none` (o protótipo não limita a largura
+  da nota em nenhuma tela); `.import-row` → `align-items:stretch` (default; o `flex-start` baixava
+  o drop); `.clip-row .acts/.more` → ocultas por `display` (o `opacity:0` reservava ~110 px).
+- **Modificadores/adições** ao catálogo: `.note.warn` (nota em modo aviso); aparência de
+  botão-ícone em `.take .act`/`.take .an-x` (o display já era do shell); supressão de spin-button
+  em `input.mini`/`input.bare`/`.pitch-table input.v` (campos `type=number` limpos); regra de
+  especificidade `.inline input.mini.lg.w44` (o `.w44` isolado perdia para `.inline input.mini.lg`);
+  `.prompts.one{margin:0}`.
+- **Ficou escopado por ser de uma tela** (não entra no catálogo): `.sh-act`/`#sceneList .rowcard`
+  (etapa 5) e `.sb-pick::after` (etapa 4). Registrados na retro para promoção quando uma segunda
+  tela precisar do mesmo padrão.
+
+Confirma a lição do Risco 1: o catálogo só vira contrato de verdade depois de a primeira tela
+consumi-lo, e a janela de promoção na integração é parte do plano. Verificação integrada da wave 4
+em `waves/wave-4-retro.md`. Asserts continuam em
+`test_wave4_tokens_e_catalogo_de_classes_do_shell` (presença de classe/regra, não valor) —
+por isso as promoções de valor não exigiram reapontar teste.
+
 ### 11. Sequenciamento de implementação (Build Order)
 
 | Ordem | Etapa | Depende de | Componentes/arquivos prováveis | Critérios que fecha |

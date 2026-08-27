@@ -135,10 +135,12 @@ code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--bg-2)
 .fine b,.fine strong{color:var(--ink-2);font-weight:600}
 .lede{color:var(--ink-2);max-width:70ch;margin:0;text-wrap:pretty}
 .lede b,.lede strong{color:var(--ink);font-weight:700}
-.note{font-size:11.5px;color:var(--ink-5);line-height:1.5;margin:var(--s3) 0 0;max-width:78ch}
+.note{font-size:12px;color:var(--ink-5);line-height:1.55;margin:var(--s3) 0 0;max-width:none}
 .note b,.note strong{color:var(--ink-3)}
 /* `code` dentro de nota é texto, não bloco destacado (protótipo: sem fundo). */
 .note code{background:none;padding:0;font-size:11px;color:var(--ink-3)}
+/* wave4-fechamento: `.note.warn` promovida de `.shot-row .note.warn` (etapa 6). */
+.note.warn{color:var(--gate)}
 .ext{font-family:"IBM Plex Mono",monospace;font-size:9.5px;color:var(--ink-5);letter-spacing:0;text-transform:none;font-weight:400}
 .hidden{display:none!important}
 .row{display:flex;gap:var(--s2);align-items:center}
@@ -172,7 +174,7 @@ code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--bg-2)
 /* Pergunta de decisão (etapa 7): texto de peso médio, não um `h4`. */
 .q{margin:0;font-size:var(--fs-sm);font-weight:500;color:var(--ink-row)}
 /* Linha "dropzone + coluna de botões" das telas de importação. */
-.import-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.import-row{display:flex;gap:14px;flex-wrap:wrap;align-items:stretch}
 .import-row>.col{min-width:220px;gap:var(--s2)}
 .import-row .col>button{padding:8px 12px}
 .flat{margin-top:0}
@@ -198,12 +200,17 @@ input.mini.lg{width:52px;background:var(--surface-2);border:1px solid var(--ctl)
 input.bare{width:auto;background:transparent;border:1px solid transparent;border-radius:var(--r-chip);padding:1px 4px;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-fine);color:inherit}
 input.bare:hover{border-color:var(--line-2)}
 input.bare:focus{background:var(--surface-2);border-color:var(--accent)}
+/* wave4-fechamento: campos number limpos (sem spinner). Promove `.ed-num` (etapa 8),
+   `input.bare.md-min` (etapa 2) e o webkit do `input.v` (etapa 11). */
+input.mini,input.bare{appearance:textfield;-moz-appearance:textfield}
+input.mini::-webkit-outer-spin-button,input.mini::-webkit-inner-spin-button,input.bare::-webkit-outer-spin-button,input.bare::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 /* Campo curto do cabeçalho de painel (protótipo: 180px, r8, 7px 11px). */
 input.sm{width:180px;max-width:100%;border-radius:var(--r-sm);padding:7px 11px;font-size:var(--fs-fine)}
 /* `input.mini` (0,1,1) perdia para `.inline input[type=number]` (0,2,1) e voltava a 60px, que
    corta valores de 3 casas (ex.: `0.511`). Promovido na integração da wave 3. */
 .inline input.mini,.ctl input.mini{width:44px;padding:4px 6px;border-radius:var(--r-chip);font-family:"IBM Plex Mono",monospace;font-size:11px}
 .inline input.mini.lg,.ctl input.mini.lg{width:52px;padding:5px 8px;border-radius:7px;font-size:11.5px}
+.inline input.mini.lg.w44,.ctl input.mini.lg.w44{width:44px}
 input.mini.wide{width:76px}
 input.mini.num{text-align:right;font-variant-numeric:tabular-nums}
 input.prompt-inline,textarea.prompt-inline{width:100%;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 11px;font-family:"IBM Plex Mono",monospace;font-size:12px}
@@ -442,7 +449,7 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .prompt .fine,.prompt p.fine{font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.7;margin:0;color:var(--ink-2)}
 /* Card de prompt compacto (etapa 4) e wrapper de card único de largura total. */
 .prompt.sm{padding:12px 14px;gap:6px}
-.prompts.one{display:block}
+.prompts.one{display:block;margin:0}
 .prompt.sel{background:var(--surface-3);border-color:var(--ok-line)}
 .prompt audio{width:100%}
 .prompt-group{display:flex;flex-direction:column;gap:var(--s2);border-left:2px solid transparent;padding-left:10px}
@@ -532,9 +539,9 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .clip-row .ctl{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-3)}
 .clip-row .ctl label{gap:5px;font-size:12px}
 /* Ações e campo extra da linha de clipe: hover/foco, como no protótipo. */
-.clip-row .acts,.clip-row .more{opacity:0;transition:opacity .15s}
+.clip-row .acts,.clip-row .more{display:none}
 .clip-row:hover .acts,.clip-row:focus-within .acts,
-.clip-row:hover .more,.clip-row:focus-within .more{opacity:1}
+.clip-row:hover .more,.clip-row:focus-within .more{display:inline-flex}
 .sfxrow{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;gap:10px 12px}
 .shot-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:16px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px 16px}
 .shot-row .nm{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3)}
@@ -547,8 +554,9 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 .take .like-lbl{color:var(--accent)}
 .take.empty{background:transparent;border-style:dashed;border-color:var(--ctl);color:var(--ink-5);padding:8px 12px;text-align:left;grid-column:auto}
 /* Ações dentro do tile de take: só no hover/foco. */
-.take .act,.take .an-x{display:none}
+.take .act,.take .an-x{display:none;padding:0 1px;border:0;background:none;color:var(--ink-4);font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1}
 .take:hover .act,.take:hover .an-x,.take:focus-within .act,.take:focus-within .an-x{display:inline-flex}
+.take .act:hover,.take .an-x:hover{color:var(--ink)}
 .take.empty:hover{border-color:var(--ctl-hover);color:var(--ink-3)}
 .take:disabled,.take[disabled]{opacity:.55;cursor:not-allowed;transform:none}
 .an-takes{gap:10px}
@@ -646,6 +654,7 @@ details.lesson b,details.lesson strong{color:var(--ink-2)}
 /* Valor editável do pitch: número alinhado à direita, sem caixa (só sublinha no foco). */
 .pitch-table input.v{width:7ch;background:transparent;border:0;padding:0;text-align:right;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-sm);color:inherit;appearance:textfield;-moz-appearance:textfield}
 .pitch-table input.v:focus{outline:none;box-shadow:none;border-bottom:1px solid var(--accent)}
+.pitch-table input.v::-webkit-outer-spin-button,.pitch-table input.v::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .pitch-table .total{display:flex;justify-content:space-between;gap:var(--s3);font-size:14px;font-weight:600;color:var(--ink);padding:8px 0;border-bottom:0}
 .pitch-table .total .v{font-family:"IBM Plex Mono",monospace;color:var(--accent)}
 .script{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-tile);padding:14px 16px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;line-height:1.8;color:var(--ink-3);white-space:pre-wrap;margin:0;overflow:visible}
