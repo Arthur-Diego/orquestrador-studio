@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 27-08-2026
-**ADRs relacionados:** [ADR-007](../MOOD/ADR-007-mood-board-vibe-unica-teto-de-8-grid-de-4-como-orientacao-de-ui.md), [ADR-003](ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004](ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-010](ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md)
+**ADRs relacionados:** [ADR-014](ADR-014-etapa-2-so-escolhe-e-aplica-um-mood-board-da-biblioteca.md), [ADR-007](../MOOD/ADR-007-mood-board-vibe-unica-teto-de-8-grid-de-4-como-orientacao-de-ui.md), [ADR-003](ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004](ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-010](ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md)
 
 ## Contexto e Problema
 
