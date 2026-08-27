@@ -1,16 +1,19 @@
-"""Etapa 2 — Mood board (aula 009), em "modo UI":
+"""Etapa 2 — Mood board (aula 009).
 
-1. o usuário **encontra** a vibe (Explore do Midjourney, Pinterest, frame de filme) e traz 1–4
-   imagens para `mood/vibe/`; o "bot" escreve UM prompt de vibe a partir delas (ou do prompt que
-   ele copiou do Explore);
-2. o usuário cola o prompt na UI da Higgsfield (onde o ilimitado vale) — ou gera via CLI, pagando
-   créditos, com as imagens de vibe (e a "melhor do grid") como referência de estilo;
-3. importa os resultados (upload, pasta Downloads do Windows, ou histórico do CLI);
-4. escolhe as imagens do mesmo mood; salvamos `mood/selected/` + `mood.md` (+ `palette.json`,
-   derivado técnico `[extensão]`) e gravamos a vibe encontrada em `project.vibe`.
+**A CRIAÇÃO de mood boards migrou para a biblioteca global** (`studio/moodboards/`, ADR-014 que
+estende a ADR-013/ADR-007). Decisão do dono do produto (27/08/2026): a etapa 2 da campanha deixou
+de criar/curar e passou a **só ESCOLHER** um board da biblioteca e **aplicá-lo à campanha** via
+`pull_board()` (copia as imagens do board para `mood/selected/` + `mood.md`/`palette.json`/
+`project.vibe`). A tela usa apenas `current()` (mood atual) e `pull_board()`.
+
+Os endpoints/funções de CRIAÇÃO abaixo (`suggest_prompts`, `generate_prompt`, `vibe_*`,
+`import_*`, `start_generate`, `select`, …) **continuam existindo** — a biblioteca global usa a
+MESMA família de ingest/prompter/paleta e os contratos não podem quebrar — mas **não são mais
+chamados pela tela da etapa 2**. Eles são o fluxo da criação, que agora vive na biblioteca.
 
 Fidelidade (auditoria da wave 2, §2): o mood board da aula **tem o produto** — nada de "no product,
 no text, no logos" injetado no prompt. "Sem pessoas" é sugestão marcada por padrão, nunca silenciosa.
+O texto de aula (achar a vibe pelo sentimento, grid de 4, teto de 8) continua no guia como contexto.
 """
 from __future__ import annotations
 
@@ -339,7 +342,38 @@ def select(pid: str, ids: list[str], note: str = "") -> dict:
     return {"selected": len(paths), "palette": palette, "vibe": vibe}
 
 
-# ---------- puxar da biblioteca global de mood boards `[extensão]` (ADR-013) ----------
+# ---------- mood atual da campanha (painel "Mood atual" da etapa 2) ----------
+def current(pid: str) -> dict:
+    """Mood aplicado à campanha: imagens de `mood/selected/`, paleta e vibe.
+
+    Leitura pura (nunca escreve) para o painel "Mood atual" da etapa 2. Seguro chamar antes de
+    qualquer mood existir — devolve listas vazias. As imagens são servidas em
+    `/files/<pid>/mood/selected/<file>`.
+    """
+    root = project_dir(pid)
+    sdir = root / "mood" / "selected"
+    files = sorted(p.name for p in sdir.iterdir()
+                   if p.is_file() and p.suffix.lower() in IMG_EXT) if sdir.is_dir() else []
+    palette: list[str] = []
+    note = ""
+    pf = root / "mood" / "palette.json"
+    if pf.is_file():
+        try:
+            data = json.loads(pf.read_text())
+            palette = [c for c in (data.get("colors") or []) if isinstance(c, str)]
+            note = (data.get("note") or "").strip()
+        except (OSError, json.JSONDecodeError):
+            pass
+    vibe = ""
+    try:
+        vibe = (json.loads((root / "project.json").read_text()).get("vibe") or "").strip()
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {"selected": [{"file": f} for f in files], "count": len(files),
+            "palette": palette, "note": note, "vibe": vibe}
+
+
+# ---------- puxar da biblioteca global de mood boards `[extensão]` (ADR-013/ADR-014) ----------
 def pull_board(pid: str, mbid: str) -> dict:
     """Semeia o mood da campanha a partir de um board da biblioteca global.
 

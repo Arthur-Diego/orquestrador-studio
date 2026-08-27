@@ -1,9 +1,10 @@
-"""Tela da etapa 2: contrato de tela da wave 4 (idêntica ao protótipo) e fidelidade à aula 009.
+"""Tela da etapa 2 — fluxo "etapa2-pick" (ADR-014, estende ADR-013/ADR-007).
 
-Wave 4: o protótipo não desenha nenhum `details.lesson` nesta tela, nem campos de brief,
-histórico de prompts, "copiar prompt", dica de UI, bloco de meta do prompt, checkbox de
-referência de estilo ou select "melhor do grid". O texto de aula que esses blocos carregavam
-continua no `guide.py` (ADR-004) e as ações foram integradas (hover no tile, `button.loading`).
+Decisão do dono do produto (27/08/2026): a CRIAÇÃO de mood boards vive só na biblioteca global;
+a etapa 2 da campanha deixou de criar/curar e passou a SÓ ESCOLHER um board da biblioteca e
+aplicá-lo à campanha. Por isso os 4 painéis de criação (achar vibe, prompt de vibe, importar grid,
+escolher) saíram da tela; entram o painel "Escolher um mood board" e o painel "Mood atual da
+campanha". O texto de aula que os painéis carregavam continua no `guide.py` (ADR-004).
 """
 
 
@@ -20,7 +21,7 @@ def _guide(client):
     return r.json()
 
 
-def test_view_follows_the_wave_screen_contract(client):
+def test_view_follows_the_screen_contract(client):
     html = _view(client, "view.html")
     assert "Etapa 2 · aula 009" in html
     assert '<section id="guide" class="guide">' in html
@@ -28,71 +29,67 @@ def test_view_follows_the_wave_screen_contract(client):
 
     js = _view(client, "view.js")
     assert 'Studio.register("mood"' in js
-    assert "destroy()" in js and "job.stop()" in js
-    assert js.count("ctx.guide()") >= 5
-    for shared in ("ui.esc(", "ui.drop(", "ui.upload(", "ui.poll(", "ui.hfChip(", "ui.confirmCost("):
-        assert shared in js, shared
+    assert "ui.esc(" in js, "reusa o helper compartilhado de escape"
+    assert js.count("ctx.guide()") >= 2, "a tela recarrega o guia após aplicar um board"
 
 
-def test_view_does_not_attribute_no_product_to_the_lesson(client):
-    """M1: o mood board da aula TEM o produto; só "sem pessoas" veio da aula, e como escolha."""
+def test_view_has_only_two_panels_pick_and_current(client):
+    """Dois painéis numerados: 01 escolher da biblioteca, 02 mood atual — nenhum de criação."""
     html = _view(client, "view.html")
-    assert "sem produto e sem pessoas (aula 009)" not in html
-    assert '<input id="moodNoPeople" type="checkbox" checked>' in html, "sugerido, nunca silencioso"
-    assert "Produto, texto e logo não são proibidos" in _guide(client)["what"], "texto de aula no guia"
-    js = _view(client, "view.js")
-    assert "no_people" in js
+    assert html.count('<span class="pn">') == 2, "só dois painéis"
+    assert '<span class="pn">01</span>Escolher um mood board' in html
+    assert '<span class="pn">02</span>Mood atual da campanha' in html
+    assert html.count('class="gallery sm"') == 2, "grade de boards + galeria do mood atual"
 
 
-def test_view_has_the_explore_prompt_field_and_style_reference(client):
-    """M2 e M3: prompt copiado do Explore; imagens de vibe (e a melhor do grid) como referência."""
+def test_view_removed_the_creation_panels(client):
+    """Os controles de criação/curadoria/importação/prompt não existem mais na etapa 2."""
     html = _view(client, "view.html")
-    assert 'id="explorePrompt"' in html
-    assert "copiar o prompt dessa pessoa" in _guide(client)["what"]
-    js = _view(client, "view.js")
-    assert "explore_prompt" in js
-    assert "use_style_refs: true" in js, "a aula sempre usa a vibe como referência de estilo"
-    assert "best_id" in js and 'data-best=' in js, "\"melhor do grid\" virou ação de hover no tile"
-    assert 'class="card-act"' in js and "usar como referência" in js
-
-
-def test_view_marks_studio_choices_and_uses_the_right_plan_name(client):
-    """M5, M10, G8 e G10."""
-    html = _view(client, "view.html")
-    assert "Ultimate" in html and "Ultra" not in html.replace("Ultimate", "")
-    assert "[extensão]" in html and "palette.json" in html
-    what = _guide(client)["what"]
-    assert "2K e 16:9 são sugestão do Studio" in what
-    assert "meio-termo" in what.lower()
-
-
-def test_view_shows_the_palette_and_the_batch_legend_when_it_opens(client):
-    """2.35 e 2.36: paleta lida de `mood/palette.json` ao abrir; legenda "<lote> · img N"."""
-    js = _view(client, "view.js")
-    assert "mood/palette.json" in js and "loadPalette(" in js
-    assert "c.batch" in js and "img ${c.batch_index" in js
-    assert "if (!r.ok) return;" in js, "404 antes do primeiro salvamento é tratado em silêncio"
-
-
-def test_view_follows_the_prototype_panels(client):
-    """Wave 4: quatro painéis numerados, nenhum `details.lesson`, galerias `.gallery.sm`."""
-    html = _view(client, "view.html")
-    assert html.count('<span class="pn">') == 4, "quatro painéis numerados"
-    for n in ("01", "02", "03", "04"):
-        assert f'<span class="pn">{n}</span>' in html
-    assert "1. Achar a vibe" not in html, "o número saiu do texto do h3 e virou `.pn`"
-    assert html.count('<details class="lesson">') == 0, "o protótipo não desenha aula nesta tela"
-    assert "O que a aula 009 manda fazer aqui" not in html
-    assert html.count('class="gallery sm"') == 2, "vibe e mood usam a galeria compacta do catálogo"
-    assert 'class="lbl">palette.json' in html, "rótulo da paleta no markup, não só no JS"
-    assert 'class="row wrap cli"' in html, "bloco do CLI preservado"
-    for removido in ('id="btnCopyAll"', 'id="promptStatus"', 'id="moodHint"', 'id="promptHistory"',
-                     'id="moodUseRefs"', 'id="moodBest"', 'id="dlFolder"', 'id="dlMinutes"'):
-        assert removido not in html, f"{removido} não existe no protótipo"
-    assert 'id="briefFields"' in html and "hidden" in html, "brief só no modo \"brief profissional\""
+    for removido in ('id="vibeUpload"', 'id="vibeGallery"', 'id="moodMode"', 'id="moodModel"',
+                     'id="explorePrompt"', 'id="briefFields"', 'id="btnMoodGenPrompt"',
+                     'id="promptList"', 'id="btnMoodGen"', 'id="btnDownloads"', 'id="btnHistory"',
+                     'id="upload"', 'id="moodNote"', 'id="btnMoodSave"', 'id="btnPullBoard"'):
+        assert removido not in html, f"{removido} é criação — saiu da etapa 2"
+    assert "Achar a vibe" not in html and "Prompt de vibe" not in html
+    assert "Importar o grid" not in html and "Gerar prompt" not in html
 
     js = _view(client, "view.js")
-    assert '<span class="eyebrow">Prompt gerado</span>' in js
-    assert 'class="link copy"' in js or "ui.copyBtn(" in js, "Copiar como `button.link` do catálogo"
+    for removido in ("mood/prompts/generate", "mood/import/upload", "mood/vibe",
+                     "mood/generate", "ui.confirmCost", "ui.progressJob", "startPoll"):
+        assert removido not in js, f"{removido} é criação — saiu da tela da etapa 2"
+    # o antigo POST /mood/select (curadoria) saiu; `mood/selected/` (leitura da galeria) permanece
+    assert "mood/select`" not in js and "mood/select'" not in js, "curadoria saiu da etapa 2"
+
+
+def test_view_picks_a_board_and_applies_it(client):
+    """Painel 01: grade de `/api/moodboards`, seleção + aplicar via `pull_board`."""
+    js = _view(client, "view.js")
+    assert '"/api/moodboards"' in js, "grade dos boards da biblioteca"
+    assert "/mbfiles/" in js, "capa do board servida em /mbfiles"
+    assert "mood/pull/" in js, "aplicar chama o backend pull_board (feature #53)"
+    assert 'id="btnApplyBoard"' in _view(client, "view.html")
+    # estado vazio + navegação para a biblioteca pelo mecanismo do shell
+    assert 'location.hash = "#/moodboards"' in js
+    assert "crie um na biblioteca" in js.lower() or "Ir para a biblioteca" in js
+
+
+def test_view_shows_the_current_mood_panel(client):
+    """Painel 02: mood atual da campanha (galeria de mood/selected + paleta + vibe)."""
+    html = _view(client, "view.html")
+    assert 'id="moodGallery"' in html and 'id="palette"' in html
+    assert 'id="moodVibe"' in html
+    assert 'id="btnSwap"' in html and 'id="btnManageBoards"' in html
+    assert 'class="lbl">palette.json' in html, "rótulo da paleta no markup"
+
+    js = _view(client, "view.js")
+    assert "/mood`" in js, "lê o mood atual via GET /api/projects/{pid}/mood"
+    assert "mood/selected/" in js, "galeria aponta para mood/selected"
     assert 'class="lbl">palette.json' in js, "o rótulo sobrevive à reescrita dos swatches"
-    assert 'class="src"' not in js, "os tiles do protótipo não têm badge de origem"
+
+
+def test_view_keeps_the_lesson_text_in_the_guide(client):
+    """ADR-004: o conhecimento da aula 009 não se perde — vive no guia, não na tela."""
+    what = _guide(client)["what"]
+    assert "biblioteca" in what.lower() and "aplic" in what.lower()
+    assert "sentimento" in what, "o contexto da aula (achar a vibe) continua no guia"
+    assert "Produto, texto e logo não são proibidos" in what
