@@ -130,6 +130,17 @@ def mood_paths(root: Path) -> list[Path]:
     return [root / m for m in mood_files(root)]
 
 
+def _mood_ref_files(root: Path, board: str | None = None) -> list[dict]:
+    """base-prompt-provenance (FDD §2): as imagens de mood/board que entraram como referência de
+    estilo no bot, em caminhos RELATIVOS para thumbs na UI. `board=None` é o mood da campanha
+    (`mood/selected/`, servido por `/files/<pid>/...`); com `board`, são as imagens curadas do board
+    da biblioteca (servidas por `/mbfiles/<board>/<rel>`). Mesmo corte que vai ao bot (MOOD_REFS_MAX)."""
+    if board:
+        from ..moodboards import service as mb
+        return [{"file": rel, "board": board} for rel in mb.board_image_files(board)[:MOOD_REFS_MAX]]
+    return [{"file": f, "board": None} for f in mood_files(root)[:MOOD_REFS_MAX]]
+
+
 def _ref_mood_paths(root: Path, board: str | None = None) -> list[Path]:
     """`[extensão]` (ADR-013): as imagens de referência que vão ao bot como "mood".
 
@@ -314,7 +325,12 @@ def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", i
              "instruction": (instruction or "").strip(), "no_bias": bool(no_bias),
              "no_people": bool(no_people), "model": model or DEFAULT_MODEL, "board": board or None,
              "aspect_ratio": project_aspect(root),
-             "created": datetime.now().isoformat(timespec="seconds"), **res, "prompt": text}
+             "created": datetime.now().isoformat(timespec="seconds"), **res, "prompt": text,
+             # base-prompt-provenance (FDD §1/§2): a junção mood × referência fica explícita no
+             # retorno e no histórico — proveniência determinística + os insumos visuais usados.
+             "provenance": prompter.provenance(text),
+             "mood_refs": _mood_ref_files(root, board),
+             "palette": pal or {"colors": [], "note": ""}}
     hist = _prompt_hist(root)
     hist.insert(0, entry)
     (root / STEP).mkdir(parents=True, exist_ok=True)
@@ -347,10 +363,14 @@ def prompts(pid: str, model: str | None = None) -> dict:
     out = []
     for r in refs:
         last = _last_prompt(hist, r["ref_id"])
+        prompt = last["prompt"] if last else situation_prompt(product, pal)
         out.append({"ref_id": r["ref_id"], "file": r["file"],
-                    "prompt": last["prompt"] if last else situation_prompt(product, pal),
+                    "prompt": prompt,
                     "prompt_source": (last.get("source") or "claude") if last else "template",
                     "prompt_mode": last.get("mode") if last else None,
+                    # base-prompt-provenance (FDD §1/§3): a UI mostra a junção mood × referência
+                    # anotando as 5 linhas do prompt exibido; recomputamos aqui para o texto atual.
+                    "provenance": prompter.provenance(prompt),
                     "bot_instruction": bot_instruction(product)})
     return {
         "model": model or DEFAULT_MODEL,

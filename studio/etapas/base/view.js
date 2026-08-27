@@ -14,6 +14,12 @@ Studio.register("base", (ctx) => {
 
   let cands = [], sel = null, chain = { situation: null, label: null, upscale: null };
   let refs = [], labelPrompt = null, claudeOk = false;
+  // base-prompt-provenance: insumos visuais da junção mood × referência (cabeçalho + chips).
+  let palette = { colors: [], note: "" }, moodFiles = [], boardImgUrls = [];
+  // Rótulo descritivo por linha (FDD §1) e o texto/cor de cada proveniência.
+  const PART_LABEL = { Composition: "referência (situação/enquadramento)", Lighting: "mood (luz)",
+    "Color grading": "mood (cor/paleta)", Style: "mood (estética/atmosfera)", Camera: "técnico" };
+  const FROM_LABEL = { reference: "referência", mood: "mood", technical: "técnico" };
   const edits = {};        // texto editado na tela, por chave: sobrevive à troca de passo (B4)
   let refId = "";          // referência escolhida no painel 01: vale para o prompt E para o import
   let step = "situation";  // passo ativo do stepper = passo da importação (auditoria #36)
@@ -59,6 +65,68 @@ Studio.register("base", (ctx) => {
       el.innerHTML = "";
     }
     ui.autosize(el.querySelectorAll("textarea"));
+    renderJunction();
+    renderProvenance();
+  }
+
+  // base-prompt-provenance: as thumbs do mood que vão ao bot (board escolhido ou mood da campanha).
+  function currentMoodThumbs() {
+    if (boardSel) return boardImgUrls;
+    return (moodFiles || []).map((f) => ctx.files(f));
+  }
+
+  // Cabeçalho de junção (FDD §3): 🖼️ referência (situação) + 🎨 mood (vibe/luz/cor) + paleta, com
+  // o texto que deixa claro que o prompt abaixo é a JUNÇÃO dos dois. Só aparece com uma referência
+  // escolhida e no passo "situação" (o passo "rótulo" é outra tarefa da aula).
+  function renderJunction() {
+    const el = $("#baseJunction");
+    if (!el) return;
+    const f = refs.find((r) => r.ref_id === refId) || refs[0];
+    if (!f || step === "label") { el.innerHTML = ""; el.style.display = "none"; return; }
+    el.style.display = "";
+    const moods = currentMoodThumbs();
+    const moodThumbs = moods.length
+      ? moods.slice(0, 4).map((u) => `<img src="${u}" alt="imagem do mood" loading="lazy">`).join("")
+      : `<span class="fine">sem imagens do mood ainda (etapa 2 ou um board)</span>`;
+    const swatches = (palette.colors || []).length
+      ? `<div class="swatches">${palette.colors.slice(0, 8).map((c) =>
+          `<span class="sw" style="background:${ui.esc(c)}" title="${ui.esc(c)}"></span>`).join("")}</div>`
+      : "";
+    el.innerHTML = `
+      <div class="side">
+        <span class="eyebrow lbl">🖼️ Referência (situação)</span>
+        <div class="thumbs"><img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy"></div>
+      </div>
+      <div class="side">
+        <span class="eyebrow lbl">🎨 Mood (vibe/luz/cor)</span>
+        <div class="thumbs">${moodThumbs}</div>${swatches}
+      </div>
+      <p class="join-note">O prompt abaixo funde a <b>situação da referência</b> com a <b>vibe do mood</b>.</p>`;
+  }
+
+  // Visão anotada [extensão] (FDD §3): read-only, cada linha do prompt com um chip de proveniência
+  // (referência / mood / técnico) e o parágrafo rotulado "junção". A fonte é o `provenance` que o
+  // backend devolve (split_sections + mapa determinístico). Nunca substitui o textarea copiável.
+  function renderProvenance() {
+    const el = $("#baseProvenance");
+    if (!el) return;
+    const f = refs.find((r) => r.ref_id === refId) || refs[0];
+    const prov = f && step !== "label" ? f.provenance : null;
+    if (!prov) { el.innerHTML = ""; el.style.display = "none"; return; }
+    el.style.display = "";
+    const lines = [];
+    if (prov.paragraph) {
+      lines.push(`<div class="prov-line"><span class="bs-chip from-join">junção</span>
+        <span class="prov-text"><b>produto da referência na vibe do mood.</b> ${ui.esc(prov.paragraph)}</span></div>`);
+    }
+    (prov.parts || []).forEach((p) => {
+      const desc = PART_LABEL[p.label] || FROM_LABEL[p.from] || p.from;
+      lines.push(`<div class="prov-line"><span class="bs-chip from-${ui.esc(p.from)}">${ui.esc(FROM_LABEL[p.from] || p.from)}</span>
+        <span class="prov-text"><b>${ui.esc(p.label)}</b> <span class="fine">(${ui.esc(desc)})</span> — ${ui.esc(p.text)}</span></div>`);
+    });
+    el.innerHTML = `<div class="row"><span class="eyebrow lbl">De onde vem cada parte</span>
+      <span class="ext">[extensão]</span></div>${lines.join("") ||
+      `<p class="fine">Prompt fora do formato de 5 linhas — copie o texto completo acima.</p>`}`;
   }
 
   // Galeria das referências da etapa 1: a escolha vale para "Gerar prompt" e para "Importar".
@@ -81,6 +149,8 @@ Studio.register("base", (ctx) => {
       refs = r.refs;
       labelPrompt = r.label_prompt_ready ? r.label_prompt : null;
       claudeOk = !!r.claude;
+      palette = r.palette || { colors: [], note: "" };
+      moodFiles = r.mood_files || [];
       const claude = $("#baseClaude");
       claude.textContent = claudeOk ? "bot: claude ok" : "bot: sem claude";
       claude.className = claudeOk ? "chip ok" : "chip warn";
@@ -159,17 +229,21 @@ Studio.register("base", (ctx) => {
     const g = $("#moodSourceGallery");
     if (!boardSel) {
       const files = (moodSources && moodSources.campaign.files) || [];
+      boardImgUrls = [];
       g.innerHTML = files.length
         ? files.map((f) => `<div class="card"><img loading="lazy" src="${ctx.files(f)}" alt=""></div>`).join("")
         : `<div class="empty">Sem mood da campanha ainda — salve o mood na etapa 2, ou puxe/escolha um mood board.</div>`;
+      renderJunction();
       return;
     }
     try {
       const d = await api(`/api/moodboards/${encodeURIComponent(boardSel)}`);
+      boardImgUrls = d.images.map((rel) => `/mbfiles/${encodeURIComponent(boardSel)}/${rel}`);
       g.innerHTML = d.images.length
         ? d.images.map((rel) => `<div class="card"><img loading="lazy" src="/mbfiles/${encodeURIComponent(boardSel)}/${ui.esc(rel)}" alt=""></div>`).join("")
         : `<div class="empty">Este mood board não tem imagens curadas.</div>`;
-    } catch (e) { g.innerHTML = `<div class="empty">${ui.esc(e.message)}</div>`; }
+    } catch (e) { boardImgUrls = []; g.innerHTML = `<div class="empty">${ui.esc(e.message)}</div>`; }
+    renderJunction();
   }
 
   // ---------- candidatas (painel 03) ----------
