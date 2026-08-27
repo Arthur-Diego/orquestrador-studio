@@ -1,6 +1,6 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.5 (fechamento da wave 3: lacunas de CSS das 6 frentes de tela promovidas ao catálogo do shell)
+Versão: 1.6 (fechamento da wave 4: 11 promoções de regra ao catálogo do shell + verificação integrada das 12 telas)
 Data: 2026-08-26
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
@@ -129,6 +129,8 @@ próxima wave que nascer de handoff: o catálogo do shell só é contrato de ver
 primeira tela consumi-lo — reservar uma janela de promoção na integração é parte do plano, não
 retrabalho. Retro: `docs/domains/studio/waves/wave-3-retro.md`.
 
+**Fechamento da wave 4 (v1.6):** a wave 4 zerou as divergências entre o app e o protótipo do handoff. A sub-wave 0 (`shell-fidelity`) mediu os valores do protótipo no DOM e reescreveu controles, botões, guia (compacto por padrão) e helpers; as 6 frentes de tela deixaram o app idêntico ao protótipo, removendo painéis e `<details>` de aula que o protótipo não desenha (regra 4: `<details class="lesson">` só na etapa 1 — o texto de aula continua em `guide.py`/FDDs/plano) e integrando ações da aula no hover/modal/inline. O fechamento **promoveu 11 regras** ao `style.css` (as 9 lacunas registradas nas 7 PRs; itens de `.take` e `.clip-row` tocam duas regras cada), mantendo as classes-marcador que os testes fixam e removendo o `<style>` escopado redundante de 5 telas. Correções de catálogo com efeito global: `.note` passou a 12px/1.55 sem `max-width` (o protótipo não limita a largura da nota em nenhuma tela); `.import-row` voltou ao `align-items:stretch` default; `.clip-row` esconde as ações com `display` em vez de `opacity` (que reservava ~110 px); campos `type=number` (`input.mini`/`input.bare`/`.pitch-table input.v`) perderam o spin-button. Verificação integrada W5: 692 testes, 0 erro de console (escuro e claro), 11/11 sem timer órfão, 0 scroll horizontal nas 12 telas a 1440 e 900 px. Retro: `docs/domains/studio/waves/wave-4-retro.md`.
+
 **Guia por etapa (v1.2):** cada plugin pode exportar `studio/etapas/<id>/guide.py` com
 `guide(pid) -> dict`, descoberto por `etapas.discover()` na chave `guide` (opcional). O hook é
 **puro**: só lê arquivos do projeto — nunca cria/regrava artefato, nunca chama CLI, ffprobe ou
@@ -183,7 +185,7 @@ Fonte de verdade
 | `/api/projects/{pid}/<etapa>/*` | API | REST/JSON, multipart (upload ≤ 25 MB; 200 MB na etapa 6) | Interna | ver HLDs dos domínios |
 | `/files/{pid}/…`, `/static/…` | Estáticos | HTTP | Interna | somente leitura (`/static/ui.js`, `/static/ui.css` = `Studio.ui`; `/static/app.js`, `/static/style.css` = shell) |
 
-**Catálogo de classes do shell (contrato visual, v1.5).** É interface pública tanto quanto as
+**Catálogo de classes do shell (contrato visual, v1.6).** É interface pública tanto quanto as
 rotas: as telas de etapa **consomem** estes nomes e o shell pode acrescentar, nunca renomear.
 Lista normativa com valores em `docs/domains/studio/features/shell-redesign-fdd.md` §5; asserts
 em `tests/test_api.py::test_shell_preserva_as_classes_que_as_telas_de_etapa_usam` e
