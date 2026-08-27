@@ -9,7 +9,8 @@ decisão gravada em `audio/story_check.json`.
 Só depois vem a trilha — "não para editar ainda, mas para sentir a energia". O curso manda ouvir
 várias músicas na biblioteca (YouTube Audio Library, Artlist, Epidemic; a aula não fixa número),
 escolher "sentindo" e usar as batidas fortes como marcação de onde algo acontece. Aqui isso vira:
-reunir candidatas (upload / Downloads / histórico do CLI / geração paga por `sonilo_music`) →
+reunir candidatas (upload / Downloads / histórico do CLI / geração paga por `sonilo_music`
+`[extensão]`) →
 ouvir na UI → escolher UMA → detectar batidas e impactos em `audio/beats.json`, que a etapa 8
 consome. A origem/licença da faixa é um campo opcional `[extensão]` — a aula não fala em licença.
 """
@@ -35,7 +36,10 @@ log = logging.getLogger("studio.music")
 
 STEP = "audio"                     # a pasta do projeto é `audio/` (PROJECT_LAYOUT), o id da etapa é `music`
 KIND = "audio"
-MODEL = "sonilo_music"             # id do plano Higgsfield; não confirmado no catálogo vivo (wave, decisão 13)
+MODEL = "sonilo_music"             # `[extensão]`: gerar trilha por IA NÃO é passo do curso — a
+                                   # aula 013 ensina SELECIONAR de bibliotecas (YouTube Audio Library,
+                                   # Artlist, Epidemic). Gerar é acréscimo do Studio (ADR-004). Id do
+                                   # plano Higgsfield, não confirmado no catálogo vivo (wave, decisão 13).
 DEFAULT_DURATION = 35
 DEFAULT_COUNT = 3
 DOWNLOADS_DEFAULT = ingest.DOWNLOADS_DEFAULT
@@ -171,7 +175,11 @@ def _elapsed(started: float) -> str:
 
 
 def start_generate(pid: str, prompt: str, duration: int = DEFAULT_DURATION, count: int = DEFAULT_COUNT) -> dict:
-    """Gera `count` faixas com `sonilo_music` e importa cada uma como candidata. Um job por projeto."""
+    """`[extensão]` Gera `count` faixas com `sonilo_music` e importa cada uma como candidata.
+
+    Gerar trilha por IA é acréscimo do Studio (ADR-004): a aula 013 ensina selecionar de
+    bibliotecas. O caminho fiel ao curso é importar (upload/Downloads/histórico); a geração é
+    uma opção paga. Um job por projeto."""
     root = project_dir(pid)
     log.info("generate start pid=%s count=%s duration=%s", pid, count, duration)
 

@@ -24,3 +24,7 @@ media/
 texts/
 transcricoes/
 harvest-report.json
+
+# Handoff de design e artefatos de análise — fora do git (grandes, locais)
+/Análise de codebase/
+/Análise de codebase.zip

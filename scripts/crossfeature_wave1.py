@@ -155,6 +155,7 @@ if ff.available():
     for i, (v, net) in enumerate([("16x9.mp4", "youtube"), ("9x16.mp4", "instagram"), ("1x1.mp4", "instagram"), ("9x16.mp4", "tiktok")]):
         api("post", f"/api/projects/{PID}/publish/log", json={"video": v, "network": net, "url": f"https://example.com/p{i}", "note": ""}, expect=(200, 201))
     pf = api("get", f"/api/projects/{PID}/publish/portfolio").json()
+    # ADR-012: o portfólio conta OBRAS distintas (projetos), não vídeos de um mesmo projeto.
     check("publish: 3 vídeos distintos em 4 posts → ready=false (decisão 1)", pf.get("distinct_videos") == 3 and pf.get("ready") is False, str(pf))
 
     # ---- Etapa 11 · prospect (gate + teaser) ----
@@ -164,7 +165,10 @@ if ff.available():
     shutil.copy2(ROOT / "export" / "9x16.mp4", ROOT / "export" / "teaser.mp4")
     api("post", f"/api/projects/{PID}/publish/log", json={"video": "teaser.mp4", "network": "instagram", "url": "https://example.com/p9", "note": "teaser"}, expect=(200, 201))
     g = api("get", f"/api/projects/{PID}/prospect/gate").json()
-    check("prospect: gate aberto com 4 vídeos distintos", g.get("ok") is True, str(g))
+    # NB (ADR-012): o gate abre por 4 OBRAS (projetos) publicadas, não por 4 vídeos deste projeto —
+    # aqui ele passa porque o diretório de projetos já tem 4+ obras. Ver scripts/e2e_pipeline.py,
+    # que abre o gate criando projetos-irmãos publicados (forma correta pós-ADR-012).
+    check("prospect: gate aberto (>=4 obras publicadas no workspace)", g.get("ok") is True, str(g))
     r = api("post", f"/api/projects/{PID}/prospect/leads", json={"business": "Zé do Hambúrguer", "handle": "@zeburger", "post_ref": "hambúrgueres gourmet", "why": "prefiro gourmet", "role": "fã"}, expect=(200, 201, 409))
     lid = r.json().get("id") if r.status_code in (200, 201) else None
     if lid:
