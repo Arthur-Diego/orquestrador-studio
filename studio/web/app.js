@@ -27,6 +27,11 @@ let steps = [], projects = [], pid = null, project = null;
 let guideAll = null;              // { steps: [Guide × 11], done, total, progress, current }
 let guideById = {};               // id → Guide
 let view = "overview";            // "overview" | <id da etapa>
+// Áreas do shell: "campaign" (as 11 etapas + visão geral) e "moodboards" (biblioteca global
+// [extensão] ADR-013, campanha-independente). `moodboards` é um prefixo de rota RESERVADO —
+// um pid de projeto nunca pode ser "moodboards" (reservado em create_project).
+const MB_ROUTE = "moodboards";
+let area = "campaign";            // "campaign" | "moodboards"
 let currentStep = null;           // etapa instanciada em #main
 const factories = {}, instances = {}, loaded = new Set(), readySteps = new Set();
 let refreshTimer = null;
@@ -81,6 +86,20 @@ async function navigate(target, opts = {}) {
   else location.hash = h;                       // dispara hashchange → applyRoute()
 }
 async function applyRoute() {
+  const hr = parseHash();
+  // Área global da biblioteca de mood boards [extensão] (ADR-013): tratada ANTES do check de
+  // campanhas — funciona mesmo sem nenhuma campanha criada. `#/moodboards` = lista;
+  // `#/moodboards/<mbid>` = editor.
+  if (hr && hr.pid === MB_ROUTE) {
+    area = "moodboards";
+    destroyCurrent();
+    view = null;
+    renderMenu(); renderTopbar();
+    const mbid = (hr.view && hr.view !== "overview") ? hr.view : null;
+    if (window.Studio.moodboards) window.Studio.moodboards.open(mbid);
+    return;
+  }
+  area = "campaign";
   if (!projects.length) {
     pid = null; project = null; guideAll = null; guideById = {};
     renderMenu(); renderTopbar(); renderNoProject();
@@ -182,7 +201,9 @@ function pipeHtml(estados) {
 }
 function renderMenu() {
   const ui = window.Studio.ui;
-  $("#btnOverview").classList.toggle("active", view === "overview");
+  $("#btnOverview").classList.toggle("active", area === "campaign" && view === "overview");
+  const mb = $("#btnMoodboards");
+  if (mb) mb.classList.toggle("active", area === "moodboards");
   const estados = estadosDasEtapas();
   $("#railPipe").innerHTML = pipeHtml(estados);
   const feitas = estados.filter((st) => st === "done").length;
@@ -542,6 +563,7 @@ $("#projSel").addEventListener("change", (e) => { if (e.target.value) navigate("
 $("#btnNewProj").onclick = openWizard;
 $("#btnEditCamp").onclick = openEdit;
 $("#btnOverview").onclick = () => navigate("overview");
+$("#btnMoodboards").onclick = () => { if (location.hash === "#/moodboards") applyRoute(); else location.hash = "#/moodboards"; };
 $("#btnContinue").onclick = () => { const c = guideAll && guideAll.current; if (c) navigate(c); };
 $("#btnTheme").onclick = () => {
   const ordem = ["auto", "light", "dark"];

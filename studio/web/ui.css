@@ -73,6 +73,15 @@
 /* No cabeçalho da visão geral o chip "a fazer" é mais claro que o do card. */
 .ov-summary .chip.todo{background:var(--bg-2)}
 
+/* ---- biblioteca de mood boards [extensão] (ADR-013): cards de capa na lista ---- */
+.mb-card{cursor:pointer}
+.mb-cover{aspect-ratio:16/10;border-radius:var(--r-sm);overflow:hidden;background:var(--bg-2);
+  border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center}
+.mb-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.mb-nocover{font-size:var(--fs-fine);color:var(--ink-5)}
+.mb-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:auto}
+.mb-meta .chip{font-size:10px;padding:2px 8px}
+
 /* ================= modal ================= */
 .modal-backdrop{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(3px);
   -webkit-backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;
