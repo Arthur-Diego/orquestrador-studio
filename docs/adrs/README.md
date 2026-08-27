@@ -19,6 +19,7 @@ organizadas por módulo, e mostra o grafo de relacionamentos entre elas.
 | ADR-010 | Guia por Etapa Calculado por Leitura Pura de Artefatos; Núcleo Editável Só pelo Preparo/Shell | STUDIO | Aceito | [ADR-010](generated/STUDIO/ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md) |
 | ADR-011 | A cena do produto permanece na etapa 5, decidida na etapa 7 | MUSIC | Aceito | [ADR-011](generated/MUSIC/ADR-011-cena-do-produto-permanece-na-etapa-5.md) |
 | ADR-012 | Portfólio Global Conta Projetos Distintos (Obras), Não Arquivos do Mesmo Projeto | PUBLISH | Aceito | [ADR-012](generated/PUBLISH/ADR-012-portfolio-global-conta-projetos-distintos.md) |
+| ADR-013 | Biblioteca Global de Mood Boards Reutilizáveis (estende a ADR-007) | STUDIO | Aceito | [ADR-013](generated/STUDIO/ADR-013-biblioteca-global-de-mood-boards-reutilizaveis.md) |
 
 ## Grafo de relacionamentos
 
@@ -60,6 +61,11 @@ graph LR
     ADR004 --- ADR011
     ADR003 --- ADR012
     ADR004 --- ADR012
+    ADR013["ADR-013<br/>Biblioteca global de mood boards"]
+    ADR007 --- ADR013
+    ADR003 --- ADR013
+    ADR004 --- ADR013
+    ADR010 --- ADR013
 ```
 
 _Índice atualizado no fechamento da wave 4 (2026-08-27): ADR-010 a ADR-012, geradas nas waves 1–2, entraram na tabela e no grafo. A wave 4 (fidelidade ao protótipo) não criou ADR — suas decisões de lote foram pré-autorizadas pelo dono do produto e ficam em `docs/domains/studio/waves/wave-4.md` §"Decisões do lote" e na retro `wave-4-retro.md`._

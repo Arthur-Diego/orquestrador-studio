@@ -14,6 +14,7 @@ from PIL import Image
 def studio_env(tmp_path, monkeypatch):
     """Isola PROJECTS_DIR e STATE_DIR e recarrega os módulos para que leiam o novo ambiente."""
     monkeypatch.setenv("STUDIO_PROJECTS", str(tmp_path / "projects"))
+    monkeypatch.setenv("STUDIO_MOODBOARDS", str(tmp_path / "moodboards"))
     monkeypatch.setenv("STUDIO_STATE", str(tmp_path / "state"))
     monkeypatch.setenv("STUDIO_DOWNLOADS", str(tmp_path / "downloads"))
     (tmp_path / "downloads").mkdir()
@@ -22,11 +23,13 @@ def studio_env(tmp_path, monkeypatch):
     import studio.config  # noqa: F401  (re-executa com as variáveis novas)
     from studio import app as app_module
     from studio.mood import service as mood_service
+    from studio.moodboards import service as moodboards_service
     from studio.refs import service as refs_service
     def svc(name: str):
         return importlib.import_module(f"studio.{name}.service")
 
-    return {"tmp": tmp_path, "app": app_module.app, "refs": refs_service, "mood": mood_service, "svc": svc}
+    return {"tmp": tmp_path, "app": app_module.app, "refs": refs_service, "mood": mood_service,
+            "moodboards": moodboards_service, "svc": svc}
 
 
 @pytest.fixture()
