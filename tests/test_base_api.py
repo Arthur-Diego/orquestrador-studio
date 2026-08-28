@@ -77,12 +77,12 @@ def test_view_follows_the_wave4_prototype(client):
     # painéis numerados com `.pn`, na ordem visual (o painel 04, do CLI pago, saiu)
     posicoes = [html.index(f'<span class="pn">{n}</span>') for n in ("01", "02", "03")]
     assert posicoes == sorted(posicoes), "os 3 painéis são numerados com .pn na ordem visual"
-    # moodboard-library `[extensão]` (ADR-013, ADH-OS-20260827-04): a etapa 3 ganhou 1 painel de
-    # "Mood de referência" (seletor campanha/board + galeria VISUAL do mood). Os 3 painéis do
-    # curso seguem intactos e numerados 01/02/03; o painel extra é o único acréscimo, marcado
-    # `[extensão]` e numerado com `.pn` "M" (não conflita com a numeração do curso).
-    assert html.count('<section class="panel">') == 4
-    assert '<span class="pn">M</span>Mood de referência' in html and 'id="moodSourceGallery"' in html
+    # wave 5 · ponto 1 (ADH-OS-20260828-14): o painel "Mood de referência" (ADR-013) foi FUNDIDO
+    # na junção do painel 01 — o seletor campanha/board e o mosaico do mood passam a ser
+    # renderizados dentro de #baseJunction pelo view.js. Restam os 3 painéis do curso (01/02/03).
+    assert html.count('<section class="panel">') == 3
+    assert '<span class="pn">M</span>' not in html and 'id="moodSourceGallery"' not in html
+    assert 'id="moodSource"' in js and "moodMosaic" in js
     assert '<span class="pn">04</span>' not in html and "gasta créditos" not in html
     # o texto de aula vive no guia: `<details class="lesson">` só existe na etapa 1 (regra 4)
     assert '<details class="lesson">' not in html
@@ -127,9 +127,10 @@ def test_view_shows_the_mood_reference_junction(client):
     proveniência — SEM remover o textarea copiável nem os 3 painéis do curso (contrato da wave 4)."""
     html = client.get("/steps/base/view.html").text
     js = client.get("/steps/base/view.js").text
-    # contêineres novos, dentro do painel 01 (não é um painel novo): a contagem segue 4 (ADR-013)
+    # contêineres dentro do painel 01 (não são painéis novos); wave 5 · ponto 1: com o "M" fundido
+    # na junção, a contagem de painéis cai para 3 (os do curso: 01/02/03)
     assert '<div id="baseJunction"' in html and '<div id="baseProvenance"' in html
-    assert html.count('<section class="panel">') == 4
+    assert html.count('<section class="panel">') == 3
     # cabeçalho de junção: os dois lados rotulados + o texto que explica a junção
     assert "🖼️ Referência (situação)" in js and "🎨 Mood (vibe/luz/cor)" in js
     assert "funde a <b>situação da referência</b> com a <b>vibe do mood</b>" in js
@@ -144,11 +145,29 @@ def test_view_shows_the_mood_reference_junction(client):
     # o textarea copiável com o prompt COMPLETO segue intacto (não pode quebrar "Copiar"/editar)
     assert '<div id="basePrompts" class="prompts one bs-one"></div>' in html
     assert "<textarea" in js and 'class="link copy"' in js
-    # os 3 painéis do curso e o painel M da ADR-013 permanecem
+    # os 3 painéis do curso permanecem; wave 5 · ponto 1: o seletor de fonte do mood (ADR-013) foi
+    # fundido na junção (renderizado por moodSourceSelectHtml no view.js), não é mais um painel "M"
     for pn in ("01", "02", "03"):
         assert f'<span class="pn">{pn}</span>' in html
-    assert '<span class="pn">M</span>Mood de referência' in html
+    assert '<span class="pn">M</span>' not in html and "moodSourceSelectHtml" in js
     assert '<span class="pn">04</span>' not in html and '<details class="lesson">' not in html
+
+
+def test_view_shows_final_base_image_card_and_mosaic(client):
+    """wave 5 · pontos 2 e 4 (ADH-OS-20260828-14): o painel 03 ganha o card da imagem base final
+    (preview + selo + "segue para o storyboard →"), reusando o `final` que /base/candidates já
+    devolve — sem rota nova; e a junção do painel 01 usa o mosaico quadricular do mood."""
+    html = client.get("/steps/base/view.html").text
+    js = client.get("/steps/base/view.js").text
+    # ponto 2: container do card + render a partir de `finalRel` (dado já existente, sem endpoint novo)
+    assert '<div id="baseFinalCard"></div>' in html
+    assert "renderFinalCard" in js and "finalRel = r.final" in js
+    assert "imagem base final ✓" in js and "segue para o storyboard →" in js
+    assert "base/base_final.png" in js
+    # ponto 4: o mood da junção é renderizado como mosaico quadricular reutilizável
+    assert "ui.moodMosaic(currentMoodThumbs()" in js
+    # estilos escopados da fatia (regra 6): card final e <details> da proveniência
+    assert ".bs-final{" in html and ".bs-prov-det" in html
 
 
 def test_view_keeps_every_id_the_script_queries(client):
@@ -382,7 +401,7 @@ def test_view_offers_cli_generation_in_the_three_steps(client):
     # o botão de CLI vive no passo 03, com marcador [extensão] e o slot de custo — sem painel 04
     assert 'id="btnBaseCli"' in html and ">Gerar via CLI<" in html
     assert 'id="baseCliCost"' in html and 'id="baseGenResult"' in html
-    assert '<span class="pn">04</span>' not in html and html.count('<section class="panel">') == 4
+    assert '<span class="pn">04</span>' not in html and html.count('<section class="panel">') == 3
     # a linha do Higgsfield (UI ilimitada) — o caminho não pago — aparece explícita na tela
     assert "Higgsfield (UI ilimitada)" in html and "importe aqui" in html
     # o botão age no PASSO ATIVO: o rótulo muda por passo (situação/rótulo/upscale)

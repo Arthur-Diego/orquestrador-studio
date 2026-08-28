@@ -51,6 +51,26 @@
   .bs-result figcaption{font-size:12px;color:var(--ink-3);margin-top:5px}
   .bs-result .arrow{font-size:22px;color:var(--ink-3);align-self:center}
   .bs-result .dl{display:inline-block;margin-top:8px}
+  /* wave 5 · ponto 1: painel "M" fundido na junção — o seletor de fonte do mood e o mosaico
+     quadricular vivem dentro do lado 🎨 Mood; a proveniência vira <details> recolhido. */
+  .bs-junction .bs-moodhead{gap:8px;align-items:center;margin-bottom:6px}
+  .bs-junction select#moodSource{max-width:100%;margin-bottom:8px}
+  .bs-junction .side .mood-mosaic{max-width:180px}
+  .bs-junction .side>.fine{margin:6px 0 0}
+  .bs-prov-det{margin-top:12px}
+  .bs-prov-det>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center;padding:6px 0}
+  .bs-prov-det>summary::-webkit-details-marker{display:none}
+  .bs-prov-det>summary::before{content:"▸";color:var(--ink-4);font-size:12px}
+  .bs-prov-det[open]>summary::before{content:"▾"}
+  .bs-prov-det .bs-prov-body{margin-top:2px}
+  /* wave 5 · ponto 2: card da imagem base final — deixa claro que ela segue para o storyboard. */
+  .bs-final{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:16px;padding:12px;
+    border:1px solid var(--accent-line);border-radius:12px;background:var(--accent-soft)}
+  .bs-final figure{margin:0}
+  .bs-final figure img{width:120px;height:120px;object-fit:cover;border-radius:10px;
+    border:1px solid var(--line);display:block}
+  .bs-final .bs-final-body{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .bs-final .bs-final-hint{margin:0;font-weight:600;color:var(--accent)}
 </style>
 
 <header class="stephead">
@@ -60,15 +80,6 @@
 </header>
 
 <section id="guide" class="guide"></section>
-
-<section class="panel">
-  <div class="panel-head">
-    <h3><span class="pn">M</span>Mood de referência <span class="ext">[extensão]</span></h3>
-    <select id="moodSource" title="qual mood o bot usa como referência de estilo"></select>
-  </div>
-  <p class="fine">Escolha qual mood o bot usa como referência de estilo: o mood da <b>campanha</b> (etapa 2) ou um <b>mood board</b> da biblioteca. As imagens escolhidas aparecem abaixo e vão ao bot junto da referência.</p>
-  <div id="moodSourceGallery" class="gallery xs"></div>
-</section>
 
 <section class="panel">
   <div class="panel-head">
@@ -120,6 +131,7 @@
   </div>
   <p class="fine bs-hf">Você também pode fazer no <b>Higgsfield (UI ilimitada)</b>: gere lá e importe aqui. O CLI é o caminho pago (gasta crédito por passo — o upscale custa diferente).</p>
   <div id="baseGallery" class="gallery sm"></div>
+  <div id="baseFinalCard"></div>
   <div id="baseGenResult" class="bs-result"></div>
   <p class="note bs-note">Escolha uma imagem por passo — trocar a situação recomeça a cadeia. Ao fechar: <code>base/base_final.png</code> + <code>base.md</code>.</p>
 </section>

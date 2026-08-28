@@ -349,6 +349,8 @@ def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
     assert '"/api/moodboards"' in mood_js and "/mood/pull/" in mood_js
     base_html = client.get("/steps/base/view.html").text
     base_js = client.get("/steps/base/view.js").text
-    assert 'id="moodSource"' in base_html and 'id="moodSourceGallery"' in base_html
-    assert "Mood de referência" in base_html
+    # wave 5 · ponto 1: o seletor de fonte do mood e o mosaico vivem DENTRO da junção (#baseJunction),
+    # renderizados pelo view.js — o painel "M" separado deixou de existir.
+    assert 'id="baseJunction"' in base_html
+    assert 'id="moodSource"' in base_js and "moodMosaic" in base_js
     assert "board: boardSel" in base_js and "mood-sources" in base_js

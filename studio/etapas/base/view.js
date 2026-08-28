@@ -13,6 +13,7 @@ Studio.register("base", (ctx) => {
   const SINCE_MINUTES = 120;
 
   let cands = [], sel = null, chain = { situation: null, label: null, upscale: null };
+  let finalRel = null;     // wave 5 · ponto 2: caminho de base/base_final.png quando já existe
   let refs = [], labelPrompt = null, claudeOk = false;
   // base-prompt-provenance: insumos visuais da junção mood × referência (cabeçalho + chips).
   let palette = { colors: [], note: "" }, moodFiles = [], boardImgUrls = [];
@@ -75,19 +76,27 @@ Studio.register("base", (ctx) => {
     return (moodFiles || []).map((f) => ctx.files(f));
   }
 
-  // Cabeçalho de junção (FDD §3): 🖼️ referência (situação) + 🎨 mood (vibe/luz/cor) + paleta, com
-  // o texto que deixa claro que o prompt abaixo é a JUNÇÃO dos dois. Só aparece com uma referência
-  // escolhida e no passo "situação" (o passo "rótulo" é outra tarefa da aula).
+  // wave 5 · ponto 1: o seletor de fonte do mood (campanha × board da biblioteca, controle do
+  // ADR-013) vive DENTRO da junção — o painel "M" foi fundido aqui. As opções vêm de `moodSources`
+  // (persistente no JS); o valor selecionado, de `boardSel`. O onchange é tratado por delegação em
+  // `#baseJunction` (o innerHTML é reescrito a cada render).
+  function moodSourceSelectHtml() {
+    const ms = moodSources || { campaign: { count: 0 }, boards: [] };
+    const opts = [`<option value=""${boardSel ? "" : " selected"}>Mood da campanha (${ms.campaign.count} img)</option>`]
+      .concat((ms.boards || []).map((b) =>
+        `<option value="${ui.esc(b.id)}"${b.id === boardSel ? " selected" : ""}>Board: ${ui.esc(b.name)} (${b.count} img) [extensão]</option>`));
+    return `<select id="moodSource" title="qual mood o bot usa como referência de estilo">${opts.join("")}</select>`;
+  }
+
+  // Cabeçalho de junção (FDD §3): 🖼️ referência (situação) + 🎨 mood (vibe/luz/cor: seletor de
+  // fonte + mosaico quadricular + paleta), com o texto que deixa claro que o prompt abaixo é a
+  // JUNÇÃO dos dois. Só aparece com uma referência escolhida e no passo "situação".
   function renderJunction() {
     const el = $("#baseJunction");
     if (!el) return;
     const f = refs.find((r) => r.ref_id === refId) || refs[0];
     if (!f || step === "label") { el.innerHTML = ""; el.style.display = "none"; return; }
     el.style.display = "";
-    const moods = currentMoodThumbs();
-    const moodThumbs = moods.length
-      ? moods.slice(0, 4).map((u) => `<img src="${u}" alt="imagem do mood" loading="lazy">`).join("")
-      : `<span class="fine">sem imagens do mood ainda (etapa 2 ou um board)</span>`;
     const swatches = (palette.colors || []).length
       ? `<div class="swatches">${palette.colors.slice(0, 8).map((c) =>
           `<span class="sw" style="background:${ui.esc(c)}" title="${ui.esc(c)}"></span>`).join("")}</div>`
@@ -98,8 +107,12 @@ Studio.register("base", (ctx) => {
         <div class="thumbs"><img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy"></div>
       </div>
       <div class="side">
-        <span class="eyebrow lbl">🎨 Mood (vibe/luz/cor)</span>
-        <div class="thumbs">${moodThumbs}</div>${swatches}
+        <div class="row wrap bs-moodhead">
+          <span class="eyebrow lbl">🎨 Mood (vibe/luz/cor)</span><span class="ext">[extensão]</span>
+        </div>
+        ${moodSourceSelectHtml()}
+        ${ui.moodMosaic(currentMoodThumbs(), {})}
+        <p class="fine">Fonte de estilo: o mood da <b>campanha</b> (etapa 2) ou um <b>mood board</b> da biblioteca.</p>${swatches}
       </div>
       <p class="join-note">O prompt abaixo funde a <b>situação da referência</b> com a <b>vibe do mood</b>.</p>`;
   }
@@ -124,9 +137,12 @@ Studio.register("base", (ctx) => {
       lines.push(`<div class="prov-line"><span class="bs-chip from-${ui.esc(p.from)}">${ui.esc(FROM_LABEL[p.from] || p.from)}</span>
         <span class="prov-text"><b>${ui.esc(p.label)}</b> <span class="fine">(${ui.esc(desc)})</span> — ${ui.esc(p.text)}</span></div>`);
     });
-    el.innerHTML = `<div class="row"><span class="eyebrow lbl">De onde vem cada parte</span>
-      <span class="ext">[extensão]</span></div>${lines.join("") ||
-      `<p class="fine">Prompt fora do formato de 5 linhas — copie o texto completo acima.</p>`}`;
+    // wave 5 · ponto 1: recolhida por padrão (<details> sem `open`) para encurtar o painel 01.
+    el.innerHTML = `<details class="bs-prov-det">
+      <summary><span class="eyebrow lbl">De onde vem cada parte</span> <span class="ext">[extensão]</span></summary>
+      <div class="bs-prov-body">${lines.join("") ||
+        `<p class="fine">Prompt fora do formato de 5 linhas — copie o texto completo acima.</p>`}</div>
+    </details>`;
   }
 
   // Galeria das referências da etapa 1: a escolha vale para "Gerar prompt" e para "Importar".
@@ -212,45 +228,36 @@ Studio.register("base", (ctx) => {
   }
 
   // ---------- mood de referência [extensão] (ADR-013): campanha OU board da biblioteca ----------
+  // wave 5 · ponto 1: o seletor e o mosaico do mood vivem na junção (painel 01). `loadMoodSources`
+  // só carrega os dados; a pintura é a própria junção (`renderMoodSourceGallery` → `renderJunction`).
   async function loadMoodSources() {
     try { moodSources = await api(url("mood-sources")); }
     catch (e) { moodSources = { campaign: { files: [], count: 0 }, boards: [] }; }
-    const sel = $("#moodSource");
-    const opts = [`<option value="">Mood da campanha (${moodSources.campaign.count} img)</option>`]
-      .concat(moodSources.boards.map((b) =>
-        `<option value="${ui.esc(b.id)}">Board: ${ui.esc(b.name)} (${b.count} img) [extensão]</option>`));
-    sel.innerHTML = opts.join("");
     if (boardSel && !moodSources.boards.some((b) => b.id === boardSel)) boardSel = null;
-    sel.value = boardSel || "";
     await renderMoodSourceGallery();
   }
 
+  // Repinta o mosaico do mood na junção. Sem board, usa o mood da campanha (`moodFiles`); com board,
+  // busca as imagens curadas e as guarda em `boardImgUrls` (lidas por `currentMoodThumbs`).
   async function renderMoodSourceGallery() {
-    const g = $("#moodSourceGallery");
     if (!boardSel) {
-      const files = (moodSources && moodSources.campaign.files) || [];
       boardImgUrls = [];
-      g.innerHTML = files.length
-        ? files.map((f) => `<div class="card"><img loading="lazy" src="${ctx.files(f)}" alt=""></div>`).join("")
-        : `<div class="empty">Sem mood da campanha ainda — salve o mood na etapa 2, ou puxe/escolha um mood board.</div>`;
       renderJunction();
       return;
     }
     try {
       const d = await api(`/api/moodboards/${encodeURIComponent(boardSel)}`);
       boardImgUrls = d.images.map((rel) => `/mbfiles/${encodeURIComponent(boardSel)}/${rel}`);
-      g.innerHTML = d.images.length
-        ? d.images.map((rel) => `<div class="card"><img loading="lazy" src="/mbfiles/${encodeURIComponent(boardSel)}/${ui.esc(rel)}" alt=""></div>`).join("")
-        : `<div class="empty">Este mood board não tem imagens curadas.</div>`;
-    } catch (e) { boardImgUrls = []; g.innerHTML = `<div class="empty">${ui.esc(e.message)}</div>`; }
+    } catch (e) { boardImgUrls = []; toast(e.message); }
     renderJunction();
   }
 
   // ---------- candidatas (painel 03) ----------
   async function load() {
-    if (!ctx.pid()) { cands = []; return render(); }
+    if (!ctx.pid()) { cands = []; finalRel = null; return render(); }
     const r = await api(url("candidates"));
     cands = r.candidates;
+    finalRel = r.final || null;   // wave 5 · ponto 2: já vem do endpoint de candidatas (sem rota nova)
     chain = { situation: null, label: null, upscale: null };
     cands.filter((c) => c.selected).forEach((c) => { chain[c.kind] = c.id; });
     if (sel && !cands.some((c) => c.id === sel)) sel = null;
@@ -274,6 +281,27 @@ Studio.register("base", (ctx) => {
       sel: sel === c.id,
       title: c.prompt || c.name || "",
     })).join("");
+    renderFinalCard();
+  }
+
+  // wave 5 · ponto 2: quando a imagem base final já existe (`base/base_final.png`, gravada pelo
+  // "Usar como imagem base"), mostra o preview + o selo e a dica de que ela segue para o storyboard.
+  // Reusa o dado que o endpoint de candidatas já devolve — sem rota nova. `?v=` evita cache do PNG
+  // reescrito no mesmo caminho a cada seleção.
+  function renderFinalCard() {
+    const el = $("#baseFinalCard");
+    if (!el) return;
+    if (!finalRel) { el.innerHTML = ""; el.style.display = "none"; return; }
+    el.style.display = "";
+    const src = `${ctx.files(finalRel)}?v=${Date.now()}`;
+    el.innerHTML = `<div class="bs-final">
+      <figure><img src="${src}" alt="imagem base final" loading="lazy"></figure>
+      <div class="bs-final-body">
+        <span class="chip ok">imagem base final ✓</span>
+        <p class="bs-final-hint">segue para o storyboard →</p>
+        <p class="fine">Gravada em <code>base/base_final.png</code> — é a imagem que a etapa 4 (storyboard) usa.</p>
+      </div>
+    </div>`;
   }
 
   // Cadeia da aula como `.stepper` do catálogo. O passo com candidata escolhida fica `done`
@@ -417,7 +445,13 @@ Studio.register("base", (ctx) => {
       $("#refGallery").addEventListener("keydown", (e) => { const c = e.target.closest(".card"); if (c && e.key === "Enter") selectRef(c.dataset.ref); });
       $("#btnPrompt").onclick = () => gerarPrompt(false);
       $("#btnPromptNoBias").onclick = () => gerarPrompt(true);
-      $("#moodSource").onchange = () => { boardSel = $("#moodSource").value || null; renderMoodSourceGallery(); };
+      // wave 5 · ponto 1: o #moodSource é recriado dentro da junção a cada render → delegação.
+      $("#baseJunction").addEventListener("change", (e) => {
+        if (e.target && e.target.id === "moodSource") {
+          boardSel = e.target.value || null;
+          renderMoodSourceGallery();
+        }
+      });
       $("#basePrompts").addEventListener("click", async (e) => {
         const b = e.target.closest("button.copy"); if (!b) return;
         const ta = b.closest(".prompt").querySelector("textarea");
