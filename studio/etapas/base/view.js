@@ -121,7 +121,7 @@ Studio.register("base", (ctx) => {
         ${ui.moodMosaic(currentMoodThumbs(), {})}
         <p class="fine">Fonte de estilo: o mood da <b>campanha</b> (etapa 2) ou um <b>mood board</b> da biblioteca.</p>${swatches}
       </div>
-      <p class="join-note">O prompt abaixo funde a <b>situação da referência</b> com a <b>vibe do mood</b>.</p>`;
+      <p class="join-note">O prompt ao lado funde a <b>situação da referência</b> com a <b>vibe do mood</b>.</p>`;
   }
 
   // Visão anotada [extensão] (FDD §3): read-only, cada linha do prompt com um chip de proveniência

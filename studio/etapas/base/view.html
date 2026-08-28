@@ -69,7 +69,13 @@
   .bs-refhero{margin:10px 0 12px;border:1px solid var(--line);border-radius:14px;overflow:hidden;
     background:var(--surface-2)}
   .bs-refhero:empty{display:none}
-  .bs-refhero img{display:block;width:100%;height:clamp(220px,32vw,360px);object-fit:cover}
+  .bs-refhero img{display:block;width:100%;height:clamp(200px,22vw,300px);object-fit:cover}
+  /* ADH-OS-20260828-24: painel 01 em DUAS COLUNAS — referência+mood à esquerda, instrução e o
+     PROMPT à direita (visível no topo, sem ficar soterrado abaixo do hero). Colapsa em 1 coluna
+     no estreito. Corrige a regressão em que o prompt caía a ~1800px da dobra. */
+  .bs-p1grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.15fr);gap:20px;align-items:start}
+  .bs-p1-left,.bs-p1-right{min-width:0}
+  @media (max-width:860px){.bs-p1grid{grid-template-columns:1fr}}
   /* a tira das referências vira compacta e de largura plena (sem o cap de 560px que deixava a
      faixa morta à direita): thumbs menores, fluxo por toda a largura. */
   .bs-refpick .gallery.xs{max-width:none;grid-template-columns:repeat(auto-fill,minmax(88px,1fr))}
@@ -100,24 +106,30 @@
     <h3><span class="pn">01</span>O prompt da aula — quem escreve é o bot</h3>
     <span id="baseClaude" class="chip mode">bot: ?</span>
   </div>
-  <div class="refpick bs-refpick">
-    <span class="eyebrow lbl">Referência (etapa 1) — clique para escolher</span>
-    <div id="baseRefHero" class="bs-refhero"></div>
-    <div id="refGallery" class="gallery xs"></div>
+  <div class="bs-p1grid">
+    <div class="bs-p1-left">
+      <div class="refpick bs-refpick">
+        <span class="eyebrow lbl">Referência (etapa 1) — clique para escolher</span>
+        <div id="baseRefHero" class="bs-refhero"></div>
+        <div id="refGallery" class="gallery xs"></div>
+      </div>
+      <div id="baseJunction" class="bs-junction"></div>
+    </div>
+    <div class="bs-p1-right">
+      <div class="row wrap bs-instr">
+        <input id="promptInstruction" class="grow" placeholder="o que muda nesta referência">
+        <button id="btnPrompt" class="primary">Gerar prompt</button>
+        <button id="btnPromptNoBias" class="ghost" title="Sessão nova do bot, sem nada sobre a campanha">Gerar sem viés</button>
+      </div>
+      <div id="basePrompts" class="prompts one bs-one"></div>
+      <div class="row wrap bs-p1cli">
+        <button id="btnBasePanel01Cli" class="primary">Gerar via CLI</button>
+        <span class="ext">[extensão]</span>
+        <span id="basePanel01CliCost" class="fine"></span>
+      </div>
+      <div id="baseProvenance" class="bs-prov"></div>
+    </div>
   </div>
-  <div class="row wrap bs-instr">
-    <input id="promptInstruction" class="grow" placeholder="o que muda nesta referência">
-    <button id="btnPrompt" class="primary">Gerar prompt</button>
-    <button id="btnPromptNoBias" class="ghost" title="Sessão nova do bot, sem nada sobre a campanha">Gerar sem viés</button>
-  </div>
-  <div id="baseJunction" class="bs-junction"></div>
-  <div id="basePrompts" class="prompts one bs-one"></div>
-  <div class="row wrap bs-p1cli">
-    <button id="btnBasePanel01Cli" class="primary">Gerar via CLI</button>
-    <span class="ext">[extensão]</span>
-    <span id="basePanel01CliCost" class="fine"></span>
-  </div>
-  <div id="baseProvenance" class="bs-prov"></div>
 </section>
 
 <section class="panel">
