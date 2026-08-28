@@ -47,7 +47,10 @@ def clamp_count(count: int | None) -> int:
 
 def _params(source_path: Path, model: str, resolution: str | None, aspect_ratio: str,
             prompt: str) -> dict:
-    params: dict = {"prompt": prompt, "aspect_ratio": aspect_ratio, "count": 1,
+    # Sem `count` nos params do CLI: o job já faz N chamadas (1 imagem cada), então mandar
+    # `--count 1` é redundante — e modelos como `nano_banana_pro` rejeitam o parâmetro
+    # ("Unknown params: count"). Quem controla a quantidade é o loop de `start_generate`.
+    params: dict = {"prompt": prompt, "aspect_ratio": aspect_ratio,
                     "image_references": [str(source_path)]}
     if resolution and model and resolution in (pricing.CATALOG.get(model, {}).get("variants") or {}):
         params["resolution"] = resolution

@@ -415,7 +415,7 @@ def cost(pid: str, scene: str, model: str, prompts: list[str], count: int = 4,
     """Estimativa de créditos SEM criar job — a UI mostra antes do confirm() de `generate`."""
     root, _ = _resolve(pid, scene)
     _check_gen(prompts, count)
-    est = [hf.cost(model, {"prompt": p, "aspect_ratio": _aspect_ratio(root), "count": 1,
+    est = [hf.cost(model, {"prompt": p, "aspect_ratio": _aspect_ratio(root),
                            **({"resolution": resolution} if resolution else {})}) for p in prompts]
     known = [e["credits"] for e in est if isinstance(e.get("credits"), (int, float))]
     complete = len(known) == len(est) and bool(known)
@@ -467,7 +467,9 @@ def start_generate(pid: str, scene: str, model: str = DEFAULT_MODEL, prompts: li
         done = 0
         for pi, prompt in enumerate(ps, 1):
             for k in range(1, count + 1):
-                params = {"prompt": prompt, "aspect_ratio": ratio, "count": 1,
+                # Sem `--count` (o loop `k` já gera `count` imagens, 1 por chamada); além de
+                # redundante, modelos como `nano_banana_pro` rejeitam o parâmetro.
+                params = {"prompt": prompt, "aspect_ratio": ratio,
                           "image_references": refs, **({"resolution": resolution} if resolution else {})}
                 res = hf.generate(model, params)
                 _save_raw(root, res, f"{pi}_{k}")
