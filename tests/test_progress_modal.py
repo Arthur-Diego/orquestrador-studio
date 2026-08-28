@@ -89,8 +89,19 @@ def test_confirm_cost_still_precedes_paid_generations(client):
 
 
 def test_deterministic_generators_do_not_open_a_modal(client):
-    """Storyboard: "Montar instrução" e "Gerar prompt" (ângulos) são determinísticos: sem modal."""
-    for step in ("storyboard",):
-        js = _view(client, step)
-        assert "ui.progress(" not in js, f"{step} não chama o bot — não deve abrir o modal de fases"
-        assert "progressJob(" not in js, f"{step} não roda job desta etapa pelo CLI"
+    """Storyboard: "Montar instrução" (ideação) e "Gerar prompt" (ângulos) são determinísticos: sem modal.
+
+    Wave 7 (`[extensão]`, ADR-021): o MESMO `view.js` ganhou o vídeo por cena, que SIM abre modal —
+    `ui.progress` no "Gerar prompt de vídeo" (chamada síncrona ao Claude) e `progressJob` na geração
+    via CLI (`/video/job`). O que este teste trava é que os DOIS geradores determinísticos
+    (`build` = montar instrução; `prompts` = prompt de ângulo) seguem SEM modal.
+    """
+    js = _view(client, "storyboard")
+    # o caminho de vídeo da wave 7 usa os dois modais...
+    assert "ui.progress(" in js and "Gerar prompt de vídeo" in js
+    assert "progressJob(" in js and "/video/job" in js
+    # ...mas os geradores determinísticos continuam modal-free:
+    build = js.split("async function build(", 1)[1].split("\n    }", 1)[0]
+    assert "ui.progress" not in build and "progressJob" not in build, "montar instrução não abre modal"
+    prompts = js.split("async function prompts(", 1)[1].split("\n    }", 1)[0]
+    assert "ui.progress" not in prompts and "progressJob" not in prompts, "prompt de ângulo não abre modal"
