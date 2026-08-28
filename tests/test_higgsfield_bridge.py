@@ -117,3 +117,64 @@ def test_status_without_cli_is_never_cached(monkeypatch):
     monkeypatch.setattr(hf, "BIN", None)
     assert hf.status() == {"installed": False, "logged_in": False}
     assert hf._STATUS_CACHE["data"] is None
+
+
+# ---------- dedup do companion `_min.webp` (bug ADH-OS-20260828-19) ----------
+def test_dedup_min_helper_prefers_full_and_preserves_order():
+    urls = ["https://cdn.x/a.png", "https://cdn.x/a_min.webp",
+            "https://cdn.x/b.png", "https://cdn.x/b_min.webp"]
+    assert hf._dedup_min(urls) == ["https://cdn.x/a.png", "https://cdn.x/b.png"]
+
+
+def test_dedup_min_helper_keeps_min_when_alone():
+    assert hf._dedup_min(["https://cdn.x/c_min.webp"]) == ["https://cdn.x/c_min.webp"]
+
+
+def test_dedup_min_helper_keeps_unpaired_full():
+    assert hf._dedup_min(["https://cdn.x/d.png"]) == ["https://cdn.x/d.png"]
+
+
+def test_dedup_min_helper_prefers_full_even_when_min_comes_first():
+    # a versão cheia deve vencer independentemente da ordem de aparição
+    assert hf._dedup_min(["https://cdn.x/a_min.webp", "https://cdn.x/a.png"]) == ["https://cdn.x/a.png"]
+
+
+def test_dedup_min_ignores_query_string():
+    urls = ["https://cdn.x/a.png?sig=1", "https://cdn.x/a_min.webp?sig=2"]
+    assert hf._dedup_min(urls) == ["https://cdn.x/a.png?sig=1"]
+
+
+def test_generate_drops_min_companion(monkeypatch):
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    payload = {"id": "job1", "outputs": [
+        {"image_url": "https://cdn.x/a.png"}, {"preview_url": "https://cdn.x/a_min.webp"},
+        {"image_url": "https://cdn.x/b.png"}, {"preview_url": "https://cdn.x/b_min.webp"},
+    ]}
+    monkeypatch.setattr(hf, "_run", _fake_run(payload))
+    r = hf.generate("nano_banana_2", {"prompt": "x"})
+    assert r["urls"] == ["https://cdn.x/a.png", "https://cdn.x/b.png"] and r["id"] == "job1"
+
+
+def test_generate_keeps_lone_min(monkeypatch):
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", _fake_run({"id": "j", "outputs": [{"url": "https://cdn.x/c_min.webp"}]}))
+    assert hf.generate("nano_banana_2", {"prompt": "x"})["urls"] == ["https://cdn.x/c_min.webp"]
+
+
+def test_history_media_drops_min_companion(monkeypatch):
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    payload = {"items": [
+        {"id": "j1", "job_type": "nano_banana_2", "prompt": "vibe",
+         "results": [{"url": "https://cdn.x/a.png"}, {"url": "https://cdn.x/a_min.webp"}]},
+    ]}
+    monkeypatch.setattr(hf, "_run", _fake_run(payload))
+    jobs = hf.history_media("image", 10)
+    assert jobs[0]["urls"] == ["https://cdn.x/a.png"]
+
+
+def test_history_media_keeps_lone_min(monkeypatch):
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    payload = {"items": [{"id": "j2", "results": [{"url": "https://cdn.x/d_min.webp"}]}]}
+    monkeypatch.setattr(hf, "_run", _fake_run(payload))
+    jobs = hf.history_media("image", 10)
+    assert jobs[0]["urls"] == ["https://cdn.x/d_min.webp"]

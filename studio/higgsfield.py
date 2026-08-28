@@ -107,7 +107,7 @@ def history_media(kind: str = "image", size: int = 50) -> list[dict]:
         if not isinstance(j, dict):
             continue
         flat = _flatten(j)
-        urls = sorted({u for v in flat.values() if isinstance(v, str) for u in KIND_RE[kind].findall(v)})
+        urls = _dedup_min(sorted({u for v in flat.values() if isinstance(v, str) for u in KIND_RE[kind].findall(v)}))
         if not urls:
             continue
         result.append({
@@ -150,11 +150,38 @@ def generate(model: str, params: dict, timeout_s: int = 600) -> dict:
         raise RuntimeError((err or out).strip()[:400])
     data = _json(out)
     flat = _flatten(data if isinstance(data, dict) else {"d": data})
-    urls = sorted({u for v in flat.values() if isinstance(v, str) for u in MEDIA_URL_RE.findall(v)})
+    urls = _dedup_min(sorted({u for v in flat.values() if isinstance(v, str) for u in MEDIA_URL_RE.findall(v)}))
     return {"raw": data, "urls": urls, "id": _pick(flat, "id", "job_id")}
 
 
 # ---------- utilidades ----------
+_MEDIA_EXT_RE = re.compile(r"\.(?:png|jpe?g|webp|mp4|mov|webm|wav|mp3|m4a)$", re.I)
+
+
+def _dedup_min(urls: list[str]) -> list[str]:
+    """Colapsa o par que o CLI devolve para um mesmo resultado: a mídia cheia (`X.png`) e o
+    preview companheiro (`X_min.webp`).
+
+    Cada geração da Higgsfield emite as duas URLs; sem isto ambas viram candidatas e o board
+    fica com o dobro de itens. Agrupa por identidade normalizada (URL sem query, sem extensão
+    e sem o sufixo `_min`) e mantém **uma** URL por grupo, preferindo a versão **não-`_min`**
+    (a cheia) quando existir; se só houver a `_min`, mantém-a. Preserva a ordem de aparição.
+    Não faz dedup por URL idêntica — isso já vem do `set()` a montante.
+    """
+    kept: dict[str, str] = {}
+    order: list[str] = []
+    for url in urls:
+        stem = _MEDIA_EXT_RE.sub("", url.split("?", 1)[0])
+        is_min = stem.endswith("_min")
+        key = stem[:-4] if is_min else stem
+        if key not in kept:
+            kept[key] = url
+            order.append(key)
+        elif not is_min and _MEDIA_EXT_RE.sub("", kept[key].split("?", 1)[0]).endswith("_min"):
+            kept[key] = url  # troca o preview `_min` guardado pela versão cheia
+    return [kept[k] for k in order]
+
+
 def _params(params: dict) -> list[str]:
     args: list[str] = []
     for k, v in params.items():
