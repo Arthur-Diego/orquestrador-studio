@@ -6,6 +6,16 @@
   #refsPick .panel-head{position:relative}
   #refsPick .rf-bring{position:absolute;right:0;top:calc(100% + 2px);opacity:0;transition:opacity .15s}
   #refsPick .panel-head:hover .rf-bring,#refsPick .rf-bring:focus-visible{opacity:1}
+  /* ADR-020 — salvar a marca validada perto do #brand */
+  .rf-brandsave{display:flex;align-items:center;gap:10px;margin-top:2px}
+  /* Filtros multiseleção (checkbox) por termo e por fonte — substituem o select único #filterTerm */
+  .rf-filters{display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-start;margin:2px 0 12px}
+  .rf-filters:empty{display:none}
+  .rf-fgroup{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+  .rf-flabel{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;opacity:.6;margin-right:2px}
+  .rf-chk{display:inline-flex;align-items:center;gap:5px;font-size:.85rem;cursor:pointer;white-space:nowrap}
+  .rf-chk input{margin:0}
+  .rf-clear{align-self:center}
 </style>
 
 <header class="stephead">
@@ -34,6 +44,10 @@
         <span class="eyebrow">marca validada para se inspirar</span>
         <input id="brand" class="lg" placeholder="ex.: Red Bull">
       </label>
+      <div class="row rf-brandsave">
+        <button id="btnSaveBrand" class="link" type="button" title="Guarda esta marca como a marca validada do projeto — vira a fonte das sugestões de termos">Salvar marca validada</button>
+        <span id="brandSaved" class="note"></span>
+      </div>
       <label class="field">
         <span class="eyebrow">termos de busca — um por linha, em inglês</span>
         <textarea id="terms" rows="6" placeholder="Red Bull ads&#10;Red Bull snow ads&#10;energy drink ad campaign"></textarea>
@@ -60,13 +74,13 @@
   <div class="panel-head">
     <h3><span class="pn">02</span>Escolher o que você gosta</h3>
     <div class="row wrap">
-      <select id="filterTerm"><option value="">todos os termos</option></select>
       <span id="counts" class="chip mode">0 candidatas · 0 escolhidas</span>
       <button id="btnSave" class="primary">Salvar seleção</button>
     </div>
     <button id="btnBring" class="link rf-bring" type="button" title="Imagens salvas à mão (Explore do Midjourney, print, download avulso) — ou arraste-as sobre este painel">trazer imagens</button>
   </div>
   <p class="fine">Marque o que <b>você</b> gosta e o que foge do clichê. Clique para marcar; a aula manda voltar no fim e desmarcar o que já não agrada.</p>
+  <div id="refsFilters" class="rf-filters"></div>
   <div id="gallery" class="gallery"></div>
   <input id="refsUpload" type="file" accept="image/*" multiple hidden>
 </section>

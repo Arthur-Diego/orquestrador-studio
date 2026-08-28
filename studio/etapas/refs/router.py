@@ -21,10 +21,33 @@ class SelectReq(BaseModel):
     notes: dict[str, str] = {}
 
 
+class ValidatedBrandReq(BaseModel):
+    brand: str = ""
+
+
 @router.get("/api/suggest-terms")
-def suggest(product: str, vibe: str = "", brand: str = ""):
-    """`brand` (aula 009): a busca começa por uma marca já validada do segmento."""
-    return service.suggest_terms(product, vibe, brand)
+def suggest(product: str = "", vibe: str = "", brand: str = "", pid: str = ""):
+    """`brand` (aula 009): a busca começa por uma marca já validada do segmento.
+
+    `[extensão]` (ADR-020): com `pid` de um projeto que tem marca validada persistida, as sugestões
+    saem só dela (≥12 termos), ignorando `product`/`vibe`/`brand` digitados.
+    """
+    validated = service.get_validated_brand(pid) if pid else ""
+    return service.suggest_terms(product, vibe, brand, validated_brand=validated)
+
+
+@router.get("/api/projects/{pid}/refs/validated-brand")
+def refs_validated_brand_get(pid: str):
+    """`[extensão]` (ADR-020): a marca validada persistida do projeto (`""` quando não há)."""
+    service.project_dir(pid)
+    return {"brand": service.get_validated_brand(pid)}
+
+
+@router.put("/api/projects/{pid}/refs/validated-brand")
+def refs_validated_brand_put(pid: str, req: ValidatedBrandReq):
+    """`[extensão]` (ADR-020): grava a marca validada no domínio refs (texto vazio limpa)."""
+    service.project_dir(pid)
+    return service.set_validated_brand(pid, req.brand)
 
 
 @router.post("/api/pinterest/login")

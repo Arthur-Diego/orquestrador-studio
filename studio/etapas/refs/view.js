@@ -6,6 +6,9 @@ Studio.register("refs", (ctx) => {
   const { $, api, toast } = ctx;
   const ui = Studio.ui;
   let cands = [], selected = new Set(), job = null, loginJob = null;
+  // Filtros multiseleção da etapa 1: um conjunto por grupo. União dentro de cada grupo (qualquer
+  // termo/fonte marcado), interseção entre grupos (termo marcado E fonte marcada). Vazio = tudo.
+  const filterTerms = new Set(), filterSources = new Set();
 
   async function refreshLogin() {
     const el = $("#loginState"), btn = $("#btnLogin");
@@ -73,13 +76,41 @@ Studio.register("refs", (ctx) => {
   }
 
   async function load(keepSel) {
-    if (!ctx.pid()) { cands = []; render(); return; }
+    if (!ctx.pid()) { cands = []; renderFilters(); render(); return; }
     cands = await api(`/api/projects/${ctx.pid()}/refs/candidates`);
     if (!keepSel) selected = new Set(cands.filter(c => c.selected).map(c => c.id));
-    const terms = [...new Set(cands.map(c => c.term))], f = $("#filterTerm"), cur = f.value;
-    f.innerHTML = `<option value="">todos os termos</option>` +
-      terms.map(t => `<option ${t === cur ? "selected" : ""}>${ui.esc(t)}</option>`).join("");
+    // Marcações de filtro que já não existem nas candidatas atuais são descartadas.
+    const terms = new Set(cands.map(c => c.term)), sources = new Set(cands.map(c => c.source || "pinterest"));
+    [...filterTerms].forEach(t => { if (!terms.has(t)) filterTerms.delete(t); });
+    [...filterSources].forEach(s => { if (!sources.has(s)) filterSources.delete(s); });
+    renderFilters();
     render();
+  }
+
+  // Desenha os grupos de checkbox (termos e fontes presentes nas candidatas) + "limpar filtros".
+  // Um grupo só aparece quando há mais de um valor — filtrar por um valor único não separa nada.
+  function renderFilters() {
+    const box = $("#refsFilters");
+    if (!box) return;
+    if (!cands.length) { box.innerHTML = ""; return; }
+    const terms = [...new Set(cands.map(c => c.term))].sort();
+    const sources = [...new Set(cands.map(c => c.source || "pinterest"))].sort();
+    const chk = (kind, v, set) =>
+      `<label class="rf-chk"><input type="checkbox" data-filter="${kind}" value="${ui.esc(v)}" ${set.has(v) ? "checked" : ""}> ${ui.esc(v)}</label>`;
+    const groups = [];
+    if (terms.length > 1)
+      groups.push(`<div class="rf-fgroup"><span class="rf-flabel">termos</span>${terms.map(t => chk("term", t, filterTerms)).join("")}</div>`);
+    if (sources.length > 1)
+      groups.push(`<div class="rf-fgroup"><span class="rf-flabel">fontes</span>${sources.map(s => chk("source", s, filterSources)).join("")}</div>`);
+    const active = filterTerms.size || filterSources.size;
+    box.innerHTML = groups.join("") + (active ? `<button type="button" class="link rf-clear">limpar filtros</button>` : "");
+  }
+
+  // União dentro de cada grupo, interseção entre grupos. Sem marcação num grupo = grupo não filtra.
+  function matchesFilters(c) {
+    const okTerm = !filterTerms.size || filterTerms.has(c.term);
+    const okSource = !filterSources.size || filterSources.has(c.source || "pinterest");
+    return okTerm && okSource;
   }
 
   function counts() {
@@ -94,8 +125,8 @@ Studio.register("refs", (ctx) => {
   }
 
   function render() {
-    const g = $("#gallery"), term = $("#filterTerm").value;
-    const list = cands.filter(c => !term || c.term === term);
+    const g = $("#gallery");
+    const list = cands.filter(matchesFilters);
     counts();
     if (!job) scrapeLabel();
     // Tile do catálogo do shell: `.card` > img + `span.src` (origem) + `span.term` (termo).
@@ -128,9 +159,20 @@ Studio.register("refs", (ctx) => {
       $("#btnSuggest").onclick = async () => {
         const p = ctx.project(), brand = $("#brand").value.trim();
         if (!p || (!p.product && !brand)) return toast("Informe a marca validada ou o produto do projeto");
+        // pid vai junto: com marca validada persistida (ADR-020) o backend sugere só a partir dela.
         const q = `product=${encodeURIComponent(p.product || "")}&vibe=${encodeURIComponent(p.vibe || "")}` +
-                  `&brand=${encodeURIComponent(brand)}`;
+                  `&brand=${encodeURIComponent(brand)}&pid=${encodeURIComponent(ctx.pid() || "")}`;
         $("#terms").value = (await api(`/api/suggest-terms?${q}`)).join("\n");
+      };
+      $("#btnSaveBrand").onclick = async () => {
+        if (!ctx.pid()) return toast("Crie ou selecione um projeto");
+        const brand = $("#brand").value.trim();
+        try {
+          await api(`/api/projects/${ctx.pid()}/refs/validated-brand`, { method: "PUT", body: JSON.stringify({ brand }) });
+          const el = $("#brandSaved");
+          if (el) { el.textContent = brand ? "marca validada salva" : "marca validada limpa"; setTimeout(() => { if (el.isConnected) el.textContent = ""; }, 3000); }
+          toast(brand ? "Marca validada salva" : "Marca validada limpa");
+        } catch (err) { toast(err.message); }
       };
       $("#btnSearch").onclick = async () => {
         const terms = $("#terms").value.split("\n").map(s => s.trim()).filter(Boolean);
@@ -165,7 +207,17 @@ Studio.register("refs", (ctx) => {
       $("#gallery").addEventListener("keydown", e => {
         if (e.key === " " || e.key === "Enter") { e.preventDefault(); e.target.click(); }
       });
-      $("#filterTerm").onchange = render;
+      // Filtros multiseleção: marcar/desmarcar um checkbox refiltra; "limpar filtros" reseta.
+      $("#refsFilters").addEventListener("change", (e) => {
+        const inp = e.target.closest("input[data-filter]"); if (!inp) return;
+        const set = inp.dataset.filter === "term" ? filterTerms : filterSources;
+        inp.checked ? set.add(inp.value) : set.delete(inp.value);
+        renderFilters(); render();
+      });
+      $("#refsFilters").addEventListener("click", (e) => {
+        if (!e.target.closest(".rf-clear")) return;
+        filterTerms.clear(); filterSources.clear(); renderFilters(); render();
+      });
       $("#btnSave").onclick = async () => {
         try {
           const r = await api(`/api/projects/${ctx.pid()}/refs/select`, { method: "POST",
@@ -179,8 +231,12 @@ Studio.register("refs", (ctx) => {
     },
     async onProject() {
       $("#btnSearch").disabled = $("#btnSave").disabled = !ctx.pid();
+      filterTerms.clear(); filterSources.clear();     // filtros são por projeto
       await load();
       if (ctx.pid()) {
+        // Marca validada persistida (ADR-020): preenche o campo para editar/sugerir a partir dela.
+        try { $("#brand").value = (await api(`/api/projects/${ctx.pid()}/refs/validated-brand`)).brand || ""; }
+        catch { /* projeto sem marca validada: campo fica como está */ }
         const j = await api(`/api/projects/${ctx.pid()}/refs/job`);
         renderJob(j);
         // Retoma o feedback em tela se um scrape já estava rodando ao abrir a etapa.
