@@ -91,18 +91,31 @@
     const st = { data, sel };
 
     main.innerHTML = `
+      <style>
+        .msc-folder{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.8rem;opacity:.8;margin:.3rem 0 0}
+        .msc-folder code{font-family:ui-monospace,monospace;background:rgba(120,120,120,.16);padding:2px 6px;border-radius:6px;word-break:break-all}
+        .msc-hint{font-size:.82rem;opacity:.72;margin:.2rem 0 .6rem}
+        .msc-card .use-btn{position:absolute;bottom:6px;left:6px;font-size:.72rem;padding:2px 8px;border-radius:999px;
+          border:none;cursor:pointer;background:rgba(60,150,90,.9);color:#fff;z-index:2}
+        .msc-card .use-btn:hover{background:rgba(60,170,100,1)}
+      </style>
       <header class="stephead">
         <span class="eyebrow"><button class="link" id="mbBack">← Biblioteca</button> · Mood board <span class="ext">[extensão]</span></span>
         <h2 id="mbTitle">${esc(data.name)}</h2>
         <p class="lede" id="mbSub">${esc(data.vibe || data.note || "Importe imagens que definem a vibe deste board, cure a galeria e gere um prompt de vibe.")}</p>
+        <p class="msc-folder"><span>Pasta do board:</span> <code id="mbFolder">${esc(data.folder || "")}</code></p>
         <div class="ov-actions">
+          <button type="button" class="ghost" id="btnMbOpenFolder" title="Abrir a pasta do board no explorador do SO — fácil de copiar as fotos">Abrir pasta</button>
           <button type="button" class="ghost" id="btnMbRename">Renomear</button>
           <button type="button" class="ghost danger" id="btnMbDelete">Apagar mood board</button>
         </div>
       </header>
 
       <section class="panel">
-        <div class="panel-head"><h3><span class="pn">01</span>Importar imagens</h3></div>
+        <div class="panel-head">
+          <h3><span class="pn">01</span>Importar imagens</h3>
+          <span id="mbImpCount" class="chip mode"></span>
+        </div>
         <div class="import-row">
           <label class="drop" id="mbDrop">Arraste imagens aqui ou <input id="mbUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
           <div class="col">
@@ -110,6 +123,8 @@
             <button id="btnMbHistory" class="ghost" title="via higgsfield generate list --image (precisa de login no CLI)">Importar do histórico Higgsfield</button>
           </div>
         </div>
+        <p class="msc-hint">Importadas ficam aqui até você mandá-las ao board. Cada uma pode gerar outros ângulos (<b>▨ ângulos</b>) e é promovida à curadoria com <b>usar no board</b>.</p>
+        <div id="mbImported" class="gallery sm"></div>
       </section>
 
       <section class="panel">
@@ -120,7 +135,7 @@
             <button id="btnMbSave" class="primary">Salvar seleção</button>
           </div>
         </div>
-        <p class="fine">Escolha as imagens que ficam no board (um board é uma vibe só — até 8). O que você salvar é o que a etapa 2 puxa e a etapa 3 mostra.</p>
+        <p class="fine">Só as imagens escolhidas do painel 01 aparecem aqui (um board é uma vibe só — até 8). Clique numa imagem para tirá-la do board. O que você salvar é o que a etapa 2 puxa e a etapa 3 mostra.</p>
         <div id="mbPalette" class="palette"><span class="lbl">palette.json · derivado técnico [extensão]</span></div>
         <div id="mbGallery" class="gallery sm"></div>
       </section>
@@ -156,6 +171,7 @@
     document.querySelector("#btnMbHistory").onclick = () => importHistory(st);
     document.querySelector("#btnMbSave").onclick = () => saveSelection(st);
     document.querySelector("#btnMbGenPrompt").onclick = () => genPrompt(st);
+    document.querySelector("#btnMbOpenFolder").onclick = () => openBoardFolder(st);
 
     const mode = document.querySelector("#mbMode");
     const cs = document.querySelector("#mbClaude");
@@ -164,42 +180,70 @@
     [...mode.options].forEach((o) => { if (o.value !== "template") o.disabled = !data.available_claude; });
     if (!data.available_claude) mode.value = "template";
 
-    // Bug fix (ADH-OS-20260827-05): mutar `st.sel`, não o `sel` capturado no closure. `reload()`
-    // reatribui `st.sel = new Set(...)` a cada import; usar o `sel` antigo desincronizava a seleção
-    // do que "Salvar seleção"/"Gerar prompt" leem (`st.sel`), resultando em "0 imagem no board".
+    // Painel 01 (importadas aguardando): "▨ ângulos" abre o multishot; "usar no board" promove
+    // a candidata à seleção (vai ao painel 02). Rework ADR-019: a mesma lista `candidates` é
+    // dividida por `st.sel` — não-selecionadas no 01, selecionadas no 02.
+    // Bug fix (ADH-OS-20260827-05): mutar `st.sel` (não o `sel` do closure), pois `reload()`
+    // reatribui `st.sel` a cada import.
+    const imp = document.querySelector("#mbImported");
+    imp.addEventListener("click", (e) => {
+      const msb = e.target.closest(".ms-btn");
+      if (msb) { e.stopPropagation(); openMultishot(st, msb.dataset.ms); return; }
+      const use = e.target.closest(".use-btn");
+      if (use) { e.stopPropagation(); st.sel.add(use.dataset.use); renderPanels(st); return; }
+    });
+
+    // Painel 02 (curar): "▨ ângulos" abre o multishot; clicar no card tira a imagem do board
+    // (volta ao painel 01). A seleção só é persistida em "Salvar seleção".
     const gal = document.querySelector("#mbGallery");
     gal.addEventListener("click", (e) => {
-      // Multishot [extensão] (ADR-017): o botão "▨ ângulos" abre o componente para ESTA imagem,
-      // sem alterar a seleção do board (por isso é tratado antes do toggle e interrompe o clique).
       const msb = e.target.closest(".ms-btn");
       if (msb) { e.stopPropagation(); openMultishot(st, msb.dataset.ms); return; }
       const card = e.target.closest(".card"); if (!card) return;
-      const id = card.dataset.id;
-      if (st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
-      card.classList.toggle("sel"); counts(st);
+      st.sel.delete(card.dataset.id); renderPanels(st);
     });
 
-    renderGallery(st);
+    renderPanels(st);
     paintPalette(data.palette.colors || []);
     if (data.prompt) showPrompt(data.prompt);
   }
 
-  function renderGallery(st) {
+  function cardHtml(mbid, c, promotable) {
+    return `<div class="card msc-card ${promotable ? "" : "sel"}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.name || "")}">
+       <img loading="lazy" src="${esc(mb(mbid, "candidates/" + c.thumb))}" alt="">
+       ${c.role === "multishot" ? `<span class="src">multishot</span>` : ""}
+       <button class="ms-btn" type="button" data-ms="${esc(c.id)}" title="Gerar multishot (outros ângulos) desta imagem [extensão]">▨ ângulos</button>
+       ${promotable ? `<button class="use-btn" type="button" data-use="${esc(c.id)}" title="Adicionar esta imagem ao board (painel 02)">usar no board</button>` : ""}
+       <span class="term">${esc(`${c.source || ""} · ${c.name || ""}`)}</span></div>`;
+  }
+
+  function renderPanels(st) {
     const { data, sel } = st;
+    const waiting = data.candidates.filter((c) => !sel.has(c.id));
+    const chosen = data.candidates.filter((c) => sel.has(c.id));
+    const imp = document.querySelector("#mbImported");
+    imp.innerHTML = waiting.length
+      ? waiting.map((c) => cardHtml(data.id, c, true)).join("")
+      : `<div class="empty">Nenhuma imagem aguardando — importe acima ou gere ângulos.</div>`;
     const gal = document.querySelector("#mbGallery");
-    gal.innerHTML = data.candidates.length
-      ? data.candidates.map((c) =>
-        `<div class="card ${sel.has(c.id) ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.name || "")}">
-           <img loading="lazy" src="${esc(mb(data.id, "candidates/" + c.thumb))}" alt="">
-           ${c.role === "multishot" ? `<span class="src">multishot</span>` : ""}
-           <button class="ms-btn" type="button" data-ms="${esc(c.id)}" title="Gerar multishot (outros ângulos) desta imagem [extensão]">▨ ângulos</button>
-           <span class="term">${esc(`${c.source || ""} · ${c.name || ""}`)}</span></div>`).join("")
-      : `<div class="empty">Nenhuma imagem ainda — importe no painel 01.</div>`;
+    gal.innerHTML = chosen.length
+      ? chosen.map((c) => cardHtml(data.id, c, false)).join("")
+      : `<div class="empty">Nenhuma imagem no board ainda — use "usar no board" no painel 01.</div>`;
     counts(st);
   }
 
   function counts(st) {
+    const waiting = st.data.candidates.length - st.sel.size;
+    const ic = document.querySelector("#mbImpCount");
+    if (ic) ic.textContent = `${waiting} aguardando`;
     document.querySelector("#mbCounts").textContent = `${st.data.candidates.length} candidatas · ${st.sel.size} escolhidas (máx. 8)`;
+  }
+
+  async function openBoardFolder(st) {
+    try {
+      const r = await api(`/api/moodboards/${encodeURIComponent(st.data.id)}/open-folder`, { method: "POST", body: JSON.stringify({ target: "board" }) });
+      toast(r.opened ? "Pasta do board aberta no explorador" : `Pasta do board: ${r.path}`);
+    } catch (err) { toast(err.message); }
   }
 
   /** Multishot [extensão] (ADR-017): gera outros ângulos da imagem de vibe escolhida e os
@@ -215,10 +259,15 @@
       sourceUrl: mb(mbid, "candidates/" + cand.file),
       action: "mood.multishot",
       parentId: id,
+      canRemove: true,
       endpoints: {
         generate: `/api/moodboards/${encodeURIComponent(mbid)}/multishot/generate`,
         job: `/api/moodboards/${encodeURIComponent(mbid)}/multishot/job`,
         candidates: `/api/moodboards/${encodeURIComponent(mbid)}/candidates`,
+        upload: `/api/moodboards/${encodeURIComponent(mbid)}/import/upload`,
+        importDownloads: `/api/moodboards/${encodeURIComponent(mbid)}/import/downloads`,
+        downloadsFolder: `/api/moodboards/${encodeURIComponent(mbid)}/downloads-folder`,
+        openFolder: `/api/moodboards/${encodeURIComponent(mbid)}/open-folder`,
       },
       fileUrl: (rel) => mb(mbid, "candidates/" + rel),
       onChanged: () => reload(st),
@@ -243,7 +292,7 @@
     const data = await api(`/api/moodboards/${encodeURIComponent(st.data.id)}`);
     st.data = data;
     st.sel = new Set(data.candidates.filter((c) => c.selected).map((c) => c.id));
-    renderGallery(st);
+    renderPanels(st);
     paintPalette(data.palette.colors || []);
   }
 
