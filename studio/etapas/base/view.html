@@ -34,6 +34,23 @@
   .bs-chip.from-reference{color:var(--info);background:var(--info-soft);border-color:var(--info)}
   .bs-chip.from-technical{color:var(--ink-4);background:var(--surface-3);border-color:var(--line)}
   .bs-chip.from-join{color:var(--ink);background:var(--surface-3);border-color:var(--line)}
+  /* base-cli-generation [extensão] (ADH-OS-20260827-09): geração paga via CLI DENTRO do passo 03.
+     O botão age no passo ativo do stepper; o custo aparece por passo (upscale usa outro modelo);
+     a linha do Higgsfield deixa claro que a UI ilimitada é o caminho não pago. */
+  .bs-cli{gap:10px;align-items:center;margin-top:14px}
+  #baseCliCost{color:var(--ink-3)}
+  .bs-hf{margin:8px 0 0;color:var(--ink-3)}
+  .bs-hf b{color:var(--ink-2)}
+  .bs-result{margin-top:16px}
+  .bs-result .pair{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;padding:12px;
+    border:1px solid var(--line);border-radius:12px;background:var(--surface-2);margin-top:10px}
+  .bs-result .ba{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .bs-result figure{margin:0;text-align:center}
+  .bs-result figure img{width:150px;height:150px;object-fit:cover;border-radius:10px;
+    border:1px solid var(--line);display:block}
+  .bs-result figcaption{font-size:12px;color:var(--ink-3);margin-top:5px}
+  .bs-result .arrow{font-size:22px;color:var(--ink-3);align-self:center}
+  .bs-result .dl{display:inline-block;margin-top:8px}
 </style>
 
 <header class="stephead">
@@ -96,6 +113,13 @@
       <button id="btnBaseHistory" class="ghost">Importar do histórico Higgsfield</button>
     </div>
   </div>
+  <div class="row wrap bs-cli">
+    <button id="btnBaseCli" class="primary">Gerar via CLI</button>
+    <span class="ext">[extensão]</span>
+    <span id="baseCliCost" class="fine"></span>
+  </div>
+  <p class="fine bs-hf">Você também pode fazer no <b>Higgsfield (UI ilimitada)</b>: gere lá e importe aqui. O CLI é o caminho pago (gasta crédito por passo — o upscale custa diferente).</p>
   <div id="baseGallery" class="gallery sm"></div>
+  <div id="baseGenResult" class="bs-result"></div>
   <p class="note bs-note">Escolha uma imagem por passo — trocar a situação recomeça a cadeia. Ao fechar: <code>base/base_final.png</code> + <code>base.md</code>.</p>
 </section>

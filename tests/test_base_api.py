@@ -44,8 +44,10 @@ def test_step_is_published_as_ready(client):
 def test_view_follows_the_wave2_screen_contract(client):
     """Convenção da wave 2: painel do guia e helpers do Studio.ui.
 
-    Wave 4: o painel 04 (geração paga via CLI) saiu da tela — com ele saíram o poll do job,
-    `ui.poll`/`ui.confirmCost`/`ui.hfChip` e o `destroy()` que parava o poll.
+    Wave 4: o painel 04 (geração paga via CLI) saiu da tela. base-cli-generation
+    (ADH-OS-20260827-09) RE-ADICIONOU a geração via CLI, mas DENTRO do passo 03 (não um painel 04):
+    o `ui.confirmCost` volta (custo por passo) e o poll passa a ser o `ui.progressJob` (que polla
+    por dentro — a tela não chama `ui.poll` nem para o timer na mão). `ui.hfChip` segue fora.
     """
     html = client.get("/steps/base/view.html").text
     js = client.get("/steps/base/view.js").text
@@ -55,8 +57,10 @@ def test_view_follows_the_wave2_screen_contract(client):
     for helper in ("Studio.ui", "ui.drop(", "ui.esc(", "ui.tile(", "ui.autosize(",
                    'ui.renderGuide("base")'):
         assert helper in js, helper
-    for ausente in ("ui.poll(", "ui.confirmCost(", "ui.hfChip(", "job.stop()"):
-        assert ausente not in js, f"{ausente} saiu com o painel 04"
+    # base-cli-generation reusa o modal de progresso: `ui.progressJob` (não `ui.poll` cru)
+    assert "ui.progressJob(" in js and "ui.confirmCost(" in js
+    for ausente in ("ui.poll(", "ui.hfChip(", "job.stop()"):
+        assert ausente not in js, f"{ausente} não voltou com o CLI (o poll é do progressJob)"
     assert "setTimeout(pollJob" not in js and "addEventListener(\"dragover\"" not in js, "sem helper local duplicado"
     assert "ctx.guide()" in js, "o guia é recarregado depois de cada ação que muda artefato"
     # B2/B11 na tela: a sessão nova do bot continua sendo um botão, agora só com o title do protótipo
@@ -366,6 +370,111 @@ def test_generate_gates_and_job(client, pid, hf, monkeypatch):
             break
         threading.Event().wait(0.05)
     assert client.get(f"/api/projects/{pid}/base/job").json()["state"] == "done"
+
+
+def test_view_offers_cli_generation_in_the_three_steps(client):
+    """base-cli-generation (ADH-OS-20260827-09): a etapa 3 volta a oferecer GERAÇÃO VIA CLI nos 3
+    passos (situação/rótulo/upscale), DENTRO do passo 03 — sem criar um painel 04 nem quebrar as
+    asserções da wave 4. O botão age no passo ativo do stepper (rótulo por passo, custo por passo);
+    há a linha explícita do Higgsfield (UI ilimitada) e, após import/geração, download + antes/depois."""
+    html = client.get("/steps/base/view.html").text
+    js = client.get("/steps/base/view.js").text
+    # o botão de CLI vive no passo 03, com marcador [extensão] e o slot de custo — sem painel 04
+    assert 'id="btnBaseCli"' in html and ">Gerar via CLI<" in html
+    assert 'id="baseCliCost"' in html and 'id="baseGenResult"' in html
+    assert '<span class="pn">04</span>' not in html and html.count('<section class="panel">') == 4
+    # a linha do Higgsfield (UI ilimitada) — o caminho não pago — aparece explícita na tela
+    assert "Higgsfield (UI ilimitada)" in html and "importe aqui" in html
+    # o botão age no PASSO ATIVO: o rótulo muda por passo (situação/rótulo/upscale)
+    assert "gerarViaCli" in js and "updateCliButton" in js
+    assert "`Gerar ${KINDS[step] || step} via CLI`" in js
+    # custo REAL antes de pagar (upscale usa outro modelo → número por passo) via base/cost + confirmCost
+    assert 'url("cost")' in js and "ui.confirmCost(" in js
+    # trata CLI deslogado (custo null) com aviso claro, sem 500, mantendo o caminho de importação
+    assert "cost.total == null" in js and "higgsfield auth login" in js
+    # durante a geração: o modal de progresso honesto (progressJob) sobre base/generate + base/job
+    assert "ui.progressJob(" in js and 'url("generate")' in js and 'url("job")' in js
+    # depois de gerar/importar: download (<a download>) + antes/depois (origem da cadeia → resultado)
+    assert "showResult" in js and 'class="link dl" download' in js
+    assert "Modificação — antes → depois" in js and "originFor" in js
+    # o fluxo de importação, o prompt e a junção mood×referência (#57) seguem intactos
+    assert "ui.drop(" in js and "renderJunction" in js and 'url("import/upload")' in js
+
+
+def _seed_situation(client, pid):
+    """Importa e escolhe uma candidata de situação (origem da cadeia p/ rótulo e upscale)."""
+    client.post(f"/api/projects/{pid}/base/import/upload",
+                files=[("files", ("s.png", image_bytes(), "image/png"))],
+                data={"kind": "situation", "ref_id": "0f8e7d6c5b4a"})
+    cid = client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"][0]["id"]
+    client.post(f"/api/projects/{pid}/base/select", json={"id": cid})
+    return cid
+
+
+def test_cost_for_the_three_kinds(client, pid, hf, monkeypatch):
+    """base-cli-generation §3: `base/cost` responde para os 3 kinds com o CUSTO REAL do CLI
+    (`hf.cost` mockado). O upscale usa outro modelo (`bytedance_image_upscale`) → custo diferente."""
+    _seed_situation(client, pid)
+    client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero", "description": "raio neon"})
+    monkeypatch.setattr(hf, "available", lambda: True)
+    # custo por MODELO: upscale (bytedance) difere da geração (nano_banana_2) — a UI mostra por passo
+    monkeypatch.setattr(hf, "cost",
+                        lambda model, params: {"credits": 9 if "upscale" in model else 4, "model": model, "raw": {}})
+
+    sit = client.post(f"/api/projects/{pid}/base/cost",
+                      json={"kind": "situation", "ref_ids": ["0f8e7d6c5b4a"]}).json()
+    assert sit["per_item"] == 4 and sit["count"] == 1 and sit["total"] == 4 and sit["raw"]["model"] == "nano_banana_2"
+
+    lab = client.post(f"/api/projects/{pid}/base/cost", json={"kind": "label"}).json()
+    assert lab["per_item"] == 4 and lab["count"] == 3 and lab["total"] == 12  # rótulo: 3 por passo (B4)
+
+    up = client.post(f"/api/projects/{pid}/base/cost", json={"kind": "upscale"}).json()
+    assert up["per_item"] == 9 and up["count"] == 1 and up["total"] == 9, "upscale usa outro modelo → custo diferente"
+    assert up["raw"]["model"] == "bytedance_image_upscale"
+
+
+def test_cost_when_logged_out_is_null_without_500(client, pid, hf, monkeypatch):
+    """base-cli-generation §1/§2: CLI deslogado devolve credits=null (+ erro) — a UI avisa e mantém
+    o import. O endpoint NÃO pode dar 500: responde 200 com `total=null` para a tela tratar."""
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "cost", lambda model, params: {"credits": None, "error": "No workspace selected", "raw": {}})
+    r = client.post(f"/api/projects/{pid}/base/cost", json={"kind": "situation", "ref_ids": ["0f8e7d6c5b4a"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["per_item"] is None and body["total"] is None
+
+
+def test_generate_download_and_before_after_over_http(client, pid, hf, monkeypatch):
+    """base-cli-generation §1: depois de gerar via CLI os resultados viram candidatas servidas por
+    `/files/{pid}/...` (download com `<a download>`) e a origem da cadeia existe p/ o antes→depois."""
+    import threading
+
+    _seed_situation(client, pid)  # origem da cadeia (a "antes" do rótulo/upscale)
+    client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero"})
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+
+    def fake_generate(model, params):
+        return {"urls": ["https://cdn.higgsfield/x/out.png"], "id": "job1", "raw": {}}
+
+    monkeypatch.setattr(hf, "generate", fake_generate)
+    monkeypatch.setattr(hf, "download", lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True),
+                                                           dest.write_bytes(image_bytes(color=(7, 8, 9))), dest)[-1])
+    r = client.post(f"/api/projects/{pid}/base/generate", json={"kind": "label"})
+    assert r.status_code == 200 and r.json()["state"] == "running"
+    for _ in range(100):
+        if client.get(f"/api/projects/{pid}/base/job").json()["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    assert client.get(f"/api/projects/{pid}/base/job").json()["state"] == "done"
+    cands = client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+    gen = [c for c in cands if c["kind"] == "label"]
+    assert gen, "a geração via CLI entrou como candidata do passo (rótulo)"
+    # o arquivo é servido por /files/{pid}/... (o <a download> da UI aponta pra cá)
+    assert client.get(f"/files/{pid}/{gen[0]['file']}").status_code == 200
+    # a origem da cadeia (situação escolhida) existe → a UI monta o antes→depois
+    sit = [c for c in cands if c["kind"] == "situation" and c["selected"]]
+    assert sit and client.get(f"/files/{pid}/{sit[0]['file']}").status_code == 200
 
 
 def test_select_over_http(client, pid):
