@@ -65,8 +65,9 @@ Studio.register("mood", (ctx) => {
     const files = c.selected || [];
     $("#moodVibe").textContent = c.vibe ? `vibe: ${c.vibe}` : "vibe: —";
     paintPalette(c.palette || []);
-    $("#moodGallery").innerHTML = files.length ? files.map(f =>
-      `<div class="card" title="${ui.esc(f.file)}"><img loading="lazy" src="${ctx.files(`mood/selected/${ui.esc(f.file)}`)}" alt=""><span class="term">${ui.esc(f.file)}</span></div>`).join("")
+    // Mosaico quadricular (wave 5 · ponto 4): mesmo componente da biblioteca e da etapa 3.
+    $("#moodGallery").innerHTML = files.length
+      ? ui.moodMosaic(files.map(f => ctx.files(`mood/selected/${f.file}`)), {})
       : `<div class="empty">Nenhum mood aplicado ainda — escolha um mood board acima e clique em “Aplicar a esta campanha”.</div>`;
   }
 

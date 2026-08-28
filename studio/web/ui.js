@@ -610,6 +610,34 @@ window.Studio.ui = {
       `${o.up ? `<span class="up${o.upOk ? " ok" : ""}">${e(o.up)}</span>` : ""}</div>`;
   },
 
+  /**
+   * HTML de um MOSAICO quadricular (grade 2×2) das imagens de um mood — reutilizado na biblioteca
+   * (`moodboards.js`), na etapa 2 (`mood`) e na junção da etapa 3 (`base`), para que o mood apareça
+   * do mesmo jeito em todo lugar (wave 5 · ponto 4). `urls` = lista de URLs já prontas (o chamador
+   * resolve `/files/…` ou `/mbfiles/…`). `opts`: `{max=4, title}`. Mostra até `max` imagens; se
+   * houver mais, a última célula recebe o selo `+N`. Vazio → placeholder "sem imagens ainda".
+   * Retorna string HTML (padrão dos helpers do shell). Estilo em `ui.css` (`.mood-mosaic`), 2×2
+   * fixa e tema-aware; o `data-n` deixa o CSS ocupar bem 1/2/3 imagens sem buracos.
+   */
+  moodMosaic(urls, opts = {}) {
+    const e = (s) => this.esc(s);
+    const max = opts.max || 4;
+    const list = (urls || []).filter(Boolean);
+    const title = opts.title ? `<span class="mm-title eyebrow">${e(opts.title)}</span>` : "";
+    if (!list.length) {
+      return `${title}<div class="mood-mosaic empty" role="img" aria-label="sem imagens ainda">` +
+        `<span class="mm-empty">sem imagens ainda</span></div>`;
+    }
+    const shown = list.slice(0, max);
+    const overflow = list.length - shown.length;
+    const cells = shown.map((u, i) => {
+      const more = overflow > 0 && i === shown.length - 1
+        ? `<span class="mm-more">+${overflow}</span>` : "";
+      return `<span class="mm-cell"><img src="${e(u)}" loading="lazy" alt="">${more}</span>`;
+    }).join("");
+    return `${title}<div class="mood-mosaic" data-n="${shown.length}">${cells}</div>`;
+  },
+
   /** HTML do pipeline segmentado (`.pipe`): um `i` por etapa, com a classe do status. */
   pipe(estados, o = {}) {
     const t = o.titles || [];

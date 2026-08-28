@@ -82,6 +82,25 @@
 .mb-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:auto}
 .mb-meta .chip{font-size:10px;padding:2px 8px}
 
+/* ---- mosaico quadricular do mood [wave 5 · ponto 4] (Studio.ui.moodMosaic) ----
+   Grade 2×2 fixa reutilizada na biblioteca, na etapa 2 e na junção da etapa 3. Tema-aware
+   (tokens do shell). O `data-n` faz 1/2/3 imagens preencherem sem buracos; 4+ vira 2×2 com "+N". */
+.mm-title{display:block;margin-bottom:6px}
+.mood-mosaic{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);
+  gap:3px;aspect-ratio:1/1;width:100%;border-radius:var(--r-sm);overflow:hidden;
+  border:1px solid var(--line-2);background:var(--bg-2)}
+.mood-mosaic .mm-cell{position:relative;overflow:hidden;background:var(--bg-2);min-width:0}
+.mood-mosaic .mm-cell img{width:100%;height:100%;object-fit:cover;display:block}
+.mood-mosaic .mm-more{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:var(--scrim);color:#fff;font-weight:600;font-size:16px}
+/* 1 imagem: ocupa a grade inteira; 2: duas colunas altas; 3: uma alta à esquerda + duas à direita */
+.mood-mosaic[data-n="1"]{grid-template-rows:1fr}
+.mood-mosaic[data-n="1"] .mm-cell{grid-column:1/3}
+.mood-mosaic[data-n="2"]{grid-template-rows:1fr}
+.mood-mosaic[data-n="3"] .mm-cell:first-child{grid-row:1/3}
+.mood-mosaic.empty{display:flex;align-items:center;justify-content:center}
+.mood-mosaic .mm-empty{font-size:var(--fs-fine);color:var(--ink-5)}
+
 /* ================= modal ================= */
 .modal-backdrop{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(3px);
   -webkit-backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;
