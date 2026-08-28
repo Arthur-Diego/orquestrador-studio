@@ -4,7 +4,8 @@
   .sb-base{align-self:start}
   /* `[extensão]` cena-multi-keyframe (ADR-018): mini-galeria de keyframes por cena. */
   .sb-gallery{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  .sb-key{position:relative;width:60px;height:60px;border-radius:8px;overflow:hidden;border:1px solid var(--line-2)}
+  /* Wave 7 (ADR-021): fotos maiores (~110px) e clicáveis — o clique na foto abre o lightbox. */
+  .sb-key{position:relative;width:110px;height:110px;border-radius:8px;overflow:hidden;border:1px solid var(--line-2);cursor:zoom-in}
   .sb-key img{width:100%;height:100%;object-fit:cover;display:block}
   .sb-key.primary{border-color:#4FC8D9;box-shadow:0 0 0 2px rgba(79,200,217,.55)}
   .sb-key .sb-star,.sb-key .sb-rm{position:absolute;top:2px;border:0;border-radius:5px;padding:0 5px;
@@ -13,7 +14,7 @@
   .sb-key.primary .sb-star{color:#FFD54A}
   .sb-key .sb-rm{right:2px;color:#F2A5A5}
   .sb-key .sb-star:hover,.sb-key .sb-rm:hover{background:rgba(0,0,0,.82);color:#D7F4F9}
-  .sb-pick{width:60px;height:60px;position:relative;cursor:pointer;display:grid;place-items:center}
+  .sb-pick{width:110px;height:110px;position:relative;cursor:pointer;display:grid;place-items:center}
   .sb-pick::after{content:"+ imagem";font-family:"IBM Plex Mono",monospace;font-size:9px;color:#9FE3EE;text-align:center;line-height:1.2}
   .sb-pick:hover,.sb-pick:focus-visible{outline:1px dashed rgba(79,200,217,.5)}
   .sh-scene-id{font-size:11px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -24,6 +25,44 @@
     font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:400;line-height:1.4;text-decoration:none}
   #sceneList .sh-act:hover{background:rgba(0,0,0,.78);color:#D7F4F9}
   #sceneList .rowcard:hover .sh-act,#sceneList .rowcard:focus-within .sh-act{opacity:1}
+
+  /* Wave 7 (ADR-021) — reflow da linha da cena para caber a galeria de fotos maiores + o bloco de
+     vídeo: [momento | texto] em cima; a galeria de keyframes e o bloco de vídeo ocupam a linha
+     inteira abaixo. Escopo desta view (só o storyboard desenha `.scene-row`). */
+  #sbScenes .scene-row{grid-template-columns:76px minmax(0,1fr);align-items:start;padding:12px 14px}
+  #sbScenes .scene-row .sb-gallery,#sbScenes .scene-row .sb-vid{grid-column:1 / -1}
+  #sbScenes .scene-row textarea.sbTxt{padding-top:2px}
+
+  /* Bloco de vídeo por cena. */
+  .sb-vid{border-top:1px dashed var(--line);padding-top:8px;margin-top:2px}
+  .sb-vid>summary{cursor:pointer;font-size:var(--fs-sm);color:var(--ink-3);list-style:none}
+  .sb-vid>summary::-webkit-details-marker{display:none}
+  .sb-vid>summary::before{content:"▸ ";color:var(--ink-4)}
+  .sb-vid[open]>summary::before{content:"▾ "}
+  .sb-vid-body{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+  .sb-vid-frames{align-items:center}
+  .sb-vid .sbVidDesc{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;font:inherit;font-size:var(--fs-sm);color:var(--ink);resize:none;overflow:hidden;field-sizing:content}
+  .sb-vid .sbVidDesc:focus{outline:none;box-shadow:var(--ring)}
+  .sb-vid .sbVidView{display:flex;flex-direction:column;gap:6px}
+  .sb-vid .sbVidPlayer{max-width:360px;width:100%;border-radius:8px;border:1px solid var(--line-2);display:block}
+
+  /* Modal maior de reordenação — largura própria via `:has`, sem tocar o `.modal` do ui.css. */
+  .modal:has(.sb-reorder){width:min(920px,100%)}
+  .sb-reorder{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .sb-ro-item{display:flex;align-items:center;gap:12px;padding:8px 10px;background:var(--surface-2);
+    border:1px solid var(--line);border-radius:var(--r-tile)}
+  .sb-ro-item.dragging{opacity:.5}
+  .sb-ro-grip{cursor:grab;color:var(--ink-4);font-size:14px;user-select:none}
+  .sb-ro-thumb{width:64px;height:64px;flex:0 0 auto;border-radius:8px;overflow:hidden;border:1px solid var(--line-2);background:var(--stripes-sm)}
+  .sb-ro-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .sb-ro-txt{flex:1;min-width:0;font-size:var(--fs-sm);color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sb-ro-acts{display:flex;gap:5px;flex:0 0 auto}
+
+  /* Lightbox (foto/mp4 em tamanho real) — modal alargado. */
+  .modal:has(.sb-lightbox){width:min(1100px,100%)}
+  .sb-lightbox{display:grid;place-items:center}
+  .sb-lightbox-media{max-width:100%;max-height:78vh;display:block;border-radius:8px}
 </style>
 
 <header class="stephead">
@@ -67,6 +106,7 @@
     <h3><span class="pn">02</span>A história em cenas</h3>
     <div class="row wrap">
       <button id="sbAdd" class="ghost">+ cena</button>
+      <button id="sbReorder" class="ghost" title="Reordenar as cenas em um modal maior">Reordenar cenas</button>
       <button id="sbRender" class="ghost">Gerar storyboard.md</button>
       <button id="sbSave" class="primary">Salvar cenas</button>
     </div>

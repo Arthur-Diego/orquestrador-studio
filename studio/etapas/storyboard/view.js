@@ -216,6 +216,63 @@ Studio.register("storyboard", (ctx) => {
       scenes = (await api(url("/scenes"))).scenes;
       renderScenes();
     }
+    // `[extensão]` storyboard-video (ADR-021, wave 7): opções de frame do bloco de vídeo — uma
+    // `<option>` por keyframe da cena (rótulo = nome do arquivo), com `selected` no `sel` pedido.
+    function frameOptions(images, sel) {
+      return (images || []).map((f) =>
+        `<option value="${esc(f)}"${f === sel ? " selected" : ""}>${esc(f.split("/").pop())}</option>`).join("");
+    }
+
+    // Área "Ver vídeo" da cena: mostra o último take gerado (`<video controls>`) + o botão de abrir
+    // em tamanho real + a nota de que o vídeo alimenta a etapa 6 (animação).
+    function vidView(videos) {
+      const list = (videos || []).filter(Boolean);
+      if (!list.length) return "";
+      const last = list[list.length - 1];
+      return `<video class="sbVidPlayer" src="${esc(ctx.files(last))}" controls preload="metadata"></video>
+        <div class="row wrap">
+          <button type="button" class="link sbVidView" data-video="${esc(last)}">Ver vídeo em tamanho real</button>
+          <span class="fine">${esc(list.length)} take(s) · esse vídeo é usado na etapa 6 (animação)</span>
+        </div>`;
+    }
+
+    // `[extensão]` storyboard-video (ADR-021): bloco de vídeo por cena — seletor 1 frame/start→end,
+    // descrição, "Gerar prompt de vídeo" (Claude), "Gerar vídeo via CLI" (Kling) e o vídeo gerado.
+    function vidBlock(s) {
+      const images = s.images || [];
+      const desc = s.video_desc || "";
+      const prompt = s.video_prompt || "";
+      const videos = s.videos || [];
+      return `<details class="sb-vid">
+        <summary>Vídeo desta cena <span class="fine">— prompt (Claude) + geração via CLI (alimenta a etapa 6)</span></summary>
+        <div class="sb-vid-body">
+          <div class="row wrap sb-vid-frames">
+            <select class="sbVidMode" aria-label="frames do vídeo">
+              <option value="single">1 frame</option>
+              <option value="start_end">start → end</option>
+            </select>
+            <label class="inline sbVidSingle">frame <select class="sbVidImg">${frameOptions(images, s.primary)}</select></label>
+            <label class="inline sbVidPair hidden">start <select class="sbVidStart">${frameOptions(images, s.primary)}</select></label>
+            <label class="inline sbVidPair hidden">end <select class="sbVidEnd">${frameOptions(images, images[1] || images[0] || "")}</select></label>
+          </div>
+          <textarea class="txt sbVidDesc" rows="2" placeholder="o que você quer que aconteça no vídeo (em inglês)">${esc(desc)}</textarea>
+          <div class="row wrap">
+            <button type="button" class="ghost sbVidPrompt">Gerar prompt de vídeo</button>
+          </div>
+          <div class="prompt sm sbVidPromptBox${prompt ? "" : " hidden"}">
+            <div class="row"><span class="eyebrow">Prompt de vídeo</span>
+              <button type="button" class="link sbVidCopy">Copiar</button><span class="ok"></span></div>
+            <p class="txt sbVidPromptText">${esc(prompt)}</p>
+          </div>
+          <div class="row wrap">
+            <select class="sbVidDur" aria-label="duração do vídeo"><option value="5">5s</option><option value="10">10s</option></select>
+            <button type="button" class="primary sbVidGen"${prompt ? "" : " disabled"}>Gerar vídeo via CLI</button>
+          </div>
+          <div class="sbVidView">${vidView(videos)}</div>
+        </div>
+      </details>`;
+    }
+
     function renderScenes() {
       const total = scenes.length;
       $("#sbScenes").innerHTML = scenes.map((s, i) => {
@@ -223,31 +280,201 @@ Studio.register("storyboard", (ctx) => {
         const images = s.images || [];
         // `[extensão]` cena-multi-keyframe (ADR-018): mini-galeria da cena — cada keyframe com a
         // marca de principal (★) e o "✕" de remover; a última célula é o "+ imagem" (abre o picker).
+        // Wave 7: a foto é maior e clicável — o clique (fora dos botões) abre o lightbox tamanho real.
         const keys = images.map((img) => {
           const isPrimary = img === s.primary;
-          return `<div class="sb-key${isPrimary ? " primary" : ""}" data-img="${esc(img)}">
+          return `<div class="sb-key${isPrimary ? " primary" : ""}" data-img="${esc(img)}" title="clique para ver em tamanho real">
              <img loading="lazy" src="${esc(ctx.files(img))}" alt="">
              <button type="button" class="sb-star" data-star="${esc(img)}" title="${isPrimary ? "principal da cena" : "marcar como principal"}">★</button>
              <button type="button" class="sb-rm" data-rm="${esc(img)}" title="remover imagem">✕</button>
            </div>`;
         }).join("");
-        return `<div class="scene-row" data-i="${i}" data-images="${esc(images.join("|"))}" data-primary="${esc(s.primary || "")}">
+        return `<div class="scene-row" data-i="${i}" data-sid="${esc(s.id || "")}" data-images="${esc(images.join("|"))}" data-primary="${esc(s.primary || "")}" data-videos="${esc((s.videos || []).join("|"))}">
            <span class="mom" data-mom="${esc(momOf(arc.label))}" title="Cena ${i + 1} · ${esc(arc.label)}">${esc(arc.label)}</span>
-           <div class="sb-gallery">${keys}<div class="thumb pick sb-pick" tabindex="0" role="button" title="adicionar imagem à cena"></div></div>
            <textarea class="txt sbTxt" rows="1" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
+           <div class="sb-gallery">${keys}<div class="thumb pick sb-pick" tabindex="0" role="button" title="adicionar imagem à cena"></div></div>
+           ${vidBlock(s)}
            <div class="acts">
              <button type="button" class="ghost mini sbUp" title="subir">↑</button><button type="button" class="ghost mini sbDown" title="descer">↓</button><button type="button" class="ghost mini sbDel" title="remover">✕</button>
            </div>
          </div>`;
       }).join("");
       ui.autosize("#sbScenes textarea.sbTxt");
+      ui.autosize("#sbScenes textarea.sbVidDesc");
     }
     function collect() {
       return [...document.querySelectorAll("#sbScenes .scene-row")].map((el) => ({
         text: el.querySelector(".sbTxt").value,
-        images: el.dataset.images ? el.dataset.images.split("|") : [],
+        images: el.dataset.images ? el.dataset.images.split("|").filter(Boolean) : [],
         primary: el.dataset.primary || null,
+        // `[extensão]` storyboard-video (ADR-021): campos aditivos persistidos junto no PUT /scenes.
+        video_desc: (el.querySelector(".sbVidDesc") || {}).value || "",
+        video_prompt: (el.querySelector(".sbVidPromptText") || {}).textContent || "",
+        videos: el.dataset.videos ? el.dataset.videos.split("|").filter(Boolean) : [],
       }));
+    }
+
+    // ---------- vídeo por cena (wave 7, contrato congelado wave-7.md) ----------
+    const sceneLabelOf = (sid) => String(sid || "").replace(/^cena0*/, "cena ");
+    const rowBySid = (sid) => document.querySelector(`#sbScenes .scene-row[data-sid="${(window.CSS && CSS.escape) ? CSS.escape(sid) : sid}"]`);
+
+    function framesOf(box) {
+      const mode = box.querySelector(".sbVidMode").value;
+      if (mode === "start_end") {
+        return { mode, start_image: box.querySelector(".sbVidStart").value || null, end_image: box.querySelector(".sbVidEnd").value || null };
+      }
+      return { mode, image: box.querySelector(".sbVidImg").value || null };
+    }
+
+    // Lightbox tamanho real (foto ou mp4) — modal escopado alargado via CSS `.modal:has(.sb-lightbox)`.
+    function lightbox(rel) {
+      if (!rel) return;
+      const isVid = /\.(mp4|webm|mov|m4v)$/i.test(rel);
+      const media = isVid
+        ? `<video src="${esc(ctx.files(rel))}" controls autoplay class="sb-lightbox-media"></video>`
+        : `<img src="${esc(ctx.files(rel))}" alt="" class="sb-lightbox-media">`;
+      ui.modal({ title: "Tamanho real", subtitle: String(rel).split("/").pop(), html: `<div class="sb-lightbox">${media}</div>` });
+    }
+
+    // Persiste `video_desc`/`video_prompt`/`videos` no PUT /scenes SEM re-render (best-effort): na
+    // Frente A integrada os campos ficam gravados; no backend atual são ignorados sem quebrar nada.
+    async function persistVideo() {
+      try { await api(url("/scenes"), { method: "PUT", body: JSON.stringify({ scenes: collect() }) }); }
+      catch (err) { /* silencioso: os campos de vídeo passam a persistir com a Frente A (wave-7) */ }
+    }
+
+    async function genVideoPrompt(box) {
+      const sid = box.dataset.sid;
+      if (!sid) return toast("Salve as cenas primeiro.");
+      const description = box.querySelector(".sbVidDesc").value.trim();
+      const p = ui.progress({ title: "Gerar prompt de vídeo", subtitle: "o Claude escreve o prompt de movimento" });
+      p.step("Chamando o Claude…");
+      try {
+        const r = await api(url("/video-prompt"), { method: "POST", body: JSON.stringify({ scene_id: sid, description, frames: framesOf(box) }) });
+        box.querySelector(".sbVidPromptText").textContent = r.prompt || "";
+        box.querySelector(".sbVidPromptBox").classList.toggle("hidden", !r.prompt);
+        box.querySelector(".sbVidGen").disabled = !r.prompt;
+        p.ok("Prompt pronto");
+        p.note(`<span class="fine">fonte: ${esc(r.source || "claude")}${r.seconds ? ` · sugestão ${esc(r.seconds)}s` : ""}</span>`);
+        persistVideo();
+      } catch (err) { p.fail(err.message); }
+    }
+
+    async function genVideo(box) {
+      const sid = box.dataset.sid;
+      if (!sid) return toast("Salve as cenas primeiro.");
+      const prompt = box.querySelector(".sbVidPromptText").textContent.trim();
+      if (!prompt) return toast("Gere o prompt de vídeo primeiro.");
+      const mode = box.querySelector(".sbVidMode").value;
+      const duration = +box.querySelector(".sbVidDur").value;
+      const frames = framesOf(box);
+      try {
+        const ok = await ui.confirmCost(
+          () => api(url("/video/cost"), { method: "POST", body: JSON.stringify({ scene_id: sid, mode, duration }) }),
+          `Gerar vídeo de ${sceneLabelOf(sid)} (${duration}s)`);
+        if (!ok) return;
+        const body = { scene_id: sid, prompt, mode, duration };
+        if (mode === "start_end") { body.start_image = frames.start_image; body.end_image = frames.end_image; }
+        else body.image = frames.image;
+        ui.progressJob({
+          title: `Gerar vídeo · ${sceneLabelOf(sid)}`,
+          subtitle: "Higgsfield (Kling) via CLI",
+          start: () => api(url("/video/generate"), { method: "POST", body: JSON.stringify(body) }),
+          jobUrl: url(`/video/job?scene_id=${encodeURIComponent(sid)}`),
+          done: async (j) => onVideoDone(sid, j),
+        }).catch((err) => toast(err.message));
+      } catch (err) { toast(err.message); }
+    }
+
+    function onVideoDone(sid, j) {
+      if (!j || !j.video) { toast("Job concluído (sem vídeo)."); return; }
+      const box = rowBySid(sid);
+      if (!box) return;
+      const videos = box.dataset.videos ? box.dataset.videos.split("|").filter(Boolean) : [];
+      videos.push(j.video);
+      box.dataset.videos = videos.join("|");
+      box.querySelector(".sbVidView").innerHTML = vidView(videos);
+      toast("Vídeo gerado · usado na etapa 6 (animação)");
+      persistVideo(); ctx.guide();
+    }
+
+    async function copyVidPrompt(box) {
+      const ok = await ui.copy(box.querySelector(".sbVidPromptText").textContent);
+      const eco = box.querySelector(".sbVidCopy").parentElement.querySelector(".ok");
+      if (eco) { eco.textContent = ok ? "copiado ✓" : "copie à mão"; setTimeout(() => (eco.textContent = ""), 1500); }
+    }
+
+    // ---------- salvar/reordenar cenas ----------
+    // Preserva os campos de vídeo digitados na tela quando o backend (pré-integração) ainda não os
+    // devolve, para o PUT /scenes não apagar o que o usuário acabou de escrever.
+    function mergeVideo(server, local) {
+      return (server || []).map((s, i) => {
+        const l = local[i] || {};
+        return {
+          ...s,
+          video_desc: s.video_desc != null ? s.video_desc : (l.video_desc || ""),
+          video_prompt: s.video_prompt != null ? s.video_prompt : (l.video_prompt || ""),
+          videos: (s.videos && s.videos.length) ? s.videos : (l.videos || []),
+        };
+      });
+    }
+    async function saveScenes(list) {
+      const r = await api(url("/scenes"), { method: "PUT", body: JSON.stringify({ scenes: list }) });
+      scenes = mergeVideo(r.scenes, list); renderScenes();
+      await loadStatus(); ctx.guide();
+      return r;
+    }
+
+    function reorderModal() {
+      scenes = collect();
+      if (!scenes.length) return toast("Nenhuma cena para reordenar.");
+      const rows = scenes.map((s, i) => {
+        const thumb = s.primary ? `<img loading="lazy" src="${esc(ctx.files(s.primary))}" alt="">` : "";
+        const label = (s.text || "").trim() || `cena ${i + 1}`;
+        return `<li class="sb-ro-item" draggable="true" data-i="${i}">
+          <span class="sb-ro-grip" title="arraste para reordenar">⋮⋮</span>
+          <span class="sb-ro-thumb">${thumb}</span>
+          <span class="sb-ro-txt">${esc(label)}</span>
+          <span class="sb-ro-acts">
+            <button type="button" class="ghost mini sb-ro-up" title="subir">↑</button>
+            <button type="button" class="ghost mini sb-ro-down" title="descer">↓</button>
+          </span></li>`;
+      }).join("");
+      const m = ui.modal({
+        title: "Reordenar cenas",
+        subtitle: "Arraste (ou use ↑/↓) e salve para reescrever a ordem — regrava storyboard.md.",
+        html: `<ol class="sb-reorder">${rows}</ol>`,
+        actions: [
+          { label: "Cancelar", kind: "ghost" },
+          { label: "Salvar ordem", kind: "primary", close: false, onClick: (mm) => saveReorder(mm) },
+        ],
+      });
+      wireReorder(m.el.querySelector(".sb-reorder"));
+    }
+
+    function wireReorder(list) {
+      list.addEventListener("click", (e) => {
+        const li = e.target.closest(".sb-ro-item"); if (!li) return;
+        if (e.target.closest(".sb-ro-up") && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
+        else if (e.target.closest(".sb-ro-down") && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
+      });
+      let dragEl = null;
+      list.addEventListener("dragstart", (e) => { dragEl = e.target.closest(".sb-ro-item"); if (dragEl) dragEl.classList.add("dragging"); });
+      list.addEventListener("dragend", () => { if (dragEl) dragEl.classList.remove("dragging"); dragEl = null; });
+      list.addEventListener("dragover", (e) => {
+        e.preventDefault(); if (!dragEl) return;
+        const after = [...list.querySelectorAll(".sb-ro-item:not(.dragging)")].find((el) => {
+          const rect = el.getBoundingClientRect(); return e.clientY <= rect.top + rect.height / 2;
+        });
+        if (after) list.insertBefore(dragEl, after); else list.appendChild(dragEl);
+      });
+    }
+
+    async function saveReorder(mm) {
+      const orderIdx = [...mm.el.querySelectorAll(".sb-reorder .sb-ro-item")].map((li) => +li.dataset.i);
+      const reordered = orderIdx.map((idx) => scenes[idx]).filter(Boolean);
+      try { await saveScenes(reordered); mm.close(); toast("Ordem salva · storyboard.md atualizado"); }
+      catch (err) { toast(err.message); }
     }
 
     async function refresh() {
@@ -274,7 +501,15 @@ Studio.register("storyboard", (ctx) => {
         if (panelDrop) panelDrop.accept = "image/*";
         $("#sbCounts").onclick = importModal;
 
-        $("#sbAdd").onclick = () => { scenes = collect().concat({ text: "", images: [], primary: null }); renderScenes(); };
+        $("#sbAdd").onclick = () => { scenes = collect().concat({ text: "", images: [], primary: null, videos: [] }); renderScenes(); };
+        $("#sbReorder").onclick = reorderModal;
+        $("#sbScenes").addEventListener("change", (e) => {
+          if (!e.target.classList.contains("sbVidMode")) return;
+          const box = e.target.closest(".scene-row"); if (!box) return;
+          const se = e.target.value === "start_end";
+          box.querySelectorAll(".sbVidSingle").forEach((n) => n.classList.toggle("hidden", se));
+          box.querySelectorAll(".sbVidPair").forEach((n) => n.classList.toggle("hidden", !se));
+        });
         $("#sbScenes").addEventListener("click", (e) => {
           const box = e.target.closest(".scene-row"); if (!box) return;
           const i = +box.dataset.i;
@@ -283,6 +518,15 @@ Studio.register("storyboard", (ctx) => {
           const rm = e.target.closest(".sb-rm");
           if (rm) return removeImage(i, rm.dataset.rm);
           if (e.target.closest(".sb-pick")) return pickerModal(i);
+          // Wave 7: clique na foto (fora de ★/✕) abre o lightbox; ações do bloco de vídeo.
+          const key = e.target.closest(".sb-key");
+          if (key && !e.target.closest("button")) return lightbox(key.dataset.img);
+          if (e.target.closest(".sbVidPrompt")) return genVideoPrompt(box);
+          if (e.target.closest(".sbVidGen")) return genVideo(box);
+          if (e.target.closest(".sbVidCopy")) return copyVidPrompt(box);
+          const vv = e.target.closest(".sbVidView [data-video]");
+          if (vv) return window.open(ctx.files(vv.dataset.video), "_blank");
+          if (e.target.closest(".sb-vid")) return;   // cliques dentro do bloco de vídeo não mexem na cena
           scenes = collect();
           if (e.target.classList.contains("sbDel")) scenes.splice(i, 1);
           else if (e.target.classList.contains("sbUp") && i > 0) scenes.splice(i - 1, 0, scenes.splice(i, 1)[0]);
@@ -297,8 +541,7 @@ Studio.register("storyboard", (ctx) => {
         });
         $("#sbSave").onclick = async () => {
           try {
-            const r = await api(url("/scenes"), { method: "PUT", body: JSON.stringify({ scenes: collect() }) });
-            scenes = r.scenes; renderScenes(); await loadStatus(); ctx.guide();
+            const r = await saveScenes(collect());
             toast(`${r.scenes.length} cenas salvas · storyboard.md atualizado`);
           } catch (err) { toast(err.message); }
         };
