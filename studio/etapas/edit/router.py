@@ -16,6 +16,7 @@ NO_FFMPEG = "ffmpeg não disponível — instale em ~/.local/bin para renderizar
 
 class ClipReq(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
+    id: str | None = None      # [extensão]: id estável do clipe (editor)
     scene: str = ""
     shot: str = ""
     take: str = ""
@@ -50,6 +51,7 @@ class TimelineReq(BaseModel):
     sfx: list[SfxReq] = []
     fade_out: float = edit.DEFAULT_FADE_OUT
     loudnorm: bool = True      # [extensão]: a aula 014 não fala de loudness (auditoria 8.4)
+    editor: dict | None = None    # [extensão]: modelo do editor completo (validado em service/editor.py)
 
 
 class ProposeReq(BaseModel):
@@ -66,6 +68,11 @@ class LastFrameReq(BaseModel):
 
 class RenderReq(BaseModel):
     target: str = "master"
+    # [extensão] opções do modal de exportação; ausentes = master 1920x1080/30 (aula 014)
+    width: int | None = None
+    height: int | None = None
+    fps: int | None = None
+    quality: str | None = None
 
 
 def _translate(e: Exception) -> HTTPException:
@@ -159,7 +166,8 @@ def start_render(pid: str, req: RenderReq):
     if not ff.available():
         raise HTTPException(409, NO_FFMPEG)
     try:
-        return render.start_render(pid, req.target)
+        export = {"width": req.width, "height": req.height, "fps": req.fps, "quality": req.quality}
+        return render.start_render(pid, req.target, export)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e)) from e
     except ValueError as e:

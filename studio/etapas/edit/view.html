@@ -1,62 +1,184 @@
 <style>
-  /* Escopo da etapa 7. As lacunas do shell registradas nesta tela (w44, spinner do number,
-     hover-only da .clip-row via `display`) foram promovidas ao catálogo no fechamento
-     (ADH-OS-20260826-17). Restou só o texto do estado vazio da lista de SFX. */
-  .sfx-line.ed-none{color:var(--ink-5)}
+  /* Etapa 8 — Editor de vídeo completo [extensão]. Layout de 5 regiões estilo CapCut desktop,
+     todo sobre os tokens do design system (studio/web/style.css). O root é `position:fixed` e
+     medido em JS (`fit()` no view.js) para escapar do padding/max-width do <main> do shell e
+     ocupar a área útil (abaixo da topbar, à direita da sidebar). A montagem da aula 014
+     (backbone) continua sendo o que renderiza; as camadas novas aparecem no preview e são
+     persistidas no bloco `editor` da timeline. */
+  .ved{position:fixed;top:0;left:var(--side-w);right:0;bottom:0;z-index:20;display:flex;flex-direction:column;
+       background:var(--bg);color:var(--ink);font-size:var(--fs-sm);overflow:hidden}
+  .ved *{box-sizing:border-box}
+  .ved button{font:inherit;cursor:pointer}
+  .ved .muted{color:var(--ink-4)}
+  .ved-fallback{display:none}
+
+  /* header */
+  .ved-top{display:flex;align-items:center;gap:var(--s3);padding:8px 12px;border-bottom:1px solid var(--line);
+           background:var(--surface-2);min-height:46px;flex-wrap:wrap}
+  .ved-top-l{display:flex;align-items:center;gap:10px;min-width:180px}
+  .ved-top-c{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap;justify-content:center}
+  .ved-top-r{display:flex;align-items:center;gap:8px}
+  .ved-title{font-family:"Bricolage Grotesque",sans-serif;font-weight:600;font-size:var(--fs-md)}
+  .ved-save{font-size:var(--fs-micro);padding:2px 8px;border-radius:var(--r-chip);border:1px solid var(--line-2);color:var(--ink-3)}
+  .ved-save[data-s="saved"]{color:var(--ok);border-color:var(--ok-line)}
+  .ved-save[data-s="saving"]{color:var(--info);border-color:var(--info-line)}
+  .ved-save[data-s="dirty"]{color:var(--gate);border-color:var(--gate-line)}
+  .ved-save[data-s="error"]{color:var(--fail);border-color:var(--fail-line)}
+  .ved-sep{width:1px;height:20px;background:var(--line-2)}
+  .ved-chip{display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-micro);color:var(--ink-4)}
+  .ved-chip select{font:inherit;font-size:var(--fs-micro);background:var(--ctl);color:var(--ink-2);
+                   border:1px solid var(--line-2);border-radius:var(--r-chip);padding:3px 4px}
+  .ved-ib{display:inline-flex;align-items:center;justify-content:center;width:30px;height:28px;border-radius:var(--r2);
+          border:1px solid var(--line-2);background:var(--ctl);color:var(--ink-2)}
+  .ved-ib:hover{background:var(--ctl-hover);color:var(--ink)}
+  .ved-ib:disabled{opacity:.4;cursor:default}
+  .ved-ib.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}
+  .ved-top-r .ghost,.ved-top-r .primary{padding:6px 14px;border-radius:var(--r2)}
+  .ved .primary{background:var(--accent);color:#fff;border:1px solid var(--accent);font-weight:600}
+  .ved .primary:hover{filter:brightness(1.06)}
+  .ved .ghost{background:var(--ctl);color:var(--ink-2);border:1px solid var(--line-2)}
+  .ved .ghost:hover{background:var(--ctl-hover);color:var(--ink)}
+  .ved .ghost.sm,.ved .primary.sm{padding:4px 10px;font-size:var(--fs-micro)}
+
+  /* body 3 columns */
+  .ved-body{flex:1;display:flex;min-height:0}
+  .ved-left{width:280px;min-width:180px;max-width:520px;display:flex;border-right:1px solid var(--line);background:var(--surface-2)}
+  .ved-rail{display:flex;flex-direction:column;gap:2px;padding:8px 6px;border-right:1px solid var(--line);width:74px;flex:none;overflow:auto}
+  .ved-rail button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;border:0;border-radius:var(--r2);
+                   background:transparent;color:var(--ink-4);font-size:9px;line-height:1.1}
+  .ved-rail button .ic{font-size:16px}
+  .ved-rail button:hover{background:var(--ctl);color:var(--ink-2)}
+  .ved-rail button.on{background:var(--accent-soft);color:var(--accent-ink)}
+  .ved-panel{flex:1;overflow:auto;padding:12px}
+  .ved-panel h4{margin:0 0 8px;font-size:var(--fs-sm);font-family:"Bricolage Grotesque",sans-serif}
+  .ved-panel .hint{font-size:var(--fs-micro);color:var(--ink-4);margin:0 0 10px}
+
+  .ved-center{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+  .ved-stage-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;overflow:hidden;min-height:0}
+  .ved-stage{position:relative;background:#000;box-shadow:var(--shadow-2);overflow:hidden;user-select:none}
+  .ved-stage video,.ved-stage img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none}
+  .ved-layer{position:absolute;transform-origin:center;will-change:transform}
+  .ved-layer.text{white-space:pre-wrap;pointer-events:auto;cursor:move;padding:2px 6px}
+  .ved-black{position:absolute;inset:0;background:#000}
+  .ved-bbox{position:absolute;border:1.5px solid var(--accent);pointer-events:none;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+  .ved-bbox .h{position:absolute;width:10px;height:10px;background:#fff;border:1.5px solid var(--accent);border-radius:2px;pointer-events:auto}
+  .ved-bbox .h.rot{border-radius:50%;top:-24px;left:calc(50% - 5px)}
+  .ved-bbox .h.nw{top:-5px;left:-5px;cursor:nwse-resize}.ved-bbox .h.ne{top:-5px;right:-5px;cursor:nesw-resize}
+  .ved-bbox .h.sw{bottom:-5px;left:-5px;cursor:nesw-resize}.ved-bbox .h.se{bottom:-5px;right:-5px;cursor:nwse-resize}
+  .ved-guide{position:absolute;background:var(--accent);opacity:.9;pointer-events:none;z-index:5}
+  .ved-guide.v{width:1px;top:0;bottom:0}.ved-guide.h{height:1px;left:0;right:0}
+  .ved-pctl{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--line);background:var(--surface-2)}
+  .ved-pctl .tc{font-family:"IBM Plex Mono",monospace;font-size:var(--fs-micro);color:var(--ink-3);min-width:120px}
+  .ved-pctl input[type=range]{width:90px;accent-color:var(--accent)}
+
+  .ved-right{width:300px;min-width:200px;max-width:520px;border-left:1px solid var(--line);background:var(--surface-2);overflow:auto}
+  .ved-props{padding:12px}
+  .ved-props h4{margin:0 0 4px;font-size:var(--fs-sm);font-family:"Bricolage Grotesque",sans-serif}
+  .ved-tabs{display:flex;gap:2px;margin:8px 0 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .ved-tabs button{border:0;background:transparent;color:var(--ink-4);padding:5px 8px;font-size:var(--fs-micro);border-bottom:2px solid transparent}
+  .ved-tabs button.on{color:var(--accent-ink);border-bottom-color:var(--accent)}
+  .ved-field{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:7px 0}
+  .ved-field label{font-size:var(--fs-micro);color:var(--ink-4);flex:none}
+  .ved-field input[type=number],.ved-field input[type=text],.ved-field select,.ved-field input[type=color]{
+    background:var(--ctl);border:1px solid var(--line-2);border-radius:var(--r-chip);color:var(--ink-2);padding:4px 6px;font:inherit;font-size:var(--fs-micro);width:84px}
+  .ved-field input[type=text]{width:130px}
+  .ved-field.row2{flex-wrap:wrap}
+  .ved-slider{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .ved-slider label{font-size:var(--fs-micro);color:var(--ink-4);width:76px;flex:none}
+  .ved-slider input[type=range]{flex:1;accent-color:var(--accent)}
+  .ved-slider .val{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3);width:34px;text-align:right}
+  .ved-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .ved-grid.g3{grid-template-columns:repeat(3,1fr)}
+  .ved-pick{border:1px solid var(--line-2);background:var(--surface-3);border-radius:var(--r2);padding:8px 6px;text-align:center;
+            font-size:10px;color:var(--ink-3);display:flex;flex-direction:column;gap:4px;align-items:center}
+  .ved-pick:hover{border-color:var(--accent-line);color:var(--ink)}
+  .ved-pick.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+  .ved-pick .sw{width:100%;height:30px;border-radius:3px;background:var(--ctl);display:flex;align-items:center;justify-content:center;font-size:15px}
+
+  /* media list */
+  .ved-media{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .ved-mtile{border:1px solid var(--line-2);border-radius:var(--r2);overflow:hidden;background:var(--surface-3);cursor:grab}
+  .ved-mtile .mt-th{aspect-ratio:16/9;background:#000;position:relative}
+  .ved-mtile video,.ved-mtile img{width:100%;height:100%;object-fit:cover}
+  .ved-mtile .mt-meta{padding:4px 6px;font-size:9px;color:var(--ink-4);display:flex;justify-content:space-between;gap:4px}
+  .ved-mtile .mt-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ved-search{width:100%;background:var(--ctl);border:1px solid var(--line-2);border-radius:var(--r2);color:var(--ink-2);padding:6px 8px;margin-bottom:8px;font:inherit;font-size:var(--fs-micro)}
+
+  /* timeline */
+  .ved-timeline{height:270px;min-height:120px;max-height:70vh;display:flex;flex-direction:column;border-top:1px solid var(--line);background:var(--surface-2)}
+  .ved-tl-toolbar{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .ved-tl-toolbar .ved-ib{width:28px;height:26px}
+  .ved-tl-toolbar .spacer{flex:1}
+  .ved-zoom{display:flex;align-items:center;gap:6px}
+  .ved-zoom input{width:120px;accent-color:var(--accent)}
+  .ved-tl-body{flex:1;display:grid;grid-template-columns:160px 1fr;min-height:0}
+  .ved-tl-heads{overflow:hidden;border-right:1px solid var(--line);background:var(--surface-2)}
+  .ved-tl-heads .ruler-pad{height:26px;border-bottom:1px solid var(--line)}
+  .ved-thead{display:flex;align-items:center;gap:4px;padding:0 6px;border-bottom:1px solid var(--line-2);font-size:10px;color:var(--ink-3)}
+  .ved-thead .tn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ved-thead button{border:0;background:transparent;color:var(--ink-4);font-size:12px;padding:2px}
+  .ved-thead button.act{color:var(--accent-ink)}
+  .ved-tl-main{position:relative;overflow-x:auto;overflow-y:hidden;background:var(--surface)}
+  .ved-ruler{position:sticky;top:0;height:26px;border-bottom:1px solid var(--line);background:var(--surface-2);z-index:4}
+  .ved-ruler .tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line-2);font-size:9px;color:var(--ink-5);padding-left:3px}
+  .ved-tracks{position:relative}
+  .ved-lane{position:relative;border-bottom:1px solid var(--line-2)}
+  .ved-lane.drop{background:var(--accent-soft)}
+  .ved-clip{position:absolute;top:3px;bottom:3px;border-radius:var(--r2);overflow:hidden;border:1px solid var(--line-2);
+            background:var(--surface-3);display:flex;align-items:stretch;cursor:grab;user-select:none}
+  .ved-clip.video{background:linear-gradient(180deg,var(--surface-3),var(--surface-2))}
+  .ved-clip .cl-body{flex:1;position:relative;padding:2px 6px;overflow:hidden;min-width:0}
+  .ved-clip .cl-name{font-size:9px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ved-clip .cl-th{position:absolute;inset:0;opacity:.35;display:flex}
+  .ved-clip .cl-th video{height:100%;width:auto}
+  .ved-clip.sel{border-color:var(--accent);box-shadow:var(--ring-sel);z-index:3}
+  .ved-clip .cl-trim{position:absolute;top:0;bottom:0;width:7px;cursor:ew-resize;background:rgba(0,0,0,.001)}
+  .ved-clip .cl-trim.l{left:0}.ved-clip .cl-trim.r{right:0}
+  .ved-clip .cl-trim:hover{background:var(--accent)}
+  .ved-clip.text{background:color-mix(in srgb,var(--info-soft) 70%,var(--surface-3))}
+  .ved-clip.caption{background:color-mix(in srgb,var(--accent-soft) 60%,var(--surface-3))}
+  .ved-clip.overlay{background:color-mix(in srgb,var(--gate-soft) 55%,var(--surface-3))}
+  .ved-clip.audio,.ved-clip.music,.ved-clip.sfx{background:color-mix(in srgb,var(--ok-soft) 45%,var(--surface-3))}
+  .ved-wave{position:absolute;inset:0;opacity:.5}
+  .ved-wave i{position:absolute;bottom:0;width:1px;background:var(--ok);transform:translateY(0)}
+  .ved-trans{position:absolute;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;
+             background:var(--accent);color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:4;border:2px solid var(--surface)}
+  .ved-marker{position:absolute;top:0;bottom:0;width:1px;background:var(--gate);z-index:3}
+  .ved-marker .lb{position:absolute;top:0;left:2px;font-size:8px;color:var(--gate);white-space:nowrap}
+  .ved-playhead{position:absolute;top:0;bottom:0;width:1px;background:var(--fail);z-index:6;pointer-events:none}
+  .ved-playhead::before{content:"";position:absolute;top:0;left:-5px;border:5px solid transparent;border-top-color:var(--fail)}
+  .ved-playhead .grip{position:absolute;top:0;left:-6px;width:12px;height:14px;pointer-events:auto;cursor:ew-resize}
+
+  .ved-resize{width:5px;cursor:col-resize;background:transparent;flex:none}
+  .ved-resize:hover{background:var(--accent-line)}
+  .ved-resize-v{height:5px;cursor:row-resize;background:transparent}
+  .ved-resize-v:hover{background:var(--accent-line)}
+
+  .ved-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--ink-4);text-align:center;padding:40px}
+  .ved-empty h3{margin:0;font-family:"Bricolage Grotesque",sans-serif;color:var(--ink-2)}
+
+  /* context menu */
+  .ved-menu{position:fixed;z-index:60;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r2);
+            box-shadow:var(--shadow-modal);padding:4px;min-width:180px}
+  .ved-menu button{display:flex;width:100%;justify-content:space-between;gap:16px;border:0;background:transparent;color:var(--ink-2);
+                   padding:6px 10px;border-radius:var(--r-chip);font-size:var(--fs-micro);text-align:left}
+  .ved-menu button:hover{background:var(--ctl-hover)}
+  .ved-menu button.danger:hover{background:var(--fail-soft);color:var(--fail)}
+  .ved-menu .sep{height:1px;background:var(--line-2);margin:4px 0}
+  .ved-menu kbd{font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--ink-5)}
+
+  @media (max-width:1100px){ .ved{left:0} }
+  @media (max-width:820px){ .ved-left{width:64px} .ved-panel{display:none} .ved-right{display:none} }
 </style>
 
-<header class="stephead">
-  <span class="eyebrow">Etapa 7 · aula 014</span>
-  <h2>Montagem no ritmo</h2>
-  <p class="lede">A trilha dita o ritmo: cada impacto visual cai numa batida forte. O ritmo vem primeiro, o refinamento depois; SFX entram por último.</p>
+<header class="stephead ved-fallback">
+  <span class="eyebrow">Etapa 7 · aula 014 · editor [extensão]</span>
+  <h2>Montagem de vídeo</h2>
 </header>
 
+<!-- O guia da aula 014 continua vindo do hook puro `guide.py` (SFX "gelo, ambiência,
+     respiração, impacto", ritmo, dever de casa). O editor o abre num modal pelo botão "Guia":
+     a fidelidade ao curso fica acessível mesmo com a tela em modo editor. -->
 <section id="guide" class="guide"></section>
 
-<section class="panel">
-  <div class="panel-head">
-    <h3><span class="pn">01</span>Timeline</h3>
-    <div class="row wrap">
-      <span id="ffState" class="chip mode">ffmpeg: ?</span>
-      <button id="btnPropose" class="ghost">Propor cortes nos impactos</button>
-      <button id="btnSave" class="primary">Salvar timeline</button>
-    </div>
-  </div>
-  <div id="editRuler"></div>
-  <div id="editAxis" class="beats-axis hidden">
-    <span>0s</span>
-    <span>▾ cortes nos impactos</span>
-    <span id="editAxisEnd">—</span>
-  </div>
-  <div id="clips" class="rowlist"></div>
-</section>
-
-<section class="panel">
-  <div class="panel-head">
-    <h3><span class="pn">02</span>Música, SFX e transição colada</h3>
-  </div>
-  <div class="row wrap loose">
-    <label class="inline">cortar a música em <input id="musicOffset" class="mini lg ed-num" type="number" value="0" min="0" step="0.1"> s</label>
-    <label class="inline">fade final <input id="fadeOut" class="mini lg w44 ed-num" type="number" value="1.5" min="0" max="5" step="0.1"> s</label>
-    <label class="inline"><input id="loudnorm" type="checkbox" checked> normalizar volume [extensão]</label>
-  </div>
-  <div class="import-row row stretch">
-    <label class="drop sm" id="sfxDrop" title="ou clique para escolher arquivos">Arraste SFX aqui (gelo, ambiência, respiração, impacto)<input id="sfxUpload" type="file" accept="audio/*" multiple hidden></label>
-    <div id="sfxCol" class="sfx-list"></div>
-  </div>
-</section>
-
-<section class="panel">
-  <div class="panel-head">
-    <h3><span class="pn">03</span>Render</h3>
-    <div class="row wrap">
-      <span id="durInfo" class="chip mode">duração 0,0 s</span>
-      <span id="musicChip" class="chip warn hidden">sem trilha escolhida na etapa 6</span>
-      <button id="btnRough" class="ghost" title="Prévia rápida: só música, sem SFX e sem fade">Rough cut</button>
-      <button id="btnMaster" class="primary">Master 1920×1080 · 30 fps</button>
-    </div>
-  </div>
-  <div class="progress"><div id="renderBar" class="bar"></div></div>
-  <div id="renderLog" class="log"></div>
-  <p class="note flat">Dever de casa da aula: <b>publique o seu trabalho, mesmo imperfeito. O primeiro projeto sempre será o pior.</b></p>
-</section>
+<div class="ved" id="ved"></div>

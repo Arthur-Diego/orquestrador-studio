@@ -32,6 +32,33 @@ registry = JobRegistry()
 RENDER_TIMEOUT = 1800          # minterpolate em 1080p é lento; 600 s da API transversal é pouco
 TARGETS = {"rough": {"name": "rough_cut.mp4", "crf": "23", "preset": "veryfast"},
            "master": {"name": "master.mp4", "crf": "18", "preset": "medium"}}
+# [extensão] export com opções: resolução (mantém a proporção 16:9 do projeto), fps e qualidade.
+# Sem parâmetros, o master sai 1920x1080/30 como a aula — o comportamento atual é o default.
+QUALITY = {"low": {"crf": "28", "preset": "veryfast"},
+           "medium": {"crf": "23", "preset": "fast"},
+           "high": {"crf": "18", "preset": "medium"}}
+RES_PRESETS = {720: (1280, 720), 1080: (1920, 1080), 1440: (2560, 1440), 2160: (3840, 2160)}
+FPS_OUT = (24, 25, 30, 50, 60)
+
+
+def _out_size(width, height) -> tuple[int, int]:
+    """Resolução de saída presa a um preset 16:9 (720p–4K). Sem pedido -> 1920x1080."""
+    if not width and not height:
+        return WIDTH, HEIGHT
+    h = int(round(float(height))) if height else int(round(float(width) * HEIGHT / WIDTH))
+    nearest = min(RES_PRESETS, key=lambda k: abs(k - h))
+    return RES_PRESETS[nearest]
+
+
+def _out_fps(fps) -> int:
+    if not fps:
+        return FPS
+    return min(FPS_OUT, key=lambda c: abs(c - float(fps)))
+
+
+def _quality(quality, conf: dict) -> tuple[str, str]:
+    q = QUALITY.get(quality or "")
+    return (q["crf"], q["preset"]) if q else (conf["crf"], conf["preset"])
 AFORMAT = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
 NO_MUSIC = ("escolha a trilha na etapa 6 antes de montar: o master não sai sem música "
             "(aula 013 — a montagem é guiada pelo som)")
@@ -75,14 +102,23 @@ def expected_duration(timeline: dict, segments: list[tuple[str, int]]) -> float:
 
 
 def build_filtergraph(root: Path, timeline: dict, target: str = "master",
-                      out: Path | str | None = None) -> tuple[list[str], float]:
+                      out: Path | str | None = None, *, width: int | None = None,
+                      height: int | None = None, fps: int | None = None,
+                      quality: str | None = None) -> tuple[list[str], float]:
     """Argumentos completos do ffmpeg (sem o binário) + duração prevista. Não executa nada.
 
     `out` troca só o arquivo de destino (a escrita continua atômica, em `<out>.part`): a etapa 6
     reusa este mesmo grafo em modo `rough` para gerar `audio/rough_sequence.mp4`.
+
+    `width`/`height`/`fps`/`quality` são [extensão] de export: a composição é feita em 1920x1080
+    (canvas da aula) e reescalada no fim para a resolução pedida (preset 16:9), com o fps e o crf
+    escolhidos. Sem esses parâmetros o resultado é idêntico ao master atual.
     """
     if target not in TARGETS:
         raise ValueError(f"target inválido: {target} (use 'rough' ou 'master')")
+    out_w, out_h = _out_size(width, height)
+    out_fps = _out_fps(fps)
+    crf, preset = _quality(quality, TARGETS[target])
     clips = timeline.get("clips") or []
     if not clips:
         raise ValueError("timeline sem clipes")
@@ -147,10 +183,15 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
 
     order = "".join(f"[v{i}]" if kind == "clip" else f"[b{i}]" for kind, i in segments)
     filters.append(f"{order}concat=n={len(segments)}:v=1:a=0[vcat]")
+    vtail: list[str] = []
     if master and fade_out > 0:
-        filters.append(f"[vcat]fade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}[vout]")
-    else:
-        filters.append("[vcat]null[vout]")
+        vtail.append(f"fade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}")
+    if (out_w, out_h) != (WIDTH, HEIGHT):
+        # reescala o canvas 1920x1080 para a resolução de export (preset 16:9), com pad de segurança.
+        vtail.append(f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease")
+        vtail.append(f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black")
+        vtail.append("setsar=1")
+    filters.append(f"[vcat]{','.join(vtail)}[vout]" if vtail else "[vcat]null[vout]")
 
     # --- áudio: música cortada para o ápice + SFX (só no master) ---
     audio_labels: list[str] = []
@@ -179,8 +220,8 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
     if has_audio:
         args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
     dest = Path(out) if out else root / "edit" / conf["name"]
-    args += ["-c:v", "libx264", "-preset", conf["preset"], "-crf", conf["crf"], "-pix_fmt", "yuv420p",
-             "-r", str(FPS), "-movflags", "+faststart", "-t", _num(duration), "-f", "mp4",
+    args += ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p",
+             "-r", str(out_fps), "-movflags", "+faststart", "-t", _num(duration), "-f", "mp4",
              f"{dest}.part"]
     return args, duration
 
@@ -207,9 +248,14 @@ def _adjust_to_real_durations(root: Path, timeline: dict, job: dict) -> None:
         job["done"] += 1
 
 
-def start_render(pid: str, target: str = "master") -> dict:
-    """Dispara o render em thread. RuntimeError se já houver job para o projeto (-> 409)."""
+def start_render(pid: str, target: str = "master", export: dict | None = None) -> dict:
+    """Dispara o render em thread. RuntimeError se já houver job para o projeto (-> 409).
+
+    `export` (opcional, [extensão]) = {width, height, fps, quality} para o modal de exportação;
+    ausente = master 1920x1080/30 como a aula.
+    """
     root = project_dir(pid)
+    opts = export or {}
     if target not in TARGETS:
         raise ValueError(f"target inválido: {target} (use 'rough' ou 'master')")
     stored = load_timeline(pid)
@@ -244,7 +290,9 @@ def start_render(pid: str, target: str = "master") -> dict:
                 job["log"].append(f"black at {_num(working['blacks'][j]['at'])} dur {_num(working['blacks'][j]['dur'])}")
         job["done"] += 1
 
-        args, duration = build_filtergraph(root, working, target)
+        args, duration = build_filtergraph(root, working, target, width=opts.get("width"),
+                                           height=opts.get("height"), fps=opts.get("fps"),
+                                           quality=opts.get("quality"))
         job["duration"] = duration
         music = (working.get("music") or {}).get("file")
         n_sfx = len(working.get("sfx") or []) if target == "master" else 0
@@ -256,7 +304,9 @@ def start_render(pid: str, target: str = "master") -> dict:
             logger.warning("edit: rough sem música em %s", pid)
         job["done"] += 1
 
-        job["log"].append(f"encode libx264 crf {conf['crf']} preset {conf['preset']}")
+        ow, oh = _out_size(opts.get("width"), opts.get("height"))
+        ocrf, opreset = _quality(opts.get("quality"), conf)
+        job["log"].append(f"encode libx264 {ow}x{oh}@{_out_fps(opts.get('fps'))} crf {ocrf} preset {opreset}")
         stderr_tail = ""
         try:
             proc = ff.run(args, timeout=RENDER_TIMEOUT)
@@ -265,7 +315,7 @@ def start_render(pid: str, target: str = "master") -> dict:
         except Exception as e:
             part.unlink(missing_ok=True)
             stderr_tail = str(e)[-400:]
-            _write_job_file(root, target, args, started, duration, None, stderr_tail)
+            _write_job_file(root, target, args, started, duration, None, stderr_tail, opts)
             raise
         probed = 0.0
         try:
@@ -275,20 +325,22 @@ def start_render(pid: str, target: str = "master") -> dict:
         job["log"].append(f"ok {rel} {probed:.2f}s (previsto {duration:.2f}s)")
         job["added"] = 1
         job["done"] += 1
-        _write_job_file(root, target, args, started, duration, probed, stderr_tail)
+        _write_job_file(root, target, args, started, duration, probed, stderr_tail, opts)
         logger.info("edit: render %s de %s concluído em %.2fs", target, pid, probed)
 
     return registry.start(pid, total, run, target=target, output=rel, duration=0.0)
 
 
 def _write_job_file(root: Path, target: str, args: list[str], started: str,
-                    expected: float, probed: float | None, stderr_tail: str) -> None:
+                    expected: float, probed: float | None, stderr_tail: str,
+                    export: dict | None = None) -> None:
     jobs = root / "jobs"
     jobs.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     payload = {"target": target, "args": args, "started": started,
                "finished": datetime.now().isoformat(timespec="seconds"),
-               "duration_expected": expected, "duration_probed": probed, "stderr_tail": stderr_tail}
+               "duration_expected": expected, "duration_probed": probed, "stderr_tail": stderr_tail,
+               "export": export or {}}
     (jobs / f"edit_render_{stamp}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1))
 
 
