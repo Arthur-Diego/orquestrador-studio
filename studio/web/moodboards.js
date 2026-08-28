@@ -24,15 +24,19 @@
     let boards = [];
     try { boards = await api("/api/moodboards"); }
     catch (e) { main.innerHTML = `<div class="empty">Não foi possível carregar a biblioteca: ${esc(e.message)}</div>`; return; }
-    const cards = boards.map((b) => `
+    const cards = boards.map((b) => {
+      // Mosaico quadricular das selecionadas (wave 5 · ponto 4). Fallback à capa em respostas
+      // antigas sem `thumbs`; sem imagem alguma, o próprio mosaico desenha "sem imagens ainda".
+      const rels = (b.thumbs && b.thumbs.length) ? b.thumbs : (b.cover ? [b.cover] : []);
+      const thumbs = rels.map((rel) => mb(b.id, rel));
+      return `
       <article class="ovcard mb-card" data-mb="${esc(b.id)}" tabindex="0" role="button" title="${esc(b.name)}">
-        <div class="mb-cover">${b.cover
-          ? `<img src="${esc(mb(b.id, b.cover))}" loading="lazy" alt="">`
-          : `<span class="mb-nocover">sem imagens ainda</span>`}</div>
+        ${ui.moodMosaic(thumbs, {})}
         <h4>${esc(b.name)}</h4>
         <p class="desc">${esc(b.vibe || b.note || "")}</p>
         <div class="mb-meta">${ui.chip(`${b.count} imagem(ns)`, "mode")}${b.vibe ? ui.chip(`vibe: ${b.vibe}`, "info") : ""}</div>
-      </article>`).join("");
+      </article>`;
+    }).join("");
     main.innerHTML = `
       <header class="stephead ov">
         <span class="eyebrow">Biblioteca · independente de campanha</span>

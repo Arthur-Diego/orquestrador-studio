@@ -56,7 +56,9 @@ def _meta(mbid: str) -> dict:
 
 # ---------- CRUD ----------
 def list_boards() -> list[dict]:
-    """Todos os boards da biblioteca, com capa (1ª imagem), contagem de imagens e vibe."""
+    """Todos os boards da biblioteca, com capa (1ª imagem), contagem, vibe e `thumbs` (até 4 das
+    selecionadas — o mosaico quadricular da wave 5; fallback para as candidatas quando ainda não
+    houve curadoria)."""
     out = []
     if not MOODBOARDS_DIR.exists():
         return out
@@ -69,8 +71,27 @@ def list_boards() -> list[dict]:
         except (OSError, json.JSONDecodeError):
             continue
         imgs = _image_files(d)
-        out.append({**_public(meta), "cover": (imgs[0] if imgs else None), "count": len(imgs)})
+        out.append({**_public(meta), "cover": (imgs[0] if imgs else None),
+                    "count": len(imgs), "thumbs": _board_thumbs(d, imgs)})
     return out
+
+
+def _board_thumbs(d: Path, imgs: list[str], limit: int = 4) -> list[str]:
+    """Até `limit` caminhos relativos (`/mbfiles/<mbid>/<rel>`) para o mosaico da lista: as imagens
+    curadas (selecionadas) do board e, se ainda não houver curadoria, as candidatas importadas."""
+    if imgs:
+        return imgs[:limit]
+    thumbs = []
+    for c in candidates_of_dir(d)[:limit]:
+        rel = c.get("thumb") or c.get("file")
+        if rel:
+            thumbs.append(f"candidates/{rel}")
+    return thumbs
+
+
+def candidates_of_dir(d: Path) -> list[dict]:
+    """Candidatas de um diretório de board já resolvido (evita revalidar o mbid em `list_boards`)."""
+    return ingest.load_candidates(d, "")
 
 
 def create_board(name: str, note: str = "") -> dict:

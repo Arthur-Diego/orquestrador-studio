@@ -49,6 +49,31 @@ def test_import_curate_and_palette(studio_env):
     assert mb.board_image_files(mbid) == det["images"]
 
 
+def test_list_thumbs_selected_with_fallback(studio_env):
+    """wave 5 · ponto 4: o `list` expõe `thumbs` (até 4) para o mosaico quadricular — as imagens
+    selecionadas quando há curadoria, senão as candidatas importadas."""
+    mb = studio_env["moodboards"]
+    # 5 imagens DISTINTAS (o ingest deduplica por conteúdo): garante o teto de 4 no fallback
+    mbid = mb.create_board("Mosaic")["id"]
+    for i in range(5):
+        mb.import_upload(mbid, [(f"m{i}.png", image_bytes((20 + i * 40, 60, 200 - i * 30)))])
+    # sem curadoria ainda: thumbs caem para as candidatas, com teto de 4
+    board = next(b for b in mb.list_boards() if b["id"] == mbid)
+    assert board["count"] == 0
+    assert len(board["thumbs"]) == 4
+    assert all(t.startswith("candidates/") for t in board["thumbs"])
+    # depois de curar: thumbs são as selecionadas (imagens curadas), servidas por images/<f>
+    cands = mb.candidates(mbid)
+    mb.select(mbid, [c["id"] for c in cands[:2]])
+    board = next(b for b in mb.list_boards() if b["id"] == mbid)
+    assert board["count"] == 2
+    assert board["thumbs"] == mb.board_image_files(mbid)
+    assert all(t.startswith("images/") for t in board["thumbs"])
+    # board vazio: sem imagens nem candidatas, thumbs é lista vazia (mosaico desenha o placeholder)
+    empty = mb.create_board("Empty")["id"]
+    assert next(b for b in mb.list_boards() if b["id"] == empty)["thumbs"] == []
+
+
 def test_curate_cap_of_8(studio_env):
     mb = studio_env["moodboards"]
     mbid = mb.create_board("Big")["id"]
