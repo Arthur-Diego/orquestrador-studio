@@ -264,6 +264,7 @@ Studio.register("base", (ctx) => {
   function render() {
     $("#btnBaseSelect").disabled = !sel;
     renderChain();
+    updateCliButton();
     // Sem filtro e sem contador (auditoria #31): a galeria mostra tudo; vazia, não desenha nada.
     $("#baseGallery").innerHTML = cands.map((c) => ui.tile({
       id: c.id,
@@ -295,17 +296,23 @@ Studio.register("base", (ctx) => {
     if (!k || k === step) return;
     step = k; stepTouched = true;
     renderChain();
+    updateCliButton();          // o botão do CLI age no passo ativo; o custo é por passo
+    const res = $("#baseGenResult");
+    if (res) { res.innerHTML = ""; res.style.display = "none"; }   // resultado é do passo anterior
     renderPrompt();   // no passo "rótulo" o card do painel 01 vira a instrução de rótulo
   }
 
-  function afterImport(r) {
+  async function afterImport(r, beforeIds) {
     (r.warnings || []).forEach((w) => toast(w));
     toast(`${r.added} imagem(ns) importada(s)`);
-    load(); ctx.guide();
+    await load();
+    if (beforeIds) showResult(cands.filter((c) => !beforeIds.has(c.id)).map((c) => c.id));
+    ctx.guide();
   }
 
   async function importar(files) {
     if (!files.length) return;
+    const before = new Set(cands.map((c) => c.id));
     const fd = new FormData();
     [...files].forEach((f) => fd.append("files", f));
     fd.append("kind", step);
@@ -314,7 +321,94 @@ Studio.register("base", (ctx) => {
     const res = await fetch(url("import/upload"), { method: "POST", body: fd });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) return toast(body.detail || res.statusText);
-    afterImport(body);
+    afterImport(body, before);
+  }
+
+  // ---------- geração paga via CLI [extensão] (ADH-OS-20260827-09) ----------
+  // O botão age no PASSO ATIVO do stepper: situação e rótulo usam `nano_banana_2`; o upscale usa
+  // `bytedance_image_upscale` — por isso o custo aparece por passo. O caminho ilimitado é a UI da
+  // Higgsfield (importar aqui depois); o CLI é o pago.
+  function genBody() {
+    return { kind: step, ref_ids: step === "situation" && refId ? [refId] : null, prompt: importPrompt() };
+  }
+
+  function updateCliButton() {
+    const b = $("#btnBaseCli");
+    if (b) b.textContent = `Gerar ${KINDS[step] || step} via CLI`;
+    const cost = $("#baseCliCost");
+    if (cost) cost.textContent = "";
+  }
+
+  // A imagem de ORIGEM da cadeia (situação→rótulo→upscale) para o "antes → depois". Espelha
+  // `upscale_ratio`/`_selected` do backend: upscale←(rótulo|situação), rótulo←situação,
+  // situação←referência escolhida.
+  function originFor() {
+    if (step === "upscale") {
+      const c = cands.find((x) => x.id === (chain.label || chain.situation));
+      return c ? { url: ctx.files(c.file), label: KINDS[c.kind] || c.kind } : null;
+    }
+    if (step === "label") {
+      const c = cands.find((x) => x.id === chain.situation);
+      return c ? { url: ctx.files(c.file), label: "situação" } : null;
+    }
+    const f = refs.find((r) => r.ref_id === refId) || refs[0];
+    return f ? { url: ctx.files(f.file), label: "referência" } : null;
+  }
+
+  // Depois de importar/gerar: download de cada resultado + a MODIFICAÇÃO (antes → depois).
+  function showResult(newIds) {
+    const el = $("#baseGenResult");
+    if (!el) return;
+    const results = cands.filter((c) => newIds.includes(c.id));
+    if (!results.length) { el.innerHTML = ""; el.style.display = "none"; return; }
+    el.style.display = "";
+    const origin = originFor();
+    const depoisLbl = KINDS[step] || step;
+    const pairs = results.map((c) => {
+      const after = ctx.files(c.file);
+      const before = origin
+        ? `<figure><img src="${origin.url}" alt="antes (${ui.esc(origin.label)})" loading="lazy"><figcaption>antes · ${ui.esc(origin.label)}</figcaption></figure><span class="arrow">→</span>`
+        : "";
+      return `<div class="pair"><div class="ba">${before}
+        <figure><img src="${after}" alt="depois (${ui.esc(depoisLbl)})" loading="lazy"><figcaption>depois · ${ui.esc(depoisLbl)}</figcaption>
+          <a class="link dl" download href="${after}">Baixar imagem</a></figure></div></div>`;
+    }).join("");
+    el.innerHTML = `<div class="row"><span class="eyebrow lbl">Modificação — antes → depois</span>
+      <span class="ext">[extensão]</span></div>${pairs}`;
+  }
+
+  async function gerarViaCli() {
+    const kind = step, label = KINDS[kind] || kind;
+    const body = genBody();
+    const costEl = $("#baseCliCost");
+    // Custo REAL antes de pagar (upscale usa outro modelo → número diferente). CLI deslogado
+    // devolve credits null (+ erro "No workspace selected"); CLI ausente → 409. Nos dois casos,
+    // aviso claro e o caminho de importação continua — nunca 500 na cara do usuário.
+    let cost = null;
+    if (costEl) costEl.textContent = "consultando custo…";
+    try { cost = await api(url("cost"), { method: "POST", body: JSON.stringify(body) }); }
+    catch (err) { cost = null; }
+    if (!cost || cost.total == null) {
+      if (costEl) costEl.textContent = "custo indisponível (sem login)";
+      toast("Faça login no Higgsfield (higgsfield auth login) para gerar via CLI e ver o custo. "
+        + "Você também pode gerar na UI ilimitada do Higgsfield e importar aqui.");
+      return;
+    }
+    if (costEl) costEl.textContent = `${label}: ${cost.total} créditos (${cost.per_item}/item)`;
+    if (!await ui.confirmCost(() => cost, `Gerar ${label} via CLI`)) return;
+    const before = new Set(cands.map((c) => c.id));
+    try {
+      await ui.progressJob({
+        title: `Gerar ${label} via CLI`,
+        subtitle: `Higgsfield CLI · custo estimado ${cost.total} créditos (${cost.per_item}/item)`,
+        start: () => api(url("generate"), { method: "POST", body: JSON.stringify(body) }),
+        jobUrl: url("job"),
+        label: "Geração concluída",
+        done: () => load(),
+      });
+      showResult(cands.filter((c) => !before.has(c.id)).map((c) => c.id));
+      ctx.guide();
+    } catch (err) { toast(err.message); }
   }
 
   return {
@@ -344,16 +438,19 @@ Studio.register("base", (ctx) => {
         if (s && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setStep(s.dataset.step); }
       });
       ui.drop($("#baseDrop"), importar);
+      $("#btnBaseCli").onclick = gerarViaCli;
       $("#btnBaseDownloads").onclick = async () => {
+        const before = new Set(cands.map((c) => c.id));
         try {
           afterImport(await api(url("import/downloads"), { method: "POST", body: JSON.stringify({
-            since_minutes: SINCE_MINUTES, kind: step, ref_id: refId || null, prompt: importPrompt() }) }));
+            since_minutes: SINCE_MINUTES, kind: step, ref_id: refId || null, prompt: importPrompt() }) }), before);
         } catch (err) { toast(err.message); }
       };
       $("#btnBaseHistory").onclick = async () => {
+        const before = new Set(cands.map((c) => c.id));
         try {
           afterImport(await api(url("import/history"), { method: "POST", body: JSON.stringify({
-            kind: step, ref_id: refId || null }) }));
+            kind: step, ref_id: refId || null }) }), before);
         } catch (err) { toast(err.message); }
       };
       $("#baseGallery").addEventListener("click", (e) => {
