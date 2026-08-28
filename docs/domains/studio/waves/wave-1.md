@@ -49,9 +49,9 @@ para o prompt de troca de rótulo; marcado `[extensão]`.
 
 ### Feature: storyboard (OS-004) — Etapa 4 · Storyboard · aula 010
 **Provides**
-- `storyboard/scenes.json` — `{"scenes":[{"id":"cena01","n":1,"text":"…","image":"storyboard/ideas/<file>|null"}]}` (5 cenas por padrão, editável)
+- `storyboard/scenes.json` — `{"scenes":[{"id":"cena01","n":1,"text":"…","images":["storyboard/ideas/<file>",…],"primary":"storyboard/ideas/<file>|null"}]}` (5 cenas por padrão, editável). **Evoluído na wave 5 (ADR-018 `[extensão]`):** cada cena carrega uma galeria `images` com uma `primary`; o campo `image` singular legado é lido e migrado automaticamente para `images:[image]`,`primary`.
 - `storyboard/ideas/` — imagens de ideação importadas (Draw to Edit, edições) + `ideas.json` `[{id,file,thumb,prompt,selected}]`
-- `storyboard/storyboard.md` — cenas em ordem com a imagem de cada uma
+- `storyboard/storyboard.md` — cenas em ordem, com a `primary` como imagem hero e as demais como alternativas
 **Consumes**
 - `base/base_final.png` ← base
 **O que a aula manda (010):** usar a imagem base para ter ideias (Draw to Edit: o usuário
@@ -159,7 +159,7 @@ mockados por fixture); **integração em série** na ordem topológica.
 | Consumidora | Critério `[cross-feature]` |
 |---|---|
 | base | lê `mood/selected/` e `palette.json` reais do projeto de teste e usa ≥1 referência de `refs/brainstorming/` no prompt |
-| storyboard | abre `base/base_final.png` real; `scenes.json` válido é lido por `shots` |
+| storyboard | abre `base/base_final.png` real; `scenes.json` válido (com `images`/`primary`, ADR-018) é lido por `shots`, que usa a `primary` como base da cena |
 | shots | consome `scenes.json`; produz `storyboard.json` que `animate` lê sem adaptação |
 | animate | lê `storyboard.json`; produz `takes.json` que `edit` lê |
 | music | `beats.json` com `impacts` usado por `edit` para propor cortes |

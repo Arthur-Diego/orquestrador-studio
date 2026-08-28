@@ -20,9 +20,9 @@ A etapa 4 do curso (aula 010) transforma a imagem base da campanha em uma histó
 Contrato de handoff da wave (copiado de `wave-1.md`):
 
 **Provides**
-- `storyboard/scenes.json`: `{"scenes":[{"id":"cena01","n":1,"text":"…","image":"storyboard/ideas/<file>|null"}]}` (5 cenas por padrão, editável)
+- `storyboard/scenes.json`: `{"scenes":[{"id":"cena01","n":1,"text":"…","images":["storyboard/ideas/<file>",…],"primary":"storyboard/ideas/<file>|null"}]}` (5 cenas por padrão, editável). **Evoluído na wave 5 (ADR-018 `[extensão]`):** galeria `images` + `primary` por cena; o `image` singular legado migra automaticamente.
 - `storyboard/ideas/`: imagens de ideação importadas (Draw to Edit, edições) + `ideas.json` `[{id,file,thumb,prompt,selected}]`
-- `storyboard/storyboard.md`: cenas em ordem com a imagem de cada uma
+- `storyboard/storyboard.md`: cenas em ordem, `primary` como hero + alternativas
 
 **Consumes**
 - `base/base_final.png` ← base
