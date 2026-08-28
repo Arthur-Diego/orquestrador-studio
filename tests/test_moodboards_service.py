@@ -98,6 +98,75 @@ def test_reserved_name_moodboards_as_pid(studio_env):
     assert refs.create_project("Campanha X")["id"].endswith("-campanha-x")
 
 
+def test_remove_candidate_deletes_file_thumb_and_entry(studio_env):
+    """§3 da FDD: remover apaga o arquivo, a thumb e a entrada de `candidates.json`."""
+    mb = studio_env["moodboards"]
+    mbid = _board_with_images(mb, n=3)
+    d = mb.board_dir(mbid)
+    cands = mb.candidates(mbid)
+    victim = cands[0]
+    fpath = d / "candidates" / victim["file"]
+    tpath = d / "candidates" / victim["thumb"]
+    assert fpath.is_file() and tpath.is_file()
+    r = mb.remove_candidate(mbid, victim["id"])
+    assert r["removed"] == victim["id"] and r["candidates"] == 2
+    assert not fpath.exists() and not tpath.exists()
+    remaining = mb.candidates(mbid)
+    assert len(remaining) == 2 and all(c["id"] != victim["id"] for c in remaining)
+
+
+def test_remove_candidate_unselects_and_rederives_palette(studio_env):
+    """Se a candidata estava selecionada: sai da seleção, some de `images/` e a paleta é refeita."""
+    mb = studio_env["moodboards"]
+    mbid = _board_with_images(mb, n=3)
+    d = mb.board_dir(mbid)
+    cands = mb.candidates(mbid)
+    chosen = [c["id"] for c in cands[:2]]
+    mb.select(mbid, chosen)
+    victim = next(c for c in mb.candidates(mbid) if c["id"] == chosen[0])
+    assert (d / "images" / victim["file"]).is_file()
+    r = mb.remove_candidate(mbid, victim["id"])
+    assert r["was_selected"] is True
+    assert not (d / "images" / victim["file"]).exists()
+    det = mb.get_board(mbid)
+    # a candidata some da lista e da contagem de curadas (só resta 1 selecionada)
+    assert all(c["id"] != victim["id"] for c in det["candidates"])
+    assert det["count"] == 1
+
+
+def test_remove_candidate_missing_raises_keyerror(studio_env):
+    """Candidata inexistente → KeyError (o router traduz em 404)."""
+    mb = studio_env["moodboards"]
+    mbid = _board_with_images(mb, n=1)
+    with pytest.raises(KeyError):
+        mb.remove_candidate(mbid, "nao_existe")
+
+
+def test_downloads_folder_reuses_ingest_default(studio_env):
+    """§3 da FDD: `downloads-folder` reusa `ingest._default_downloads` e informa se existe."""
+    mb = studio_env["moodboards"]
+    from studio.common import ingest
+    r = mb.downloads_folder()
+    assert r["folder"] == str(ingest._default_downloads())
+    assert r["exists"] is True   # o conftest cria tmp/downloads e aponta STUDIO_DOWNLOADS para ela
+
+
+def test_open_folder_best_effort_never_raises(studio_env, monkeypatch):
+    """§3 da FDD: abrir pasta é best-effort com o subprocess mockado — nunca lança (nunca 500)."""
+    mb = studio_env["moodboards"]
+    from studio.moodboards import service as svc
+    mbid = mb.create_board("Openable")["id"]
+    calls = {"popen": 0}
+    monkeypatch.setattr(svc.shutil, "which", lambda name: "/usr/bin/xdg-open" if name == "xdg-open" else None)
+    monkeypatch.setattr(svc.subprocess, "Popen", lambda *a, **k: calls.__setitem__("popen", calls["popen"] + 1))
+    r = mb.open_board_folder(mbid)
+    assert r["opened"] is True and r["path"] == str(mb.board_dir(mbid)) and calls["popen"] == 1
+    # se o subprocess estourar, ainda assim retorna opened=False sem propagar
+    monkeypatch.setattr(svc.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(OSError("boom")))
+    r2 = mb.open_board_folder(mbid)
+    assert r2["opened"] is False and "path" in r2
+
+
 def test_prompt_template_is_deterministic(studio_env):
     mb = studio_env["moodboards"]
     mbid = _board_with_images(mb, n=1)
