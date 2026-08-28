@@ -140,24 +140,28 @@ Studio.register("storyboard", (ctx) => {
       ideas = (await api(url("/candidates"))).ideas;
     }
 
+    // `[extensão]` cena-multi-keyframe (ADR-018): o picker é multi-seleção — a cena vira uma
+    // galeria de keyframes com uma principal (a que semeia a base dos ângulos e é o hero do .md).
     function pickerModal(i) {
-      const atual = scenes[i] ? scenes[i].image : null;
+      scenes = collect();
+      const marcadas = new Set(scenes[i] ? scenes[i].images : []);
       const gal = ideas.length ? ideas.map((c) =>
-        `<div class="card ${c.file === atual ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.prompt)}">
+        `<div class="card ${marcadas.has(c.file) ? "sel" : ""}" data-id="${esc(c.id)}" data-file="${esc(c.file)}" tabindex="0" title="${esc(c.prompt)}">
            <img loading="lazy" src="${esc(ctx.files(c.thumb || c.file))}" alt=""></div>`).join("")
         : `<div class="empty">Nenhuma ideia ainda — gere na Higgsfield com a instrução do painel 01 e importe.</div>`;
       const m = ui.modal({
-        title: `Cena ${i + 1} — escolher a ideia`,
-        subtitle: "Um clique anexa a ideia à cena (ela passa a viver em storyboard/ideas/).",
+        title: `Cena ${i + 1} — escolher as imagens`,
+        subtitle: "Clique para marcar/desmarcar várias ideias; ao aplicar, a 1ª vira a principal (você troca depois).",
         html: `<div id="sbGallery" class="gallery sm">${gal}</div>`,
         actions: [
           { label: "Importar ideias…", onClick: () => setTimeout(importModal, 0) },
-          { label: "Sem imagem", onClick: () => attach(i, null) },
+          { label: "Aplicar", kind: "primary", onClick: (mm) => applyPicker(i, mm) },
+          { label: "Sem imagem", onClick: () => attachImages(i, []) },
         ],
       });
       m.el.querySelector("#sbGallery").addEventListener("click", (e) => {
         const card = e.target.closest(".card"); if (!card) return;
-        m.close(); attach(i, card.dataset.id);
+        card.classList.toggle("sel");
       });
       m.el.querySelector("#sbGallery").addEventListener("dblclick", (e) => {
         const card = e.target.closest(".card"); if (!card) return;
@@ -166,22 +170,46 @@ Studio.register("storyboard", (ctx) => {
       });
     }
 
-    async function attach(i, ideaId) {
+    function applyPicker(i, m) {
+      const ids = [...m.el.querySelectorAll("#sbGallery .card.sel")].map((el) => el.dataset.id);
+      attachImages(i, ids);
+    }
+
+    // Anexa a lista de ideias (por id) à cena `i`, garantindo que cada uma esteja selecionada
+    // (vive em storyboard/ideas/) e recalculando a principal quando a atual sai da galeria.
+    async function attachImages(i, ideaIds) {
       scenes = collect();
       if (!scenes[i]) return;
-      if (!ideaId) { scenes[i].image = null; renderScenes(); return; }
       try {
-        const alvo = ideas.find((c) => c.id === ideaId);
-        if (alvo && !alvo.selected) {
-          const ids = [...new Set(ideas.filter((c) => c.selected).map((c) => c.id).concat(ideaId))];
-          await api(url("/candidates/select"), { method: "POST", body: JSON.stringify({ ids }) });
-          await loadIdeas();
+        if (ideaIds.length) {
+          const already = ideas.filter((c) => c.selected).map((c) => c.id);
+          const ids = [...new Set(already.concat(ideaIds))];
+          if (ids.length !== already.length) {
+            await api(url("/candidates/select"), { method: "POST", body: JSON.stringify({ ids }) });
+            await loadIdeas();
+          }
         }
-        const escolhida = ideas.find((c) => c.id === ideaId);
-        scenes[i].image = escolhida ? escolhida.file : null;
+        const files = ideaIds.map((id) => { const c = ideas.find((x) => x.id === id); return c ? c.file : null; }).filter(Boolean);
+        scenes[i].images = files;
+        if (!scenes[i].primary || !files.includes(scenes[i].primary)) scenes[i].primary = files[0] || null;
         renderScenes();
         await loadStatus(); ctx.guide();
       } catch (err) { toast(err.message); }
+    }
+
+    function setPrimary(i, file) {
+      scenes = collect();
+      if (!scenes[i] || !scenes[i].images.includes(file)) return;
+      scenes[i].primary = file;
+      renderScenes();
+    }
+
+    function removeImage(i, file) {
+      scenes = collect();
+      if (!scenes[i]) return;
+      scenes[i].images = scenes[i].images.filter((x) => x !== file);
+      if (scenes[i].primary === file) scenes[i].primary = scenes[i].images[0] || null;
+      renderScenes();
     }
 
     async function loadScenes() {
@@ -192,9 +220,20 @@ Studio.register("storyboard", (ctx) => {
       const total = scenes.length;
       $("#sbScenes").innerHTML = scenes.map((s, i) => {
         const arc = arcOf(i + 1, total);
-        return `<div class="scene-row" data-i="${i}" data-image="${esc(s.image || "")}">
+        const images = s.images || [];
+        // `[extensão]` cena-multi-keyframe (ADR-018): mini-galeria da cena — cada keyframe com a
+        // marca de principal (★) e o "✕" de remover; a última célula é o "+ imagem" (abre o picker).
+        const keys = images.map((img) => {
+          const isPrimary = img === s.primary;
+          return `<div class="sb-key${isPrimary ? " primary" : ""}" data-img="${esc(img)}">
+             <img loading="lazy" src="${esc(ctx.files(img))}" alt="">
+             <button type="button" class="sb-star" data-star="${esc(img)}" title="${isPrimary ? "principal da cena" : "marcar como principal"}">★</button>
+             <button type="button" class="sb-rm" data-rm="${esc(img)}" title="remover imagem">✕</button>
+           </div>`;
+        }).join("");
+        return `<div class="scene-row" data-i="${i}" data-images="${esc(images.join("|"))}" data-primary="${esc(s.primary || "")}">
            <span class="mom" data-mom="${esc(momOf(arc.label))}" title="Cena ${i + 1} · ${esc(arc.label)}">${esc(arc.label)}</span>
-           <div class="thumb pick sb-pick" tabindex="0" role="button" title="escolher a imagem da cena">${s.image ? `<img loading="lazy" src="${esc(ctx.files(s.image))}" alt="">` : ""}</div>
+           <div class="sb-gallery">${keys}<div class="thumb pick sb-pick" tabindex="0" role="button" title="adicionar imagem à cena"></div></div>
            <textarea class="txt sbTxt" rows="1" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
            <div class="acts">
              <button type="button" class="ghost mini sbUp" title="subir">↑</button><button type="button" class="ghost mini sbDown" title="descer">↓</button><button type="button" class="ghost mini sbDel" title="remover">✕</button>
@@ -205,7 +244,9 @@ Studio.register("storyboard", (ctx) => {
     }
     function collect() {
       return [...document.querySelectorAll("#sbScenes .scene-row")].map((el) => ({
-        text: el.querySelector(".sbTxt").value, image: el.dataset.image || null,
+        text: el.querySelector(".sbTxt").value,
+        images: el.dataset.images ? el.dataset.images.split("|") : [],
+        primary: el.dataset.primary || null,
       }));
     }
 
@@ -233,11 +274,15 @@ Studio.register("storyboard", (ctx) => {
         if (panelDrop) panelDrop.accept = "image/*";
         $("#sbCounts").onclick = importModal;
 
-        $("#sbAdd").onclick = () => { scenes = collect().concat({ text: "", image: null }); renderScenes(); };
+        $("#sbAdd").onclick = () => { scenes = collect().concat({ text: "", images: [], primary: null }); renderScenes(); };
         $("#sbScenes").addEventListener("click", (e) => {
           const box = e.target.closest(".scene-row"); if (!box) return;
           const i = +box.dataset.i;
-          if (e.target.closest(".thumb")) return pickerModal(i);
+          const star = e.target.closest(".sb-star");
+          if (star) return setPrimary(i, star.dataset.star);
+          const rm = e.target.closest(".sb-rm");
+          if (rm) return removeImage(i, rm.dataset.rm);
+          if (e.target.closest(".sb-pick")) return pickerModal(i);
           scenes = collect();
           if (e.target.classList.contains("sbDel")) scenes.splice(i, 1);
           else if (e.target.classList.contains("sbUp") && i > 0) scenes.splice(i - 1, 0, scenes.splice(i, 1)[0]);

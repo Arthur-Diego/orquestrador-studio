@@ -2,10 +2,20 @@
   /* Escopo `.sb-` (ideação) e `.sh-` (ângulos) da etapa 4 (ADR-015). O que sobra aqui é lacuna do
      shell: o overlay "escolher imagem" da thumb da cena, e a ação hover-only dentro de um `.rowcard`. */
   .sb-base{align-self:start}
-  .sb-pick::after{content:"escolher imagem";position:absolute;inset:0;display:grid;place-items:center;
-    font-family:"IBM Plex Mono",monospace;font-size:9px;color:#D7F4F9;background:rgba(0,0,0,.55);
-    opacity:0;transition:opacity .15s}
-  .sb-pick:hover::after,.sb-pick:focus-visible::after{opacity:1}
+  /* `[extensão]` cena-multi-keyframe (ADR-018): mini-galeria de keyframes por cena. */
+  .sb-gallery{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .sb-key{position:relative;width:60px;height:60px;border-radius:8px;overflow:hidden;border:1px solid var(--line-2)}
+  .sb-key img{width:100%;height:100%;object-fit:cover;display:block}
+  .sb-key.primary{border-color:#4FC8D9;box-shadow:0 0 0 2px rgba(79,200,217,.55)}
+  .sb-key .sb-star,.sb-key .sb-rm{position:absolute;top:2px;border:0;border-radius:5px;padding:0 5px;
+    font-size:11px;line-height:1.5;cursor:pointer;background:rgba(0,0,0,.6);color:#9FE3EE}
+  .sb-key .sb-star{left:2px}
+  .sb-key.primary .sb-star{color:#FFD54A}
+  .sb-key .sb-rm{right:2px;color:#F2A5A5}
+  .sb-key .sb-star:hover,.sb-key .sb-rm:hover{background:rgba(0,0,0,.82);color:#D7F4F9}
+  .sb-pick{width:60px;height:60px;position:relative;cursor:pointer;display:grid;place-items:center}
+  .sb-pick::after{content:"+ imagem";font-family:"IBM Plex Mono",monospace;font-size:9px;color:#9FE3EE;text-align:center;line-height:1.2}
+  .sb-pick:hover,.sb-pick:focus-visible{outline:1px dashed rgba(79,200,217,.5)}
   .sh-scene-id{font-size:11px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sh-builder{margin-bottom:14px}
   #sceneList .rowcard{position:relative}
