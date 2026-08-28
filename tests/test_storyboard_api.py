@@ -258,13 +258,21 @@ def test_screen_mentions_the_narrative_arc_and_the_upscale_step(client, pid, bas
 
 
 def test_screen_dropped_the_paid_cli_path(client):
-    """Wave 4 (4.21/4.24): a aula 010 gera na UI da Higgsfield — o CLI sai da TELA, não da API."""
+    """Wave 4 (4.21/4.24): a aula 010 gera IDEIAS na UI da Higgsfield — o CLI de IDEAÇÃO sai da TELA.
+
+    Wave 7 (`[extensão]`, ADR-021): a MESMA tela ganhou o caminho pago de VÍDEO por cena (contrato
+    congelado wave-7.md), então `confirmCost`/`progressJob` passam a existir — mas só para o vídeo.
+    Os marcadores da geração de IMAGEM de ideação (rótulo do botão, `source_id`, `hfChip`) continuam
+    fora da tela; o único caminho pago desenhado é o de vídeo (`/video/cost` + `/video/generate`).
+    """
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    for termo in ("Gerar via CLI", "usar como origem", "source_id", "confirmCost", "hfChip"):
+    for termo in ("Gerar via CLI", "usar como origem", "source_id", "hfChip"):
         assert termo not in html and termo not in js, termo
-    # As rotas continuam publicadas para quem quiser o caminho pago.
+    # As rotas de ideação continuam publicadas para quem quiser o caminho pago.
     assert client.get("/openapi.json").json()["paths"].get("/api/projects/{pid}/storyboard/generate")
+    # O caminho pago que a tela desenha é o de VÍDEO da wave 7 (ADR-021), não o de ideação.
+    assert "confirmCost" in js and '"/video/cost"' in js and '"/video/generate"' in js
 
 
 def test_cli_generate_chains_on_the_selected_idea(client, pid, base, root, monkeypatch):

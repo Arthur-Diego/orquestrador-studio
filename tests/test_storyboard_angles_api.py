@@ -339,10 +339,16 @@ def test_view_uses_the_shell_catalog_after_the_redesign(client):
 
 
 def test_screen_dropped_the_paid_cli_path(client):
-    """Wave 4 (5.22/5.28/5.32): CLI e controles de câmera saem da TELA; as rotas ficam."""
+    """Wave 4 (5.22/5.28/5.32): CLI e controles de câmera da metade ÂNGULOS saem da TELA; rotas ficam.
+
+    `confirmCost` deixou de ser proibido no arquivo inteiro: a wave 7 (`[extensão]`, ADR-021)
+    adicionou o caminho pago de VÍDEO na metade IDEAÇÃO do mesmo `view.js` (coberto por
+    `test_storyboard_api::test_screen_dropped_the_paid_cli_path`). Os marcadores da metade ângulos
+    (controles de câmera/lente, `hfChip`, `Upscale do último escolhido`, etc.) seguem fora da tela.
+    """
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    for termo in ("Gerar via CLI", "Upscale do último escolhido", "confirmCost", "hfChip",
+    for termo in ("Gerar via CLI", "Upscale do último escolhido", "hfChip",
                   "promptCamera", "promptLens", "promptAperture", "promptRealism",
                   "shotsRatio", "shotsWarn", "btnShotsReload", "sceneText", "sh-subhead"):
         assert termo not in html and termo not in js, termo
