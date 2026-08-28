@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 from .. import higgsfield as hf
-from ..common import ingest
+from ..common import ingest, settings
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -578,6 +578,9 @@ def start_generate(pid: str, scene: str, shot: str, model: str, count: int = DEF
                 if not urls:
                     raise RuntimeError("o CLI não devolveu URL de vídeo (JSON bruto em jobs/)")
                 url = urls[0]
+                # `[extensão]` livro-caixa de créditos (ADR-016): custo por clipe gerado.
+                settings.record_generation(action="animate.video", model=model, params=params, count=1,
+                                           pid=pid, step="animate", job_id=jid)
                 tmp = root / STEP / "tmp" / f"{jid}_{k}{Path(url.split('?')[0]).suffix.lower()}"
                 hf.download(url, tmp)
                 cand = ingest.ingest_bytes(root, STEP, tmp.read_bytes(), "cli", tmp.name, text,

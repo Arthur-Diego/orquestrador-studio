@@ -33,9 +33,10 @@ def list_projects() -> list[dict]:
 
 
 #: Nomes reservados que um pid de projeto NUNCA pode assumir. `moodboards` é a área global da
-#: biblioteca de mood boards `[extensão]` (ADR-013): o shell trata `#/moodboards` como área
-#: campanha-independente, então um projeto com esse id colidiria com a rota reservada.
-RESERVED_PIDS = {"moodboards"}
+#: biblioteca de mood boards `[extensão]` (ADR-013) e `creditos` é a tela global de créditos e
+#: custos `[extensão]` (ADR-016): o shell trata `#/moodboards` e `#/creditos` como áreas
+#: campanha-independentes, então um projeto com esses ids colidiria com as rotas reservadas.
+RESERVED_PIDS = {"moodboards", "creditos"}
 
 
 def create_project(name: str, product: str = "", vibe: str = "") -> dict:

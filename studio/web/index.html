@@ -33,6 +33,7 @@
     <section class="side-sec">
       <span class="eyebrow">Biblioteca</span>
       <button id="btnMoodboards" class="navlink" type="button" title="Mood boards reutilizáveis, independentes de campanha"><span aria-hidden="true">▦</span> Mood boards <span class="ext">[extensão]</span></button>
+      <button id="btnCreditos" class="navlink" type="button" title="Saldo, custo por modelo, histórico de gasto e modelos default por ação"><span aria-hidden="true">◈</span> Créditos &amp; Custos <span class="ext">[extensão]</span></button>
     </section>
 
     <nav aria-label="Etapas do curso">
@@ -60,6 +61,8 @@
         </div>
       </div>
       <div class="tb-actions">
+        <button id="btnCredits" class="chip mode tb-credits" type="button" data-credits-chip
+          title="Créditos restantes — clique para ver custos">● CLI…</button>
         <div class="tb-prog">
           <div class="lbl"><span>Progresso</span><span id="tbCount">—</span></div>
           <div class="pipe lg" id="tbPipe"></div>
@@ -79,5 +82,6 @@
 <script src="/static/ui.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/moodboards.js"></script>
+<script src="/static/creditos.js"></script>
 </body>
 </html>

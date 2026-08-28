@@ -504,3 +504,18 @@ do mesmo projeto; o gate da etapa 11 passa a ler o portfólio do aluno, não o d
 > no fim deste arquivo em worktrees paralelas. O conflito de merge foi resolvido no rebase da
 > frente OS-019 sobre `develop` mantendo os **dois** blocos, na ordem de integração
 > (ADR-011 e depois ADR-012). A numeração das ADRs não colidiu.
+
+## Atualização 2026-08-27 (frente ADH-OS-20260827-11 — Créditos & Custos)
+
+Extensão da aula 008 (custo em primeiro lugar), fora do fluxo das etapas do curso:
+
+- **STUDIO** ganhou a gestão de créditos e custos: catálogo de custo medido por modelo/resolução
+  (`studio/common/pricing.py`), config de modelo default por ação com resolução projeto → global →
+  código e livro-caixa de gasto (`studio/common/settings.py`), a tela global "Créditos & Custos"
+  (`studio/creditos/`, rota reservada `#/creditos`) que também é o painel admin dos defaults, e o
+  indicador global de saldo na topbar/sidebar atualizado após cada geração paga. As etapas 3
+  (base) e 5 (animação) passaram a ler o modelo default da config em vez de fixá-lo no código; o
+  gate de custo antes de gerar virou um modal rico com saldo e aviso de CLI deslogado.
+
+**ADR nova: ADR-016** (STUDIO) — gestão de créditos, custos e modelo default por ação (painel
+admin); tudo `[extensão]` da aula 008, sem alterar o comportamento de nenhuma etapa do curso.
