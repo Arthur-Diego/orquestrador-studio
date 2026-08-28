@@ -22,7 +22,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from ..common import ingest, prompter
+from ..common import ingest, multishot, prompter, settings
+from ..common.jobs import JobRegistry
 from ..common.palette import palette as _palette
 from ..config import MOODBOARDS_DIR
 
@@ -221,6 +222,60 @@ def generate_prompt(mbid: str, mode: str = "images", instruction: str = "",
     hist.insert(0, entry)
     (d / "prompts.json").write_text(json.dumps(hist[:50], ensure_ascii=False, indent=1))
     return entry
+
+
+# ---------- multishot `[extensão]` (ADR-017): gerar ângulos da imagem de vibe ----------
+#: Um job de multishot por board (mesma disciplina de "um job por chave" do resto do Studio).
+_ms_registry = JobRegistry()
+
+
+def _candidate_path(mbid: str, source_id: str) -> Path:
+    """Caminho absoluto da imagem-candidata `source_id` do board (a "imagem de vibe" escolhida)."""
+    d = board_dir(mbid)
+    for c in candidates(mbid):
+        if c.get("id") == source_id:
+            return d / "candidates" / c["file"]
+    raise ValueError(f"imagem não encontrada no board: {source_id}")
+
+
+def _ms_model(model: str | None) -> tuple[str, str | None]:
+    """Resolve o modelo/variação do multishot da vibe pela config (ADR-016), a menos que explícito."""
+    if model:
+        return model, None
+    d = settings.default_for("mood.multishot", None)
+    return d["model"], d["variant"]
+
+
+def multishot_cost(mbid: str, source_id: str, count: int = multishot.DEFAULT_COUNT,
+                   model: str | None = None) -> dict:
+    """Estimativa do multishot da imagem de vibe (não gasta crédito)."""
+    src = _candidate_path(mbid, source_id)
+    model, variant = _ms_model(model)
+    meta = _meta(mbid)
+    return multishot.cost(model, count, resolution=variant, subject=meta.get("vibe") or meta.get("name"),
+                          source_path=src)
+
+
+def multishot_generate(mbid: str, source_id: str, count: int = multishot.DEFAULT_COUNT,
+                       model: str | None = None) -> dict:
+    """Gera `count` ângulos da imagem de vibe escolhida e os adiciona como candidatas do board."""
+    src = _candidate_path(mbid, source_id)
+    model, variant = _ms_model(model)
+    meta = _meta(mbid)
+    try:
+        return multishot.start_generate(
+            _ms_registry, mbid, board_dir(mbid), "", src,
+            model=model, count=count, resolution=variant,
+            subject=meta.get("vibe") or meta.get("name"), parent=source_id,
+            spend_action="mood.multishot", spend_pid=None, spend_step="moodboard",
+            spend_name=meta.get("name"))
+    except RuntimeError as e:
+        raise RuntimeError("Já existe um multishot em andamento para este board.") from e
+
+
+def multishot_job(mbid: str) -> dict:
+    board_dir(mbid)   # 404 se o board não existe
+    return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], **_ms_registry.status(mbid)}
 
 
 # ---------- consumo pela etapa 2 e pela etapa 3 ----------

@@ -165,6 +165,10 @@
     // do que "Salvar seleção"/"Gerar prompt" leem (`st.sel`), resultando em "0 imagem no board".
     const gal = document.querySelector("#mbGallery");
     gal.addEventListener("click", (e) => {
+      // Multishot [extensão] (ADR-017): o botão "▨ ângulos" abre o componente para ESTA imagem,
+      // sem alterar a seleção do board (por isso é tratado antes do toggle e interrompe o clique).
+      const msb = e.target.closest(".ms-btn");
+      if (msb) { e.stopPropagation(); openMultishot(st, msb.dataset.ms); return; }
       const card = e.target.closest(".card"); if (!card) return;
       const id = card.dataset.id;
       if (st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
@@ -183,6 +187,8 @@
       ? data.candidates.map((c) =>
         `<div class="card ${sel.has(c.id) ? "sel" : ""}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.name || "")}">
            <img loading="lazy" src="${esc(mb(data.id, "candidates/" + c.thumb))}" alt="">
+           ${c.role === "multishot" ? `<span class="src">multishot</span>` : ""}
+           <button class="ms-btn" type="button" data-ms="${esc(c.id)}" title="Gerar multishot (outros ângulos) desta imagem [extensão]">▨ ângulos</button>
            <span class="term">${esc(`${c.source || ""} · ${c.name || ""}`)}</span></div>`).join("")
       : `<div class="empty">Nenhuma imagem ainda — importe no painel 01.</div>`;
     counts(st);
@@ -190,6 +196,29 @@
 
   function counts(st) {
     document.querySelector("#mbCounts").textContent = `${st.data.candidates.length} candidatas · ${st.sel.size} escolhidas (máx. 8)`;
+  }
+
+  /** Multishot [extensão] (ADR-017): gera outros ângulos da imagem de vibe escolhida e os
+   * adiciona como candidatas do board (a galeria mostra os resultados para curar). */
+  function openMultishot(st, id) {
+    if (!window.Studio.multishot) { toast("Componente de multishot indisponível"); return; }
+    const mbid = st.data.id;
+    const cand = (st.data.candidates || []).find((c) => c.id === id);
+    if (!cand) { toast("Imagem não encontrada"); return; }
+    window.Studio.multishot.open({
+      title: "Multishot da imagem de vibe",
+      subtitle: `Mood board "${st.data.name}" · outros ângulos da mesma vibe (aula 011) [extensão]`,
+      sourceUrl: mb(mbid, "candidates/" + cand.file),
+      action: "mood.multishot",
+      parentId: id,
+      endpoints: {
+        generate: `/api/moodboards/${encodeURIComponent(mbid)}/multishot/generate`,
+        job: `/api/moodboards/${encodeURIComponent(mbid)}/multishot/job`,
+        candidates: `/api/moodboards/${encodeURIComponent(mbid)}/candidates`,
+      },
+      fileUrl: (rel) => mb(mbid, "candidates/" + rel),
+      onChanged: () => reload(st),
+    });
   }
 
   function paintPalette(colors) {

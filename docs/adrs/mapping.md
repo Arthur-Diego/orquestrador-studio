@@ -519,3 +519,17 @@ Extensão da aula 008 (custo em primeiro lugar), fora do fluxo das etapas do cur
 
 **ADR nova: ADR-016** (STUDIO) — gestão de créditos, custos e modelo default por ação (painel
 admin); tudo `[extensão]` da aula 008, sem alterar o comportamento de nenhuma etapa do curso.
+
+## Atualização 2026-08-27 (frente ADH-OS-20260827-12 — componente de multishot)
+
+Extração da técnica de multishot (aula 011) para um componente reutilizável, fora da etapa 4:
+
+- **STUDIO** ganhou `studio/common/multishot.py` (núcleo agnóstico de dono: gera N ângulos de uma
+  imagem via CLI, ingere como candidatas com `role="multishot"`/`parent`, custo e livro-caixa via
+  ADR-016) e `studio/web/multishot.js` (`Studio.multishot`, modal único com custo, geração e
+  galeria dos resultados). **MOODBOARDS** passou a usá-lo: no editor do board, cada imagem ganha a
+  ação "▨ ângulos" (`/api/moodboards/{mbid}/multishot/{cost,generate,job}`); os ângulos entram como
+  candidatas do board para curadoria da vibe.
+
+**ADR nova: ADR-017** (STUDIO) — componente reutilizável de multishot; `angles.py` da etapa 4 só
+migra para o núcleo na reescrita do storyboard (ADR-018), até lá as duas implementações coexistem.
