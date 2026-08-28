@@ -36,6 +36,11 @@ class DownloadsReq(BaseModel):
     since_minutes: int = 120
 
 
+class OpenFolderReq(BaseModel):
+    """Qual pasta abrir no explorador do SO: a do board (default) ou a de Downloads."""
+    target: str = "board"
+
+
 class PromptGenReq(BaseModel):
     mode: str = "images"
     instruction: str = ""
@@ -81,6 +86,28 @@ def board_delete(mbid: str):
 @router.get("/api/moodboards/{mbid}/candidates")
 def board_candidates(mbid: str):
     return mb.candidates(mbid)
+
+
+@router.delete("/api/moodboards/{mbid}/candidates/{cid}")
+def board_candidate_delete(mbid: str, cid: str):
+    """Remove uma candidata do board (arquivo+thumb+entrada; desmarca se selecionada). O KeyError
+    de `remove_candidate` (board ou candidata inexistente) vira 404 no handler do núcleo."""
+    return mb.remove_candidate(mbid, cid)
+
+
+@router.get("/api/moodboards/{mbid}/downloads-folder")
+def board_downloads_folder(mbid: str):
+    mb.board_dir(mbid)   # 404 se o board não existe
+    return mb.downloads_folder()
+
+
+@router.post("/api/moodboards/{mbid}/open-folder")
+def board_open_folder(mbid: str, req: OpenFolderReq):
+    """Abre a pasta do board (ou a de Downloads) no explorador do SO — best-effort, nunca 500."""
+    mb.board_dir(mbid)   # 404 se o board não existe
+    if req.target == "downloads":
+        return mb.open_downloads_folder()
+    return mb.open_board_folder(mbid)
 
 
 @router.post("/api/moodboards/{mbid}/import/upload")

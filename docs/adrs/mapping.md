@@ -554,3 +554,23 @@ Desvio da aula 010 (1 keyframe por cena), aprovado explicitamente pelo dono do p
 desta reescrita. Pendência de integração (W5): refletir o schema novo de `scenes.json` em
 `docs/domains/studio/waves/wave-1.md` e no "Provides" do `storyboard-fdd.md`, e revalidar a cadeia
 `scenes.json → storyboard.json → animate` no estado integrado.
+
+## Atualização 2026-08-28 (wave 6, frente ADH-OS-20260828-20 — rework do editor de mood board)
+
+Rework de UX do editor da biblioteca de mood boards (`[extensão]`, ADR-013/017), sem alterar o método
+das aulas 009/011 nem o modelo de vibe única (ADR-007):
+
+- **MOODBOARDS** — o editor ganha o fluxo **painel 01 → 02**: importadas ficam no painel 01 (com
+  "▨ ângulos" e "usar no board"); o painel 02 mostra só as selecionadas (`moodboards.js`, divisão por
+  `st.sel`). O componente de multishot (`multishot.js`) troca o grid por **carrossel** (`.msc-`,
+  prev/next/contador, `<style>` inline escopado), com **remover** o ângulo ativo e **importar** novas
+  fotos (reuso de `import/upload`/`import/downloads` + "Abrir pasta de Downloads"). Backend novo em
+  `moodboards/service.py`+`router.py`: `DELETE …/candidates/{cid}` (remove arquivo+thumb+entrada;
+  desmarca seleção; 404 se não existe), `GET …/downloads-folder` (reusa `ingest._default_downloads`) e
+  `POST …/open-folder` (abre o explorador do SO na pasta do board/Downloads, best-effort WSL/xdg-open,
+  nunca 500). `get_board` passa a expor `folder`; o cabeçalho mostra a pasta + botão "Abrir pasta". A
+  pasta = slug do nome **não é renomeada** (chave estável de `pull_board`/campanhas, ADR-013).
+
+**ADR nova: ADR-019** (STUDIO) — rework do editor de mood board (fluxo painel 01→02, multishot em
+carrossel, remover/importar candidata, abrir pasta); `[extensão]`, relaciona ADR-013/016/017.
+Migração/rename de pasta segue **fora de escopo**.

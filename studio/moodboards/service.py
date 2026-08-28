@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -118,7 +119,7 @@ def get_board(mbid: str) -> dict:
     return {**_public(meta), "cover": (imgs[0] if imgs else None), "count": len(imgs),
             "candidates": candidates(mbid), "images": imgs,
             "palette": _read_palette(d), "prompt": _read_prompt(d),
-            "available_claude": prompter.available()}
+            "folder": str(d), "available_claude": prompter.available()}
 
 
 def patch_board(mbid: str, name: str | None = None, note: str | None = None,
@@ -191,6 +192,85 @@ def select(mbid: str, ids: list[str], note: str = "") -> dict:
     (d / "palette.json").write_text(
         json.dumps({"colors": colors, "note": (note or "").strip(), "by_file": by_file}, indent=1))
     return {"selected": len(paths), "palette": colors}
+
+
+def remove_candidate(mbid: str, cid: str) -> dict:
+    """Remove uma candidata do board: apaga o arquivo em `candidates/`, a thumb e a entrada de
+    `candidates.json`; se estava selecionada, tira-a da seleção (apaga a cópia em `images/` e
+    re-deriva a paleta). `KeyError` (→ 404 no router) quando `cid` não existe no board."""
+    d = board_dir(mbid)
+    cands = candidates(mbid)
+    match = next((c for c in cands if c.get("id") == cid), None)
+    if match is None:
+        raise KeyError(cid)   # candidata inexistente → 404
+    was_selected = bool(match.get("selected"))
+    cdir = d / "candidates"
+    fname = match.get("file")
+    if fname:
+        (cdir / fname).unlink(missing_ok=True)
+    thumb = match.get("thumb")
+    if thumb:
+        (cdir / thumb).unlink(missing_ok=True)
+    if was_selected and fname:
+        (d / "images" / fname).unlink(missing_ok=True)
+    remaining = [c for c in cands if c.get("id") != cid]
+    ingest.save_candidates(d, "", remaining)
+    if was_selected:
+        _rederive_palette(d, remaining)
+    return {"removed": cid, "was_selected": was_selected, "candidates": len(remaining)}
+
+
+def _rederive_palette(d: Path, cands: list[dict]) -> None:
+    """Recalcula `palette.json` a partir das imagens curadas que ainda existem em `images/`."""
+    idir = d / "images"
+    paths = [idir / c["file"] for c in cands
+             if c.get("selected") and c.get("file") and (idir / c["file"]).is_file()]
+    colors = _palette(paths)
+    by_file = {p.name: _palette([p], 3) for p in paths}
+    note = _read_palette(d).get("note", "")
+    (d / "palette.json").write_text(
+        json.dumps({"colors": colors, "note": note, "by_file": by_file}, indent=1))
+
+
+# ---------- pasta do board / Downloads (abrir no explorador do SO) ----------
+def downloads_folder() -> dict:
+    """Caminho da pasta Downloads detectada (reuso de `ingest._default_downloads`) + se existe."""
+    folder = ingest._default_downloads()
+    return {"folder": str(folder), "exists": folder.exists()}
+
+
+def open_board_folder(mbid: str) -> dict:
+    """Abre o explorador do SO na pasta do board (best-effort; nunca lança)."""
+    return _open_in_explorer(board_dir(mbid))
+
+
+def open_downloads_folder() -> dict:
+    """Abre o explorador do SO na pasta Downloads (best-effort; nunca lança)."""
+    return _open_in_explorer(ingest._default_downloads())
+
+
+def _open_in_explorer(path: Path) -> dict:
+    """Best-effort: no WSL usa `explorer.exe` via `wslpath -w`; senão `xdg-open`/`open`. Nunca
+    levanta exceção (retorna `{opened: False, path}` em qualquer falha) — jamais vira 500."""
+    p = Path(path)
+    result = {"opened": False, "path": str(p)}
+    if not p.exists():
+        return result
+    try:
+        if shutil.which("explorer.exe") and shutil.which("wslpath"):
+            win = subprocess.run(["wslpath", "-w", str(p)], capture_output=True, text=True, timeout=10)
+            winpath = (win.stdout or "").strip()
+            if winpath:
+                subprocess.Popen(["explorer.exe", winpath])  # noqa: S603 — caminho validado do board
+                result["opened"] = True
+                return result
+        opener = shutil.which("xdg-open") or shutil.which("open")
+        if opener:
+            subprocess.Popen([opener, str(p)])  # noqa: S603
+            result["opened"] = True
+    except Exception:
+        result["opened"] = False
+    return result
 
 
 # ---------- prompt de vibe (reuso do bot da etapa 2) ----------
