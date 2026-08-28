@@ -73,6 +73,25 @@ def test_prepare_base_uses_scene_image_or_campaign_base(shots, studio_env, proje
         assert (root / "storyboard" / s["id"] / "base.png").exists()
 
 
+def test_prepare_base_uses_the_primary_keyframe(shots, studio_env, project):
+    """[extensão] cena-multi-keyframe (ADR-018): a base da cena vem da PRINCIPAL, não do 1º da galeria.
+
+    a1 (1ª da galeria) é apagada e a principal é a2 (existe): se o código usasse a 1ª imagem cairia
+    para a base da campanha (`source="base"`); usar a principal mantém `source="storyboard"`."""
+    root = studio_env["refs"].project_dir(project)
+    (root / "storyboard" / "ideas" / "a1.png").unlink()
+    (root / "storyboard" / "scenes.json").write_text(json.dumps({"scenes": [
+        {"id": "cena01", "n": 1, "text": "galeria",
+         "images": ["storyboard/ideas/a1.png", "storyboard/ideas/a2.png"],
+         "primary": "storyboard/ideas/a2.png"},
+    ]}))
+    assert shots.prepare_base(project, "cena01")["source"] == "storyboard"
+    # a tela dos ângulos recebe a principal e a galeria da cena
+    s = next(x for x in shots.list_scenes(project)["scenes"] if x["id"] == "cena01")
+    assert s["primary"] == "storyboard/ideas/a2.png"
+    assert s["images"] == ["storyboard/ideas/a1.png", "storyboard/ideas/a2.png"]
+
+
 def test_prepare_base_is_idempotent_and_accepts_upload(shots, studio_env, project):
     a = shots.prepare_base(project, "cena01")
     assert shots.prepare_base(project, "cena01") == a

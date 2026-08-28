@@ -44,6 +44,10 @@ class SelectReq(BaseModel):
 
 class SceneIn(BaseModel):
     text: str = ""
+    #: `[extensão]` cena-multi-keyframe (ADR-018): galeria de keyframes por cena + a principal.
+    images: list[str] = []
+    primary: str | None = None
+    #: legado (formato antigo, uma imagem por cena) — dobrado em `images`/`primary` por `_normalize`.
     image: str | None = None
 
 

@@ -24,6 +24,16 @@ from . import META
 _NUMBERED = re.compile(r"\b\d+[.)]\s")
 _IMG = {".png", ".jpg", ".jpeg", ".webp"}
 
+
+def _has_image(s: dict) -> bool:
+    """Cena "com imagem" = tem ≥ 1 keyframe (`[extensão]` cena-multi-keyframe, ADR-018).
+
+    Lê o formato novo (`images`/`primary`) e, por retrocompat, o `image` singular antigo."""
+    imgs = s.get("images")
+    if isinstance(imgs, list):
+        return bool(imgs)
+    return bool(s.get("primary") or s.get("image"))
+
 WHAT = (
     "Pegue a imagem base da campanha (etapa 3) e use-a para ter ideias de cena na Higgsfield "
     "(Draw to Edit, edições uma instrução por vez, Multi Shot); importe o que gostou e escreva a "
@@ -74,7 +84,7 @@ def _next_action(has_base, chosen, scenes, escritas_ok, md_ok,
         return "Escolher a imagem base da campanha na etapa 3"
     if not chosen or not escritas_ok:
         return f"Gerar ideias a partir da imagem base e escrever as {DEFAULT_SCENES} cenas"
-    if any(not s.get("image") for s in scenes):
+    if any(not _has_image(s) for s in scenes):
         return "Anexar uma ideia a cada cena"
     if not md_ok:
         return "Gerar o storyboard.md com as cenas escritas"
@@ -104,7 +114,7 @@ def guide(pid: str) -> dict:
     chosen = [c for c in cands if c.get("selected")]
     scenes = (read_json(pid, "storyboard/scenes.json", default={}) or {}).get("scenes") or []
     written = [s for s in scenes if (s.get("text") or "").strip()]
-    with_image = [s for s in scenes if s.get("image")]
+    with_image = [s for s in scenes if _has_image(s)]
     alvo = min(DEFAULT_SCENES, len(scenes)) if scenes else DEFAULT_SCENES
     escritas_ok = bool(scenes) and len(written) >= alvo
 
@@ -140,7 +150,7 @@ def guide(pid: str) -> dict:
             detail=f"{len(written)} de {len(scenes) or DEFAULT_SCENES} cenas com texto",
             fix=None if escritas_ok else "Escreva o texto das cenas no painel 02")
 
-    sem_img = [s.get("id") for s in scenes if not s.get("image")]
+    sem_img = [s.get("id") for s in scenes if not _has_image(s)]
     g.check("v42_cena_com_imagem", "Toda cena aponta para uma ideia de storyboard/ideas/",
             "ok" if scenes and not sem_img else ("todo" if not with_image else "warn"),
             detail="todas as cenas têm imagem" if scenes and not sem_img
