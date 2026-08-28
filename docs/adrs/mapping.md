@@ -596,3 +596,31 @@ das sugestões de termos, e troca o filtro único por **filtros multiseleção**
 sugestões de termos, `[extensão]` da aula 009; relaciona ADR-004 (fidelidade) e ADR-003
 (persistência em arquivos). Consumo local à etapa 1 — nenhuma etapa a jusante lê
 `refs/validated_brand.json`.
+
+## Atualização 2026-08-28 (wave 7, frente ADH-OS-20260828-26 — vídeo por cena no storyboard)
+
+Vídeo-preview por cena no painel 02 do storyboard (`[extensão]`, aula 010 é só texto; aprovado pelo
+dono do produto), cruzando a fronteira com o `animate` (dono do vídeo, aula 012):
+
+- **STORYBOARD** — novas rotas (contrato congelado em `docs/domains/studio/waves/wave-7.md`):
+  `POST …/storyboard/video-prompt` (Claude via papel `motion` + template agnóstico, com fallback
+  determinístico), `POST …/storyboard/video/cost`, `POST …/storyboard/video/generate` e
+  `GET …/storyboard/video/job?scene_id=…`. Geração pelo CLI no padrão do `animate`
+  (`build_params → hf.generate(900s) → download → storyboard/<cena>/video/take_K.mp4 →
+  record_generation("storyboard.video")`), com **JobRegistry próprio de vídeo, chave por cena**
+  (`pid:scene`), separado do registry da ideação. Modelo resolvido no servidor: `start_end` →
+  Kling 3.0 Turbo, senão Kling 2.6. `scenes.json` ganha campos **aditivos** `video_desc`,
+  `video_prompt`, `videos:[]` (retrocompat ADR-018).
+- **Modelos Kling** — `pricing.CATALOG` ganha `kling2_6` (5s=10/10s=20) e `kling3_0_turbo`
+  (5s=7,5/10s=15), medidos no CLI. `settings` ganha `storyboard.video.scene`→kling2_6 e
+  `.transition`→kling3_0_turbo; `animate.video` **reverte** para kling2_6. Em `animate/service.py`:
+  `MODEL_ORDER=["kling2_6","seedance_2_0"]`, `TRANSITION_MODEL="kling3_0_turbo"` (aceito, fora da
+  progressão por falhas), `kling3_0` legado ainda aceito, e `LESSON_MODEL_NOTE` corrigida (o "CLI só
+  tem 3.0" caiu: a 2.6 existe; o 2.5 Turbo não existe → 3.0 Turbo nas transições).
+
+**ADR nova: ADR-021** (STUDIO) — vídeo-preview por cena no storyboard + mapa de modelos Kling (2.6
+cena / 3.0 Turbo transição; 2.5 Turbo inexistente no CLI), `[extensão]`; relaciona ADR-004
+(fidelidade), ADR-006 (jobs), ADR-015 (fusão), ADR-016 (créditos) e ADR-018 (campos aditivos de
+`scenes.json`). Pendências de integração (W5): auto-import dos mp4 do storyboard para o `animate`
+(handoff automático), refletir os campos novos de `scenes.json` em `wave-1.md`/"Provides", e o
+registry de vídeo (chave `pid:scene`) não é descoberto pelo `reset`.

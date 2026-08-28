@@ -34,14 +34,22 @@ log = logging.getLogger("studio.animate")
 STEP = "animate"
 #: Modelos da aula 012: Kling (cenas simples e start/end) e Seedance (movimentos complexos).
 #: `veo3_1_lite` NÃO está na ordem padrão — é `[extensão]`, só entra por `STUDIO_ANIMATE_MODELS`.
-MODEL_ORDER = ["kling3_0", "seedance_2_0"]
+#: `[extensão]` wave 7 (ADR-021): a cena passou de `kling3_0` para `kling2_6` (o desvio "CLI só tem
+#: 3.0" caiu — a Kling 2.6 existe no CLI). A transição start/end usa `TRANSITION_MODEL` (Kling 3.0
+#: Turbo), não uma entrada da ordem viva (que dirige a progressão por falhas).
+MODEL_ORDER = ["kling2_6", "seedance_2_0"]
+#: `[extensão]` wave 7: modelo das TRANSIÇÕES (modo start/end), no lugar do "Kling 2.5 Turbo" da
+#: aula (inexistente no CLI). É um modelo ACEITO na geração, mas fora da ordem de progressão.
+TRANSITION_MODEL = "kling3_0_turbo"
 #: `[extensão]` — modelos fora do que a aula ensina, disponíveis só por env. `veo3_1_lite` com
 #: start+end exige `--duration 8` (ressalva do CLI), regra aplicada em `build_params`.
 EXTENSION_MODELS = ("veo3_1_lite",)
-#: Desvio registrado (gate 4 do CLAUDE.md): a aula usa Kling 2.6 e Kling 2.5 Turbo; o catálogo do
-#: CLI oferece Kling 3.0 para os dois casos — mesmo processo, ferramenta mais nova.
-LESSON_MODEL_NOTE = ("A aula 012 usa Kling 2.6 (cenas simples) e Kling 2.5 Turbo (start/end frame); "
-                     "o CLI da Higgsfield oferece o Kling 3.0 para os dois casos.")
+#: Nota de fidelidade (gate 4 do CLAUDE.md): a aula usa Kling 2.6 (cenas) e Kling 2.5 Turbo
+#: (start/end). O CLI tem a Kling 2.6 (usada nas cenas) e, no lugar do 2.5 Turbo inexistente, a
+#: Kling 3.0 Turbo (usada nas transições start/end). Registrado em ADR-021.
+LESSON_MODEL_NOTE = ("A aula 012 usa Kling 2.6 (cenas simples) e Kling 2.5 Turbo (start/end frame). "
+                     "No CLI da Higgsfield a cena usa a Kling 2.6 e a transição start/end usa a "
+                     "Kling 3.0 Turbo (o 2.5 Turbo não existe no CLI).")
 FAIL_THRESHOLD = 3          # a aula fala em "3 a 4 falhas"; 3 é o conservador em créditos
 ADAPT_THRESHOLD = FAIL_THRESHOLD * 2   # "saber quando parar de iterar; adaptar a ideia" (aula 012)
 DURATIONS = (5, 10)         # 5 s padrão, 10 s para mudanças lentas (aula 012)
@@ -81,6 +89,25 @@ def model_order() -> list[str]:
     """Ordem viva de modelos (ADR-002: ids não ficam presos no código). Override: STUDIO_ANIMATE_MODELS."""
     models = [m.strip() for m in os.environ.get("STUDIO_ANIMATE_MODELS", "").split(",") if m.strip()]
     return models or list(MODEL_ORDER)
+
+
+def model_for_mode(mode: str | None) -> str:
+    """`[extensão]` wave 7 (ADR-021): mapa cena → Kling 2.6, transição (start/end) → Kling 3.0 Turbo.
+
+    A cena vem do topo da ordem viva (progressão por falhas); a transição usa o `TRANSITION_MODEL`
+    fixo (fora da ordem, mas aceito na geração)."""
+    return TRANSITION_MODEL if mode == "start_end" else model_order()[0]
+
+
+def accepted_models() -> list[str]:
+    """Modelos aceitos numa geração/custo: a ordem viva + a transição start/end (`[extensão]` wave 7)
+    + `kling3_0` legado (default histórico do router, ainda no catálogo). A ordem viva dirige a
+    progressão por falhas; estes são só os ids que a validação aceita."""
+    out = list(model_order())
+    for extra in (TRANSITION_MODEL, "kling3_0"):
+        if extra not in out:
+            out.append(extra)
+    return out
 
 
 # ---------- storyboard (etapa 4 — ADR-015) ----------
@@ -276,7 +303,9 @@ def load_plan(pid: str) -> dict:
     _save_data(root, data)
     shots = [_public(data, s) for s in data["shots"]]
     return {"shots": shots, "ready": sum(1 for s in shots if s["ready"]), "total": len(shots),
-            "model_order": model_order(), "warnings": warnings,
+            "model_order": model_order(),
+            # `[extensão]` wave 7 (ADR-021): mapa cena → 2.6 / transição start_end → 3.0 Turbo.
+            "scene_model": model_order()[0], "transition_model": TRANSITION_MODEL, "warnings": warnings,
             "model_note": LESSON_MODEL_NOTE, "mode_tips": MODE_TIPS, "parallel_hint": PARALLEL_HINT,
             "last_frames": last_frames(root), "aspect_ratio": project_aspect_ratio(root),
             "cli_mode": default_cli_mode(), "aspect_ratios": list(ASPECT_RATIOS),
@@ -437,8 +466,8 @@ def attach_take(pid: str, scene: str, shot: str, candidate_id: str, model: str |
         raise RuntimeError("Este vídeo já é um take deste shot.")
     order = model_order()
     model = model or suggested_model(failures_of(entry)) or order[0]
-    if model not in order:
-        raise ValueError(f"modelo fora da ordem configurada: {model} ({', '.join(order)})")
+    if model not in accepted_models():
+        raise ValueError(f"modelo fora da ordem configurada: {model} ({', '.join(accepted_models())})")
     src = root / STEP / "candidates" / cand["file"]
     if not src.exists():
         raise FileNotFoundError(f"arquivo do candidato ausente: {cand['file']}")
@@ -533,9 +562,8 @@ def _validated(pid: str, scene: str, shot: str, model: str, count: int) -> tuple
     root = project_dir(pid)
     data, _ = _merge(root)
     entry = _find(data, scene, shot)
-    order = model_order()
-    if model not in order:
-        raise ValueError(f"modelo fora da ordem configurada: {model} ({', '.join(order)})")
+    if model not in accepted_models():
+        raise ValueError(f"modelo fora da ordem configurada: {model} ({', '.join(accepted_models())})")
     if not 1 <= count <= 4:
         raise ValueError("gere de 1 a 4 takes por vez (a aula 012 usa 2)")
     return root, data, entry

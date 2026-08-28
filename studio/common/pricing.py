@@ -51,6 +51,29 @@ CATALOG: dict[str, dict] = {
         "default_variant": "5s",
         "note": "Image-to-video (aula 012). Custo por duração do clipe.",
     },
+    # `[extensão]` wave 7 (ADR-021): vídeo por cena no storyboard + revert do desvio do animate.
+    # Kling 2.6 = modelo das CENAS (o desvio "CLI só tem 3.0" caiu: 2.6 existe no CLI). Custo
+    # medido no CLI (`higgsfield generate cost kling2_6`): 5s=10, 10s=20 créditos.
+    "kling2_6": {
+        "label": "Kling 2.6",
+        "kind": "video",
+        "variants": {"5s": 10, "10s": 20},
+        "variant_key": "duration",
+        "variant_options": ["5s", "10s"],
+        "default_variant": "5s",
+        "note": "Image-to-video (Kling 2.6). Cena do storyboard/animação; custo medido no CLI (wave 7).",
+    },
+    # `[extensão]` wave 7 (ADR-021): Kling 3.0 Turbo = modelo das TRANSIÇÕES (modo start/end), no
+    # lugar do "Kling 2.5 Turbo" da aula (inexistente no CLI). Custo medido: 5s=7,5, 10s=15.
+    "kling3_0_turbo": {
+        "label": "Kling 3.0 Turbo",
+        "kind": "video",
+        "variants": {"5s": 7.5, "10s": 15},
+        "variant_key": "duration",
+        "variant_options": ["5s", "10s"],
+        "default_variant": "5s",
+        "note": "Image-to-video rápido (transição start/end). Custo medido no CLI (wave 7).",
+    },
     "seedance_2_0": {
         "label": "Seedance 2.0",
         "kind": "video",

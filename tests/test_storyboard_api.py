@@ -126,7 +126,8 @@ def test_select_ideas_writes_ideas_json_and_detaches(client, pid, root):
 
 def test_scenes_lifecycle_over_http(client, pid, root):
     scenes = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"]
-    assert len(scenes) == 5 and scenes[0] == {"id": "cena01", "n": 1, "text": "", "images": [], "primary": None}
+    assert len(scenes) == 5 and scenes[0] == {"id": "cena01", "n": 1, "text": "", "images": [], "primary": None,
+                                              "video_desc": "", "video_prompt": "", "videos": []}
     r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
         {"text": "A lata cai e inunda tudo"}, {"text": "Close no astronauta"}, {"text": "Puxa a corda"}]})
     assert r.status_code == 200
@@ -163,7 +164,9 @@ def test_scene_image_written_by_put_is_readable_by_the_next_step(client, pid, ro
                json={"scenes": [{"text": "Close", "images": [img], "primary": img}]})
     data = json.loads((root / "storyboard" / "scenes.json").read_text())
     assert set(data) == {"scenes"}
-    assert set(data["scenes"][0]) == {"id", "n", "text", "images", "primary"}
+    # `[extensão]` wave 7 (ADR-021): campos aditivos de vídeo por cena (retrocompat ADR-018).
+    assert set(data["scenes"][0]) == {"id", "n", "text", "images", "primary",
+                                      "video_desc", "video_prompt", "videos"}
     assert data["scenes"][0]["images"] == [img] and data["scenes"][0]["primary"] == img
     assert data["scenes"][0]["primary"].startswith("storyboard/ideas/")
     assert (root / data["scenes"][0]["primary"]).exists()
@@ -348,3 +351,79 @@ def test_scene_buttons_stay_childless(client):
         m = re.search(r'<button[^>]*\b' + cls + r'\b[^>]*>(.*?)</button>', js)
         assert m, cls
         assert "<" not in m.group(1), (cls, m.group(1))
+
+
+# ---------- `[extensão]` wave 7 (ADR-021): vídeo por cena (contrato congelado) ----------
+def _select_idea(client, pid):
+    """Sobe e seleciona uma ideia; devolve o caminho relativo em storyboard/ideas/."""
+    client.post(f"/api/projects/{pid}/storyboard/import/upload",
+                files=[("files", ("a.png", image_bytes(), "image/png"))])
+    cid = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"][0]["id"]
+    client.post(f"/api/projects/{pid}/storyboard/candidates/select", json={"ids": [cid]})
+    return client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"][0]["file"]
+
+
+def test_video_prompt_route_returns_template_without_claude(client, pid, monkeypatch):
+    from studio.storyboard import service as sb
+    monkeypatch.setattr(sb.prompter, "available", lambda: False)
+    r = client.post(f"/api/projects/{pid}/storyboard/video-prompt",
+                    json={"scene_id": "cena01", "description": "an astronaut walking",
+                          "frames": {"mode": "single"}})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "template" and body["seconds"] == 5
+    assert body["prompt"].startswith("A photorealistic cinematic animation of an astronaut walking")
+    assert client.post(f"/api/projects/{pid}/storyboard/video-prompt",
+                       json={"scene_id": "cena01", "description": "  "}).status_code == 422
+
+
+def test_video_cost_route_resolves_model_by_mode(client, pid):
+    single = client.post(f"/api/projects/{pid}/storyboard/video/cost",
+                         json={"scene_id": "cena01", "mode": "single", "duration": 5})
+    assert single.json() == {"model": "kling2_6", "per_item": 10, "total": 10}
+    trans = client.post(f"/api/projects/{pid}/storyboard/video/cost",
+                        json={"scene_id": "cena01", "mode": "start_end", "duration": 10})
+    assert trans.json() == {"model": "kling3_0_turbo", "per_item": 15, "total": 15}
+
+
+def test_video_generate_and_job_polling(client, pid, monkeypatch):
+    import studio.higgsfield as hf
+    img = _select_idea(client, pid)
+    client.put(f"/api/projects/{pid}/storyboard/scenes",
+               json={"scenes": [{"text": "cena", "images": [img], "primary": img}]})
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    monkeypatch.setattr(hf, "generate",
+                        lambda model, params, timeout_s=600: {"raw": {}, "urls": ["http://x/out.mp4"], "id": "v1"})
+    monkeypatch.setattr(hf, "download", lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True),
+                                                           dest.write_bytes(b"mp4"), dest)[-1])
+    gen = client.post(f"/api/projects/{pid}/storyboard/video/generate",
+                      json={"scene_id": "cena01", "prompt": "slow dolly", "mode": "single",
+                            "duration": 5, "image": img})
+    assert gen.status_code == 200 and gen.json()["state"] == "running"
+    for _ in range(100):
+        job = client.get(f"/api/projects/{pid}/storyboard/video/job", params={"scene_id": "cena01"}).json()
+        if job["state"] != "running":
+            break
+    assert job["state"] == "done" and job["video"] == "storyboard/cena01/video/take_1.mp4"
+    scene = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]
+    assert scene["videos"] == ["storyboard/cena01/video/take_1.mp4"] and scene["video_prompt"] == "slow dolly"
+
+
+def test_video_generate_requires_cli_and_prompt(client, pid, monkeypatch):
+    import studio.higgsfield as hf
+    img = _select_idea(client, pid)
+    monkeypatch.setattr(hf, "available", lambda: False)
+    r = client.post(f"/api/projects/{pid}/storyboard/video/generate",
+                    json={"scene_id": "cena01", "prompt": "p", "mode": "single", "duration": 5, "image": img})
+    assert r.status_code == 409, "sem CLI é pré-condição (409)"
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    assert client.post(f"/api/projects/{pid}/storyboard/video/generate",
+                       json={"scene_id": "cena01", "prompt": "", "mode": "single", "duration": 5,
+                             "image": img}).status_code == 422
+
+
+def test_video_job_is_idle_before_any_generation(client, pid):
+    job = client.get(f"/api/projects/{pid}/storyboard/video/job", params={"scene_id": "cena01"}).json()
+    assert job["state"] == "idle" and job["video"] is None

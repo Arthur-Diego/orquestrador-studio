@@ -63,6 +63,39 @@ class GenerateReq(BaseModel):
     source_id: str | None = None
 
 
+# `[extensão]` wave 7 (ADR-021) — VÍDEO por cena (contrato congelado em wave-7.md). Namespace
+# `video` para não colidir com `generate`/`cost`/`job` (que geram IMAGENS de ideação).
+class VideoFrames(BaseModel):
+    #: `single` (1 frame, `image`) | `start_end` (transição, `start_image`+`end_image`).
+    mode: str = "single"
+    #: caminhos relativos de storyboard/ideas/... (as imagens escolhidas da cena).
+    image: str | None = None
+    start_image: str | None = None
+    end_image: str | None = None
+
+
+class VideoPromptReq(BaseModel):
+    scene_id: str
+    description: str = ""
+    frames: VideoFrames = VideoFrames()
+
+
+class VideoCostReq(BaseModel):
+    scene_id: str
+    mode: str = "single"
+    duration: int = 5
+
+
+class VideoGenerateReq(BaseModel):
+    scene_id: str
+    prompt: str
+    mode: str = "single"
+    duration: int = 5
+    image: str | None = None
+    start_image: str | None = None
+    end_image: str | None = None
+
+
 def _guard(fn, *args, **kwargs):
     """Traduz o vocabulário de erros do serviço para HTTP (422 pedido inválido, 409 pré-requisito)."""
     try:
@@ -163,6 +196,29 @@ def storyboard_generate(pid: str, req: GenerateReq):
 def storyboard_job(pid: str):
     refs.project_dir(pid)
     return sb.job_status(pid)
+
+
+# ---------- `[extensão]` wave 7 (ADR-021): vídeo por cena (Claude + CLI Kling) ----------
+@router.post("/api/projects/{pid}/storyboard/video-prompt")
+def storyboard_video_prompt(pid: str, req: VideoPromptReq):
+    return _guard(sb.video_prompt, pid, req.scene_id, req.description, req.frames.model_dump())
+
+
+@router.post("/api/projects/{pid}/storyboard/video/cost")
+def storyboard_video_cost(pid: str, req: VideoCostReq):
+    return _guard(sb.video_cost, pid, req.scene_id, req.mode, req.duration)
+
+
+@router.post("/api/projects/{pid}/storyboard/video/generate")
+def storyboard_video_generate(pid: str, req: VideoGenerateReq):
+    frames = {"image": req.image, "start_image": req.start_image, "end_image": req.end_image}
+    return _guard(sb.start_video_generate, pid, req.scene_id, req.prompt, req.mode, req.duration, frames)
+
+
+@router.get("/api/projects/{pid}/storyboard/video/job")
+def storyboard_video_job(pid: str, scene_id: str = Query(...)):
+    refs.project_dir(pid)
+    return _guard(sb.video_job_status, pid, scene_id)
 
 
 # ==========================================================================================

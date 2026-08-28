@@ -63,3 +63,15 @@ def test_ledger_records_and_summarizes(studio_env):
     assert projs["p1"]["credits"] == pytest.approx(10)
     assert settings.summary("p2")["total_credits"] == pytest.approx(0.94)
     assert len(settings.history("p1")) == 2
+
+
+def test_storyboard_video_defaults_map_scene_to_kling26_and_transition_to_turbo(studio_env):
+    """`[extensão]` wave 7 (ADR-021): cena → Kling 2.6, transição (start/end) → Kling 3.0 Turbo;
+    o desvio do animate cai (era kling3_0)."""
+    from studio.common import settings
+    assert {a["key"] for a in settings.ACTIONS} >= {"storyboard.video.scene", "storyboard.video.transition"}
+    scene = settings.default_for("storyboard.video.scene")
+    trans = settings.default_for("storyboard.video.transition")
+    assert scene["model"] == "kling2_6" and scene["variant"] == "5s"
+    assert trans["model"] == "kling3_0_turbo" and trans["variant"] == "5s"
+    assert settings.default_for("animate.video")["model"] == "kling2_6"

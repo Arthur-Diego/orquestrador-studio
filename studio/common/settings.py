@@ -43,6 +43,12 @@ ACTIONS: list[dict] = [
      "label": "Gerar a foto da cena (prompt realista)"},
     {"key": "storyboard.multishot", "screen": "Etapa 4 — Storyboard", "kind": "image",
      "label": "Multishot (fotos-semente e frames da cena)"},
+    # `[extensão]` wave 7 (ADR-021): vídeo por cena no storyboard. Cena → Kling 2.6; transição
+    # (start/end) → Kling 3.0 Turbo. O modelo é resolvido no servidor por `default_for` conforme o modo.
+    {"key": "storyboard.video.scene", "screen": "Etapa 4 — Storyboard", "kind": "video",
+     "label": "Gerar o vídeo da cena (image-to-video) [extensão]"},
+    {"key": "storyboard.video.transition", "screen": "Etapa 4 — Storyboard", "kind": "video",
+     "label": "Gerar a transição start/end (image-to-video) [extensão]"},
     {"key": "animate.video", "screen": "Etapa 5 — Animação", "kind": "video",
      "label": "Animar (image-to-video)"},
     {"key": "music.track", "screen": "Etapa 6 — Trilha", "kind": "audio",
@@ -59,7 +65,11 @@ DEFAULTS: dict[str, dict] = {
     "mood.multishot": {"model": "nano_banana_2", "variant": "2k"},
     "storyboard.scene": {"model": "nano_banana_2", "variant": "2k"},
     "storyboard.multishot": {"model": "nano_banana_2", "variant": "2k"},
-    "animate.video": {"model": "kling3_0", "variant": "5s"},
+    # `[extensão]` wave 7 (ADR-021): cena → Kling 2.6; transição (start/end) → Kling 3.0 Turbo.
+    # `animate.video` reverte o desvio (era `kling3_0`): a cena da animação também passa a 2.6.
+    "storyboard.video.scene": {"model": "kling2_6", "variant": "5s"},
+    "storyboard.video.transition": {"model": "kling3_0_turbo", "variant": "5s"},
+    "animate.video": {"model": "kling2_6", "variant": "5s"},
     "music.track": {"model": "sonilo_music", "variant": None},
 }
 

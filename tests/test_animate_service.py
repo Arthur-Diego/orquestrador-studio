@@ -70,7 +70,8 @@ def test_plan_follows_storyboard_order_and_creates_takes_json(svc, studio_env, p
         ("cena01", "shot01"), ("cena01", "shot02"), ("cena02", "shot03")], "ordem do storyboard, não do JSON"
     assert [s["next_in_scene"] for s in plan["shots"]] == ["shot02", None, None]
     assert plan["total"] == 3 and plan["ready"] == 0
-    assert plan["model_order"] == ["kling3_0", "seedance_2_0"], "modelos da aula; veo3_1_lite é [extensão]"
+    assert plan["model_order"] == ["kling2_6", "seedance_2_0"], "wave 7 (ADR-021): cena passou a Kling 2.6"
+    assert plan["scene_model"] == "kling2_6" and plan["transition_model"] == "kling3_0_turbo"
     data = json.loads((_root(studio_env, project) / "animate" / "takes.json").read_text())
     assert [s["shot"] for s in data["shots"]] == ["shot01", "shot02", "shot03"]
 
@@ -322,7 +323,7 @@ def test_attach_take_numbers_takes_and_refuses_the_same_video_twice(svc, studio_
     r1 = svc.attach_take(project, "cena01", "shot01", c1)
     assert r1["take"]["file"] == "videos/cena01/shot01_take1.mp4"
     assert (root / r1["take"]["file"]).exists() and r1["take"]["liked"] is None
-    assert r1["take"]["model"] == "kling3_0", "modelo sugerido quando não informado"
+    assert r1["take"]["model"] == "kling2_6", "modelo sugerido quando não informado (wave 7: cena → 2.6)"
     r2 = svc.attach_take(project, "cena01", "shot01", c2, model="seedance_2_0")
     assert r2["take"]["file"] == "videos/cena01/shot01_take2.mp4"
     with pytest.raises(RuntimeError):
@@ -359,8 +360,8 @@ def test_like_writes_final_copy_and_rejection_counts_as_failure(svc, studio_env,
 
 # ---------- troca de modelo ----------
 def test_model_suggestion_walks_the_order_then_gives_up(svc):
-    assert svc.suggested_model(0) == "kling3_0"
-    assert svc.suggested_model(2) == "kling3_0"
+    assert svc.suggested_model(0) == "kling2_6"        # wave 7 (ADR-021): cena → Kling 2.6
+    assert svc.suggested_model(2) == "kling2_6"
     assert svc.suggested_model(3) == "seedance_2_0", "aula 012: após 3 falhas, troque de modelo"
     assert svc.suggested_model(6) is None, "esgotada a ordem da aula: adaptar a ideia ou corte para preto"
 
@@ -377,10 +378,28 @@ def test_veo_is_an_extension_outside_the_default_order(svc, monkeypatch):
 
 
 def test_the_lesson_model_note_is_published_with_the_plan(svc, project):
-    """Gate 4 do CLAUDE.md: a troca 2.6/2.5 Turbo → 3.0 é registrada, não silenciosa."""
+    """Gate 4 do CLAUDE.md: o mapa Kling 2.6 (cena) / 3.0 Turbo (transição) é registrado, não silencioso."""
     plan = svc.load_plan(project)
     assert "Kling 2.6" in plan["model_note"] and "2.5 Turbo" in plan["model_note"]
-    assert "Kling 3.0" in plan["model_note"]
+    assert "Kling 3.0 Turbo" in plan["model_note"]
+
+
+def test_wave7_maps_scene_to_kling26_and_transition_to_turbo_without_breaking_generate(svc, project):
+    """`[extensão]` wave 7 (ADR-021): cena → Kling 2.6, transição (start/end) → Kling 3.0 Turbo.
+
+    O desvio "CLI só tem 3.0" caiu (2.6 existe). O modelo da transição é ACEITO na geração sem
+    entrar na ordem de progressão por falhas, e o `kling3_0` legado continua aceito (default do router)."""
+    assert svc.MODEL_ORDER == ["kling2_6", "seedance_2_0"] and svc.TRANSITION_MODEL == "kling3_0_turbo"
+    assert svc.model_for_mode("simple") == "kling2_6" and svc.model_for_mode("elaborate") == "kling2_6"
+    assert svc.model_for_mode("start_end") == "kling3_0_turbo"
+    accepted = svc.accepted_models()
+    assert {"kling2_6", "kling3_0_turbo", "kling3_0", "seedance_2_0"} <= set(accepted)
+    # a transição não entra na progressão por falhas (essa segue a ordem viva)
+    assert "kling3_0_turbo" not in svc.model_order()
+    svc.load_plan(project)
+    svc.update_shot(project, "cena01", "shot01", mode="start_end", prompt="slow dramatic transition")
+    with pytest.raises(ValueError):
+        svc.start_generate(project, "cena01", "shot01", "wan2_7", 1)   # fora do catálogo aceito
 
 
 def test_model_order_is_configurable_by_env(svc, monkeypatch):
