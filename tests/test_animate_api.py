@@ -136,7 +136,7 @@ def test_get_shots_returns_the_plan_and_404_without_storyboard(client, studio_en
     assert r.status_code == 200
     body = r.json()
     assert [s["shot"] for s in body["shots"]] == ["shot01", "shot02"]
-    assert body["total"] == 2 and body["ready"] == 0 and body["model_order"][0] == "kling3_0"
+    assert body["total"] == 2 and body["ready"] == 0 and body["model_order"][0] == "kling2_6"
     assert client.get("/api/projects/nao-existe/animate/shots").status_code == 404
     other = studio_env["refs"].create_project("Vazio")["id"]
     r = client.get(f"/api/projects/{other}/animate/shots")

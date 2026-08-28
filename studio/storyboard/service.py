@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import higgsfield as hf
-from ..common import ingest
+from ..common import ingest, pricing, prompter, settings
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 from .angles import registry  # noqa: F401
@@ -342,7 +342,10 @@ def _scenes_file(root: Path) -> Path:
 
 
 def _blank_scenes(n: int = DEFAULT_SCENES) -> list[dict]:
-    return [{"id": f"cena{i:02d}", "n": i, "text": "", "images": [], "primary": None} for i in range(1, n + 1)]
+    # `[extensão]` wave 7 (ADR-021): cena vazia também expõe os campos de vídeo (contrato: GET /scenes
+    # sempre traz video_desc/video_prompt/videos).
+    return [{"id": f"cena{i:02d}", "n": i, "text": "", "images": [], "primary": None,
+             "video_desc": "", "video_prompt": "", "videos": []} for i in range(1, n + 1)]
 
 
 def _scene_images(s: dict) -> tuple[list[str], str | None]:
@@ -367,13 +370,26 @@ def _scene_images(s: dict) -> tuple[list[str], str | None]:
     return images, primary
 
 
+def _scene_videos(s: dict) -> list[str]:
+    """`[extensão]` wave 7 (ADR-021): lista de vídeos (mp4 relativos) da cena, dedup preservando ordem.
+    Campo aditivo retrocompatível (ADR-018): cena antiga sem `videos` vira `[]`."""
+    raw = s.get("videos")
+    videos = [v for v in raw if v] if isinstance(raw, list) else []
+    seen: set[str] = set()
+    return [v for v in videos if not (v in seen or seen.add(v))]
+
+
 def _normalize(scenes: list[dict]) -> list[dict]:
     """`id` e `n` são sempre recalculados pela ordem recebida — cliente não decide numeração."""
     out = []
     for i, s in enumerate(scenes, 1):
         images, primary = _scene_images(s)
+        # `[extensão]` wave 7 (ADR-021): campos aditivos de vídeo por cena (retrocompat ADR-018).
         out.append({"id": f"cena{i:02d}", "n": i, "text": (s.get("text") or "").strip(),
-                    "images": images, "primary": primary})
+                    "images": images, "primary": primary,
+                    "video_desc": (s.get("video_desc") or "").strip(),
+                    "video_prompt": (s.get("video_prompt") or "").strip(),
+                    "videos": _scene_videos(s)})
     return out
 
 
@@ -428,6 +444,13 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
         s["images"] = checked
         if s["primary"] not in checked:
             s["primary"] = checked[0] if checked else None
+        # `[extensão]` wave 7 (ADR-021): valida cada vídeo sob storyboard/<cena>/video/ (sem traversal).
+        checked_videos: list[str] = []
+        for v in s["videos"]:
+            ok = _check_video(root, v)
+            if ok and ok not in checked_videos:
+                checked_videos.append(ok)
+        s["videos"] = checked_videos
     _write_scenes(root, norm)
     md = _write_md(root, norm)
     log.info("scenes_saved %s", {"pid": pid, "scenes": len(norm), "with_image": sum(1 for s in norm if s["images"])})
@@ -546,3 +569,239 @@ def start_generate(pid: str, model: str, kind: str, text: str, count: int = 4, s
 def job_status(pid: str) -> dict:
     """Estado do job sempre no formato do contrato — o registry devolve só `state` quando idle."""
     return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], **_registry.status(pid)}
+
+
+# ==========================================================================================
+# `[extensão]` wave 7 (ADR-021) — VÍDEO por cena (painel 02): prompt de vídeo (Claude) + geração
+# via CLI (Kling 2.6 cena / 3.0 Turbo transição). Contrato congelado em docs/domains/studio/
+# waves/wave-7.md (§Contrato HTTP CONGELADO). Cruza a fronteira com o animate (dono de vídeo): é um
+# PREVIEW por cena que alimenta a etapa 6 — não faz o handoff automático (fora de escopo, FDD §8).
+# ==========================================================================================
+VIDEO_DURATIONS = (5, 10)                 # inteiro ao CLI (5/10), como o animate
+VIDEO_MODES = ("single", "start_end")     # 1 frame (image-to-video) OU start/end (transição)
+VIDEO_CLI_MODE = "pro"                    # modo do CLI (a aula não fixa; [extensão], como no animate)
+VIDEO_TIMEOUT_S = 900                     # vídeo é lento (mesmo teto do animate)
+VIDEO_KEEP = 6                            # últimos takes mantidos em scenes.json por cena
+MAX_VIDEO_DESC = 500                      # descrição da cena (o que acontece no vídeo)
+VIDEO_ASPECT_RATIOS = ("16:9", "9:16", "1:1")
+DEFAULT_ASPECT_RATIO = "16:9"
+_SCENE_ID_RE = re.compile(r"^cena\d{2,}$")
+
+#: Template AGNÓSTICO (genericizado do exemplo do dono do produto, FDD §1): serve de ESTRUTURA, sem
+#: assumir cena alguma. `{action}` é instanciado pela descrição do usuário. Vai como instrução ao bot
+#: (papel `motion`) e, sem Claude, é o próprio prompt determinístico (fallback).
+VIDEO_TEMPLATE = (
+    "A photorealistic cinematic animation of {action}. The subject moves with physical realism — "
+    "weight, resistance, balance; the effort is visible. Camera performs one restrained move (e.g., "
+    "slow steady forward dolly at eye level), subtly tracking the subject while keeping intimate "
+    "framing. Environmental particles (snow, dust, rain, embers) move dynamically across the frame, "
+    "driven by a force, partially affecting visibility. Surface/material details (condensation, ice, "
+    "sweat, texture, reflections) are visible. Micro-movements: breathing, slight tremors, "
+    "muscle/shoulder tension, fabric/material reacting to conditions, contact with the ground. "
+    "Lighting is cold/warm, diffused, low contrast with soft highlights, preserving realistic "
+    "textures. Depth of field shallow, background dissolving into haze/bokeh. Camera motion smooth, "
+    "grounded, physically realistic — no artificial motion blur, no exaggerated effects — restrained, "
+    "tension/tone-driven cinematic realism. No text, no audio."
+)
+_TRANSITION_HINT = (" This is a start-frame/end-frame transition: describe the single action and the "
+                    "one camera move that carry the scene from the first (start) frame to the second "
+                    "(end) frame.")
+
+_video_registry = JobRegistry()           # registro PRÓPRIO de vídeo (chave por cena), separado da ideação
+
+
+def _valid_scene_id(scene_id: str) -> str:
+    if not scene_id or not _SCENE_ID_RE.match(scene_id):
+        raise Invalid(f"scene_id inválido: {scene_id} (esperado cenaNN)")
+    return scene_id
+
+
+def _valid_mode(mode: str) -> str:
+    if mode not in VIDEO_MODES:
+        raise Invalid(f"modo de vídeo inválido: {mode} (use {', '.join(VIDEO_MODES)})")
+    return mode
+
+
+def _valid_duration(duration) -> int:
+    if duration not in VIDEO_DURATIONS:
+        raise Invalid(f"duração inválida: {duration} (use {' ou '.join(map(str, VIDEO_DURATIONS))} segundos)")
+    return int(duration)
+
+
+def _aspect_ratio(root: Path) -> str:
+    """Proporção da campanha (`project.json`, núcleo). Ausente/inválida → 16:9 — igual ao animate."""
+    meta = _read_json(root / "project.json", {}) or {}
+    ar = meta.get("aspect_ratio") if isinstance(meta, dict) else None
+    return ar if ar in VIDEO_ASPECT_RATIOS else DEFAULT_ASPECT_RATIO
+
+
+def _video_dir(root: Path, scene_id: str) -> Path:
+    return root / STEP / scene_id / "video"
+
+
+def _check_video(root: Path, rel: str | None) -> str | None:
+    """Cena só aponta para mp4 sob storyboard/<cena>/video/ (sem path traversal)."""
+    if not rel:
+        return None
+    sb_dir = (root / STEP).resolve()
+    p = (root / rel).resolve()
+    inside = p.relative_to(sb_dir) if p.is_relative_to(sb_dir) else None
+    if inside is None or len(inside.parts) < 3 or inside.parts[1] != "video" \
+            or p.suffix.lower() != ".mp4" or not p.exists():
+        raise Invalid(f"vídeo fora de {STEP}/<cena>/video/ ou inexistente: {rel}")
+    return f"{STEP}/{inside.as_posix()}"
+
+
+def _next_video_rel(root: Path, scene_id: str) -> str:
+    d = _video_dir(root, scene_id)
+    used = [int(m.group(1)) for p in d.glob("take_*.mp4") if (m := re.search(r"take_(\d+)", p.stem))] if d.exists() else []
+    return f"{STEP}/{scene_id}/video/take_{max(used, default=0) + 1}.mp4"
+
+
+# ---------- prompt de vídeo (Claude, papel `motion`) ----------
+def _video_instruction(desc: str, mode: str) -> str:
+    text = VIDEO_TEMPLATE.replace("{action}", desc)
+    return text + _TRANSITION_HINT if mode == "start_end" else text
+
+
+def _video_frame_paths(root: Path, mode: str, frames: dict) -> list[Path]:
+    """Caminhos absolutos das imagens da cena (sob storyboard/ideas/) para o bot ver, quando dadas."""
+    frames = frames or {}
+    keys = ("start_image", "end_image") if mode == "start_end" else ("image",)
+    out: list[Path] = []
+    for k in keys:
+        rel = frames.get(k)
+        if rel:
+            out.append((root / _check_image(root, rel)))
+    return out
+
+
+def video_prompt(pid: str, scene_id: str, description: str, frames: dict | None = None) -> dict:
+    """Gera o PROMPT de vídeo cinematográfico da cena (Claude via papel `motion` + template agnóstico).
+
+    Com imagem(ns) da cena, o bot olha os frames (`from_images`); sem imagem, usa só o brief
+    (`from_brief`). Sem Claude no PATH (ou falha do bot), cai no template determinístico preenchido.
+    Devolve `{prompt, source, seconds}` — `seconds` é a duração sugerida do clipe (10 s para
+    transições, 5 s para cenas), o default que a tela pré-seleciona no custo/geração."""
+    root = project_dir(pid)
+    _valid_scene_id(scene_id)
+    frames = frames or {}
+    mode = _valid_mode(frames.get("mode") or "single")
+    desc = (description or "").strip()
+    if not desc:
+        raise Invalid("Escreva a descrição do vídeo da cena (o que acontece).")
+    if len(desc) > MAX_VIDEO_DESC:
+        raise Invalid(f"Descrição acima de {MAX_VIDEO_DESC} caracteres.")
+    instruction = _video_instruction(desc, mode)
+    seconds = VIDEO_DURATIONS[1] if mode == "start_end" else VIDEO_DURATIONS[0]
+    images = _video_frame_paths(root, mode, frames)
+    if prompter.available():
+        try:
+            res = (prompter.from_images("motion", images, instruction=instruction) if images
+                   else prompter.from_brief("motion", {"instruction": instruction}))
+            log.info("video_prompt %s", {"pid": pid, "scene": scene_id, "mode": mode, "source": "claude"})
+            return {"prompt": res["prompt"], "source": "claude", "seconds": seconds}
+        except Exception as e:  # noqa: BLE001  — bot indisponível/erro cai no template determinístico
+            log.warning("video_prompt claude falhou, usando template: %s", e)
+    log.info("video_prompt %s", {"pid": pid, "scene": scene_id, "mode": mode, "source": "template"})
+    return {"prompt": instruction, "source": "template", "seconds": seconds}
+
+
+# ---------- geração de vídeo via CLI (Kling) ----------
+def video_model(pid: str, mode: str) -> str:
+    """Modelo resolvido no servidor: start_end → transição (Kling 3.0 Turbo), senão cena (Kling 2.6)."""
+    action = "storyboard.video.transition" if mode == "start_end" else "storyboard.video.scene"
+    return settings.default_for(action, pid)["model"]
+
+
+def _video_build_params(root: Path, prompt: str, mode: str, duration: int, frames: dict) -> dict:
+    """Params do `generate create` (padrão do animate): áudio OFF, duração inteira, proporção da campanha.
+    single → `start_image` (image-to-video); start_end → `start_image` + `end_image` (transição)."""
+    def _abs(rel: str | None, label: str) -> str:
+        if not rel:
+            raise Invalid(f"informe o frame {label} (imagem escolhida em storyboard/ideas/)")
+        return str((root / _check_image(root, rel)).resolve())
+
+    params = {"prompt": prompt.strip(), "duration": int(duration),
+              "aspect_ratio": _aspect_ratio(root), "mode": VIDEO_CLI_MODE, "sound": False}
+    if mode == "start_end":
+        params["start_image"] = _abs(frames.get("start_image"), "inicial (start)")
+        params["end_image"] = _abs(frames.get("end_image"), "final (end)")
+    else:
+        params["start_image"] = _abs(frames.get("image"), "da cena")
+    return params
+
+
+def _append_scene_video(root: Path, scene_id: str, rel: str, prompt: str) -> None:
+    """Anexa o mp4 gerado à cena em scenes.json (campo aditivo `videos`) e grava o `video_prompt`."""
+    scenes = _read_scenes(root)
+    for s in scenes:
+        if s["id"] == scene_id:
+            vids = [v for v in s["videos"] if v != rel] + [rel]
+            s["videos"] = vids[-VIDEO_KEEP:]
+            if prompt.strip():
+                s["video_prompt"] = prompt.strip()
+            _write_scenes(root, scenes)
+            _write_md(root, scenes)
+            return
+
+
+def video_cost(pid: str, scene_id: str, mode: str, duration: int) -> dict:
+    """Custo medido (offline, ADR-016) do vídeo da cena: `{model, per_item, total}`. Uma geração por cena."""
+    _valid_scene_id(scene_id)
+    _valid_mode(mode)
+    dur = _valid_duration(duration)
+    model = video_model(pid, mode)
+    per = pricing.estimate(model, {"duration": f"{dur}s"}).get("credits")
+    return {"model": model, "per_item": per, "total": per}
+
+
+def start_video_generate(pid: str, scene_id: str, prompt: str, mode: str, duration: int,
+                         frames: dict | None = None) -> dict:
+    """Gera UM vídeo da cena pelo CLI (gasta créditos), salva storyboard/<cena>/video/take_K.mp4 e
+    registra o gasto (`storyboard.video`, ADR-016). JobRegistry PRÓPRIO de vídeo, chave por cena."""
+    root = project_dir(pid)
+    _valid_scene_id(scene_id)
+    _valid_mode(mode)
+    dur = _valid_duration(duration)
+    text = (prompt or "").strip()
+    if not text:
+        raise Invalid("Gere (ou escreva) o prompt de vídeo antes de gerar.")
+    _cli_ready()
+    model = video_model(pid, mode)
+    params = _video_build_params(root, text, mode, dur, frames or {})
+    started = datetime.now()
+
+    def run(job: dict):
+        res = hf.generate(model, params, timeout_s=VIDEO_TIMEOUT_S)
+        urls = [u for u in res["urls"] if Path(u.split("?")[0]).suffix.lower() in ingest.MEDIA_EXT["video"]]
+        if not urls:
+            raise RuntimeError("o CLI não devolveu URL de vídeo")
+        rel = _next_video_rel(root, scene_id)
+        hf.download(urls[0], root / rel)
+        # `[extensão]` livro-caixa de créditos (ADR-016): custo por clipe gerado.
+        settings.record_generation(action="storyboard.video", model=model, params=params, count=1,
+                                   pid=pid, step="storyboard", job_id=res.get("id"))
+        _append_scene_video(root, scene_id, rel, text)
+        job["added"] += 1
+        job["video"] = rel
+        job["done"] = 1
+        job["log"].append(f"vídeo salvo em {rel}")
+        log.info("video_cli_job %s", {"pid": pid, "scene": scene_id, "model": model, "mode": mode,
+                                      "state": "done", "seconds": round((datetime.now() - started).total_seconds(), 1)})
+
+    try:
+        return _video_registry.start(_video_key(pid, scene_id), 1, run, scene_id=scene_id, model=model)
+    except RuntimeError as e:
+        raise Precondition("Já existe uma geração de vídeo em andamento para esta cena.") from e
+
+
+def _video_key(pid: str, scene_id: str) -> str:
+    return f"{pid}:{scene_id}"
+
+
+def video_job_status(pid: str, scene_id: str) -> dict:
+    """Estado do job de vídeo da cena; concluído devolve `{state:"done", video:<rel mp4>}`."""
+    _valid_scene_id(scene_id)
+    return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], "video": None,
+            **_video_registry.status(_video_key(pid, scene_id))}

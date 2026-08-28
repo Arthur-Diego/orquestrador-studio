@@ -115,7 +115,9 @@ def test_save_scenes_renumbers_by_order_and_writes_md(sb, project, root):
     md = (root / "storyboard" / "storyboard.md").read_text()
     assert "# Storyboard: Gelo Zero" in md and "## Cena 1" in md and "Close no astronauta" in md
     reordered = sb.save_scenes(project, [{"text": "A lata cai"}, {"text": "Close no astronauta"}])["scenes"]
-    assert reordered[0] == {"id": "cena01", "n": 1, "text": "A lata cai", "images": [], "primary": None}
+    # `[extensão]` wave 7 (ADR-021): campos aditivos de vídeo (retrocompat) no schema da cena.
+    assert reordered[0] == {"id": "cena01", "n": 1, "text": "A lata cai", "images": [], "primary": None,
+                            "video_desc": "", "video_prompt": "", "videos": []}
 
 
 def test_save_scenes_limits_and_image_must_live_in_ideas(sb, project, base):
@@ -386,3 +388,180 @@ def test_storyboard_md_carries_the_arc_and_the_upscale_note(sb, project, root, b
     md = (root / "storyboard" / "storyboard.md").read_text()
     assert "## Cena 1 — começo" in md and "## Cena 3 — desfecho" in md
     assert "ângulos" in md, "4.1: o documento diz onde o upscale acontece"
+
+
+# ---------- `[extensão]` wave 7 (ADR-021): vídeo por cena ----------
+def _fake_video_cli(monkeypatch, sb, url="https://cdn/out.mp4?sig=1", gate=None):
+    """Fake do CLI da Higgsfield para VÍDEO: logado, hf.generate devolve uma URL .mp4, hf.download grava."""
+    monkeypatch.setattr(sb.hf, "available", lambda: True)
+    monkeypatch.setattr(sb.hf, "status", lambda: {"installed": True, "logged_in": True, "credits": 100})
+    sent = {}
+
+    def fake_generate(model, params, timeout_s=600):
+        if gate is not None:
+            gate.wait(5)
+        sent.update({"model": model, "params": params, "timeout": timeout_s})
+        return {"raw": {"id": "vid1"}, "urls": [url], "id": "vid1"}
+
+    def fake_download(u, dest):
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x00\x00\x00\x18ftypmp42fake")
+        return dest
+
+    monkeypatch.setattr(sb.hf, "generate", fake_generate)
+    monkeypatch.setattr(sb.hf, "download", fake_download)
+    return sent
+
+
+def _wait_video(sb, project, scene, tries=100):
+    for _ in range(tries):
+        if sb.video_job_status(project, scene)["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    return sb.video_job_status(project, scene)
+
+
+def test_video_prompt_falls_back_to_the_template_without_claude(sb, project, monkeypatch):
+    monkeypatch.setattr(sb.prompter, "available", lambda: False)
+    r = sb.video_prompt(project, "cena01", "an astronaut walking through a blizzard",
+                        {"mode": "single"})
+    assert r["source"] == "template" and r["seconds"] == 5
+    assert r["prompt"].startswith("A photorealistic cinematic animation of an astronaut walking")
+    assert "No text, no audio." in r["prompt"], "estrutura agnóstica do template"
+    se = sb.video_prompt(project, "cena01", "the weather changes", {"mode": "start_end"})
+    assert se["seconds"] == 10 and "start-frame/end-frame transition" in se["prompt"]
+
+
+def test_video_prompt_uses_claude_when_available(sb, project, monkeypatch):
+    monkeypatch.setattr(sb.prompter, "available", lambda: True)
+    seen = {}
+
+    def fake_brief(kind, brief):
+        seen.update({"kind": kind, "brief": brief})
+        return {"prompt": "Slow dolly-in on the astronaut, snow drifting, realistic.", "source": "claude", "seconds": 3.0}
+
+    monkeypatch.setattr(sb.prompter, "from_brief", fake_brief)
+    r = sb.video_prompt(project, "cena01", "an astronaut walking", {"mode": "single"})
+    assert r["source"] == "claude" and r["prompt"].startswith("Slow dolly-in")
+    assert r["seconds"] == 5, "seconds é a duração sugerida do clipe, não o tempo do bot"
+    assert seen["kind"] == "motion" and "an astronaut walking" in seen["brief"]["instruction"]
+
+
+def test_video_prompt_sends_scene_images_to_claude(sb, project, monkeypatch):
+    a, b = _two_ideas(sb, project)
+    monkeypatch.setattr(sb.prompter, "available", lambda: True)
+    got = {}
+
+    def fake_images(kind, images, instruction="", brief=None):
+        got.update({"kind": kind, "images": [str(i) for i in images], "instruction": instruction})
+        return {"prompt": "faithful motion prompt", "source": "claude", "seconds": 4.0}
+
+    monkeypatch.setattr(sb.prompter, "from_images", fake_images)
+    r = sb.video_prompt(project, "cena01", "the can falls", {"mode": "single", "image": a})
+    assert r["source"] == "claude" and got["kind"] == "motion"
+    assert len(got["images"]) == 1 and got["images"][0].endswith(Path(a).name)
+
+
+def test_video_prompt_validates_description_and_scene(sb, project):
+    with pytest.raises(sb.Invalid):
+        sb.video_prompt(project, "cena01", "   ", {"mode": "single"})
+    with pytest.raises(sb.Invalid):
+        sb.video_prompt(project, "not-a-scene", "walk", {"mode": "single"})
+    with pytest.raises(sb.Invalid):
+        sb.video_prompt(project, "cena01", "walk", {"mode": "magic"})
+
+
+def test_video_cost_resolves_model_by_mode(sb, project):
+    single = sb.video_cost(project, "cena01", "single", 5)
+    assert single == {"model": "kling2_6", "per_item": 10, "total": 10}
+    trans = sb.video_cost(project, "cena01", "start_end", 10)
+    assert trans == {"model": "kling3_0_turbo", "per_item": 15, "total": 15}
+    with pytest.raises(sb.Invalid):
+        sb.video_cost(project, "cena01", "single", 7)
+
+
+def test_video_generate_single_saves_take_and_persists_scene(sb, project, monkeypatch, root):
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    sent = _fake_video_cli(monkeypatch, sb)
+    sb.start_video_generate(project, "cena01", "Slow dolly on the can", "single", 5, {"image": a})
+    job = _wait_video(sb, project, "cena01")
+    assert job["state"] == "done" and job["added"] == 1
+    rel = "storyboard/cena01/video/take_1.mp4"
+    assert job["video"] == rel and (root / rel).exists()
+    assert sent["model"] == "kling2_6" and sent["timeout"] == sb.VIDEO_TIMEOUT_S
+    assert sent["params"]["duration"] == 5 and sent["params"]["sound"] is False
+    assert sent["params"]["start_image"].endswith(Path(a).name) and "end_image" not in sent["params"]
+    scene = sb.load_scenes(project)["scenes"][0]
+    assert scene["videos"] == [rel] and scene["video_prompt"] == "Slow dolly on the can"
+
+
+def test_video_generate_start_end_sends_both_frames_with_turbo(sb, project, monkeypatch, root):
+    a, b = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a, b], "primary": a}])
+    sent = _fake_video_cli(monkeypatch, sb)
+    sb.start_video_generate(project, "cena01", "dramatic transition", "start_end", 10,
+                            {"start_image": a, "end_image": b})
+    job = _wait_video(sb, project, "cena01")
+    assert job["state"] == "done"
+    assert sent["model"] == "kling3_0_turbo" and sent["params"]["duration"] == 10
+    assert sent["params"]["start_image"].endswith(Path(a).name)
+    assert sent["params"]["end_image"].endswith(Path(b).name)
+
+
+def test_video_generate_second_take_increments_and_keeps_history(sb, project, monkeypatch, root):
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    _fake_video_cli(monkeypatch, sb)
+    sb.start_video_generate(project, "cena01", "take one", "single", 5, {"image": a})
+    _wait_video(sb, project, "cena01")
+    sb.start_video_generate(project, "cena01", "take two", "single", 5, {"image": a})
+    _wait_video(sb, project, "cena01")
+    assert (root / "storyboard/cena01/video/take_2.mp4").exists()
+    assert sb.load_scenes(project)["scenes"][0]["videos"] == [
+        "storyboard/cena01/video/take_1.mp4", "storyboard/cena01/video/take_2.mp4"]
+
+
+def test_video_generate_validates_prompt_mode_and_frames(sb, project, monkeypatch):
+    a, _ = _two_ideas(sb, project)
+    _fake_video_cli(monkeypatch, sb)
+    with pytest.raises(sb.Invalid):
+        sb.start_video_generate(project, "cena01", "  ", "single", 5, {"image": a})     # sem prompt
+    with pytest.raises(sb.Invalid):
+        sb.start_video_generate(project, "cena01", "p", "single", 5, {})                # sem frame
+    with pytest.raises(sb.Invalid):
+        sb.start_video_generate(project, "cena01", "p", "start_end", 5, {"start_image": a})  # falta end
+
+
+def test_video_job_is_isolated_per_scene(sb, project, monkeypatch, root):
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "c1", "images": [a], "primary": a}, {"text": "c2"}])
+    gate = threading.Event()
+    _fake_video_cli(monkeypatch, sb, gate=gate)
+    sb.start_video_generate(project, "cena01", "p", "single", 5, {"image": a})
+    # mesma cena em andamento → recusa (chave por cena)
+    with pytest.raises(sb.Precondition):
+        sb.start_video_generate(project, "cena01", "p", "single", 5, {"image": a})
+    # outra cena não colide (registry por cena) — mas idle ainda
+    assert sb.video_job_status(project, "cena02")["state"] == "idle"
+    gate.set()
+    assert _wait_video(sb, project, "cena01")["state"] == "done"
+
+
+def test_scenes_videos_are_additive_and_retrocompatible(sb, project, root):
+    """Um scenes.json antigo (sem campos de vídeo) lê com defaults; PUT valida o mp4 sob <cena>/video/."""
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "scenes.json").write_text(json.dumps({"scenes": [
+        {"id": "cena01", "n": 1, "text": "antiga", "images": [], "primary": None}]}))
+    s = sb.load_scenes(project)["scenes"][0]
+    assert s["video_desc"] == "" and s["video_prompt"] == "" and s["videos"] == []
+    # PUT com um vídeo inexistente é recusado (sem traversal); um mp4 real sob <cena>/video/ passa
+    make_image(root / "storyboard" / "ideas" / "x.png")  # só para existir a pasta ideas
+    with pytest.raises(sb.Invalid):
+        sb.save_scenes(project, [{"text": "c", "videos": ["storyboard/cena01/video/nao-existe.mp4"]}])
+    (root / "storyboard" / "cena01" / "video").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "cena01" / "video" / "take_1.mp4").write_bytes(b"x")
+    out = sb.save_scenes(project, [{"text": "c", "video_desc": "a can falls",
+                                    "videos": ["storyboard/cena01/video/take_1.mp4"]}])["scenes"][0]
+    assert out["video_desc"] == "a can falls" and out["videos"] == ["storyboard/cena01/video/take_1.mp4"]

@@ -13,6 +13,11 @@ def test_measured_costs_match_the_product_owner_table():
     assert pricing.estimate("kling3_0", {"duration": "5s"})["credits"] == 10
     assert pricing.estimate("kling3_0", {"duration": "10s"})["credits"] == 20
     assert pricing.estimate("seedance_2_0", {})["credits"] == 22.5
+    # `[extensão]` wave 7 (ADR-021): Kling 2.6 (cena) e Kling 3.0 Turbo (transição), medidos no CLI.
+    assert pricing.estimate("kling2_6", {"duration": "5s"})["credits"] == 10
+    assert pricing.estimate("kling2_6", {"duration": "10s"})["credits"] == 20
+    assert pricing.estimate("kling3_0_turbo", {"duration": "5s"})["credits"] == 7.5
+    assert pricing.estimate("kling3_0_turbo", {"duration": "10s"})["credits"] == 15
     assert pricing.estimate("veo3_1_lite", {"duration": "8s"})["credits"] == 8
     assert pricing.estimate("sonilo_music", {})["credits"] == 0.94
 
@@ -20,6 +25,8 @@ def test_measured_costs_match_the_product_owner_table():
 def test_variant_normalization_accepts_loose_inputs():
     assert pricing.estimate("kling3_0", {"duration": 5})["credits"] == 10
     assert pricing.estimate("kling3_0", {"duration": "10"})["credits"] == 20
+    assert pricing.estimate("kling2_6", {"duration": 10})["credits"] == 20        # inteiro aceito
+    assert pricing.estimate("kling3_0_turbo", {})["variant"] == "5s"              # default do modelo
     assert pricing.estimate("nano_banana_2", {"resolution": "4096"})["credits"] == 4
     # sem variação, cai no default do modelo
     assert pricing.estimate("nano_banana_2", None)["variant"] == "2k"
