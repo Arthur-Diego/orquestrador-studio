@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from .. import higgsfield as hf
-from ..common import ingest, prompter
+from ..common import ingest, prompter, settings
 from ..common.jobs import JobRegistry
 from ..common.palette import palette as _palette
 from ..refs.service import project_dir
@@ -260,6 +260,9 @@ def start_generate(pid: str, model: str, prompts: list[str], aspect_ratio: str =
             if refs:
                 params["image_references"] = refs
             res = hf.generate(model, params)
+            # `[extensão]` livro-caixa de créditos (ADR-016).
+            settings.record_generation(action="mood.grid", model=model, params=params, count=count,
+                                       pid=pid, step="mood", job_id=res.get("id"))
             for url in res["urls"]:
                 try:
                     data = urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=60).read()

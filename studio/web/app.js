@@ -31,7 +31,10 @@ let view = "overview";            // "overview" | <id da etapa>
 // [extensão] ADR-013, campanha-independente). `moodboards` é um prefixo de rota RESERVADO —
 // um pid de projeto nunca pode ser "moodboards" (reservado em create_project).
 const MB_ROUTE = "moodboards";
-let area = "campaign";            // "campaign" | "moodboards"
+// Área global "Créditos & Custos" [extensão] (ADR-016): saldo, custos e painel admin de modelos
+// default. Rota RESERVADA — um pid de projeto nunca pode ser "creditos" (reservado em create_project).
+const CR_ROUTE = "creditos";
+let area = "campaign";            // "campaign" | "moodboards" | "creditos"
 let currentStep = null;           // etapa instanciada em #main
 const factories = {}, instances = {}, loaded = new Set(), readySteps = new Set();
 let refreshTimer = null;
@@ -97,6 +100,16 @@ async function applyRoute() {
     renderMenu(); renderTopbar();
     const mbid = (hr.view && hr.view !== "overview") ? hr.view : null;
     if (window.Studio.moodboards) window.Studio.moodboards.open(mbid);
+    return;
+  }
+  // Área global "Créditos & Custos" [extensão] (ADR-016): funciona com ou sem campanha. Quando há
+  // uma campanha selecionada, a tela usa o pid dela para o override de modelo por projeto.
+  if (hr && hr.pid === CR_ROUTE) {
+    area = "creditos";
+    destroyCurrent();
+    view = null;
+    renderMenu(); renderTopbar();
+    if (window.Studio.creditos) window.Studio.creditos.open(pid);
     return;
   }
   area = "campaign";
@@ -204,6 +217,8 @@ function renderMenu() {
   $("#btnOverview").classList.toggle("active", area === "campaign" && view === "overview");
   const mb = $("#btnMoodboards");
   if (mb) mb.classList.toggle("active", area === "moodboards");
+  const cr = $("#btnCreditos");
+  if (cr) cr.classList.toggle("active", area === "creditos");
   const estados = estadosDasEtapas();
   $("#railPipe").innerHTML = pipeHtml(estados);
   const feitas = estados.filter((st) => st === "done").length;
@@ -564,6 +579,10 @@ $("#btnNewProj").onclick = openWizard;
 $("#btnEditCamp").onclick = openEdit;
 $("#btnOverview").onclick = () => navigate("overview");
 $("#btnMoodboards").onclick = () => { if (location.hash === "#/moodboards") applyRoute(); else location.hash = "#/moodboards"; };
+const goCreditos = () => { if (location.hash === "#/creditos") applyRoute(); else location.hash = "#/creditos"; };
+$("#btnCreditos").onclick = goCreditos;
+const btnCredits = $("#btnCredits");
+if (btnCredits) btnCredits.onclick = goCreditos;
 $("#btnContinue").onclick = () => { const c = guideAll && guideAll.current; if (c) navigate(c); };
 $("#btnTheme").onclick = () => {
   const ordem = ["auto", "light", "dark"];
@@ -580,6 +599,8 @@ $("#steps").addEventListener("keydown", (e) => {
   aplicaTema(store.get("studio.theme") || "auto");
   // Chip do CLI da Higgsfield no rodapé da sidebar: o estado do plano vale para a sessão inteira.
   window.Studio.ui.hfChip("#hfChipSide");
+  // Indicador global de créditos na topbar (ADR-016): saldo restante, atualizado após cada geração.
+  window.Studio.ui.refreshCredits(false);
   steps = await api("/api/steps").catch(() => []);
   // Catálogo em leitura para `Studio.ui` (o guia usa o número da etapa em "Ir para a etapa N").
   window.Studio.steps = steps;

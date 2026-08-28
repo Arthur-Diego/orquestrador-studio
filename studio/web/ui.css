@@ -138,3 +138,53 @@
 .fmt .dest{font-size:11px;color:var(--ink-3);line-height:1.35}
 .fmt input{position:absolute;opacity:0;width:0;height:0}
 @media (max-width:560px){.fmt{grid-template-columns:1fr}}
+
+/* ---------- Créditos & Custos [extensão] (ADR-016) ---------- */
+.tb-credits{cursor:pointer;font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+.cr-grid{display:flex;flex-direction:column;gap:var(--s5)}
+.cr-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-panel);padding:var(--s5);display:flex;flex-direction:column;gap:var(--s3)}
+.cr-card-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.cr-card-head h3{font-size:var(--fs-h3);font-weight:600;color:var(--ink);margin-right:auto}
+.cr-card h3{font-size:var(--fs-h3);font-weight:600;color:var(--ink)}
+.cr-card h4{font-size:var(--fs-sm);font-weight:600;color:var(--ink-2);margin-top:var(--s2)}
+.cr-note{font-size:var(--fs-fine);color:var(--ink-4);line-height:1.5}
+.cr-balance{background:var(--surface-3);border-color:var(--accent-line-3)}
+.cr-balance-main{display:flex;align-items:center;gap:var(--s4)}
+.cr-saldo{display:flex;align-items:baseline;gap:6px}
+.cr-saldo b{font-size:var(--fs-display);font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1}
+.cr-saldo span{font-size:var(--fs-sm);color:var(--ink-4)}
+.cr-balance-msg{font-size:var(--fs-fine);color:var(--ink-3);line-height:1.5}
+.cr-balance code,.cost-warn code{font-family:"IBM Plex Mono",monospace;background:var(--code-bg);padding:1px 5px;border-radius:4px;font-size:.9em}
+.cr-scope{display:flex;align-items:center;gap:var(--s2)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:var(--r-sm);overflow:hidden}
+.seg-btn{padding:5px 12px;font-size:var(--fs-fine);background:var(--surface);color:var(--ink-3);border:0;cursor:pointer}
+.seg-btn.on{background:var(--accent-soft-2);color:var(--accent);font-weight:600}
+.cr-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.cr-table th{text-align:left;font-size:var(--fs-micro);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-5);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--line)}
+.cr-table td{padding:8px 10px;border-bottom:1px solid var(--line);color:var(--ink-row);vertical-align:top}
+.cr-table tbody tr:last-child td{border-bottom:0}
+.cr-table .cr-cost{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cr-table .cr-mid{display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-5)}
+.cr-table .cr-mnote{font-size:var(--fs-fine);color:var(--ink-4)}
+.cr-table .cr-empty{color:var(--ink-5);text-align:center;font-style:italic}
+.cr-kind{margin-top:var(--s3)}
+.cr-act{display:flex;flex-direction:column;gap:1px}
+.cr-act span{font-size:var(--fs-micro);color:var(--ink-5)}
+.cr-modelcell{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cr-model,.cr-variant{padding:5px 8px;border:1px solid var(--ctl);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font-size:var(--fs-fine)}
+.cr-variant{max-width:80px}
+.cr-src{white-space:nowrap}
+.cr-clear{margin-left:8px;font-size:var(--fs-fine)}
+.cr-hist-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+.cr-hist-scroll{overflow-x:auto;max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--r-sm)}
+@media (max-width:720px){.cr-hist-grid{grid-template-columns:1fr}}
+
+/* modal de custo antes de gerar */
+.cost-sheet{display:flex;flex-direction:column;gap:2px;margin-bottom:var(--s3)}
+.cost-row{display:flex;justify-content:space-between;gap:var(--s4);padding:6px 0;font-size:var(--fs-sm);color:var(--ink-2);border-bottom:1px solid var(--line)}
+.cost-row b{color:var(--ink);font-variant-numeric:tabular-nums}
+.cost-row.total{border-bottom:2px solid var(--line-2)}
+.cost-row.total b{color:var(--accent);font-size:var(--fs-base)}
+.cost-warn{background:var(--gate-soft);border:1px solid var(--gate-line);border-radius:var(--r-sm);padding:8px 10px;font-size:var(--fs-fine);color:var(--ink-2);line-height:1.5;margin-bottom:var(--s2)}
+.cost-note{font-size:var(--fs-fine);color:var(--ink-4);line-height:1.5}
+.cost-line{font-size:var(--fs-base);color:var(--ink);margin-bottom:6px}

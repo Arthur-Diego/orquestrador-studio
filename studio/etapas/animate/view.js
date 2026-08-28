@@ -19,6 +19,7 @@ Studio.register("animate", (ctx) => {
   const DL_MINUTES = 120;    // janela fixa da importação da pasta Downloads (protótipo não desenha o campo)
   let plan = { ...EMPTY }, cands = [], picked = null, jobShot = null, job = null;
   let dl = { folder: "", exists: false }, avisos = "", mod = null;
+  let cfgModel = null;   // modelo default de "animate.video" vindo da config (ADR-016)
 
   const esc = (s) => ui.esc(s);
   const key = (s) => `${s.scene}/${s.shot}`;
@@ -37,6 +38,8 @@ Studio.register("animate", (ctx) => {
 
   async function loadPlan() {
     if (!ctx.pid()) { plan = { ...EMPTY }; return render(); }
+    // Modelo default lido da config de "Créditos & Custos" (ADR-016), não fixo no código.
+    if (cfgModel === null) { const d = await ui.defaultModel("animate.video", ctx.pid()); cfgModel = (d && d.model) || ""; }
     try { plan = await api(`${base()}/shots`); }
     catch (err) { $("#anShots").innerHTML = `<div class="empty">${esc(err.message)}</div>`; return; }
     // Avisos do plano não ocupam a tela (o protótipo não os desenha): viram toast na mudança.
@@ -234,7 +237,7 @@ Studio.register("animate", (ctx) => {
       <div class="row wrap">
         <div class="field grow-md"><span class="eyebrow lbl">modelo</span>
           <select class="an-model" title="${esc(plan.model_note || "")}">${(plan.model_order || []).map((m) =>
-            `<option value="${esc(m)}"${m === (s.suggested_model || "") ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></div>
+            `<option value="${esc(m)}"${m === (s.suggested_model || cfgModel || (plan.model_order || [])[0] || "") ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></div>
         <label class="inline">takes <input type="number" class="an-count" value="${TAKES_DA_AULA}" min="1" max="4"></label>
         <span class="chip mode an-cli">● CLI · ?</span>
       </div>

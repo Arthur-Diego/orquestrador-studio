@@ -27,7 +27,7 @@ from pathlib import Path
 
 from .. import higgsfield as hf
 from ..common import ffmpeg as ff
-from ..common import ingest
+from ..common import ingest, settings
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 from . import beats as beats_mod
@@ -194,6 +194,9 @@ def start_generate(pid: str, prompt: str, duration: int = DEFAULT_DURATION, coun
                 job["log"].append(f"faixa {i + 1}/{count}: geração falhou em {_elapsed(started)}: {e}")
                 job["done"] = i + 1
                 continue
+            # `[extensão]` livro-caixa de créditos (ADR-016): custo por faixa gerada.
+            settings.record_generation(action="music.track", model=MODEL, params={"duration": duration},
+                                       count=1, pid=pid, step="music", job_id=res.get("id"))
             urls = _audio_urls(res)
             log.info("generate track %s/%s job_id=%s urls=%s", i + 1, count, res.get("id"), len(urls))
             if not urls:

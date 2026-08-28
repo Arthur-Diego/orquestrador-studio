@@ -150,20 +150,117 @@ window.Studio.ui = {
     return nodes[0] || null;
   },
 
-  // ---------- custo ----------
+  // ---------- custo (ADR-016: gate de custo + saldo global) ----------
   /**
-   * Mostra o custo estimado antes de gastar créditos (aula 008: custo é o critério principal).
-   * `costFn()` devolve `{credits}` / `{total}` / número / null; falha vira "estimativa
-   * indisponível" — nunca impede o usuário de decidir. Retorna true se ele confirmou.
+   * Confirma uma geração paga mostrando o custo ANTES de gastar (aula 008). Dois modos, os dois
+   * devolvem `Promise<boolean>` (true = confirmou):
+   *
+   *   confirmCost(costFn, label)                — modo legado: `costFn()` devolve `{credits}` /
+   *     `{total}` / número / null; abre um modal simples com a estimativa.
+   *   confirmCost({action, pid, count, label, step}, label?) — modo rico (ADR-016): consulta
+   *     `/api/.../creditos/cost?action=…`, resolve o MODELO default da ação (config do projeto ›
+   *     global › código), mostra modelo, resolução, custo unitário, quantidade, total, saldo atual
+   *     e saldo depois, e avisa quando o CLI está deslogado (caminho da UI ilimitada da Higgsfield).
+   *
+   * `generate cost` é grátis — consultar custo nunca gasta crédito.
    */
-  async confirmCost(costFn, label = "Gerar via CLI") {
-    let est = "Estimativa de custo indisponível.";
+  confirmCost(costFnOrOpts, label = "Gerar via CLI") {
+    if (typeof costFnOrOpts === "function") return this._confirmCostSimple(costFnOrOpts, label);
+    return this._confirmGeneration(costFnOrOpts || {});
+  },
+
+  async _confirmCostSimple(costFn, label) {
+    let credits = null;
     try {
       const c = await costFn();
-      const credits = typeof c === "number" ? c : (c && (c.total ?? c.credits));
-      if (credits != null) est = `Estimativa: ${credits} créditos.`;
-    } catch (e) { /* mantém indisponível */ }
-    return window.confirm(`${label}? ${est} Isso gasta créditos (o ilimitado do plano vale só na UI da Higgsfield).`);
+      credits = typeof c === "number" ? c : (c && (c.total ?? c.credits));
+    } catch (e) { /* estimativa indisponível */ }
+    const est = credits != null ? `Estimativa: <b>${this.esc(credits)}</b> créditos.` : "Estimativa de custo indisponível.";
+    return this._confirmModal({ title: label, label,
+      bodyHtml: `<p class="cost-line">${est}</p>
+        <p class="cost-note">Isso gasta créditos — o ilimitado do plano vale só na UI da Higgsfield.</p>` });
+  },
+
+  async _confirmGeneration({ action, pid, count = 1, label = "Gerar via CLI", step } = {}) {
+    let info = null;
+    try {
+      const base = pid ? `/api/projects/${encodeURIComponent(pid)}/creditos/cost` : "/api/creditos/cost";
+      info = await (await fetch(`${base}?action=${encodeURIComponent(action)}`)).json();
+    } catch (e) { info = null; }
+    const n = Math.max(1, Number(count) || 1);
+    const unit = info && info.credits != null ? Number(info.credits) : null;
+    const total = unit != null ? Math.round(unit * n * 100) / 100 : null;
+    const bal = info && info.balance;
+    const loggedOut = bal && bal.installed && !bal.logged_in;
+    const notInstalled = bal && !bal.installed;
+    const saldo = bal && bal.credits != null ? Number(bal.credits) : null;
+    const rows = [];
+    if (info && info.model) rows.push(`<div class="cost-row"><span>Modelo</span><b>${this.esc(info.label || info.model)}${info.variant ? ` · ${this.esc(info.variant)}` : ""}</b></div>`);
+    if (unit != null) rows.push(`<div class="cost-row"><span>Custo por geração</span><b>${this.esc(unit)} créditos${info.source === "cli" ? " (CLI)" : info.source === "measured" ? " (medido)" : ""}</b></div>`);
+    if (n > 1) rows.push(`<div class="cost-row"><span>Quantidade</span><b>${n}×</b></div>`);
+    rows.push(`<div class="cost-row total"><span>Total estimado</span><b>${total != null ? `${total} créditos` : "indisponível"}</b></div>`);
+    if (saldo != null) {
+      rows.push(`<div class="cost-row"><span>Saldo atual</span><b>${this.esc(saldo)} créditos</b></div>`);
+      if (total != null) rows.push(`<div class="cost-row"><span>Saldo depois</span><b>${Math.round((saldo - total) * 100) / 100} créditos</b></div>`);
+    }
+    let warn = "";
+    if (notInstalled) warn = `<p class="cost-warn">⚠ CLI da Higgsfield não instalado. Gere pela <b>UI da Higgsfield</b> (ilimitado no plano) e importe o resultado.</p>`;
+    else if (loggedOut) warn = `<p class="cost-warn">⚠ CLI sem login (<code>higgsfield auth login</code>). Sem login, use a <b>UI da Higgsfield</b> (ilimitado) e importe — o CLI cobra créditos.</p>`;
+    const body = `<div class="cost-sheet">${rows.join("")}</div>${warn}
+      <p class="cost-note">Isso gasta créditos — o ilimitado do plano vale só na UI da Higgsfield.</p>`;
+    return this._confirmModal({ title: label, label, bodyHtml: body });
+  },
+
+  /** Modal de confirmação genérico (título + corpo HTML) que resolve `Promise<boolean>`. */
+  _confirmModal({ title, label, bodyHtml }) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; resolve(v); };
+      const m = this.modal({
+        title, subtitle: "Custo antes de gerar (aula 008)", html: bodyHtml,
+        actions: [
+          { label: "Cancelar", kind: "ghost", onClick: () => finish(false) },
+          { label: label || "Gerar", kind: "primary", onClick: () => finish(true) },
+        ],
+        onClose: () => finish(false),
+      });
+      return m;
+    });
+  },
+
+  /**
+   * Resolve o modelo default de uma ação (config do projeto › global › código) para a tela
+   * preselecionar o `<select>` de modelo em vez de fixar um id no código (ADR-016).
+   * Devolve `{model, variant}` (ou `{}` em falha — a tela mantém o seu default).
+   */
+  async defaultModel(action, pid) {
+    try {
+      const base = pid ? `/api/projects/${encodeURIComponent(pid)}/creditos/cost` : "/api/creditos/cost";
+      const r = await (await fetch(`${base}?action=${encodeURIComponent(action)}`)).json();
+      return { model: r.model, variant: r.variant };
+    } catch (e) { return {}; }
+  },
+
+  /**
+   * Atualiza o indicador GLOBAL de créditos (topbar + rodapé da sidebar) relendo o saldo do CLI.
+   * Chamada no boot e automaticamente ao fim de cada geração paga (via `progressJob`). `refresh`
+   * força uma consulta nova ao CLI (`?refresh=1`).
+   */
+  async refreshCredits(refresh = true) {
+    let s = { installed: false, logged_in: false };
+    try {
+      s = await (await fetch(`/api/creditos/balance${refresh ? "?refresh=1" : ""}`)).json();
+    } catch (e) { /* mantém o estado anterior */ }
+    document.querySelectorAll("[data-credits-chip]").forEach((node) => {
+      node.classList.add("chip");
+      node.classList.remove("ok", "warn", "mode");   // preserva classes da tela (ex.: tb-credits)
+      if (!s.installed) { node.textContent = "● CLI · não instalado"; node.classList.add("warn"); }
+      else if (!s.logged_in) { node.textContent = "● CLI · sem login"; node.classList.add("warn"); }
+      else { node.textContent = `● ${s.credits ?? "?"} créditos`; node.classList.add("ok"); }
+      node.title = s.logged_in ? `Plano ${s.plan || "logado"} · ${s.credits ?? "?"} créditos — clique para ver custos`
+        : "CLI deslogado — o ilimitado vale só na UI da Higgsfield";
+    });
+    return s;
   },
 
   // ---------- polling ----------
@@ -380,6 +477,9 @@ window.Studio.ui = {
       const finishOk = async (job) => {
         p.ok(label || "Pronto");
         try { if (done) await done(job); } catch (e) { /* pós-conclusão não trava o modal */ }
+        // Indicador global de créditos (ADR-016): toda geração paga passa por aqui, então este é
+        // o ponto único que atualiza o saldo depois de gastar.
+        try { window.Studio.ui.refreshCredits(); } catch (e) { /* indicador é informativo */ }
         setTimeout(() => p.close(), 900);
         resolve(job);
       };

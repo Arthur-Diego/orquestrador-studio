@@ -28,7 +28,7 @@ from pathlib import Path
 from PIL import Image
 
 from .. import higgsfield as hf
-from ..common import ingest, prompter
+from ..common import ingest, prompter, settings
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -471,6 +471,18 @@ def upscale_ratio(root: Path, cands: list[dict]) -> tuple[float | None, int, int
     return (round(w1 / w0, 2) if w0 and w1 else None), w0, w1
 
 
+def _default_model(pid: str, kind: str) -> str:
+    """Modelo default da etapa 3, LIDO DA CONFIG (ADR-016): override do projeto › global › código.
+
+    A etapa 3 não tem seletor de modelo na tela (o `?model=` saiu na wave 3): o default vem daqui,
+    não de um id fixo, para o painel admin de "Créditos & Custos" mandar de fato.
+    """
+    kind = _check_kind(kind)
+    action = "base.upscale" if kind == "upscale" else "base.image"
+    chosen = settings.default_for(action, pid).get("model")
+    return chosen or DEFAULT_MODELS[kind]
+
+
 def _check_kind(kind: str) -> str:
     if kind not in KINDS:
         raise ValueError(f"kind inválido: {kind} (use situation, label ou upscale)")
@@ -681,7 +693,7 @@ def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[s
     aspect_ratio = aspect_ratio or project_aspect(root)
     items, text = _plan(root, kind, ref_ids, count, prompt, board)
     n = len(items) * (count if kind == "situation" else 1)
-    model = model or DEFAULT_MODELS[kind]
+    model = model or _default_model(pid, kind)
     params: dict = {}
     if text:
         params["prompt"] = text
@@ -701,7 +713,7 @@ def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[
     count = count or DEFAULT_COUNT[_check_kind(kind)]
     aspect_ratio = aspect_ratio or project_aspect(root)
     items, _ = _plan(root, kind, ref_ids, count, prompt, board)
-    model = model or DEFAULT_MODELS[kind]
+    model = model or _default_model(pid, kind)
 
     log.info("base: job início pid=%s kind=%s itens=%s model=%s", pid, kind, len(items), model)
 
@@ -718,6 +730,10 @@ def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[
                 res = hf.generate(model, params)
                 added = _ingest_job(root, res, kind, item, model, job)
                 job["added"] += added
+                # `[extensão]` livro-caixa de créditos (ADR-016): registra o gasto real por chamada.
+                settings.record_generation(action="base.upscale" if kind == "upscale" else "base.image",
+                                           model=model, params=params, count=count if kind == "situation" else 1,
+                                           pid=pid, step=STEP, job_id=res.get("id"))
                 job["log"].append(f"[{kind}] ref={item.get('ref_id') or '—'} model={model} "
                                   f"urls={len(res.get('urls') or [])} added={added}")
             except Exception as e:  # noqa: BLE001  — falha de item não derruba o job inteiro
