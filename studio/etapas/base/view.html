@@ -63,6 +63,20 @@
   .bs-prov-det>summary::before{content:"▸";color:var(--ink-4);font-size:12px}
   .bs-prov-det[open]>summary::before{content:"▾"}
   .bs-prov-det .bs-prov-body{margin-top:2px}
+  /* ADH-OS-20260828-22 (wave 6 · frente D): painel 01 sem espaço morto — PREVIEW GRANDE da
+     referência selecionada (#baseRefHero) ocupando a largura útil do painel + a tira compacta
+     (#refGallery) para trocar a seleção. Só apresentação; a lógica de selectRef não muda. */
+  .bs-refhero{margin:10px 0 12px;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    background:var(--surface-2)}
+  .bs-refhero:empty{display:none}
+  .bs-refhero img{display:block;width:100%;height:clamp(220px,32vw,360px);object-fit:cover}
+  /* a tira das referências vira compacta e de largura plena (sem o cap de 560px que deixava a
+     faixa morta à direita): thumbs menores, fluxo por toda a largura. */
+  .bs-refpick .gallery.xs{max-width:none;grid-template-columns:repeat(auto-fill,minmax(88px,1fr))}
+  /* botão "Gerar via CLI" do painel 01: age SEMPRE sobre a situação (força kind:"situation"),
+     sem tocar o stepper do painel 03. */
+  .bs-p1cli{gap:10px;align-items:center;margin-top:12px}
+  #basePanel01CliCost{color:var(--ink-3)}
   /* wave 5 · ponto 2: card da imagem base final — deixa claro que ela segue para o storyboard. */
   .bs-final{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:16px;padding:12px;
     border:1px solid var(--accent-line);border-radius:12px;background:var(--accent-soft)}
@@ -86,8 +100,9 @@
     <h3><span class="pn">01</span>O prompt da aula — quem escreve é o bot</h3>
     <span id="baseClaude" class="chip mode">bot: ?</span>
   </div>
-  <div class="refpick">
+  <div class="refpick bs-refpick">
     <span class="eyebrow lbl">Referência (etapa 1) — clique para escolher</span>
+    <div id="baseRefHero" class="bs-refhero"></div>
     <div id="refGallery" class="gallery xs"></div>
   </div>
   <div class="row wrap bs-instr">
@@ -97,6 +112,11 @@
   </div>
   <div id="baseJunction" class="bs-junction"></div>
   <div id="basePrompts" class="prompts one bs-one"></div>
+  <div class="row wrap bs-p1cli">
+    <button id="btnBasePanel01Cli" class="primary">Gerar via CLI</button>
+    <span class="ext">[extensão]</span>
+    <span id="basePanel01CliCost" class="fine"></span>
+  </div>
   <div id="baseProvenance" class="bs-prov"></div>
 </section>
 

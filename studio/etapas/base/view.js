@@ -38,9 +38,16 @@ Studio.register("base", (ctx) => {
     return ta ? ta.value : "";
   }
 
-  function importPrompt() {
-    if (step === "upscale") return "";
-    return promptText(step === "label" ? "label" : `p:${refId}`);
+  // `kind` default = passo ativo do stepper (fluxo do painel 03). O botão "Gerar via CLI" do
+  // painel 01 força `kind:"situation"`: nesse caso lê o texto vivo do card da situação e, se o
+  // stepper estiver noutro passo (o card exibe o rótulo), cai no prompt salvo da referência.
+  function importPrompt(kind = step) {
+    if (kind === "upscale") return "";
+    if (kind === "label") return promptText("label");
+    const live = promptText(`p:${refId}`);
+    if (live) return live;
+    const f = refs.find((r) => r.ref_id === refId) || refs[0];
+    return f ? f.prompt : "";
   }
 
   function promptCard(label, text, key) {
@@ -150,11 +157,25 @@ Studio.register("base", (ctx) => {
     $("#refGallery").innerHTML = refs.map((f) =>
       `<div class="card${f.ref_id === refId ? " sel" : ""}" data-ref="${ui.esc(f.ref_id)}" tabindex="0" title="referência ${ui.esc(f.ref_id)}">
          <img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy"></div>`).join("");
+    renderRefHero();
+  }
+
+  // ADH-OS-20260828-22 (wave 6 · frente D): preview GRANDE da referência selecionada, ocupando a
+  // largura útil do painel 01 — fim do espaço morto. Só apresentação: espelha o que `selectRef`
+  // já escolheu (a tira `#refGallery` continua sendo o seletor). Vazio quando não há referência.
+  function renderRefHero() {
+    const el = $("#baseRefHero");
+    if (!el) return;
+    const f = refs.find((r) => r.ref_id === refId) || refs[0];
+    el.innerHTML = f
+      ? `<img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)} (selecionada)" loading="lazy">`
+      : "";
   }
 
   function selectRef(id) {
     refId = id || "";
     $("#refGallery").querySelectorAll(".card").forEach((c) => c.classList.toggle("sel", c.dataset.ref === refId));
+    renderRefHero();
     renderPrompt();
   }
 
@@ -356,8 +377,8 @@ Studio.register("base", (ctx) => {
   // O botão age no PASSO ATIVO do stepper: situação e rótulo usam `nano_banana_2`; o upscale usa
   // `bytedance_image_upscale` — por isso o custo aparece por passo. O caminho ilimitado é a UI da
   // Higgsfield (importar aqui depois); o CLI é o pago.
-  function genBody() {
-    return { kind: step, ref_ids: step === "situation" && refId ? [refId] : null, prompt: importPrompt() };
+  function genBody(kind = step) {
+    return { kind, ref_ids: kind === "situation" && refId ? [refId] : null, prompt: importPrompt(kind) };
   }
 
   function updateCliButton() {
@@ -370,12 +391,12 @@ Studio.register("base", (ctx) => {
   // A imagem de ORIGEM da cadeia (situação→rótulo→upscale) para o "antes → depois". Espelha
   // `upscale_ratio`/`_selected` do backend: upscale←(rótulo|situação), rótulo←situação,
   // situação←referência escolhida.
-  function originFor() {
-    if (step === "upscale") {
+  function originFor(kind = step) {
+    if (kind === "upscale") {
       const c = cands.find((x) => x.id === (chain.label || chain.situation));
       return c ? { url: ctx.files(c.file), label: KINDS[c.kind] || c.kind } : null;
     }
-    if (step === "label") {
+    if (kind === "label") {
       const c = cands.find((x) => x.id === chain.situation);
       return c ? { url: ctx.files(c.file), label: "situação" } : null;
     }
@@ -384,14 +405,15 @@ Studio.register("base", (ctx) => {
   }
 
   // Depois de importar/gerar: download de cada resultado + a MODIFICAÇÃO (antes → depois).
-  function showResult(newIds) {
+  // `kind` default = passo ativo; o "Gerar via CLI" do painel 01 passa "situation".
+  function showResult(newIds, kind = step) {
     const el = $("#baseGenResult");
     if (!el) return;
     const results = cands.filter((c) => newIds.includes(c.id));
     if (!results.length) { el.innerHTML = ""; el.style.display = "none"; return; }
     el.style.display = "";
-    const origin = originFor();
-    const depoisLbl = KINDS[step] || step;
+    const origin = originFor(kind);
+    const depoisLbl = KINDS[kind] || kind;
     const pairs = results.map((c) => {
       const after = ctx.files(c.file);
       const before = origin
@@ -405,10 +427,12 @@ Studio.register("base", (ctx) => {
       <span class="ext">[extensão]</span></div>${pairs}`;
   }
 
-  async function gerarViaCli() {
-    const kind = step, label = KINDS[kind] || kind;
-    const body = genBody();
-    const costEl = $("#baseCliCost");
+  // `kind`/`costEl` default = passo ativo + slot do painel 03. O botão "Gerar via CLI" do painel
+  // 01 chama `gerarViaCli("situation", $("#basePanel01CliCost"))`: mesmo fluxo (cost → confirmCost
+  // → progressJob → showResult/load), mas SEMPRE sobre a situação e sem tocar o stepper do 03.
+  async function gerarViaCli(kind = step, costEl = $("#baseCliCost")) {
+    const label = KINDS[kind] || kind;
+    const body = genBody(kind);
     // Custo REAL antes de pagar (upscale usa outro modelo → número diferente). CLI deslogado
     // devolve credits null (+ erro "No workspace selected"); CLI ausente → 409. Nos dois casos,
     // aviso claro e o caminho de importação continua — nunca 500 na cara do usuário.
@@ -434,7 +458,7 @@ Studio.register("base", (ctx) => {
         label: "Geração concluída",
         done: () => load(),
       });
-      showResult(cands.filter((c) => !before.has(c.id)).map((c) => c.id));
+      showResult(cands.filter((c) => !before.has(c.id)).map((c) => c.id), kind);
       ctx.guide();
     } catch (err) { toast(err.message); }
   }
@@ -472,7 +496,9 @@ Studio.register("base", (ctx) => {
         if (s && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setStep(s.dataset.step); }
       });
       ui.drop($("#baseDrop"), importar);
-      $("#btnBaseCli").onclick = gerarViaCli;
+      // painel 03: age no passo ativo do stepper. painel 01: força a situação (não toca o stepper).
+      $("#btnBaseCli").onclick = () => gerarViaCli();
+      $("#btnBasePanel01Cli").onclick = () => gerarViaCli("situation", $("#basePanel01CliCost"));
       $("#btnBaseDownloads").onclick = async () => {
         const before = new Set(cands.map((c) => c.id));
         try {

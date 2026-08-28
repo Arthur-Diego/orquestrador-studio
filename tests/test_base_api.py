@@ -420,6 +420,36 @@ def test_view_offers_cli_generation_in_the_three_steps(client):
     assert "ui.drop(" in js and "renderJunction" in js and 'url("import/upload")' in js
 
 
+def test_view_panel01_ref_hero_and_cli(client):
+    """base-painel01 (ADH-OS-20260828-22, wave 6 · frente D): o painel 01 ganha um PREVIEW GRANDE
+    da referência selecionada (#baseRefHero) ocupando a largura útil, mantendo a tira compacta
+    (#refGallery) como seletor — fim do espaço morto — e um botão "Gerar via CLI" que reusa o fluxo
+    do painel 03 forçando kind:"situation", sem tocar o stepper. Sem novos painéis (segue com 3)."""
+    html = client.get("/steps/base/view.html").text
+    js = client.get("/steps/base/view.js").text
+    # hero da referência: container no painel 01 + render dedicado no view.js; a tira compacta segue
+    assert '<div id="baseRefHero" class="bs-refhero"></div>' in html
+    assert '<div id="refGallery" class="gallery xs"></div>' in html
+    assert "renderRefHero" in js and "(selecionada)" in js
+    # CSS escopado `.bs-` da fatia (regra 6): hero de largura plena + tira sem o cap de 560px
+    assert ".bs-refhero img{" in html and ".bs-refpick .gallery.xs{" in html
+    assert "max-width:none" in html
+    # a lógica de seleção não muda — só a apresentação (selectRef segue existindo e é só render)
+    assert "function selectRef(" in js
+    # botão "Gerar via CLI" no painel 01, com [extensão] e slot de custo próprio
+    assert '<button id="btnBasePanel01Cli" class="primary">Gerar via CLI</button>' in html
+    assert 'id="basePanel01CliCost"' in html
+    # reusa gerarViaCli/genBody do painel 03 FORÇANDO a situação (independe do stepper)
+    assert 'gerarViaCli("situation", $("#basePanel01CliCost"))' in js
+    assert "function gerarViaCli(kind = step" in js and "function genBody(kind = step)" in js
+    assert 'kind === "situation"' in js
+    # o botão do painel 03 segue existindo e agindo no passo ativo (não regride)
+    assert 'id="btnBaseCli"' in html and "() => gerarViaCli()" in js
+    # sem painel novo: continuam os 3 painéis do curso
+    assert html.count('<section class="panel">') == 3
+    assert '<span class="pn">04</span>' not in html
+
+
 def _seed_situation(client, pid):
     """Importa e escolhe uma candidata de situação (origem da cadeia p/ rótulo e upscale)."""
     client.post(f"/api/projects/{pid}/base/import/upload",
