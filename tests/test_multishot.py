@@ -86,6 +86,49 @@ def test_moodboard_multishot_generates_candidates(client, stub_hf, studio_env):
     assert "moodboard" in steps and steps["moodboard"]["credits"] == pytest.approx(6)  # 2 × 3
 
 
+def test_multishot_never_sends_count_to_cli(client, studio_env, monkeypatch):
+    """Regressão (bug `Unknown params: count`): modelos como `nano_banana_pro` rejeitam `--count`.
+    O multishot NUNCA manda `count` ao CLI — o loop já gera N imagens, 1 por chamada."""
+    import studio.higgsfield as hf
+    seen: list[dict] = []
+
+    def fake_generate(model, params, timeout_s=600):
+        seen.append(dict(params))
+        n = len(seen)
+        return {"urls": [f"http://fake/a{n}.png"], "id": f"j{n}", "raw": {}}
+
+    def fake_download(url, dest):
+        from pathlib import Path
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        # cor distinta por chamada: evita o dedup do ingest (senão o job não adiciona nada)
+        dest.write_bytes(_png((len(seen) * 37 % 255, 60, 200)))
+        return dest
+
+    def fake_cost(model, params):
+        seen.append(dict(params))
+        return {"credits": 2}
+
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "generate", fake_generate)
+    monkeypatch.setattr(hf, "download", fake_download)
+    monkeypatch.setattr(hf, "cost", fake_cost)
+    monkeypatch.setattr(hf, "status", lambda refresh=False: {"installed": True, "logged_in": True, "credits": 500})
+
+    mbid, cid = _board_with_image(client)
+    client.post(f"/api/moodboards/{mbid}/multishot/cost", json={"source_id": cid, "count": 2})
+    assert client.post(f"/api/moodboards/{mbid}/multishot/generate",
+                       json={"source_id": cid, "count": 2}).status_code == 200
+    for _ in range(50):
+        job = client.get(f"/api/moodboards/{mbid}/multishot/job").json()
+        if job.get("state") in ("done", "error"):
+            break
+        time.sleep(0.1)
+    assert job["state"] == "done", job
+    assert seen, "esperava chamadas ao CLI (cost + generate)"
+    assert all("count" not in p for p in seen), seen
+
+
 def test_multishot_bad_source_is_422(client, stub_hf):
     mbid, _ = _board_with_image(client)
     assert client.post(f"/api/moodboards/{mbid}/multishot/generate",
