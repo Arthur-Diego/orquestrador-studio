@@ -65,16 +65,77 @@ def project_dir(pid: str) -> Path:
     return p
 
 
+# ---------- marca validada persistida (ADR-020) ----------
+#: `[extensão]` (ADR-020) — a "marca validada" da aula 009 (a marca conhecida do segmento por onde a
+#: busca começa) passa a persistir NO DOMÍNIO refs, em `projects/<pid>/refs/validated_brand.json`
+#: `{"brand": "<texto>"}`. NÃO se confunde com o `brand` do `project.json` (marca do produto, etapa 3)
+#: nem com `base/brand.json` (marca do rótulo, etapa 3): são outras coisas. É a fonte única das
+#: sugestões de termos quando presente.
+VALIDATED_BRAND_FILE = "refs/validated_brand.json"
+
+
+def get_validated_brand(pid: str) -> str:
+    """Texto da marca validada persistida do projeto ("" quando não há nenhuma)."""
+    try:
+        path = project_dir(pid) / VALIDATED_BRAND_FILE
+        if not path.is_file():
+            return ""
+        data = json.loads(path.read_text())
+    except (KeyError, OSError, json.JSONDecodeError):
+        return ""
+    return (data.get("brand") or "").strip() if isinstance(data, dict) else ""
+
+
+def set_validated_brand(pid: str, brand: str) -> dict:
+    """Grava (ou limpa, com texto vazio) a marca validada no domínio refs. Devolve o valor gravado."""
+    root = project_dir(pid)
+    path = root / VALIDATED_BRAND_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    b = (brand or "").strip()
+    path.write_text(json.dumps({"brand": b}, ensure_ascii=False, indent=1))
+    return {"brand": b}
+
+
 # ---------- termos de busca ----------
-def suggest_terms(product: str, vibe: str = "", brand: str = "") -> list[str]:
+#: `[extensão]` (ADR-020) — modificadores determinísticos usados para expandir a marca validada em
+#: MAIS termos (≥12), variando estilo, enquadramento, mood, material e luz em torno DELA. Sem Claude:
+#: montagem de strings, na linha do gerador da aula 009.
+_BRAND_MODIFIERS = [
+    "ads", "ad campaign", "commercial creative", "advertising photography",
+    "product shot cinematic", "billboard advertising", "poster campaign",
+    "brand campaign", "hero product shot", "studio lighting product",
+    "editorial advertising", "lifestyle campaign",
+    "dramatic lighting advertising", "minimalist ad", "close-up product shot",
+    "neon aesthetic ad",
+]
+
+
+def _dedup_terms(terms: list[str]) -> list[str]:
+    seen, out = set(), []
+    for t in terms:
+        t = " ".join(t.split())
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    return out
+
+
+def suggest_terms(product: str = "", vibe: str = "", brand: str = "", validated_brand: str = "") -> list[str]:
     """Termos de busca da aula 009, em inglês.
 
     A aula começa por uma **marca já validada** — "vamos colocar uma marca conhecida de alguma coisa
     que já tá validada […] Red Bull […] eles já têm anúncios já validados" — e só depois refina pela
-    situação ("Red Bull Snow", "Red Bull Snow Ads"). Por isso, com `brand` preenchida os termos da
-    marca vêm primeiro; os termos por produto ficam como complemento. `vibe` é opcional: a aula só
-    encontra a vibe na etapa 2.
+    situação ("Red Bull Snow", "Red Bull Snow Ads").
+
+    `[extensão]` (ADR-020): quando há **marca validada persistida** (`validated_brand`), as sugestões
+    saem **apenas dela** — sem misturar `product`/`vibe` — e o gerador é expandido para ≥12 termos
+    distintos (estilo, enquadramento, mood, material, luz em torno da marca). Sem marca validada
+    persistida, mantém o comportamento atual: com `brand` digitada os termos da marca vêm primeiro e
+    os termos por produto ficam como complemento; `vibe` é opcional (a aula só a encontra na etapa 2).
     """
+    vb = (validated_brand or "").strip()
+    if vb:
+        return _dedup_terms([f"{vb} {m}" for m in _BRAND_MODIFIERS])
     p = product.strip()
     v = vibe.strip()
     b = brand.strip()
@@ -87,13 +148,7 @@ def suggest_terms(product: str, vibe: str = "", brand: str = "") -> list[str]:
               f"giant {p} advertising", f"{p} product shot cinematic"]
     if v:
         terms += [f"{p} {v} ad", f"{v} product photography", f"{v} commercial"]
-    seen, out = set(), []
-    for t in terms:
-        t = " ".join(t.split())
-        if t and t.lower() not in seen:
-            seen.add(t.lower())
-            out.append(t)
-    return out
+    return _dedup_terms(terms)
 
 
 # ---------- job de busca ----------

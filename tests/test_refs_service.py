@@ -43,6 +43,39 @@ def test_suggest_terms_start_from_the_validated_brand(studio_env):
     assert refs.suggest_terms("soda") == refs.suggest_terms("soda", "", ""), "sem marca, nada muda"
 
 
+def test_validated_brand_persists_in_the_refs_domain(studio_env):
+    """ADR-020 `[extensão]`: a marca validada persiste em `refs/validated_brand.json`."""
+    refs = studio_env["refs"]
+    meta = refs.create_project("Marca Val", "energy drink", "snow neon")
+    pid = meta["id"]
+    assert refs.get_validated_brand(pid) == "", "projeto novo não tem marca validada"
+
+    assert refs.set_validated_brand(pid, "  Red Bull  ") == {"brand": "Red Bull"}, "grava aparado"
+    path = refs.project_dir(pid) / "refs" / "validated_brand.json"
+    assert json.loads(path.read_text()) == {"brand": "Red Bull"}
+    assert refs.get_validated_brand(pid) == "Red Bull"
+
+    # não colide com o `brand` do project.json (marca do produto) — arquivo separado no domínio refs
+    assert "brand" not in json.loads((refs.project_dir(pid) / "project.json").read_text())
+
+    assert refs.set_validated_brand(pid, "") == {"brand": ""}, "texto vazio limpa"
+    assert refs.get_validated_brand(pid) == ""
+
+
+def test_suggest_terms_from_validated_brand_are_richer_and_only_from_it(studio_env):
+    """ADR-020 `[extensão]`: com marca validada, ≥12 termos, todos dela, sem product/vibe."""
+    refs = studio_env["refs"]
+    terms = refs.suggest_terms("energy drink", "snow neon", "", validated_brand="Red Bull")
+    assert len(terms) >= 12, "gerador expandido: alvo ≥12 termos"
+    assert len(terms) == len(set(terms)), "sem termos repetidos"
+    assert all(t.startswith("Red Bull ") for t in terms), "todos derivados só da marca validada"
+    assert not any("energy drink" in t or "snow neon" in t for t in terms), "não mistura product/vibe"
+
+    # sem marca validada persistida, o comportamento atual (product/vibe/brand) é preservado
+    assert refs.suggest_terms("energy drink", "snow neon") == \
+        refs.suggest_terms("energy drink", "snow neon", "", validated_brand="")
+
+
 def test_select_copies_to_brainstorming_and_writes_readme(studio_env):
     refs = studio_env["refs"]
     from studio.refs import pinterest

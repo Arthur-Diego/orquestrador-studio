@@ -66,6 +66,46 @@ def test_view_no_longer_collects_the_why_of_each_reference(client):
     assert "onlySel" not in js and "só escolhidas" not in html, "filtro que o protótipo não desenha"
 
 
+def test_validated_brand_endpoints_persist_and_drive_suggestions(client):
+    """ADR-020 `[extensão]`: GET/PUT da marca validada e `/api/suggest-terms?pid=` só dela."""
+    pid = client.post("/api/projects", json={"name": "Brand API", "product": "energy drink",
+                                             "vibe": "snow neon"}).json()["id"]
+    assert client.get(f"/api/projects/{pid}/refs/validated-brand").json() == {"brand": ""}
+
+    r = client.put(f"/api/projects/{pid}/refs/validated-brand", json={"brand": " Red Bull "})
+    assert r.status_code == 200 and r.json() == {"brand": "Red Bull"}
+    assert client.get(f"/api/projects/{pid}/refs/validated-brand").json() == {"brand": "Red Bull"}
+
+    # com pid de projeto com marca validada, o suggest sai só dela (ignora product/vibe/brand)
+    terms = client.get(f"/api/suggest-terms?product=energy+drink&vibe=snow+neon&pid={pid}").json()
+    assert len(terms) >= 12 and all(t.startswith("Red Bull ") for t in terms)
+    assert not any("energy drink" in t for t in terms)
+
+    # sem pid (ou projeto sem marca validada) mantém o comportamento atual (product/vibe/brand)
+    mixed = client.get("/api/suggest-terms?product=energy+drink&vibe=snow+neon").json()
+    assert "energy drink ad campaign" in mixed
+
+
+def test_validated_brand_endpoints_reject_unknown_project(client):
+    assert client.get("/api/projects/nao-existe/refs/validated-brand").status_code == 404
+    assert client.put("/api/projects/nao-existe/refs/validated-brand", json={"brand": "x"}).status_code == 404
+
+
+def test_view_replaces_single_select_with_multiselect_filters(client):
+    """Filtros multiseleção (checkbox) por termo e por fonte substituem o `#filterTerm` único."""
+    html = _view(client, "view.html")
+    assert 'id="filterTerm"' not in html, "o select de termo único saiu"
+    assert 'id="refsFilters"' in html, "container dos filtros multiseleção"
+    assert 'id="btnSaveBrand"' in html and "Salvar marca validada" in html, "salvar a marca validada"
+
+    js = _view(client, "view.js")
+    assert "data-filter=" in js and 'chk("term"' in js and 'chk("source"' in js, "grupos termo e fonte"
+    assert "filterTerms" in js and "filterSources" in js, "um conjunto de marcação por grupo"
+    assert "rf-clear" in js and "matchesFilters" in js, "limpar filtros e a filtragem client-side"
+    assert "refs/validated-brand" in js and "renderFilters(" in js
+    assert "#filterTerm" not in js, "sem resquício do select antigo"
+
+
 def test_view_shows_the_last_scrape_when_the_screen_opens(client):
     """1.22–1.24: barra, rótulo `baixadas/meta` e log do último scrape vêm do backend."""
     js = _view(client, "view.js")

@@ -574,3 +574,25 @@ das aulas 009/011 nem o modelo de vibe única (ADR-007):
 **ADR nova: ADR-019** (STUDIO) — rework do editor de mood board (fluxo painel 01→02, multishot em
 carrossel, remover/importar candidata, abrir pasta); `[extensão]`, relaciona ADR-013/016/017.
 Migração/rename de pasta segue **fora de escopo**.
+
+### Wave 6 — Frente C: marca validada persistida e filtros multiseleção nas referências (ADH-OS-20260828-21)
+
+`[extensão]`: a etapa 1 (Referências) ganha uma **marca validada persistida** que vira a fonte única
+das sugestões de termos, e troca o filtro único por **filtros multiseleção**.
+
+- **REFS** — a "marca validada" da aula 009 passa a persistir em
+  `projects/<pid>/refs/validated_brand.json` `{"brand":"…"}`, **sem colidir** com o `brand` do
+  `project.json` (marca do produto) nem com `base/brand.json` (marca do rótulo). `refs/service.py`
+  ganha `get_validated_brand`/`set_validated_brand` e `suggest_terms(..., validated_brand=…)`: com
+  marca validada, sugere **só a partir dela** (≥12 termos determinísticos, sem product/vibe); sem
+  ela, o comportamento atual é preservado. `etapas/refs/router.py` expõe `GET`/`PUT
+  /api/projects/{pid}/refs/validated-brand` e `GET /api/suggest-terms?pid=…`. A tela
+  (`etapas/refs/view.{html,js}`) salva a marca validada (botão perto do `#brand`) e substitui o
+  `#filterTerm` (select único) por **checkboxes por termo e por fonte** (filtragem client-side:
+  união dentro do grupo, interseção entre grupos, "limpar filtros"); CSS escopado no `<style>` do
+  `view.html`.
+
+**ADR nova: ADR-020** (STUDIO) — marca validada persistida no domínio refs como fonte única das
+sugestões de termos, `[extensão]` da aula 009; relaciona ADR-004 (fidelidade) e ADR-003
+(persistência em arquivos). Consumo local à etapa 1 — nenhuma etapa a jusante lê
+`refs/validated_brand.json`.
