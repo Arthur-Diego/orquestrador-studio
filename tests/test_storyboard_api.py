@@ -127,7 +127,7 @@ def test_select_ideas_writes_ideas_json_and_detaches(client, pid, root):
 def test_scenes_lifecycle_over_http(client, pid, root):
     scenes = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"]
     assert len(scenes) == 5 and scenes[0] == {"id": "cena01", "n": 1, "text": "", "images": [], "primary": None,
-                                              "video_desc": "", "video_prompt": "", "videos": []}
+                                              "video_desc": "", "video_prompt": "", "videos": [], "photos": {}}
     r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
         {"text": "A lata cai e inunda tudo"}, {"text": "Close no astronauta"}, {"text": "Puxa a corda"}]})
     assert r.status_code == 200
@@ -166,7 +166,7 @@ def test_scene_image_written_by_put_is_readable_by_the_next_step(client, pid, ro
     assert set(data) == {"scenes"}
     # `[extensão]` wave 7 (ADR-021): campos aditivos de vídeo por cena (retrocompat ADR-018).
     assert set(data["scenes"][0]) == {"id", "n", "text", "images", "primary",
-                                      "video_desc", "video_prompt", "videos"}
+                                      "video_desc", "video_prompt", "videos", "photos"}
     assert data["scenes"][0]["images"] == [img] and data["scenes"][0]["primary"] == img
     assert data["scenes"][0]["primary"].startswith("storyboard/ideas/")
     assert (root / data["scenes"][0]["primary"]).exists()
@@ -435,3 +435,21 @@ def test_video_generate_requires_cli_and_prompt(client, pid, monkeypatch):
 def test_video_job_is_idle_before_any_generation(client, pid):
     job = client.get(f"/api/projects/{pid}/storyboard/video/job", params={"scene_id": "cena01"}).json()
     assert job["state"] == "idle" and job["video"] is None
+
+
+def test_scenes_put_persists_per_photo_map(client, pid):
+    """`[extensão]` ADR-022: o PUT /scenes grava o mapa `photos` por foto (desc/prompt) via SceneIn."""
+    img = _select_idea(client, pid)
+    r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+        {"text": "cena", "images": [img], "primary": img,
+         "photos": {img: {"video_desc": "a can falls", "video_prompt": "slow dolly", "videos": []}}}]})
+    assert r.status_code == 200
+    scene = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]
+    assert scene["photos"][img] == {"video_desc": "a can falls", "video_prompt": "slow dolly", "videos": []}
+
+
+def test_status_exposes_video_models_for_the_animate_modal(client, pid):
+    """`[extensão]` ADR-022: o status expõe a lista de modelos de vídeo e o default por modo."""
+    st = client.get(f"/api/projects/{pid}/storyboard").json()
+    assert "kling2_6" in st["video_models"] and "kling3_0_turbo" in st["video_models"]
+    assert st["video_model_defaults"] == {"single": "kling2_6", "start_end": "kling3_0_turbo"}

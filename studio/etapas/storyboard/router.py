@@ -49,6 +49,9 @@ class SceneIn(BaseModel):
     primary: str | None = None
     #: legado (formato antigo, uma imagem por cena) — dobrado em `images`/`primary` por `_normalize`.
     image: str | None = None
+    #: `[extensão]` vídeo por foto (ADR-022): mapa `img_rel -> {video_desc, video_prompt, videos}`,
+    #: persistido no PUT /scenes (o par por-cena legado migra para `photos[principal]` na leitura).
+    photos: dict = {}
 
 
 class ScenesReq(BaseModel):
@@ -84,6 +87,8 @@ class VideoCostReq(BaseModel):
     scene_id: str
     mode: str = "single"
     duration: int = 5
+    #: `[extensão]` ADR-022: modelo do cliente (opcional). Ausente = resolução por servidor (ADR-021).
+    model: str | None = None
 
 
 class VideoGenerateReq(BaseModel):
@@ -94,6 +99,10 @@ class VideoGenerateReq(BaseModel):
     image: str | None = None
     start_image: str | None = None
     end_image: str | None = None
+    #: `[extensão]` ADR-022: foto dona do vídeo (rel em storyboard/ideas/) e modelo — ambos opcionais.
+    #: `photo` ausente = grava por-cena (comportamento wave-7); presente = grava em `photos[photo]`.
+    photo: str | None = None
+    model: str | None = None
 
 
 def _guard(fn, *args, **kwargs):
@@ -206,19 +215,20 @@ def storyboard_video_prompt(pid: str, req: VideoPromptReq):
 
 @router.post("/api/projects/{pid}/storyboard/video/cost")
 def storyboard_video_cost(pid: str, req: VideoCostReq):
-    return _guard(sb.video_cost, pid, req.scene_id, req.mode, req.duration)
+    return _guard(sb.video_cost, pid, req.scene_id, req.mode, req.duration, req.model)
 
 
 @router.post("/api/projects/{pid}/storyboard/video/generate")
 def storyboard_video_generate(pid: str, req: VideoGenerateReq):
     frames = {"image": req.image, "start_image": req.start_image, "end_image": req.end_image}
-    return _guard(sb.start_video_generate, pid, req.scene_id, req.prompt, req.mode, req.duration, frames)
+    return _guard(sb.start_video_generate, pid, req.scene_id, req.prompt, req.mode, req.duration,
+                  frames, req.photo, req.model)
 
 
 @router.get("/api/projects/{pid}/storyboard/video/job")
-def storyboard_video_job(pid: str, scene_id: str = Query(...)):
+def storyboard_video_job(pid: str, scene_id: str = Query(...), photo: str | None = Query(None)):
     refs.project_dir(pid)
-    return _guard(sb.video_job_status, pid, scene_id)
+    return _guard(sb.video_job_status, pid, scene_id, photo)
 
 
 # ==========================================================================================
