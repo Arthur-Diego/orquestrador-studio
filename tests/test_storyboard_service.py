@@ -1,6 +1,7 @@
 """Etapa 4 — o storyboard segue a aula 010: uma instrução por vez, 4/1 gerações, ~5 cenas em texto."""
 import json
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -98,22 +99,23 @@ def test_presets_are_in_english_with_ptbr_labels(sb):
 def test_scenes_default_to_five_empty_scenes(sb, project, root):
     scenes = sb.load_scenes(project)["scenes"]
     assert [s["id"] for s in scenes] == [f"cena{i:02d}" for i in range(1, 6)]
-    assert all(s["text"] == "" and s["image"] is None for s in scenes)
+    # [extensão] cena-multi-keyframe (ADR-018): cada cena vira {id,n,text,images,primary}.
+    assert all(s["text"] == "" and s["images"] == [] and s["primary"] is None for s in scenes)
     assert [s["n"] for s in scenes] == [1, 2, 3, 4, 5]
     on_disk = json.loads((root / "storyboard" / "scenes.json").read_text())
-    assert on_disk == {"scenes": scenes}, "schema do wave-1.md, persistido na primeira leitura"
+    assert on_disk == {"scenes": scenes}, "schema cena-multi-keyframe, persistido na primeira leitura"
 
 
 def test_save_scenes_renumbers_by_order_and_writes_md(sb, project, root):
-    r = sb.save_scenes(project, [{"text": "Close no astronauta", "image": None},
-                                 {"text": "Ele encontra a lata gigante", "image": None},
-                                 {"text": "A lata cai", "image": None}])
+    r = sb.save_scenes(project, [{"text": "Close no astronauta"},
+                                 {"text": "Ele encontra a lata gigante"},
+                                 {"text": "A lata cai"}])
     assert [s["id"] for s in r["scenes"]] == ["cena01", "cena02", "cena03"]
     assert r["storyboard_md"] == "storyboard/storyboard.md"
     md = (root / "storyboard" / "storyboard.md").read_text()
     assert "# Storyboard: Gelo Zero" in md and "## Cena 1" in md and "Close no astronauta" in md
     reordered = sb.save_scenes(project, [{"text": "A lata cai"}, {"text": "Close no astronauta"}])["scenes"]
-    assert reordered[0] == {"id": "cena01", "n": 1, "text": "A lata cai", "image": None}
+    assert reordered[0] == {"id": "cena01", "n": 1, "text": "A lata cai", "images": [], "primary": None}
 
 
 def test_save_scenes_limits_and_image_must_live_in_ideas(sb, project, base):
@@ -140,6 +142,79 @@ def test_render_requires_at_least_one_written_scene(sb, project):
         sb.render(project)
     sb.save_scenes(project, [{"text": "Close no astronauta"}])
     assert sb.render(project)["storyboard_md"] == "storyboard/storyboard.md"
+
+
+# ---------- cena-multi-keyframe (ADR-018, [extensão]) ----------
+def _two_ideas(sb, project):
+    """Duas ideias selecionadas em storyboard/ideas/ — devolve (fileA, fileB)."""
+    sb.import_upload(project, [("a.png", image_bytes(color=(1, 2, 3))), ("b.png", image_bytes(color=(9, 9, 9)))])
+    ids = [i["id"] for i in sb.list_ideas(project)["ideas"]]
+    sb.select_ideas(project, ids)
+    return tuple(i["file"] for i in sb.list_ideas(project)["ideas"])
+
+
+def test_legacy_scenes_json_migrates_image_to_images_and_primary(sb, project, root):
+    """Migração retrocompatível: um scenes.json antigo (`image` singular) é lido no schema novo."""
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "scenes.json").write_text(json.dumps({"scenes": [
+        {"id": "cena01", "n": 1, "text": "close", "image": "storyboard/ideas/a.png"},
+        {"id": "cena02", "n": 2, "text": "aberta", "image": None},
+    ]}))
+    scenes = sb.load_scenes(project)["scenes"]
+    assert scenes[0]["images"] == ["storyboard/ideas/a.png"] and scenes[0]["primary"] == "storyboard/ideas/a.png"
+    assert scenes[1]["images"] == [] and scenes[1]["primary"] is None
+    assert "image" not in scenes[0], "o formato novo não carrega mais o campo antigo"
+
+
+def test_save_scenes_persists_multiple_images_with_default_primary(sb, project):
+    a, b = _two_ideas(sb, project)
+    r = sb.save_scenes(project, [{"text": "cena com galeria", "images": [a, b]}])
+    s = r["scenes"][0]
+    assert s["images"] == [a, b] and s["primary"] == a, "default: a 1ª imagem vira principal"
+    # persistiu: relê do disco no schema novo
+    assert sb.load_scenes(project)["scenes"][0] == s
+
+
+def test_save_scenes_honors_explicit_primary_and_dedupes(sb, project):
+    a, b = _two_ideas(sb, project)
+    s = sb.save_scenes(project, [{"text": "c", "images": [a, b, a], "primary": b}])["scenes"][0]
+    assert s["images"] == [a, b], "itens repetidos são deduplicados preservando a ordem"
+    assert s["primary"] == b, "a principal explícita é respeitada"
+
+
+def test_save_scenes_recomputes_primary_when_it_is_not_in_images(sb, project):
+    a, b = _two_ideas(sb, project)
+    s = sb.save_scenes(project, [{"text": "c", "images": [a, b], "primary": "storyboard/ideas/fora.png"}])["scenes"][0]
+    assert s["primary"] == a, "principal fora da galeria volta para o primeiro item válido"
+
+
+def test_save_scenes_validates_each_image_of_the_gallery(sb, project):
+    a, _ = _two_ideas(sb, project)
+    for bad in ("storyboard/ideas/nao-existe.png", "storyboard/candidates/x.png",
+                "storyboard/ideas/../../base/base_final.png"):
+        with pytest.raises(sb.Invalid):
+            sb.save_scenes(project, [{"text": "c", "images": [a, bad]}])
+
+
+def test_detach_removes_from_gallery_and_promotes_next_primary(sb, project):
+    """select() detach: se a principal cai, promove o próximo item da cena (ADR-018)."""
+    a, b = _two_ideas(sb, project)
+    ids = [i["id"] for i in sb.list_ideas(project)["ideas"]]
+    id_a = next(i["id"] for i in sb.list_ideas(project)["ideas"] if i["file"] == a)
+    sb.save_scenes(project, [{"text": "c", "images": [a, b], "primary": a}])
+    # desmarca a ideia que era a principal: sai da galeria e a próxima é promovida
+    out = sb.select_ideas(project, [i for i in ids if i != id_a])
+    assert out["detached"] == ["cena01"]
+    cena01 = sb.load_scenes(project)["scenes"][0]
+    assert cena01["images"] == [b] and cena01["primary"] == b
+
+
+def test_storyboard_md_shows_primary_as_hero_and_the_rest_as_alternatives(sb, project, root):
+    a, b = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena galeria", "images": [a, b], "primary": a}])
+    md = (root / "storyboard" / "storyboard.md").read_text()
+    assert f"![cena01](ideas/{Path(a).name})" in md, "a principal é o hero da cena"
+    assert "Alternativas:" in md and f"![cena01 alternativa 1](ideas/{Path(b).name})" in md
 
 
 # ---------- ideias ----------
@@ -176,10 +251,11 @@ def test_select_copies_to_ideas_and_detaches_scene_on_deselect(sb, project, root
     assert all(row["file"].startswith("storyboard/ideas/") for row in rows)
 
     img = next(i["file"] for i in sb.list_ideas(project)["ideas"] if i["id"] == a)
-    sb.save_scenes(project, [{"text": "Close no astronauta", "image": img}, {"text": "A lata cai"}])
+    sb.save_scenes(project, [{"text": "Close no astronauta", "images": [img], "primary": img}, {"text": "A lata cai"}])
     out = sb.select_ideas(project, [b])
     assert out == {"selected": 1, "detached": ["cena01"]}
-    assert sb.load_scenes(project)["scenes"][0]["image"] is None
+    cena01 = sb.load_scenes(project)["scenes"][0]
+    assert cena01["images"] == [] and cena01["primary"] is None
     assert len([p for p in ideas_dir.iterdir() if p.name != "ideas.json"]) == 1, "ideias/ guarda só as selecionadas (decisão 7)"
 
 

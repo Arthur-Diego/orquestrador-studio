@@ -533,3 +533,24 @@ Extração da técnica de multishot (aula 011) para um componente reutilizável,
 
 **ADR nova: ADR-017** (STUDIO) — componente reutilizável de multishot; `angles.py` da etapa 4 só
 migra para o núcleo na reescrita do storyboard (ADR-018), até lá as duas implementações coexistem.
+
+## Atualização 2026-08-28 (wave 5, frente ADH-OS-20260828-15 — cena multi-keyframe)
+
+Desvio da aula 010 (1 keyframe por cena), aprovado explicitamente pelo dono do produto e marcado
+`[extensão]`: cada cena do painel 02 do storyboard passa a carregar **várias imagens** no modelo
+"galeria de keyframes + 1 principal".
+
+- **STORYBOARD** — `storyboard/scenes.json` evolui de `{id,n,text,image}` para
+  `{id,n,text,images:[…],primary}`, com **migração de leitura retrocompatível** (o `image` antigo
+  vira `images:[image]`,`primary`). A **principal** semeia a base dos ângulos
+  (`angles.prepare_base`) e é o hero do `storyboard.md` (as demais viram alternativas). `service.py`
+  (schema, `_check_image` por item, `select()` detach com promoção da próxima principal, `_write_md`),
+  `angles.py` (`prepare_base`/`list_scenes` pela principal) e o painel 02 (`view.js`/`view.html`,
+  mini-galeria multi-seleção) mudam; o painel 03 (ângulos, aula 011) fica **inalterado**.
+
+**ADR nova: ADR-018** (STUDIO) — várias imagens por cena (galeria de keyframes com uma principal),
+`[extensão]` da aula 010; relaciona ADR-004 (fidelidade) e ADR-015 (fusão). A migração de
+`angles.py` para o núcleo de multishot (antecipada pela ADR-017) **segue pendente** — fora do escopo
+desta reescrita. Pendência de integração (W5): refletir o schema novo de `scenes.json` em
+`docs/domains/studio/waves/wave-1.md` e no "Provides" do `storyboard-fdd.md`, e revalidar a cadeia
+`scenes.json → storyboard.json → animate` no estado integrado.

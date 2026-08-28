@@ -20,9 +20,9 @@ A etapa 4 do curso (aula 010) transforma a imagem base da campanha em uma histó
 Contrato de handoff da wave (copiado de `wave-1.md`):
 
 **Provides**
-- `storyboard/scenes.json`: `{"scenes":[{"id":"cena01","n":1,"text":"…","image":"storyboard/ideas/<file>|null"}]}` (5 cenas por padrão, editável)
+- `storyboard/scenes.json`: `{"scenes":[{"id":"cena01","n":1,"text":"…","images":["storyboard/ideas/<file>",…],"primary":"storyboard/ideas/<file>|null"}]}` (5 cenas por padrão, editável). **Evoluído na wave 5 (ADR-018 `[extensão]`):** galeria `images` + `primary` por cena; o `image` singular legado migra automaticamente.
 - `storyboard/ideas/`: imagens de ideação importadas (Draw to Edit, edições) + `ideas.json` `[{id,file,thumb,prompt,selected}]`
-- `storyboard/storyboard.md`: cenas em ordem com a imagem de cada uma
+- `storyboard/storyboard.md`: cenas em ordem, `primary` como hero + alternativas
 
 **Consumes**
 - `base/base_final.png` ← base
@@ -542,3 +542,19 @@ depois de toda ação que muda artefato; `destroy()` para o poll do job ao troca
    as duas coisas como saída esperada); a cobrança mais branda de cada uma vive em V4.1/V4.2.
 3. `storyboard.md` passa a carregar o rótulo do arco em cada cena (`## Cena 1 — começo`), o que
    preserva a string fixada por teste `## Cena 1`.
+
+---
+
+### Nota — cena multi-keyframe (wave 5, ADH-OS-20260828-15, `[extensão]` · ADR-018)
+
+Desvio da aula 010 (1 keyframe por cena) **aprovado explicitamente** pelo dono do produto: cada cena
+do painel 02 passa a carregar **várias imagens** no modelo "galeria de keyframes + 1 principal".
+
+- O schema de handoff `scenes.json` do "Provides" acima **evolui** de
+  `{"id","n","text","image"}` para `{"id","n","text","images":[…],"primary"}`, com **migração de
+  leitura retrocompatível** (o `image` singular antigo é lido como `images:[image]`,`primary`). A
+  atualização da linha "Provides" (e do schema espelhado em `wave-1.md`) é **pendência da integração
+  (W5)** — ver `docs/domains/storyboard/features/cena-multi-keyframe-fdd.md` e ADR-018.
+- A imagem **principal** (`primary`) é a única que semeia a base dos ângulos (`angles.prepare_base`,
+  painel 03) e é o **hero** do `storyboard.md`; as demais imagens da cena entram como **alternativas**.
+- O painel 03 (ângulos por cena, aula 011) permanece **inalterado**.

@@ -318,10 +318,16 @@ def select_ideas(pid: str, ids: list[str]) -> dict:
             dropped.add(f"{IDEAS_DIR}/{c['file']}")
 
     scenes = _read_scenes(root)
-    detached = [s["id"] for s in scenes if s["image"] in dropped]
+    # `[extensão]` cena-multi-keyframe (ADR-018): tira das galerias as ideias que saíram; se a
+    # `primary` caiu, promove o próximo item da cena (ou `null`).
+    detached = []
     for s in scenes:
-        if s["image"] in dropped:
-            s["image"] = None
+        kept = [img for img in s["images"] if img not in dropped]
+        if kept != s["images"]:
+            detached.append(s["id"])
+        s["images"] = kept
+        if s["primary"] not in kept:
+            s["primary"] = kept[0] if kept else None
     ingest.save_candidates(root, STEP, cands)
     _write_ideas_json(root, cands)
     _write_scenes(root, scenes)
@@ -336,13 +342,39 @@ def _scenes_file(root: Path) -> Path:
 
 
 def _blank_scenes(n: int = DEFAULT_SCENES) -> list[dict]:
-    return [{"id": f"cena{i:02d}", "n": i, "text": "", "image": None} for i in range(1, n + 1)]
+    return [{"id": f"cena{i:02d}", "n": i, "text": "", "images": [], "primary": None} for i in range(1, n + 1)]
+
+
+def _scene_images(s: dict) -> tuple[list[str], str | None]:
+    """Estrutura (images, primary) de uma cena `[extensão]` cena-multi-keyframe (ADR-018).
+
+    Migração retrocompatível: uma cena no formato antigo (`image` singular, sem `images`) vira
+    `images:[image]`, `primary:image`; o formato novo (`images`/`primary`) é aceito como está.
+    `primary` sempre é um item de `images` (ou `null`); default = primeiro item quando há imagens.
+    A numeração e a validação de path ficam a cargo de `_normalize`/`_check_image`."""
+    raw = s.get("images")
+    if isinstance(raw, list) and any(raw):
+        images = [x for x in raw if x]
+    elif s.get("image"):                     # formato antigo (aula 010): uma imagem por cena
+        images = [s["image"]]                # (também cobre `images:[]` default + `image` legado)
+    else:
+        images = []
+    seen: set[str] = set()
+    images = [x for x in images if not (x in seen or seen.add(x))]   # dedup, preserva a ordem
+    primary = s.get("primary")
+    if not primary or primary not in images:
+        primary = images[0] if images else None
+    return images, primary
 
 
 def _normalize(scenes: list[dict]) -> list[dict]:
     """`id` e `n` são sempre recalculados pela ordem recebida — cliente não decide numeração."""
-    return [{"id": f"cena{i:02d}", "n": i, "text": (s.get("text") or "").strip(), "image": s.get("image") or None}
-            for i, s in enumerate(scenes, 1)]
+    out = []
+    for i, s in enumerate(scenes, 1):
+        images, primary = _scene_images(s)
+        out.append({"id": f"cena{i:02d}", "n": i, "text": (s.get("text") or "").strip(),
+                    "images": images, "primary": primary})
+    return out
 
 
 def _read_scenes(root: Path) -> list[dict]:
@@ -386,10 +418,19 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
     for s in norm:
         if len(s["text"]) > MAX_SCENE_TEXT:
             raise Invalid(f"{s['id']}: texto acima de {MAX_SCENE_TEXT} caracteres.")
-        s["image"] = _check_image(root, s["image"])
+        # `[extensão]` cena-multi-keyframe (ADR-018): valida CADA imagem da galeria; a `primary`
+        # é sempre um item de `images` (senão volta para o primeiro válido ou `null`).
+        checked: list[str] = []
+        for img in s["images"]:
+            ok = _check_image(root, img)
+            if ok and ok not in checked:
+                checked.append(ok)
+        s["images"] = checked
+        if s["primary"] not in checked:
+            s["primary"] = checked[0] if checked else None
     _write_scenes(root, norm)
     md = _write_md(root, norm)
-    log.info("scenes_saved %s", {"pid": pid, "scenes": len(norm), "with_image": sum(1 for s in norm if s["image"])})
+    log.info("scenes_saved %s", {"pid": pid, "scenes": len(norm), "with_image": sum(1 for s in norm if s["images"])})
     return {"scenes": norm, "storyboard_md": md}
 
 
@@ -402,8 +443,16 @@ def _write_md(root: Path, scenes: list[dict]) -> str:
         # A estrutura da aula 010 (começo → descoberta → ação → desfecho) fica visível no documento.
         lines += [f"## Cena {s['n']} — {scene_arc(s['n'], total)['label']}", ""]
         lines += [s["text"] or "_(sem texto)_", ""]
-        if s["image"]:
-            lines += [f"![{s['id']}](ideas/{Path(s['image']).name})", ""]
+        # `[extensão]` cena-multi-keyframe (ADR-018): a principal é o hero da cena; as demais
+        # imagens da galeria entram como alternativas (a principal semeia a base dos ângulos).
+        if s["primary"]:
+            lines += [f"![{s['id']}](ideas/{Path(s['primary']).name})", ""]
+            alternativas = [img for img in s["images"] if img != s["primary"]]
+            if alternativas:
+                lines += ["Alternativas:", ""]
+                lines += [f"![{s['id']} alternativa {j}](ideas/{Path(img).name})"
+                          for j, img in enumerate(alternativas, 1)]
+                lines += [""]
     lines += ["---", "", f"Gerado em {datetime.now():%Y-%m-%d %H:%M}.",
               f"Imagem base: {base_rel(root) or 'ausente (etapa 3)'}", UPSCALE_NOTE]
     f = root / MD_FILE

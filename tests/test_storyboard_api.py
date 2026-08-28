@@ -119,13 +119,14 @@ def test_select_ideas_writes_ideas_json_and_detaches(client, pid, root):
     client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [{"text": "Close", "image": img}]})
     out = client.post(f"/api/projects/{pid}/storyboard/candidates/select", json={"ids": [b]})
     assert out.json() == {"selected": 1, "detached": ["cena01"]}
-    assert client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["image"] is None
+    cena01 = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]
+    assert cena01["images"] == [] and cena01["primary"] is None
     assert client.post(f"/api/projects/{pid}/storyboard/candidates/select", json={"ids": ["zzz"]}).status_code == 422
 
 
 def test_scenes_lifecycle_over_http(client, pid, root):
     scenes = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"]
-    assert len(scenes) == 5 and scenes[0] == {"id": "cena01", "n": 1, "text": "", "image": None}
+    assert len(scenes) == 5 and scenes[0] == {"id": "cena01", "n": 1, "text": "", "images": [], "primary": None}
     r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
         {"text": "A lata cai e inunda tudo"}, {"text": "Close no astronauta"}, {"text": "Puxa a corda"}]})
     assert r.status_code == 200
@@ -149,18 +150,23 @@ def test_render_requires_written_scenes(client, pid):
 
 
 def test_scene_image_written_by_put_is_readable_by_the_next_step(client, pid, root):
-    """[cross-feature] scenes.json tem que sair exatamente no schema do wave-1.md (consumido por shots)."""
+    """[cross-feature] scenes.json sai no schema cena-multi-keyframe (ADR-018): {id,n,text,images,primary}.
+
+    O consumidor a jusante da etapa 4 (angles.prepare_base) passa a semear a base pela `primary`.
+    A verificação integrada da cadeia scenes.json→storyboard.json→animate é pendência da W5."""
     client.post(f"/api/projects/{pid}/storyboard/import/upload",
                 files=[("files", ("a.png", image_bytes(), "image/png"))])
     cid = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"][0]["id"]
     client.post(f"/api/projects/{pid}/storyboard/candidates/select", json={"ids": [cid]})
     img = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"][0]["file"]
-    client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [{"text": "Close", "image": img}]})
+    client.put(f"/api/projects/{pid}/storyboard/scenes",
+               json={"scenes": [{"text": "Close", "images": [img], "primary": img}]})
     data = json.loads((root / "storyboard" / "scenes.json").read_text())
     assert set(data) == {"scenes"}
-    assert set(data["scenes"][0]) == {"id", "n", "text", "image"}
-    assert data["scenes"][0]["image"].startswith("storyboard/ideas/")
-    assert (root / data["scenes"][0]["image"]).exists()
+    assert set(data["scenes"][0]) == {"id", "n", "text", "images", "primary"}
+    assert data["scenes"][0]["images"] == [img] and data["scenes"][0]["primary"] == img
+    assert data["scenes"][0]["primary"].startswith("storyboard/ideas/")
+    assert (root / data["scenes"][0]["primary"]).exists()
     assert f"![cena01](ideas/{img.rsplit('/', 1)[-1]})" in (root / "storyboard" / "storyboard.md").read_text()
 
 

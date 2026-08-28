@@ -73,6 +73,18 @@ def load_scenes(pid: str) -> list[dict]:
     return sorted(data.get("scenes") or [], key=lambda s: s.get("n") or 0)
 
 
+def _scene_primary(s: dict) -> str | None:
+    """Imagem principal da cena — a que semeia a base dos ângulos (`[extensão]` cena-multi-keyframe,
+    ADR-018). Usa `primary`; cai para o 1º de `images`; por retrocompat, aceita o `image` antigo."""
+    primary = s.get("primary")
+    if primary:
+        return primary
+    images = s.get("images")
+    if isinstance(images, list) and images:
+        return images[0]
+    return s.get("image")
+
+
 def _project_meta(root: Path) -> dict:
     try:
         return json.loads((root / "project.json").read_text())
@@ -136,7 +148,10 @@ def list_scenes(pid: str) -> dict:
         sdir = _scene_dir(root, sid)
         sel = _selection(root, sid)
         scenes.append({
-            "id": sid, "n": s.get("n"), "text": s.get("text") or "", "image": s.get("image"),
+            "id": sid, "n": s.get("n"), "text": s.get("text") or "",
+            # `[extensão]` cena-multi-keyframe (ADR-018): a base da cena vem da `primary`; expomos
+            # também a galeria `images` para o front dos ângulos.
+            "primary": _scene_primary(s), "images": s.get("images") or [],
             "base": f"{STEP}/{sid}/base.png", "base_ready": (sdir / "base.png").exists(),
             "candidates": len(ingest.load_candidates(root, _step_of(sid))) if sid else 0,
             "selected": len(sel),
@@ -201,7 +216,9 @@ def prepare_base(pid: str, scene: str, source: str = "storyboard", data: bytes |
     else:
         src = None
         if source != "base":
-            rel = next((s.get("image") for s in load_scenes(pid) if s.get("id") == scene), None)
+            # `[extensão]` cena-multi-keyframe (ADR-018): a base dos ângulos vem da imagem PRINCIPAL
+            # da cena (fallback: 1º da galeria; retrocompat: `image` antigo).
+            rel = next((_scene_primary(s) for s in load_scenes(pid) if s.get("id") == scene), None)
             if rel and (root / rel).exists():
                 src, used = root / rel, "storyboard"
         if src is None:
