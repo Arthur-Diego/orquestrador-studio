@@ -1,4 +1,4 @@
-"""Contrato HTTP da etapa 9 (Export e QA) — sem rede, sem CLI real, sem navegador."""
+"""Contrato HTTP da etapa 8 (Export e QA) — sem rede, sem CLI real, sem navegador."""
 from __future__ import annotations
 
 import shutil
@@ -193,6 +193,6 @@ def test_unknown_project_is_404_on_every_export_route(client, svc):
 
 def test_step_nine_is_served_as_a_plugin(client, svc):
     steps = {s["id"]: s for s in client.get("/api/steps").json()}
-    assert steps["export"]["status"] == "ready" and steps["export"]["n"] == 9 and steps["export"]["aula"] == "014"
+    assert steps["export"]["status"] == "ready" and steps["export"]["n"] == 8 and steps["export"]["aula"] == "014"
     assert client.get("/steps/export/view.html").status_code == 200
     assert client.get("/steps/export/view.js").status_code == 200

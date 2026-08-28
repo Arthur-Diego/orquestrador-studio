@@ -33,8 +33,8 @@ STEP_ORDER: list[str] = [s["id"] for s in sorted(SOON, key=lambda s: s["n"])]
 #:   refs       → tudo em `refs/` (candidates/, thumbs, brainstorming/, README.md, last_job.json)
 #:   mood       → tudo em `mood/` (vibe/, candidates/, selected/, prompts.json, palette.json, mood.md)
 #:   base       → tudo em `base/` (brand.json, prompts.json, candidates/, base.md, base_final.png)
-#:   storyboard → tudo em `storyboard/` (candidates/, ideas/, scenes.json, storyboard.md/.json)
-#:   shots      → tudo em `shots/` (cenaNN/, product/, storyboard.json/.md)
+#:   storyboard → tudo em `storyboard/` (candidates/, ideas/, scenes.json, storyboard.md; ADR-015
+#:                absorveu os ângulos: cenaNN/, product/, storyboard.json, frames.md)
 #:   animate    → `animate/` (takes.json, candidates/, tmp/) **e** `videos/` (os vídeos gerados)
 #:   music      → `audio/` (o id da etapa é `music`, mas a pasta do projeto é `audio/`:
 #:                candidates/, music.*, beats.json, license.txt, rough_sequence.mp4, story_check.json)
@@ -47,7 +47,6 @@ STEP_OUTPUTS: dict[str, list[str]] = {
     "mood": ["mood"],
     "base": ["base"],
     "storyboard": ["storyboard"],
-    "shots": ["shots"],
     "animate": ["animate", "videos"],
     "music": ["audio"],
     "edit": ["edit"],
@@ -63,7 +62,6 @@ JOB_PREFIX: dict[str, str] = {
     "mood": "mood",
     "base": "base",
     "storyboard": "storyboard",
-    "shots": "shots",
     "animate": "animate",
     "music": "music",
     "export": "export",

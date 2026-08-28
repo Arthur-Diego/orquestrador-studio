@@ -1,4 +1,4 @@
-"""Etapa 10 — o guia por etapa (aula 015), com o portfólio global do ADR-012."""
+"""Etapa 9 — o guia por etapa (aula 015), com o portfólio global do ADR-012."""
 import json
 
 import pytest
@@ -59,8 +59,8 @@ def test_resumo_do_guia_e_o_portfolio_global_em_ambar(client, studio_env, pid):
 def test_guia_bloqueado_sem_export_da_etapa_9(client, studio_env):
     pid = client.post("/api/projects", json={"name": "Sem Export"}).json()["id"]
     g = guide(client, pid)
-    assert g["status"] == "blocked" and g["n"] == 10 and g["aula"] == "015"
-    assert g["inputs"][0]["step"] == "export" and "export/*.mp4 (etapa 9)" in g["missing"]
+    assert g["status"] == "blocked" and g["n"] == 9 and g["aula"] == "015"
+    assert g["inputs"][0]["step"] == "export" and "export/*.mp4 (etapa 8)" in g["missing"]
     assert "prática, exposição e validação" in g["what"] and "comunidade ABRAhub" in g["what"]
 
 
@@ -73,7 +73,7 @@ def test_saidas_sao_o_post_deste_projeto_e_o_portfolio_global(client, studio_env
     g = guide(client, pid)
     assert g["status"] == "in_progress" and g["progress"] == 0.5
     assert out(g, "post")["status"] == "ok" and out(g, "portfolio")["status"] == "todo"
-    assert "3 para destravar a etapa 11" in out(g, "portfolio")["detail"]
+    assert "3 para destravar a etapa 10" in out(g, "portfolio")["detail"]
 
     for i in range(1, 4):
         outra_obra(studio_env, f"2026-08-obra-{i}")

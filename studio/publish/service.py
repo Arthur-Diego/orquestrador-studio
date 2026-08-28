@@ -1,4 +1,4 @@
-"""Serviço da etapa 10 (Publicar, aula 015).
+"""Serviço da etapa 9 (Publicar, aula 015).
 
 Publicar é ato humano, na interface da rede social. O Studio só **registra** o que foi
 publicado (vídeo, rede, URL, data, nota, feedback) e diz se o portfólio da aula já fechou.
@@ -46,7 +46,7 @@ def _project_lock(pid: str) -> threading.RLock:
         return _locks.setdefault(pid, threading.RLock())
 
 PORTFOLIO_GOAL = 4                      # aula 015: "pelo menos quatro vídeos" — quatro OBRAS (ADR-012)
-EXPORT_DIR = "export"                   # provides da etapa 9
+EXPORT_DIR = "export"                   # provides da etapa 8
 PUBLISH_DIR = "publish"
 LOG_REL = f"{PUBLISH_DIR}/log.json"
 PORTFOLIO_REL = f"{PUBLISH_DIR}/portfolio.md"
@@ -265,7 +265,7 @@ def posts_at(root: Path) -> list[dict]:
 
     Mesma tolerância de `load_log`: arquivo ausente, ilegível, que não seja uma lista, ou com
     entradas que não sejam objetos, conta como zero. Um projeto qualquer do `PROJECTS_DIR` com
-    log estragado não pode derrubar `GET /api/portfolio` nem o gate da etapa 11.
+    log estragado não pode derrubar `GET /api/portfolio` nem o gate da etapa 10.
     """
     path = root / LOG_REL
     if not path.exists():
@@ -359,7 +359,7 @@ def write_portfolio(pid: str) -> Path:
     resumo = (f"Este projeto: {videos} vídeo(s) distinto(s) publicado(s) em {len(posts)} publicações. "
               f"Portfólio global: {glob['distinct_videos']}/{PORTFOLIO_GOAL} vídeos distintos "
               f"(projetos com pelo menos um post). "
-              + ("Portfólio pronto: pode começar a prospecção (etapa 11)."
+              + ("Portfólio pronto: pode começar a prospecção (etapa 10)."
                  if not missing else
                  f"{'Falta' if missing == 1 else 'Faltam'} {missing} para o portfólio da aula 015."))
     lines = [f"# Portfólio: {name}", "", resumo, ""]

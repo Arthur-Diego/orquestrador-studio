@@ -1,4 +1,4 @@
-// Etapa 7 — Trilha (aula 013): assistir a história inteira, decidir se ela fecha e só então
+// Etapa 6 — Trilha (aula 013): assistir a história inteira, decidir se ela fecha e só então
 // escolher a música — "você não deve editar antes de escolher a trilha sonora".
 Studio.register("music", (ctx) => {
   const { $, api, toast } = ctx;
@@ -134,7 +134,7 @@ Studio.register("music", (ctx) => {
       beats = r.beats;
       const base = r.beats ? `Trilha escolhida · ${r.beats.impacts.length} impactos`
                            : "Trilha escolhida (sem detecção de batidas)";
-      toast(`${r.warning ? r.warning + " · " : ""}${base} — se você já montou, a etapa 8 precisa ser refeita`);
+      toast(`${r.warning ? r.warning + " · " : ""}${base} — se você já montou, a etapa 7 precisa ser refeita`);
       await load(); ctx.guide();
     } catch (err) { toast(err.message); }
   }

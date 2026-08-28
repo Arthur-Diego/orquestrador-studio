@@ -1,4 +1,4 @@
-// Etapa 11 — Prospecção (aula 001): gate global de 4 obras publicadas, script literal da DM,
+// Etapa 10 — Prospecção (aula 001): gate global de 4 obras publicadas, script literal da DM,
 // teaser 5–10 s com música SÓ para quem respondeu, follow-up, call de 15 min e pitch ancorado.
 // Enviar a DM é sempre humano.
 // Wave 4: a tela é o protótipo — a faixa do gate ocupa o lugar do guia (esta tela não desenha
@@ -42,7 +42,7 @@ Studio.register("prospect", (ctx) => {
     if (!l.replied) return `<button class="ghost sm" data-act="replied" data-id="${id}">Marcar respondeu</button>`;
     // 11.1: o teaser só existe depois que a empresa respondeu.
     if (!l.teaser) return `<button class="primary sm" data-act="teaser" data-id="${id}"
-      title="o teaser sai de um take deste projeto, com a trilha da etapa 7">Gerar teaser 5–10s</button>`;
+      title="o teaser sai de um take deste projeto, com a trilha da etapa 6">Gerar teaser 5–10s</button>`;
     return `<button class="ghost sm" data-act="copyfollow" data-id="${id}">Copiar follow-up</button>`;
   }
 
@@ -165,7 +165,7 @@ Studio.register("prospect", (ctx) => {
         // Teaser é um JOB (ffmpeg): modal com o `log` REAL progredindo (fonte única de polling).
         return Studio.ui.progressJob({
           title: "Gerar teaser",
-          subtitle: `${l.business} · 5–10 s com a trilha da etapa 7 (ffmpeg)`,
+          subtitle: `${l.business} · 5–10 s com a trilha da etapa 6 (ffmpeg)`,
           start: () => api(`${base()}/leads/${id}/teaser`, { method: "POST", body: "{}" }),
           jobUrl: `${base()}/job`,
           done: async () => { await load(); ctx.guide(); },

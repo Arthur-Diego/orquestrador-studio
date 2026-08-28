@@ -1,4 +1,4 @@
-"""Etapa 6 — contratos HTTP da animação (sem rede: CLI da Higgsfield sempre fakeado)."""
+"""Etapa 5 — contratos HTTP da animação (sem rede: CLI da Higgsfield sempre fakeado)."""
 import json
 
 import pytest
@@ -10,9 +10,9 @@ needs_ffmpeg = pytest.mark.skipif(not ff.available(), reason="sem ffmpeg (fixtur
 
 STORYBOARD = {
     "scenes": [
-        {"id": "cena01", "base": "shots/cena01/base.png", "shots": [
-            {"id": "shot01", "file": "shots/cena01/shot01_final.png", "order": 1, "prompt": "the astronaut walks"},
-            {"id": "shot02", "file": "shots/cena01/shot02_final.png", "order": 2, "prompt": "close on the helmet"},
+        {"id": "cena01", "base": "storyboard/cena01/base.png", "shots": [
+            {"id": "shot01", "file": "storyboard/cena01/shot01_final.png", "order": 1, "prompt": "the astronaut walks"},
+            {"id": "shot02", "file": "storyboard/cena01/shot02_final.png", "order": 2, "prompt": "close on the helmet"},
         ]},
     ],
     "product_scene": None,
@@ -26,8 +26,8 @@ def project(studio_env):
     root = refs.project_dir(pid)
     for shot in STORYBOARD["scenes"][0]["shots"]:
         make_image(root / shot["file"])
-    (root / "shots").mkdir(parents=True, exist_ok=True)
-    (root / "shots" / "storyboard.json").write_text(json.dumps(STORYBOARD, ensure_ascii=False))
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "storyboard.json").write_text(json.dumps(STORYBOARD, ensure_ascii=False))
     return pid
 
 
@@ -51,7 +51,7 @@ def _candidate_id(client, pid):
 # ---------- plugin ----------
 def test_step_is_registered_as_ready(client):
     steps = {s["id"]: s for s in client.get("/api/steps").json()}
-    assert steps["animate"]["status"] == "ready" and steps["animate"]["n"] == 6
+    assert steps["animate"]["status"] == "ready" and steps["animate"]["n"] == 5
     assert steps["animate"]["aula"] == "012" and steps["animate"]["title"] == "Animação"
     assert client.get("/steps/animate/view.html").status_code == 200
     assert client.get("/steps/animate/view.js").status_code == 200
@@ -60,7 +60,7 @@ def test_step_is_registered_as_ready(client):
 def test_view_follows_the_screen_contract(client):
     """Convenção das waves 2–4: painel do guia na tela, `Studio.ui` e `destroy()` sem timer órfão."""
     html = client.get("/steps/animate/view.html").text
-    assert "Etapa 6 · aula 012" in html, "string fixada: não mexer"
+    assert "Etapa 5 · aula 012" in html, "string fixada: não mexer"
     assert '<section id="guide" class="guide">' in html
     js = client.get("/steps/animate/view.js").text
     assert 'Studio.register("animate"' in js
@@ -164,9 +164,9 @@ def test_put_shot_start_end_mode_saves_the_pair_over_http(client, project):
     url = f"/api/projects/{project}/animate/shots/cena01/shot01"
     r = client.put(url, json={"mode": "start_end", "prompt": "slow dramatic camera"})
     assert r.status_code == 200
-    assert r.json()["start_end"] == {"start": "shots/cena01/shot01_final.png",
-                                     "end": "shots/cena01/shot02_final.png"}
-    assert r.json()["next_image"] == "shots/cena01/shot02_final.png"
+    assert r.json()["start_end"] == {"start": "storyboard/cena01/shot01_final.png",
+                                     "end": "storyboard/cena01/shot02_final.png"}
+    assert r.json()["next_image"] == "storyboard/cena01/shot02_final.png"
     assert client.put(url, json={"mode": "simple"}).json()["start_end"] is None
 
 
@@ -263,7 +263,7 @@ def test_take_lifecycle_from_candidate_to_final(client, studio_env, project, tmp
 
 @needs_ffmpeg
 def test_takes_json_matches_the_wave_handoff_schema(client, studio_env, project, tmp_path):
-    """[cross-feature] a etapa 8 (edit) lê este arquivo sem adaptação."""
+    """[cross-feature] a etapa 7 (edit) lê este arquivo sem adaptação."""
     client.get(f"/api/projects/{project}/animate/shots")
     _upload(client, project, "a.mp4", make_video(tmp_path / "a.mp4", seconds=1).read_bytes())
     cid = _candidate_id(client, project)

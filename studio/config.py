@@ -25,11 +25,10 @@ PROJECT_LAYOUT = [
     "mood",                  # etapa 2 — a vibe única da campanha
     "mood/vibe",             # imagens de onde a vibe é "encontrada" (aula 009)
     "base",                  # etapa 3 — produto na situação da referência
-    "storyboard",            # etapa 4 — ideias de cena e as 5 cenas em texto
+    "storyboard",            # etapa 4 — cenas em texto + vários ângulos por cena (ADR-015)
     "storyboard/ideas",      # só as ideias selecionadas (decisão #7 da wave 1)
-    "shots",                 # etapa 5 — ângulos por cena
-    "animate",               # etapa 6 — plano de takes
-    "publish",               # etapa 10 — log de posts e portfólio
-    "prospect",              # etapa 11 — leads, teasers e pitch
+    "animate",               # etapa 5 — plano de takes
+    "publish",               # etapa 9 — log de posts e portfólio
+    "prospect",              # etapa 10 — leads, teasers e pitch
     "assets", "images", "videos", "audio", "edit", "export", "jobs",
 ]

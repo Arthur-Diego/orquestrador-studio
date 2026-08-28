@@ -1,4 +1,4 @@
-"""Etapa 10 — o serviço de publicação segue a aula 015: registro manual, 4 vídeos, feedback.
+"""Etapa 9 — o serviço de publicação segue a aula 015: registro manual, 4 vídeos, feedback.
 
 Decisão 1 do lote (`docs/domains/studio/waves/wave-1.md`): o portfólio conta VÍDEOS DISTINTOS.
 Os `export/*.mp4` são fixtures vazias — a etapa não abre o vídeo (sem ffprobe, sem rede).
@@ -11,7 +11,7 @@ import pytest
 
 @pytest.fixture()
 def project(studio_env):
-    """Projeto com dois exports prontos, como a etapa 9 entrega."""
+    """Projeto com dois exports prontos, como a etapa 8 entrega."""
     refs = studio_env["refs"]
     pid = refs.create_project("Gelo Zero", "energy drink", "snow neon")["id"]
     export = refs.project_dir(pid) / "export"
@@ -324,7 +324,7 @@ def test_registros_concorrentes_nao_se_perdem(svc, project):
 
 # ---------- handoff com prospect (OS-011) ----------
 def test_fixture_de_handoff_para_prospect(svc, studio_env, project):
-    """`publish/log.json` com 4 vídeos distintos é o gate da etapa 11 (decisão 1 do lote)."""
+    """`publish/log.json` com 4 vídeos distintos é o gate da etapa 10 (decisão 1 do lote)."""
     for i, v in enumerate(("9x16.mp4", "16x9.mp4", "1x1.mp4", "extra.mp4")):
         add(svc, project, video=v, url=f"https://x.test/p{i}", note=f"post {i}")
     raw = json.loads((studio_env["refs"].project_dir(project) / "publish" / "log.json").read_text())

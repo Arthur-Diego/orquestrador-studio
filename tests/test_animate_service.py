@@ -1,4 +1,4 @@
-"""Etapa 6 — a animação segue a aula 012: prompt por take, start/end frame, 2 takes, like,
+"""Etapa 5 — a animação segue a aula 012: prompt por take, start/end frame, 2 takes, like,
 troca de modelo sugerida após 3 falhas e corte para preto como fallback."""
 import json
 import threading
@@ -12,13 +12,13 @@ needs_ffmpeg = pytest.mark.skipif(not ff.available(), reason="sem ffmpeg (fixtur
 
 STORYBOARD = {
     "scenes": [
-        {"id": "cena01", "base": "shots/cena01/base.png", "shots": [
-            {"id": "shot02", "file": "shots/cena01/shot02_final.png", "order": 2, "prompt": "close on the helmet"},
-            {"id": "shot01", "file": "shots/cena01/shot01_final.png", "order": 1,
+        {"id": "cena01", "base": "storyboard/cena01/base.png", "shots": [
+            {"id": "shot02", "file": "storyboard/cena01/shot02_final.png", "order": 2, "prompt": "close on the helmet"},
+            {"id": "shot01", "file": "storyboard/cena01/shot01_final.png", "order": 1,
              "prompt": "the astronaut walks through the blizzard"},
         ]},
-        {"id": "cena02", "base": "shots/cena02/base.png", "shots": [
-            {"id": "shot03", "file": "shots/cena02/shot03_final.png", "order": 1, "prompt": "the giant can"},
+        {"id": "cena02", "base": "storyboard/cena02/base.png", "shots": [
+            {"id": "shot03", "file": "storyboard/cena02/shot03_final.png", "order": 1, "prompt": "the giant can"},
         ]},
     ],
     "product_scene": None,
@@ -40,8 +40,8 @@ def project(studio_env, request):
         for shot in scene["shots"]:
             if shot.get("file"):
                 make_image(root / shot["file"])
-    (root / "shots").mkdir(parents=True, exist_ok=True)
-    (root / "shots" / "storyboard.json").write_text(json.dumps(board, ensure_ascii=False))
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "storyboard.json").write_text(json.dumps(board, ensure_ascii=False))
     return pid
 
 
@@ -84,7 +84,7 @@ def test_plan_requires_storyboard(svc, studio_env):
 
 def test_plan_warns_about_missing_frame_without_blocking(svc, studio_env, project):
     root = _root(studio_env, project)
-    (root / "shots" / "cena02" / "shot03_final.png").unlink()
+    (root / "storyboard" / "cena02" / "shot03_final.png").unlink()
     plan = svc.load_plan(project)
     shot = plan["shots"][-1]
     assert shot["image"] is None
@@ -92,7 +92,7 @@ def test_plan_warns_about_missing_frame_without_blocking(svc, studio_env, projec
 
 
 @pytest.mark.parametrize("project", [{**STORYBOARD, "product_scene": {
-    "id": "cena03", "shots": [{"id": "shot04", "file": "shots/cena03/shot04_final.png", "order": 1,
+    "id": "cena03", "shots": [{"id": "shot04", "file": "storyboard/cena03/shot04_final.png", "order": 1,
                                "prompt": "the frozen fridge"}]}}], indirect=True)
 def test_product_scene_is_the_last_scene(svc, project):
     plan = svc.load_plan(project)
@@ -103,9 +103,9 @@ def test_merge_keeps_takes_of_shot_removed_from_storyboard(svc, studio_env, proj
     svc.load_plan(project)
     svc.update_shot(project, "cena02", "shot03", prompt="keep me")
     root = _root(studio_env, project)
-    board = json.loads((root / "shots" / "storyboard.json").read_text())
+    board = json.loads((root / "storyboard" / "storyboard.json").read_text())
     board["scenes"] = board["scenes"][:1]
-    (root / "shots" / "storyboard.json").write_text(json.dumps(board))
+    (root / "storyboard" / "storyboard.json").write_text(json.dumps(board))
     plan = svc.load_plan(project)
     orphan = [s for s in plan["shots"] if s["shot"] == "shot03"]
     assert orphan and orphan[0]["orphan"] is True and orphan[0]["prompt"] == "keep me"
@@ -137,7 +137,7 @@ def test_start_end_requires_an_existing_end_frame(svc, studio_env, project):
     make_image(root / "edit" / "last_frames" / "shot01_last.png")
     out = svc.update_shot(project, "cena01", "shot01",
                           start_end={"end": "edit/last_frames/shot01_last.png"})
-    assert out["start_end"] == {"start": "shots/cena01/shot01_final.png",
+    assert out["start_end"] == {"start": "storyboard/cena01/shot01_final.png",
                                 "end": "edit/last_frames/shot01_last.png"}
     assert svc.update_shot(project, "cena01", "shot01", start_end=None)["start_end"] is None
 
@@ -146,11 +146,11 @@ def test_start_end_mode_records_the_pair_with_the_next_shot(svc, project):
     """6.1 (alta): escolher start/end grava `{start, end}` — antes o CLI ia sem end frame."""
     svc.load_plan(project)
     out = svc.update_shot(project, "cena01", "shot01", mode="start_end")
-    assert out["start_end"] == {"start": "shots/cena01/shot01_final.png",
-                                "end": "shots/cena01/shot02_final.png"}
-    assert out["next_in_scene"] == "shot02" and out["next_image"] == "shots/cena01/shot02_final.png"
+    assert out["start_end"] == {"start": "storyboard/cena01/shot01_final.png",
+                                "end": "storyboard/cena01/shot02_final.png"}
+    assert out["next_in_scene"] == "shot02" and out["next_image"] == "storyboard/cena01/shot02_final.png"
     plan = svc.load_plan(project)
-    assert plan["shots"][0]["start_end"]["end"] == "shots/cena01/shot02_final.png", "persistido"
+    assert plan["shots"][0]["start_end"]["end"] == "storyboard/cena01/shot02_final.png", "persistido"
 
 
 def test_leaving_start_end_mode_clears_the_pair(svc, project):
@@ -167,7 +167,7 @@ def test_start_end_mode_without_a_next_shot_asks_for_a_manual_end(svc, studio_en
     make_image(_root(studio_env, project) / "edit" / "last_frames" / "shot03_last.png")
     out = svc.update_shot(project, "cena02", "shot03", mode="start_end",
                           start_end={"end": "edit/last_frames/shot03_last.png"})
-    assert out["start_end"] == {"start": "shots/cena02/shot03_final.png",
+    assert out["start_end"] == {"start": "storyboard/cena02/shot03_final.png",
                                 "end": "edit/last_frames/shot03_last.png"}
 
 
@@ -181,8 +181,8 @@ def test_generate_in_start_end_mode_sends_the_end_image(svc, studio_env, project
                         lambda model, params, timeout_s=600: sent.update(params) or {"raw": {}, "urls": [], "id": "j"})
     svc.start_generate(project, "cena01", "shot01", "kling3_0", 1)
     _wait(svc, project)
-    assert sent["end_image"].endswith("shots/cena01/shot02_final.png")
-    assert sent["start_image"].endswith("shots/cena01/shot01_final.png")
+    assert sent["end_image"].endswith("storyboard/cena01/shot02_final.png")
+    assert sent["start_image"].endswith("storyboard/cena01/shot01_final.png")
     assert sent["end_image"].startswith(str(root)) and sent["sound"] is False
 
 
@@ -192,7 +192,7 @@ def test_the_take_registers_the_pair_used(svc, studio_env, project, tmp_path):
     svc.update_shot(project, "cena01", "shot01", mode="start_end")
     cid = _candidate(svc, studio_env, project, tmp_path, "t1.mp4")
     take = svc.attach_take(project, "cena01", "shot01", cid)["take"]
-    assert take["start_end"]["end"] == "shots/cena01/shot02_final.png"
+    assert take["start_end"]["end"] == "storyboard/cena01/shot02_final.png"
     assert take["prompt_mode"] == "start_end" and take["aspect_ratio"] == "16:9"
 
 
@@ -212,7 +212,7 @@ def test_aspect_ratio_defaults_to_the_project_and_accepts_a_shot_override(svc, s
     (root / "project.json").write_text(json.dumps({**meta, "aspect_ratio": "9:16"}))
     assert svc.project_aspect_ratio(root) == "9:16"
     svc.load_plan(project)
-    entry = {"image": "shots/cena01/shot01_final.png", "prompt": "walk", "duration": 5, "start_end": None}
+    entry = {"image": "storyboard/cena01/shot01_final.png", "prompt": "walk", "duration": 5, "start_end": None}
     assert svc.build_params(entry, "kling3_0", aspect_ratio="9:16")["aspect_ratio"] == "9:16"
     assert svc.update_shot(project, "cena01", "shot01", aspect_ratio="1:1")["aspect_ratio"] == "1:1"
     assert svc.build_params({**entry, "aspect_ratio": "1:1"}, "kling3_0",
@@ -397,12 +397,12 @@ def test_failures_count_rejections_and_cli_errors(svc):
 # ---------- params do CLI ----------
 def test_build_params_always_turns_the_model_audio_off(svc, project, studio_env):
     root = _root(studio_env, project)
-    entry = {"image": "shots/cena01/shot01_final.png", "prompt": "walk", "duration": 5, "start_end": None}
+    entry = {"image": "storyboard/cena01/shot01_final.png", "prompt": "walk", "duration": 5, "start_end": None}
     p = svc.build_params(entry, "kling3_0", root=root)
     assert p["sound"] is False and p["duration"] == 5 and p["aspect_ratio"] == "16:9" and p["mode"] == "pro"
-    assert p["start_image"].endswith("shots/cena01/shot01_final.png") and p["start_image"].startswith("/")
+    assert p["start_image"].endswith("storyboard/cena01/shot01_final.png") and p["start_image"].startswith("/")
     assert "end_image" not in p
-    se = {**entry, "start_end": {"start": "shots/cena01/shot01_final.png", "end": "shots/cena01/shot02_final.png"}}
+    se = {**entry, "start_end": {"start": "storyboard/cena01/shot01_final.png", "end": "storyboard/cena01/shot02_final.png"}}
     assert svc.build_params(se, "kling3_0", root=root)["duration"] == 5
     veo = svc.build_params(se, "veo3_1_lite", root=root)
     assert veo["duration"] == 8, "veo3_1_lite com start+end exige 8 s"
@@ -513,5 +513,5 @@ def test_cost_sends_the_same_params_as_generate(svc, project, studio_env, monkey
     monkeypatch.setattr(svc.hf, "cost", lambda model, params: seen.update(params) or {"credits": 1})
     svc.cost(project, "cena01", "shot01", "kling3_0", 2)
     root = _root(studio_env, project)
-    entry = {"image": "shots/cena01/shot01_final.png", "prompt": "walk", "duration": 10, "start_end": None}
+    entry = {"image": "storyboard/cena01/shot01_final.png", "prompt": "walk", "duration": 10, "start_end": None}
     assert seen == svc.build_params(entry, "kling3_0", root=root)

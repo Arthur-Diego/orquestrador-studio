@@ -1,4 +1,4 @@
-// Etapa 6 — Animação (aula 012): prompt de movimento por shot, start/end frame gravado,
+// Etapa 5 — Animação (aula 012): prompt de movimento por shot, start/end frame gravado,
 // importar da UI da Higgsfield, like no usável. Componentes compartilhados: Studio.ui.
 //
 // Wave 4 (fidelidade ao protótipo `06-animate`): a tela é header + guia + painel 01 (uma linha
@@ -89,7 +89,7 @@ Studio.register("animate", (ctx) => {
     const takes = s.takes || [];
     const alertas = [];
     if (!s.image) alertas.push("frame ausente");
-    if (s.adapt_idea) alertas.push("adapte a ideia: novo frame na etapa 5 ou corte para preto");
+    if (s.adapt_idea) alertas.push("adapte a ideia: novo frame na etapa 4 ou corte para preto");
     else if (s.suggested_model && s.failures >= 3) alertas.push(`Tente ${s.suggested_model}`);
     if (s.fallback_black) alertas.push("corte para preto");
     else if (s.suggest_fallback_black) alertas.push("sugestão: corte para preto");
@@ -104,7 +104,7 @@ Studio.register("animate", (ctx) => {
     return { text: `${takes.length} take(s) — dê like no usável`, warn: false };
   }
 
-  /** Opções de end frame: o próximo shot da cena (padrão da aula) e os últimos frames da etapa 8. */
+  /** Opções de end frame: o próximo shot da cena (padrão da aula) e os últimos frames da etapa 7. */
   function endOptions(s) {
     const atual = (s.start_end || {}).end || "";
     const auto = atual && atual === s.next_image;
@@ -148,7 +148,7 @@ Studio.register("animate", (ctx) => {
   function render() {
     $("#anShots").innerHTML = plan.shots.length
       ? plan.shots.map(shotRow).join("")
-      : `<div class="empty">Nenhum shot — a etapa 5 precisa produzir <code>shots/storyboard.json</code> primeiro.</div>`;
+      : `<div class="empty">Nenhum shot — a etapa 4 precisa produzir <code>storyboard/storyboard.json</code> primeiro.</div>`;
     hfStatus();
   }
 

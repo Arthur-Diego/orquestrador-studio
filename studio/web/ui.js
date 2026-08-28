@@ -17,7 +17,7 @@
 //   Studio.ui.tile({src, badge, term, up, upOk, sel, ord, wide, sq, id, title, cls})
 //       → `div.card` da galeria. `src` = URL da imagem, `badge` = `span.src` (origem),
 //         `term` = legenda mono da base, `up`/`upOk` = selo "upscalado 2x"/"sem upscale",
-//         `ord` = número da ordem (o check do tile selecionado vira o número, etapa 5).
+//         `ord` = número da ordem (o check do tile selecionado vira o número, etapa 4).
 //   Studio.ui.pipe(estados, {lg, titles})
 //       → `div.pipe` segmentado (um `i` por etapa; classes done/in_progress/blocked/todo).
 //   Studio.ui.beats(lista, {sm, cuts})

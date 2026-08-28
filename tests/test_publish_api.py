@@ -1,10 +1,10 @@
-"""Etapa 10 — contratos HTTP de publish (seção 5 do FDD), via TestClient. Sem rede, sem ffmpeg."""
+"""Etapa 9 — contratos HTTP de publish (seção 5 do FDD), via TestClient. Sem rede, sem ffmpeg."""
 import pytest
 
 
 @pytest.fixture()
 def pid(client, studio_env):
-    """Projeto com os exports que a etapa 9 entrega (fixtures vazias: publish não abre o vídeo)."""
+    """Projeto com os exports que a etapa 8 entrega (fixtures vazias: publish não abre o vídeo)."""
     pid = client.post("/api/projects", json={"name": "Gelo Zero", "product": "energy drink"}).json()["id"]
     export = studio_env["refs"].project_dir(pid) / "export"
     export.mkdir(parents=True, exist_ok=True)
@@ -30,7 +30,7 @@ def outra_obra(studio_env, slug):
 
 def test_etapa_aparece_pronta_no_catalogo(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "publish")
-    assert step["status"] == "ready" and step["n"] == 10 and step["aula"] == "015"
+    assert step["status"] == "ready" and step["n"] == 9 and step["aula"] == "015"
     assert client.get("/steps/publish/view.html").status_code == 200
     assert client.get("/steps/publish/view.js").status_code == 200
 
@@ -157,7 +157,7 @@ def test_rota_global_do_portfolio(client, studio_env, pid):
 
 
 def test_o_gate_da_prospeccao_le_o_portfolio_global(client, studio_env, pid):
-    """Critério cross-feature 11.2: a etapa 11 destrava com obras de OUTROS projetos."""
+    """Critério cross-feature 11.2: a etapa 10 destrava com obras de OUTROS projetos."""
     gate = f"/api/projects/{pid}/prospect/gate"
     for i, v in enumerate(("9x16.mp4", "16x9.mp4", "1x1.mp4", "extra.mp4")):
         client.post(f"/api/projects/{pid}/publish/log", json=post_body(video=v, url=f"https://x.test/f{i}"))
@@ -213,7 +213,7 @@ def test_view_html_segue_a_aula_sem_copy_automatica(client):
     """A tela pede só o que a aula 015 pede: vídeo, rede, URL, data, nota e feedback."""
     import re
     html = client.get("/steps/publish/view.html").text
-    assert "Etapa 10 · aula 015" in html and "4 vídeos publicados" in html and "feedback" in html.lower()
+    assert "Etapa 9 · aula 015" in html and "4 vídeos publicados" in html and "feedback" in html.lower()
     campos = set(re.findall(r'<(?:input|select|textarea)[^>]*\bid="([^"]+)"', html))
     assert campos == {"pubVideo", "pubNetwork", "pubDate", "pubUrl", "pubNote"}, \
         "sem campo de legenda, hashtag, agendamento ou métrica de alcance"

@@ -1,14 +1,20 @@
-"""Etapa 5 — Ângulos por cena (aula 011) + cena extra do produto (aula 013), em "modo UI":
+"""Etapa 4 — Ângulos por cena (aula 011) + cena extra do produto (aula 013), em "modo UI":
 
-1. cada cena de `storyboard/scenes.json` ganha uma imagem base em `shots/cenaNN/base.png`
+Absorvido da antiga etapa 5 pela fusão ADR-015: o storyboard (etapa 4) passa a ser o lugar único
+onde cada cena ganha VÁRIAS imagens/ângulos. Este módulo é a metade "ângulos por cena" da etapa 4;
+a metade "ideação + cenas em texto" fica em `studio/storyboard/service.py`.
+
+1. cada cena de `storyboard/scenes.json` (etapa 4) ganha uma imagem base em `storyboard/cenaNN/base.png`
    (a imagem de ideação da cena ou, quando ela não tem, `base/base_final.png`);
 2. o Studio entrega os prompts da aula — "outro ponto de vista" (Multi Shot), edição numerada
    e o bloco de câmera que substitui o Cinema Studio (que não tem API);
 3. o usuário gera na UI da Higgsfield (ilimitado) e importa, ou gera via CLI pagando créditos;
-4. escolhe e ordena os frames: `shots/cenaNN/shotMM_final.png` + `shots/storyboard.json`,
-   que é o que a etapa 6 (animate) lê sem adaptação.
+4. escolhe e ordena os frames: `storyboard/cenaNN/shotMM_final.png` + `storyboard/storyboard.json`,
+   que é o que a etapa 5 (animate) lê sem adaptação (schema preservado pela ADR-015).
 
-Nada fora de `projects/<pid>/shots/` é escrito (exceto `projects/<pid>/jobs/shots_*.json`).
+Nada fora de `projects/<pid>/storyboard/` é escrito (exceto `projects/<pid>/jobs/storyboard_*.json`).
+O documento de grade dos ângulos é `storyboard/frames.md` (o `storyboard/storyboard.md` continua
+sendo o documento das cenas em texto, escrito pelo serviço de ideação).
 """
 from __future__ import annotations
 
@@ -28,10 +34,10 @@ from ..common import ingest
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
-log = logging.getLogger("studio.shots")
+log = logging.getLogger("studio.storyboard.angles")
 
 SCENE_RE = re.compile(r"^cena\d{2}$")
-STEP = "shots"
+STEP = "storyboard"
 PRODUCT = "product"
 DEFAULT_MODEL = "nano_banana_2"
 UPSCALE_MODEL = "bytedance_image_upscale"
@@ -43,7 +49,7 @@ DOWNLOAD_RETRY_SLEEP = 2.0
 WARNING_COLORS = "Acerte cores e luz ANTES do multishot: as variações herdam o que a base tiver."
 #: Aula 013 (auditoria 5.8): a cena do produto nasce depois de escolher a trilha.
 PRODUCT_NOTE = ("Da aula 013: a cena do produto normalmente é feita **depois** de escolher a "
-                "trilha (etapa 7). Se você ainda não escolheu a música, siga o curso e volte aqui.")
+                "trilha (etapa 6). Se você ainda não escolheu a música, siga o curso e volte aqui.")
 #: Aula 011 (auditoria 5.5): os enquadramentos que o instrutor pede, como exemplo no campo "foco".
 FOCUS_EXAMPLES = ["the astronaut's face (close no rosto)", "his feet (foco nos pés)",
                   "his hands (foco nas mãos)", "the whole valley (plano aberto com cenário)"]
@@ -174,7 +180,7 @@ def _check_ext(name: str) -> None:
 
 def prepare_base(pid: str, scene: str, source: str = "storyboard", data: bytes | None = None,
                  name: str = "", cand_id: str | None = None) -> dict:
-    """Materializa `shots/cenaNN/base.png`. Idempotente: reexecutar sobrescreve com a mesma origem.
+    """Materializa `storyboard/cenaNN/base.png`. Idempotente: reexecutar sobrescreve com a mesma origem.
 
     `source="candidate"` promove um resultado da cena a nova base (aula 011, auditoria 5.2: o
     Cinema Studio acerta a **base** da cena; o Multi Shot só vem depois dela estar certa)."""
@@ -411,7 +417,7 @@ def _check_gen(prompts: list[str], count: int) -> None:
 def _fetch(url: str, job: dict) -> bytes | None:
     """Links de resultado expiram: baixa na hora, com 2 tentativas."""
     for attempt in (1, 2):
-        tmpdir = Path(tempfile.mkdtemp(prefix="shots_dl_"))
+        tmpdir = Path(tempfile.mkdtemp(prefix="angles_dl_"))
         try:
             return Path(hf.download(url, tmpdir / "media")).read_bytes()
         except Exception as e:  # noqa: BLE001
@@ -425,7 +431,7 @@ def _fetch(url: str, job: dict) -> bytes | None:
 
 def _save_raw(root: Path, res: dict, fallback: str) -> None:
     (root / "jobs").mkdir(parents=True, exist_ok=True)
-    (root / "jobs" / f"shots_{res.get('id') or fallback}.json").write_text(
+    (root / "jobs" / f"storyboard_{res.get('id') or fallback}.json").write_text(
         json.dumps(res.get("raw"), ensure_ascii=False, indent=1))
 
 
@@ -547,7 +553,7 @@ def select_shots(pid: str, scene: str, shots: list[dict]) -> dict:
                "fazer upscale antes de baixar. Rode o upscale e salve a ordem de novo.") if faltam else None
     log.info("shots pid=%s scene=%s op=select count=%d sem_upscale=%d", pid, scene, len(saved), len(faltam))
     return {"scene": scene, "base": f"{STEP}/{scene}/base.png", "shots": saved,
-            "storyboard": f"{STEP}/storyboard.json", "storyboard_md": f"{STEP}/storyboard.md",
+            "storyboard": f"{STEP}/storyboard.json", "storyboard_md": f"{STEP}/frames.md",
             "warning": warning}
 
 
@@ -576,11 +582,11 @@ def select_product(pid: str, cand_id: str | None, upscaled: bool = False) -> dic
     board = write_storyboard(pid)
     log.info("shots pid=%s scene=product op=product_select id=%s", pid, cand_id)
     return {"product_scene": board["product_scene"], "storyboard": f"{STEP}/storyboard.json",
-            "storyboard_md": f"{STEP}/storyboard.md", "note": PRODUCT_NOTE}
+            "storyboard_md": f"{STEP}/frames.md", "note": PRODUCT_NOTE}
 
 
 def write_storyboard(pid: str) -> dict:
-    """Reconstrói `shots/storyboard.json` por inteiro a partir do disco (nunca edita parcialmente).
+    """Reconstrói `storyboard/storyboard.json` por inteiro a partir do disco (nunca edita parcialmente).
 
     Schema da wave-1: toda cena de `scenes.json` aparece na ordem de `n`, mesmo sem shots, para
     `animate` saber o que falta. Campos extras (`candidate`, `upscaled`) são opcionais."""
@@ -615,7 +621,7 @@ def _md_row(root: Path, base: str, shots: list[dict]) -> list[str]:
         return ["_(nenhum frame escolhido ainda)_", ""]
 
     def rel(p: str) -> str:
-        """O .md mora em `shots/`: os caminhos do storyboard perdem esse prefixo."""
+        """O .md mora em `storyboard/`: os caminhos do storyboard perdem esse prefixo."""
         return p[len(STEP) + 1:] if p.startswith(f"{STEP}/") else p
 
     return ["| " + " | ".join(c[0] for c in cells) + " |",
@@ -624,7 +630,7 @@ def _md_row(root: Path, base: str, shots: list[dict]) -> list[str]:
 
 
 def write_storyboard_md(pid: str, board: dict | None = None) -> str:
-    """`shots/storyboard.md` — o documento de storyboard da aula 011 ("monta a ordem dos frames
+    """`storyboard/frames.md` — o documento de grade dos ângulos da aula 011 ("monta a ordem dos frames
     dentro do documento, usando prints"). Regravado a cada seleção (auditoria 5.4)."""
     root = project_dir(pid)
     board = board if board is not None else load_storyboard(pid)
@@ -634,7 +640,7 @@ def write_storyboard_md(pid: str, board: dict | None = None) -> str:
              f"Produto: {meta.get('product') or '—'} · Vibe: {meta.get('vibe') or '—'} · "
              f"Proporção: {_aspect_ratio(root)}", "",
              "Aula 011: a base de cada cena vem primeiro; os frames aparecem na ordem em que a "
-             "cena progride. Cada frame deve estar upscalado antes de virar vídeo (etapa 6).", ""]
+             "cena progride. Cada frame deve estar upscalado antes de virar vídeo (etapa 5).", ""]
     for scene in board.get("scenes") or []:
         sid = scene.get("id") or ""
         lines += [f"## {sid}", ""]
@@ -646,10 +652,10 @@ def write_storyboard_md(pid: str, board: dict | None = None) -> str:
         lines += ["## Cena do produto (aula 013)", "", PRODUCT_NOTE, ""]
         lines += _md_row(root, product.get("base") or "", product.get("shots") or [])
     lines += ["---", "", f"Gerado em {time.strftime('%Y-%m-%d %H:%M')}."]
-    f = root / STEP / "storyboard.md"
+    f = root / STEP / "frames.md"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("\n".join(lines) + "\n")
-    return f"{STEP}/storyboard.md"
+    return f"{STEP}/frames.md"
 
 
 def load_storyboard(pid: str) -> dict:

@@ -1,4 +1,4 @@
-"""Render da etapa 8 — os comandos ffmpeg que reproduzem a montagem da aula 014.
+"""Render da etapa 7 — os comandos ffmpeg que reproduzem a montagem da aula 014.
 
 `build_filtergraph` é pura (monta os argumentos sem executar nada) para poder ser testada sem
 ffmpeg instalado. `start_render` roda o encode num job em thread (ADR-006), com log por fase e
@@ -33,7 +33,7 @@ RENDER_TIMEOUT = 1800          # minterpolate em 1080p é lento; 600 s da API tr
 TARGETS = {"rough": {"name": "rough_cut.mp4", "crf": "23", "preset": "veryfast"},
            "master": {"name": "master.mp4", "crf": "18", "preset": "medium"}}
 AFORMAT = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
-NO_MUSIC = ("escolha a trilha na etapa 7 antes de montar: o master não sai sem música "
+NO_MUSIC = ("escolha a trilha na etapa 6 antes de montar: o master não sai sem música "
             "(aula 013 — a montagem é guiada pelo som)")
 
 
@@ -78,7 +78,7 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
                       out: Path | str | None = None) -> tuple[list[str], float]:
     """Argumentos completos do ffmpeg (sem o binário) + duração prevista. Não executa nada.
 
-    `out` troca só o arquivo de destino (a escrita continua atômica, em `<out>.part`): a etapa 7
+    `out` troca só o arquivo de destino (a escrita continua atômica, em `<out>.part`): a etapa 6
     reusa este mesmo grafo em modo `rough` para gerar `audio/rough_sequence.mp4`.
     """
     if target not in TARGETS:
@@ -214,7 +214,7 @@ def start_render(pid: str, target: str = "master") -> dict:
         raise ValueError(f"target inválido: {target} (use 'rough' ou 'master')")
     stored = load_timeline(pid)
     if stored is None:
-        raise FileNotFoundError("timeline ainda não criada — abra a etapa 8 antes de renderizar")
+        raise FileNotFoundError("timeline ainda não criada — abra a etapa 7 antes de renderizar")
     timeline = validate_timeline(root, stored)
     if not timeline["clips"]:
         raise ValueError("timeline sem clipes")
@@ -252,7 +252,7 @@ def start_render(pid: str, target: str = "master") -> dict:
             job["log"].append(f"mix: música offset {_num((working.get('music') or {}).get('offset', 0))}, "
                               f"sfx {n_sfx}{', loudnorm' if target == 'master' else ''}")
         else:
-            job["log"].append("aviso: prévia de ritmo sem trilha — escolha a música na etapa 7 antes do master")
+            job["log"].append("aviso: prévia de ritmo sem trilha — escolha a música na etapa 6 antes do master")
             logger.warning("edit: rough sem música em %s", pid)
         job["done"] += 1
 

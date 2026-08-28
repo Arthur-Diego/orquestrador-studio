@@ -1,4 +1,4 @@
-"""Smoke visual do Studio (fora do CI — ADR-008): prints das 11 etapas + prova de que nenhum
+"""Smoke visual do Studio (fora do CI — ADR-008): prints das 10 etapas + prova de que nenhum
 timer sobrevive à troca de tela (critério cross-feature 3 da wave 2).
 
 Uso (com o servidor no ar e o Chromium do Playwright instalado):

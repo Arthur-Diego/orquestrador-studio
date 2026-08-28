@@ -1,4 +1,4 @@
-"""Rotas da etapa 7 — Trilha (aula 013)."""
+"""Rotas da etapa 6 — Trilha (aula 013)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, File, HTTPException, UploadFile

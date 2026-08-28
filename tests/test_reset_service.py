@@ -38,14 +38,14 @@ def test_reset_step_no_meio_apaga_base_e_seguintes(studio_env):
     # refs e mood (n < 3) permanecem
     assert _has_files(root, "refs") and _has_files(root, "mood")
     # base e todas as seguintes ficam vazias (as pastas existem, sem arquivos dentro)
-    for step in ["base", "storyboard", "shots", "animate", "music", "edit", "export", "publish", "prospect"]:
+    for step in ["base", "storyboard", "animate", "music", "edit", "export", "publish", "prospect"]:
         for rel in RESET_FAKES[step]:
             assert not (root / rel).is_file(), f"{rel} deveria ter sido apagado"
     assert not _has_files(root, "videos") and not _has_files(root, "audio")
 
     # jobs: mood_ (n=2) fica; base_..export_ (n>=3) somem
     assert (root / "jobs" / "mood_1.json").is_file()
-    for f in ["base_1.json", "storyboard_1.json", "shots_1.json", "animate_1.json", "music_1.json", "export_1.json"]:
+    for f in ["base_1.json", "storyboard_1.json", "animate_1.json", "music_1.json", "export_1.json"]:
         assert not (root / "jobs" / f).exists(), f
     # infra compartilhada não é tocada no reset de etapa
     assert (root / "assets" / "a.bin").is_file() and (root / "images" / "i.png").is_file()

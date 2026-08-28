@@ -1,4 +1,4 @@
-"""Etapa 11 — Prospecção (aula 001).
+"""Etapa 10 — Prospecção (aula 001).
 
 A aula manda, nesta ordem: publicar 4 vídeos criativos antes de prospectar; mandar 10 DMs por dia
 com o script literal (fã/consumidor → post que ressoou → "produzo anúncios criativos" → "tive uma
@@ -107,7 +107,7 @@ def _iso(value: str, field: str) -> str:
         raise ValueError(f"{field} deve ser uma data ISO 8601 (ex.: 2026-08-27T15:00:00)") from e
 
 
-# ---------- gate: 4 vídeos publicados (etapa 10, portfólio GLOBAL) ----------
+# ---------- gate: 4 vídeos publicados (etapa 9, portfólio GLOBAL) ----------
 def gate(root: Path) -> dict:
     """`{published, posts, required, ok, message, projects}` a partir do portfólio **global**.
 
@@ -351,7 +351,7 @@ def register_call(root: Path, lid: str, call_at: str, done: bool = False, note: 
     return _replace(root, lead)
 
 
-# ---------- teaser: um take da etapa 6 + a trilha da etapa 7 ----------
+# ---------- teaser: um take da etapa 5 + a trilha da etapa 6 ----------
 def _take_duration(root: Path, entry: dict) -> float:
     d = entry.get("duration")
     if isinstance(d, (int, float)) and d > 0:
@@ -369,11 +369,11 @@ def pick_take(root: Path, take: dict | None = None) -> dict:
     """Escolhe o take do teaser: o informado; senão o primeiro com `liked`; senão o primeiro."""
     f = root / "animate" / "takes.json"
     if not f.exists():
-        raise FileNotFoundError("Etapa 6 (animação) sem takes: gere e importe pelo menos um take antes do teaser.")
+        raise FileNotFoundError("Etapa 5 (animação) sem takes: gere e importe pelo menos um take antes do teaser.")
     try:
         data = json.loads(f.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
-        raise FileNotFoundError("Etapa 6 (animação) com takes.json ilegível.") from e
+        raise FileNotFoundError("Etapa 5 (animação) com takes.json ilegível.") from e
     flat: list[dict] = []
     for shot in (data or {}).get("shots", []) or []:
         for t in shot.get("takes", []) or []:
@@ -382,7 +382,7 @@ def pick_take(root: Path, take: dict | None = None) -> dict:
             flat.append({"scene": shot.get("scene", ""), "shot": shot.get("shot", ""), "take": t.get("id", ""),
                          "file": t["file"], "liked": bool(t.get("liked")), "entry": t})
     if not flat:
-        raise FileNotFoundError("Etapa 6 (animação) sem takes: gere e importe pelo menos um take antes do teaser.")
+        raise FileNotFoundError("Etapa 5 (animação) sem takes: gere e importe pelo menos um take antes do teaser.")
     if take:
         wanted = {k: take.get(k) for k in ("scene", "shot", "take") if take.get(k)}
         chosen = next((t for t in flat if all(t.get(k) == v for k, v in wanted.items())), None) if wanted else None
@@ -398,12 +398,12 @@ def pick_take(root: Path, take: dict | None = None) -> dict:
 
 
 def find_music(root: Path) -> Path:
-    """A trilha escolhida na etapa 7 — a aula manda o teaser sair COM música."""
+    """A trilha escolhida na etapa 6 — a aula manda o teaser sair COM música."""
     for ext in ("wav", "mp3", "m4a", "ogg"):
         p = root / "audio" / f"music.{ext}"
         if p.exists():
             return p
-    raise FileNotFoundError("Etapa 7 (trilha) sem música: escolha a trilha antes de gerar o teaser.")
+    raise FileNotFoundError("Etapa 6 (trilha) sem música: escolha a trilha antes de gerar o teaser.")
 
 
 def _floor_tenth(v: float) -> float:

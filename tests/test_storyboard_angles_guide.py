@@ -1,4 +1,4 @@
-"""Guia da etapa 5 (aula 011 + aula 013): entradas, saídas e as validações V5.2–V5.8.
+"""Guia da etapa 4 (aula 011 + aula 013): entradas, saídas e as validações V5.2–V5.8.
 
 Leitura pura: consultar o guia não pode criar nem regravar artefato nenhum.
 """
@@ -7,7 +7,7 @@ import json
 import pytest
 
 from tests.conftest import image_bytes, make_image
-from tests.test_shots_service import SCENES
+from tests.test_storyboard_angles_service import SCENES
 
 
 @pytest.fixture()
@@ -33,7 +33,7 @@ def pronto(client, pid, root):
 
 
 def guide(client, pid):
-    r = client.get(f"/api/projects/{pid}/guide/shots")
+    r = client.get(f"/api/projects/{pid}/guide/storyboard")
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -43,7 +43,7 @@ def check(g, cid):
 
 
 def _dois_frames(client, pid, scene="cena01", upscaled=False):
-    api = f"/api/projects/{pid}/shots/scenes/{scene}"
+    api = f"/api/projects/{pid}/storyboard/angles/scenes/{scene}"
     client.post(f"{api}/base", json={})
     for name, color in (("a.png", (11, 22, 33)), ("b.png", (44, 55, 66))):
         client.post(f"{api}/import/upload", files={"files": (name, image_bytes(color=color), "image/png")})
@@ -52,12 +52,12 @@ def _dois_frames(client, pid, scene="cena01", upscaled=False):
     return ids
 
 
-def test_guide_is_blocked_without_the_written_storyboard(client, pid):
+def test_guide_is_blocked_without_the_base_image(client, pid):
     g = guide(client, pid)
-    assert g["id"] == "shots" and g["n"] == 5 and g["aula"] == "011"
+    assert g["id"] == "storyboard" and g["n"] == 4 and g["aula"] == "010+011"
     assert g["status"] == "blocked"
-    assert "storyboard/scenes.json com cenas escritas (etapa 4)" in g["missing"]
-    assert [i["step"] for i in g["inputs"]] == ["storyboard", "base"]
+    assert "base/base_final.png (etapa 3)" in g["missing"]
+    assert [i["step"] for i in g["inputs"]] == ["base"]
     assert g["next_step"] == "animate"
 
 
@@ -68,19 +68,26 @@ def test_guide_texts_come_from_the_lesson(client, pronto):
     assert any("trilha" in c for c in g["checklist"]), "5.8: a nota da aula 013 está no guia"
 
 
-def test_guide_walks_from_todo_to_done(client, pronto, root):
+def test_angle_outputs_and_validations_complete(client, pronto, root):
+    """Os frames por cena são saídas da etapa 4 fundida (ADR-015): à medida que cada cena ganha
+    ≥ 2 frames upscalados, as saídas de ângulo e as validações V5.2/V5.3/V5.5 ficam ok. O status
+    geral só vira `done` quando a metade da ideação também termina (coberta em test_storyboard_guide)."""
     g = guide(client, pronto)
-    assert g["status"] == "todo" and g["progress"] == 0.0
+    assert check(g, "v52_cena_com_shot")["status"] == "todo"
+    assert "storyboard/cenaNN/base.png em todas as cenas" in g["missing"]
 
     _dois_frames(client, pronto, "cena01", upscaled=True)
     g = guide(client, pronto)
-    assert g["status"] == "in_progress"
-    assert "shots/cenaNN/base.png em todas as cenas" in g["missing"]
+    assert "storyboard/cenaNN/base.png em todas as cenas" in g["missing"]
+    assert check(g, "v55_variacoes")["status"] == "ok"
 
     for s in SCENES[1:]:
         _dois_frames(client, pronto, s["id"], upscaled=True)
     g = guide(client, pronto)
-    assert g["status"] == "done" and g["progress"] == 1.0 and g["missing"] == []
+    outs = {o["id"]: o for o in g["outputs"]}
+    assert outs["bases"]["status"] == "ok"
+    assert outs["storyboard_json"]["status"] == "ok"
+    assert outs["frames_md"]["status"] == "ok"
     assert check(g, "v52_cena_com_shot")["status"] == "ok"
     assert check(g, "v53_upscale")["status"] == "ok"
     assert check(g, "v55_variacoes")["status"] == "ok"
@@ -100,7 +107,7 @@ def test_validation_v53_counts_frames_without_upscale(client, pronto):
 
 
 def test_validation_v55_warns_about_a_single_framing(client, pronto):
-    api = f"/api/projects/{pronto}/shots/scenes/cena01"
+    api = f"/api/projects/{pronto}/storyboard/angles/scenes/cena01"
     client.post(f"{api}/base", json={})
     client.post(f"{api}/import/upload", files={"files": ("a.png", image_bytes(), "image/png")})
     cid = client.get(f"{api}/candidates").json()["candidates"][0]["id"]
@@ -114,7 +121,7 @@ def test_validation_v56_warns_when_the_base_changed_after_the_candidates(client,
     import time
     _dois_frames(client, pronto, "cena01", upscaled=True)
     assert check(guide(client, pronto), "v56_candidatos_antigos")["status"] == "ok"
-    base = root / "shots" / "cena01" / "base.png"
+    base = root / "storyboard" / "cena01" / "base.png"
     futuro = time.time() + 60
     os.utime(base, (futuro, futuro))
     v = check(guide(client, pronto), "v56_candidatos_antigos")
@@ -122,7 +129,7 @@ def test_validation_v56_warns_when_the_base_changed_after_the_candidates(client,
 
 
 def test_validation_v57_looks_for_the_lesson_formula(client, pronto):
-    api = f"/api/projects/{pronto}/shots/scenes/cena01"
+    api = f"/api/projects/{pronto}/storyboard/angles/scenes/cena01"
     client.post(f"{api}/base", json={})
     client.post(f"{api}/import/upload", files={"files": ("a.png", image_bytes(), "image/png")},
                 data={"prompt": "Bring me another point of view of this image. I want a close-up on the astronaut."})
@@ -133,7 +140,7 @@ def test_validation_v57_looks_for_the_lesson_formula(client, pronto):
 
 def test_validation_v58_tracks_the_product_scene(client, pronto, root):
     assert check(guide(client, pronto), "v58_cena_do_produto")["status"] == "todo"
-    api = f"/api/projects/{pronto}/shots/product"
+    api = f"/api/projects/{pronto}/storyboard/angles/product"
     client.post(f"{api}/ref", files={"file": ("r.png", image_bytes(color=(3, 3, 3)), "image/png")})
     client.post(f"{api}/import/upload", files={"files": ("p.png", image_bytes(color=(120, 10, 10)), "image/png")})
     cid = client.get(f"{api}/candidates").json()["candidates"][0]["id"]
@@ -142,7 +149,7 @@ def test_validation_v58_tracks_the_product_scene(client, pronto, root):
 
 
 def test_palette_is_attention_not_a_blocking_input(client, pronto, root):
-    """A paleta é `[extensão]` do Studio (OS-014): ela avisa, nunca bloqueia a etapa 5."""
+    """A paleta é `[extensão]` do Studio (OS-014): ela avisa, nunca bloqueia a etapa 4."""
     g = guide(client, pronto)
     assert all(i["id"] != "palette" for i in g["inputs"])
     v = check(g, "palette")
@@ -158,9 +165,9 @@ def test_guide_never_writes_anything(client, pronto, root):
         guide(client, pronto)
         client.get(f"/api/projects/{pronto}/guide")
     assert sorted(p.relative_to(root).as_posix() for p in root.rglob("*")) == antes
-    assert not (root / "shots" / "storyboard.json").exists()
+    assert not (root / "storyboard" / "storyboard.json").exists()
 
 
 def test_aggregate_guide_lists_step_five_without_unknown(client, pronto):
     steps = {s["id"]: s for s in client.get(f"/api/projects/{pronto}/guide").json()["steps"]}
-    assert steps["shots"]["status"] != "unknown" and steps["shots"]["validations"]
+    assert steps["storyboard"]["status"] != "unknown" and steps["storyboard"]["validations"]

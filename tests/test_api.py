@@ -230,8 +230,8 @@ def test_shell_redesign_traz_o_pipeline_segmentado_e_o_catalogo_de_classes(clien
                    ".grid2.rev", ".grid2.even", ".drop.sm", ".chip.sm", ".pipe", ".rail-head",
                    ".themebtn", ".guide-strip", ".guide-actions", ".ovcard", ".ovgrid"):
         assert classe in css, f"classe {classe} do catálogo da wave 3 ausente"
-    assert "attr(data-ord)" in css, "etapa 5: o check do tile escolhido vira o número da ordem"
-    assert "#renderLog .warn" in css, "etapa 8: o aviso do log de render tem regra própria"
+    assert "attr(data-ord)" in css, "etapa 4: o check do tile escolhido vira o número da ordem"
+    assert "#renderLog .warn" in css, "etapa 7: o aviso do log de render tem regra própria"
     assert "backdrop-filter" in css, "topbar e modal com blur (handoff)"
 
     js = client.get("/static/ui.js").text

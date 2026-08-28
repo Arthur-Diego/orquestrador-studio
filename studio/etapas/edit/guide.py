@@ -1,4 +1,4 @@
-"""Guia da etapa 8 (aula 014) — leitura pura dos artefatos do projeto.
+"""Guia da etapa 7 (aula 014) — leitura pura dos artefatos do projeto.
 
 Nada aqui cria timeline: `edit.get_timeline()` **grava ao ler**, então o guia lê
 `edit/timeline.json` direto (ADR-010, regra do hook puro).
@@ -16,11 +16,11 @@ WHAT = (
     "Quando a mudança de movimento entre duas cenas quebrar a fluidez, resolva com recursos "
     "simples de edição: mistura de quadros, um pequeno zoom, um corte estratégico ou uma tela "
     "preta para dar impacto e respiração. Se uma transição pede continuidade, exporte o último "
-    "frame da cena e use como start frame da próxima (etapa 6); nem tudo precisa ser resolvido "
+    "frame da cena e use como start frame da próxima (etapa 5); nem tudo precisa ser resolvido "
     "com IA. Por último, as camadas de som: SFX, ambiência, respiração, gelo, impacto."
 )
 CHECKLIST = [
-    "A trilha foi escolhida antes de qualquer corte (etapa 7).",
+    "A trilha foi escolhida antes de qualquer corte (etapa 6).",
     "Cada impacto visual cai numa batida forte da música.",
     "Velocidade/ordem ajustadas pelo som, não pela duração original dos takes.",
     "Transições que quebravam a fluidez foram resolvidas (mistura de quadros, zoom, corte, tela "
@@ -55,11 +55,11 @@ def guide(pid: str) -> dict:
     clips = timeline.get("clips") or []
 
     # --- entradas: sem take com like não há o que montar; sem trilha não se monta (aula 013) ---
-    g.input("takes_liked", "Takes com like na etapa 6", n_liked > 0,
+    g.input("takes_liked", "Takes com like na etapa 5", n_liked > 0,
             detail=f"{n_liked} takes com like" if n_liked else None,
-            fix="Volte à etapa 6 e marque o melhor take de cada cena", step="animate")
-    g.input("music", "audio/music.* — trilha escolhida (etapa 7)", bool(music), detail=music,
-            fix="Você não deve editar antes de escolher a trilha: escolha a música na etapa 7",
+            fix="Volte à etapa 5 e marque o melhor take de cada cena", step="animate")
+    g.input("music", "audio/music.* — trilha escolhida (etapa 6)", bool(music), detail=music,
+            fix="Você não deve editar antes de escolher a trilha: escolha a música na etapa 6",
             step="music")
 
     # --- saídas: ritmo primeiro (rough), refinamento depois (master) ---
@@ -70,14 +70,14 @@ def guide(pid: str) -> dict:
     if not beats.get("beats"):
         g.check("beats", "Batidas detectadas (audio/beats.json)", "warn",
                 detail="dá para montar sem, mas os cortes deixam de ser propostos pelo som",
-                fix="Volte à etapa 7 e recalcule as batidas")
+                fix="Volte à etapa 6 e recalcule as batidas")
     else:
         g.check("beats", "Batidas detectadas (audio/beats.json)", "ok",
                 detail=f"{len(beats.get('impacts') or [])} impactos")
 
     if not clips:
         g.check("cuts_on_beats", "Cortes caem nas batidas da música", "todo",
-                detail="abra a etapa 8 para montar a timeline")
+                detail="abra a etapa 7 para montar a timeline")
     elif not beats.get("beats"):
         g.check("cuts_on_beats", "Cortes caem nas batidas da música", "todo",
                 detail="sem audio/beats.json não dá para conferir")
@@ -89,13 +89,13 @@ def guide(pid: str) -> dict:
                 detail=f"{on}/{total} cortes no ritmo" if total else "timeline com um clipe só",
                 fix=None if status != "warn" else 'Use "Propor cortes nos impactos" ou ajuste o out dos clipes')
 
-    storyboard = read_json(pid, "shots/storyboard.json", default={}) or {}
+    storyboard = read_json(pid, "storyboard/storyboard.json", default={}) or {}
     extra = storyboard.get("product_scene")
     produto = extra.get("id") if isinstance(extra, dict) else None
     if not produto:
         g.check("product_last", "Cena do produto encerra o vídeo", "todo",
-                detail="não há cena do produto no storyboard (etapa 5)",
-                fix="A aula manda terminar mostrando o produto — crie a cena na etapa 5")
+                detail="não há cena do produto no storyboard (etapa 4)",
+                fix="A aula manda terminar mostrando o produto — crie a cena na etapa 4")
     elif clips:
         ok = clips[-1].get("scene") == produto
         g.check("product_last", "Cena do produto encerra o vídeo", "ok" if ok else "warn",

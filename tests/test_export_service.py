@@ -1,4 +1,4 @@
-"""Etapa 9 — Export e QA (aulas 007/014): formatos por rede a partir do master, thumb e checklist técnico.
+"""Etapa 8 — Export e QA (aulas 007/014): formatos por rede a partir do master, thumb e checklist técnico.
 
 Sem rede e sem CLI real: o master é uma fixture de vídeo pequena (`make_video`) e a ponte com a
 Higgsfield é sempre fakeada. Testes que dependem de ffmpeg pulam quando ele não está instalado.
@@ -243,7 +243,7 @@ def test_qa_report_is_deterministic(svc, studio_env, project):
 
 
 def test_qa_bloqueia_master_sem_audio(svc, studio_env, project):
-    """9.5: a trilha da etapa 7 é obrigatória — sem áudio o QA bloqueia, não avisa."""
+    """9.5: a trilha da etapa 6 é obrigatória — sem áudio o QA bloqueia, não avisa."""
     _need_ffmpeg(svc)
     root = _root(studio_env, project)
     svc.ff.run(["-f", "lavfi", "-i", "testsrc=size=320x240:rate=30", "-t", "1", "-c:v", "libx264",
@@ -259,7 +259,7 @@ def test_qa_bloqueia_master_sem_audio(svc, studio_env, project):
     assert ausente["verdict"] == "ATENCAO", "arquivo ainda não renderizado é atenção, não bloqueio"
 
 
-# ---------- listagem (contrato consumido pela etapa 10) ----------
+# ---------- listagem (contrato consumido pela etapa 9) ----------
 def test_list_outputs_only_lists_deliverables(svc, studio_env, project):
     _need_ffmpeg(svc)
     _master(studio_env, project)

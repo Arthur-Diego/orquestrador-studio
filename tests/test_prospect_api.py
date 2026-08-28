@@ -1,4 +1,4 @@
-"""Etapa 11 — contrato HTTP da Prospecção (FastAPI TestClient, sem rede e sem navegador)."""
+"""Etapa 10 — contrato HTTP da Prospecção (FastAPI TestClient, sem rede e sem navegador)."""
 import json
 import time
 
@@ -47,7 +47,7 @@ def responde(client, pid, lid):
 
 def test_etapa_aparece_no_catalogo(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "prospect")
-    assert step["n"] == 11 and step["aula"] == "001" and step["status"] == "ready"
+    assert step["n"] == 10 and step["aula"] == "001" and step["status"] == "ready"
     assert client.get("/steps/prospect/view.html").status_code == 200
     assert client.get("/steps/prospect/view.js").status_code == 200
 
@@ -154,7 +154,7 @@ def test_teaser_erros_e_job_ocioso(client, project, monkeypatch):
     monkeypatch.setattr(svc.ff, "available", lambda: True)
     assert client.post(f"{base}/leads/{lid}/teaser", json={"duration": 3}).status_code == 422
     r = client.post(f"{base}/leads/{lid}/teaser", json={})
-    assert r.status_code == 404 and "Etapa 6" in r.json()["detail"]
+    assert r.status_code == 404 and "Etapa 5" in r.json()["detail"]
 
     (root / "animate").mkdir(parents=True, exist_ok=True)
     (root / "animate" / "takes.json").write_text(json.dumps({"shots": [{"scene": "cena01", "shot": "shot01", "takes": [
@@ -163,7 +163,7 @@ def test_teaser_erros_e_job_ocioso(client, project, monkeypatch):
     v.parent.mkdir(parents=True, exist_ok=True)
     v.write_bytes(b"x")
     r = client.post(f"{base}/leads/{lid}/teaser", json={})
-    assert r.status_code == 404 and "Etapa 7" in r.json()["detail"]
+    assert r.status_code == 404 and "Etapa 6" in r.json()["detail"]
 
 
 @pytest.mark.skipif(not ff.available(), reason="ffmpeg não disponível")
@@ -239,7 +239,7 @@ def test_leads_expoe_segmentos_e_sugestao_de_offset(client, project):
 def test_view_esconde_o_teaser_ate_a_resposta_e_mostra_os_segmentos(client):
     html = client.get("/steps/prospect/view.html").text
     js = client.get("/steps/prospect/view.js").text
-    assert "Etapa 11 · aula 001" in html
+    assert "Etapa 10 · aula 001" in html
     # 11.4: esta é a única tela sem `#guide` — a faixa do gate ocupa a posição dele.
     assert 'id="guide"' not in html
     assert 'document.querySelector("#guide")' in js, "o slot que o shell injeta é removido no init"

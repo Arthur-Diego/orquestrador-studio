@@ -26,7 +26,7 @@ def test_project_layout_mirrors_course_folders(studio_env):
     """O layout cobre as pastas de todas as etapas — o guia lê o projeto sem precisar criar nada."""
     from studio.config import PROJECT_LAYOUT
     for folder in ("refs/brainstorming", "images", "videos", "audio", "mood", "mood/vibe",
-                   "base", "storyboard", "storyboard/ideas", "shots", "animate", "publish", "prospect"):
+                   "base", "storyboard", "storyboard/ideas", "animate", "publish", "prospect"):
         assert folder in PROJECT_LAYOUT
     assert len(PROJECT_LAYOUT) == len(set(PROJECT_LAYOUT)), "sem pasta repetida"
 

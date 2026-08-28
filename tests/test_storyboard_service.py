@@ -294,7 +294,7 @@ def test_presets_publish_models_arc_and_the_upscale_note(sb):
     assert models["nano_banana_2"]["default"] is True
     assert models["gpt_image_2"]["default"] is False and "[extensão]" in models["gpt_image_2"]["label"]
     assert [a["label"] for a in p["arc"]] == ["começo", "descoberta", "ação", "desfecho"]
-    assert "etapa 5" in p["upscale_note"]
+    assert "ângulos" in p["upscale_note"] and "aula 011" in p["upscale_note"]
 
 
 def test_scene_arc_follows_the_lesson_structure(sb):
@@ -309,4 +309,4 @@ def test_storyboard_md_carries_the_arc_and_the_upscale_note(sb, project, root, b
     sb.save_scenes(project, [{"text": "abre na nevasca"}, {"text": "acha a lata"}, {"text": "bebe"}])
     md = (root / "storyboard" / "storyboard.md").read_text()
     assert "## Cena 1 — começo" in md and "## Cena 3 — desfecho" in md
-    assert "etapa 5" in md, "4.1: o documento diz onde o upscale acontece"
+    assert "ângulos" in md, "4.1: o documento diz onde o upscale acontece"

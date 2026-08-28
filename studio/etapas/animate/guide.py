@@ -1,7 +1,7 @@
-"""Guia da etapa 6 — Animação (aula 012), por leitura pura dos artefatos do projeto.
+"""Guia da etapa 5 — Animação (aula 012), por leitura pura dos artefatos do projeto.
 
 Nada aqui grava: `animate.load_plan()` cria/atualiza `animate/takes.json` e por isso está
-proibido no guia (contrato em `studio/common/guide.py`). Lemos `shots/storyboard.json` e
+proibido no guia (contrato em `studio/common/guide.py`). Lemos `storyboard/storyboard.json` (etapa 4, ADR-015) e
 `animate/takes.json` direto, pelos leitores puros do serviço.
 
 Textos de `what`/`checklist` são os da aula 012 (ADR-004) — auditoria de fidelidade
@@ -81,7 +81,7 @@ def _shots(pid: str) -> tuple[list[dict], list[dict]]:
 def _product_shots(pid: str) -> list[tuple[str, str]]:
     """Shots da cena do produto (aula 013), se o storyboard trouxer `product_scene`."""
     from ...common.guide import read_json
-    board = read_json(pid, "shots/storyboard.json", default={}) or {}
+    board = read_json(pid, "storyboard/storyboard.json", default={}) or {}
     scene = board.get("product_scene") if isinstance(board, dict) else None
     if not isinstance(scene, dict):
         return []
@@ -99,9 +99,9 @@ def guide(pid: str) -> dict:
     total = len(shots)
 
     # ---------- entradas ----------
-    g.input("storyboard", "shots/storyboard.json com os frames finais (etapa 5)", total > 0,
+    g.input("storyboard", "storyboard/storyboard.json com os frames finais (etapa 4)", total > 0,
             detail=f"{total} shot(s) no plano" if total else "nenhum shot para animar",
-            fix="Volte à etapa 5, gere os frames de cada cena e salve o storyboard", step="shots")
+            fix="Volte à etapa 4, gere os frames de cada cena e salve o storyboard", step="storyboard")
 
     # ---------- saídas ----------
     with_prompt = [s for s in shots if (s.get("prompt") or "").strip() or s.get("fallback_black")]
@@ -137,14 +137,14 @@ def _next_action(shots: list[dict]) -> str | None:
 def _checks(g: Guide, pid: str, shots: list[dict], total: int, ready: list[dict]) -> None:
     # V6.1 — image-to-video: sem frame não há o que animar.
     sem_frame = [s for s in shots if not s.get("image")]
-    g.check("v6_1_frames", "Todo shot tem frame da etapa 5", _status(not shots, not sem_frame, "fail"),
+    g.check("v6_1_frames", "Todo shot tem frame da etapa 4", _status(not shots, not sem_frame, "fail"),
             detail=(f"{len(sem_frame)} shot(s) sem frame: "
                     + ", ".join(f"{s['scene']}/{s['shot']}" for s in sem_frame[:4]) if sem_frame
                     else f"{total} frame(s) no lugar"),
-            fix="Gere o frame que falta na etapa 5" if sem_frame else None)
+            fix="Gere o frame que falta na etapa 4" if sem_frame else None)
 
-    # V6.2 — "selecionar o que é utilizável": a etapa 8 só monta com take usável (ou preto).
-    g.check("v6_2_ready", "Todo shot com take usável ou corte para preto (antes da etapa 8)",
+    # V6.2 — "selecionar o que é utilizável": a etapa 7 só monta com take usável (ou preto).
+    g.check("v6_2_ready", "Todo shot com take usável ou corte para preto (antes da etapa 7)",
             _status(not shots, len(ready) == total, "todo"),
             detail=f"{len(ready)}/{total} shot(s) prontos",
             fix="Dê like no take usável de cada shot ou marque corte para preto"
@@ -188,7 +188,7 @@ def _checks(g: Guide, pid: str, shots: list[dict], total: int, ready: list[dict]
             _status(not shots, not travados, "warn"),
             detail=(", ".join(f"{s['scene']}/{s['shot']} ({animate.failures_of(s)} falhas)"
                               for s in travados[:4]) if travados else "nenhum shot travado"),
-            fix=("Adapte a ideia: gere um novo frame na etapa 5 ou aceite o corte para preto"
+            fix=("Adapte a ideia: gere um novo frame na etapa 4 ou aceite o corte para preto"
                  if adaptar else "Gere o próximo modelo sugerido para o shot" if travados else None))
 
     # V6.8 — "nomear e organizar cenas e takes".

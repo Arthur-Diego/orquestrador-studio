@@ -1,4 +1,4 @@
-"""Etapa 5 — a etapa segue a aula 011 (ângulos por cena) e a aula 013 (cena do produto).
+"""Etapa 4 (ângulos, ADR-015) — segue a aula 011 (ângulos por cena) e a aula 013 (cena do produto).
 
 Sem rede e sem CLI: `hf.generate`/`hf.download` são fakeados; os artefatos consumidos
 (`storyboard/scenes.json`, `base/base_final.png`, `mood/palette.json`) são fixtures locais.
@@ -24,7 +24,8 @@ SCENES = [
 
 @pytest.fixture()
 def shots(studio_env):
-    return studio_env["svc"]("shots")
+    import importlib
+    return importlib.import_module("studio.storyboard.angles")
 
 
 @pytest.fixture()
@@ -54,12 +55,12 @@ def _wait(shots, pid, tries=100):
 
 # ---------- risco do FDD §10: `ingest` com step de subpasta ----------
 def test_ingest_accepts_scene_subfolder_as_step(studio_env, project):
-    """Decisão 8 da wave: `step="shots/cena01"` separa candidatos por cena sem tocar em ingest."""
+    """Decisão 8 da wave: `step="storyboard/cena01"` separa candidatos por cena sem tocar em ingest."""
     from studio.common import ingest
     root = studio_env["refs"].project_dir(project)
-    c = ingest.ingest_bytes(root, "shots/cena01", image_bytes(), "upload", "a.png")
-    assert c and (root / "shots" / "cena01" / "candidates" / c["file"]).exists()
-    assert ingest.load_candidates(root, "shots/cena01") and not ingest.load_candidates(root, "shots/cena02")
+    c = ingest.ingest_bytes(root, "storyboard/cena01", image_bytes(), "upload", "a.png")
+    assert c and (root / "storyboard" / "cena01" / "candidates" / c["file"]).exists()
+    assert ingest.load_candidates(root, "storyboard/cena01") and not ingest.load_candidates(root, "storyboard/cena02")
 
 
 # ---------- base por cena ----------
@@ -69,7 +70,7 @@ def test_prepare_base_uses_scene_image_or_campaign_base(shots, studio_env, proje
     assert sources == {"cena01": "storyboard", "cena02": "storyboard",
                        "cena03": "base", "cena04": "base", "cena05": "base"}
     for s in SCENES:
-        assert (root / "shots" / s["id"] / "base.png").exists()
+        assert (root / "storyboard" / s["id"] / "base.png").exists()
 
 
 def test_prepare_base_is_idempotent_and_accepts_upload(shots, studio_env, project):
@@ -154,8 +155,8 @@ def test_import_requires_base_and_dedupes(shots, project):
     assert shots.import_upload(project, "cena01", [("c.png", image_bytes(color=(1, 200, 1)))])["added"] == 1
     r = shots.list_candidates(project, "cena01")
     assert len(r["candidates"]) == 2
-    assert r["candidates"][0]["file"].startswith("shots/cena01/candidates/"), "caminho relativo à raiz"
-    assert r["base"] == "shots/cena01/base.png"
+    assert r["candidates"][0]["file"].startswith("storyboard/cena01/candidates/"), "caminho relativo à raiz"
+    assert r["base"] == "storyboard/cena01/base.png"
 
 
 def test_import_downloads_only_recent_images(shots, studio_env, project):
@@ -192,14 +193,14 @@ def test_select_writes_final_frames_in_order_and_rewrites_storyboard(shots, stud
     assert [s["id"] for s in r["shots"]] == ["shot01", "shot02"]
     assert [s["order"] for s in r["shots"]] == [1, 2]
     assert r["shots"][0]["candidate"] == b and r["shots"][0]["upscaled"] is True
-    assert (root / "shots" / "cena01" / "shot01_final.png").exists()
-    assert (root / "shots" / "cena01" / "shot02_final.png").exists()
+    assert (root / "storyboard" / "cena01" / "shot01_final.png").exists()
+    assert (root / "storyboard" / "cena01" / "shot02_final.png").exists()
     board = shots.load_storyboard(project)
-    assert board["scenes"][0]["shots"][0]["file"] == "shots/cena01/shot01_final.png"
+    assert board["scenes"][0]["shots"][0]["file"] == "storyboard/cena01/shot01_final.png"
     assert board["scenes"][0]["shots"][0]["prompt"] == "Bring me another…"
 
     shots.select_shots(project, "cena01", [{"id": a}])
-    assert not (root / "shots" / "cena01" / "shot02_final.png").exists(), "frame órfão é removido"
+    assert not (root / "storyboard" / "cena01" / "shot02_final.png").exists(), "frame órfão é removido"
     assert len(shots.load_storyboard(project)["scenes"][0]["shots"]) == 1
 
     shots.select_shots(project, "cena01", [])
@@ -242,7 +243,7 @@ def test_product_prompts_are_the_two_lesson_instructions(shots, project):
         shots.product_prompts(project)
     shots.set_product_ref(project, image_bytes(color=(80, 80, 80)), "geladeira.png")
     r = shots.product_prompts(project)
-    assert r["image_references"] == ["shots/product/ref.png", "base/base_final.png"]
+    assert r["image_references"] == ["storyboard/product/ref.png", "base/base_final.png"]
     assert r["prompts"][0]["text"] == ("Replace the can in image 1 with the can from image 2. "
                                        "Keep everything else identical, realistic.")
     assert r["prompts"][1]["text"] == ("Remove the text below the can and make everything around it "
@@ -256,9 +257,9 @@ def test_product_select_writes_product_scene_and_can_be_cleared(shots, studio_en
                         prompt="Remove the text below the can…")
     cid = shots.list_candidates(project, "product")["candidates"][0]["id"]
     ps = shots.select_product(project, cid, upscaled=True)["product_scene"]
-    assert ps["id"] == "product" and ps["base"] == "shots/product/ref.png"
-    assert ps["shots"][0]["file"] == "shots/product/product_final.png" and ps["shots"][0]["order"] == 1
-    assert (root / "shots" / "product" / "product_final.png").exists()
+    assert ps["id"] == "product" and ps["base"] == "storyboard/product/ref.png"
+    assert ps["shots"][0]["file"] == "storyboard/product/product_final.png" and ps["shots"][0]["order"] == 1
+    assert (root / "storyboard" / "product" / "product_final.png").exists()
     assert shots.load_storyboard(project)["product_scene"]["shots"][0]["upscaled"] is True
     assert shots.select_product(project, None)["product_scene"] is None
     assert shots.load_storyboard(project)["product_scene"] is None
@@ -296,7 +297,7 @@ def test_generate_downloads_and_registers_candidates(shots, studio_env, project,
     cands = shots.list_candidates(project, "cena01")["candidates"]
     assert len(cands) == 4 and all(c["model"] == "nano_banana_2" and c["scene"] == "cena01" for c in cands)
     assert {c["job_id"] for c in cands} == {f"job-{i}" for i in range(1, 5)}
-    assert len(list((root / "jobs").glob("shots_job-*.json"))) == 4
+    assert len(list((root / "jobs").glob("storyboard_job-*.json"))) == 4
     assert any("prompt 1/1 imagem 4/4" in line for line in job["log"])
 
 
@@ -353,10 +354,10 @@ def test_candidate_can_be_promoted_to_the_scene_base(shots, studio_env, project)
     """5.2: a aula acerta a BASE da cena antes do Multishot — o resultado bom vira a nova base."""
     root = studio_env["refs"].project_dir(project)
     a, _b = _two_candidates(shots, project)
-    antes = (root / "shots" / "cena01" / "base.png").read_bytes()
+    antes = (root / "storyboard" / "cena01" / "base.png").read_bytes()
     r = shots.prepare_base(project, "cena01", "candidate", cand_id=a)
     assert r["source"] == "candidate" and r["candidate"] == a
-    assert (root / "shots" / "cena01" / "base.png").read_bytes() != antes
+    assert (root / "storyboard" / "cena01" / "base.png").read_bytes() != antes
     with pytest.raises(ValueError):
         shots.prepare_base(project, "cena01", "candidate")
     with pytest.raises(LookupError):
@@ -449,8 +450,8 @@ def test_select_writes_the_storyboard_document(shots, studio_env, project):
     root = studio_env["refs"].project_dir(project)
     a, b = _two_candidates(shots, project)
     r = shots.select_shots(project, "cena01", [{"id": b, "upscaled": True}, {"id": a}])
-    assert r["storyboard_md"] == "shots/storyboard.md"
-    md = (root / "shots" / "storyboard.md").read_text()
+    assert r["storyboard_md"] == "storyboard/frames.md"
+    md = (root / "storyboard" / "frames.md").read_text()
     assert "## cena01" in md and "close no astronauta andando na nevasca" in md
     assert "![base](cena01/base.png)" in md
     assert "![shot01 · upscalado](cena01/shot01_final.png)" in md
@@ -467,7 +468,7 @@ def test_product_scene_document_and_note_carry_lesson_013(shots, studio_env, pro
     shots.import_upload(project, "product", [("p.png", image_bytes(color=(120, 10, 10)))])
     cid = shots.list_candidates(project, "product")["candidates"][0]["id"]
     shots.select_product(project, cid, upscaled=True)
-    md = (root / "shots" / "storyboard.md").read_text()
+    md = (root / "storyboard" / "frames.md").read_text()
     assert "## Cena do produto (aula 013)" in md and "trilha" in md
 
 

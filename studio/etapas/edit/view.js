@@ -1,4 +1,4 @@
-// Etapa 8 — Montagem no ritmo (aula 014): cortes nas batidas, speed ramp, pequenos zooms,
+// Etapa 7 — Montagem no ritmo (aula 014): cortes nas batidas, speed ramp, pequenos zooms,
 // pretos onde a fluidez quebra, música cortada para o ápice, SFX por último e fade.
 Studio.register("edit", (ctx) => {
   const { $, api, toast } = ctx;
@@ -143,7 +143,7 @@ Studio.register("edit", (ctx) => {
 
   function render() {
     if (!tl) {
-      $("#clips").innerHTML = `<div class="empty">Sem timeline — a etapa 6 precisa ter takes com like e a etapa 5 um storyboard.</div>`;
+      $("#clips").innerHTML = `<div class="empty">Sem timeline — a etapa 5 precisa ter takes com like e a etapa 4 um storyboard.</div>`;
       renderRuler(); renderSfx(); return;
     }
     // "Recriar do zero" saiu do cabeçalho: só existe como link no estado vazio (protótipo).
@@ -156,7 +156,7 @@ Studio.register("edit", (ctx) => {
     $("#musicChip").className = mf ? "chip warn hidden" : "chip warn";
     $("#durInfo").textContent = `duração ${br1(duration())} s`;
     $("#btnMaster").disabled = !hasFfmpeg || !mf;
-    $("#btnMaster").title = mf ? "" : "Escolha a trilha na etapa 7 antes de montar (aula 013)";
+    $("#btnMaster").title = mf ? "" : "Escolha a trilha na etapa 6 antes de montar (aula 013)";
     renderSfx();
     renderRuler();
   }
@@ -222,7 +222,7 @@ Studio.register("edit", (ctx) => {
       subtitle: "Montagem no ritmo (ffmpeg)",
       start: () => api(`${base()}/render`, { method: "POST", body: JSON.stringify({ target }) }),
       jobUrl: `${base()}/render/job`,
-      done: async (j) => { render(); if (j.output) toast(`${j.output} pronto — assista na etapa 9`); ctx.guide(); },
+      done: async (j) => { render(); if (j.output) toast(`${j.output} pronto — assista na etapa 8`); ctx.guide(); },
     }).catch((err) => toast(err.message)).finally(() => { $("#btnRough").disabled = false; render(); });
   }
 

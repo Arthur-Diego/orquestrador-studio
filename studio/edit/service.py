@@ -1,11 +1,11 @@
-"""Serviço da etapa 8 — Montagem no ritmo (aula 014).
+"""Serviço da etapa 7 — Montagem no ritmo (aula 014).
 
 A aula monta no CapCut; aqui o mesmo processo é reproduzido com ffmpeg (regra 3 do CLAUDE.md:
 trocar ferramenta não é desvio). O que a aula ensina e esta etapa executa: cortar nos impactos
 da trilha, speed ramp com mistura de quadros, pequenos zooms, quadros pretos onde a transição
 quebra a fluidez (escolha por corte, nunca em todos), cortar a música para o ápice (offset
 humano), fade de opacidade no fim, SFX por upload e exportar o último frame de um clipe para
-virar start frame de uma transição colada na etapa 6.
+virar start frame de uma transição colada na etapa 5.
 
 A trilha vem antes da montagem (aula 013): o `rough_cut` sai sem música com aviso, o `master`
 não sai (`render.NO_MUSIC`).
@@ -38,7 +38,7 @@ BLACK_SNAP = 0.25       # quadro preto cola no limite de clipe mais próximo den
 AUDIO_EXT = (".wav", ".mp3", ".m4a", ".ogg")
 
 INSTRUCTION = (
-    "Volte à etapa 6 e use esta imagem como start frame do próximo shot (start/end frame). "
+    "Volte à etapa 5 e use esta imagem como start frame do próximo shot (start/end frame). "
     "Exemplo da aula: 'A lente da câmera está totalmente congelada e vai descongelando até que "
     "a imagem da geladeira fique nítida.'"
 )
@@ -84,12 +84,12 @@ def _f(value, label: str) -> float:
 # ---------- insumos das etapas 5, 6 e 7 ----------
 def _takes(root: Path) -> dict:
     return _read_json(root / "animate" / "takes.json",
-                      "a etapa 6 (animação) ainda não gerou animate/takes.json")
+                      "a etapa 5 (animação) ainda não gerou animate/takes.json")
 
 
 def _storyboard(root: Path) -> dict:
-    return _read_json(root / "shots" / "storyboard.json",
-                      "a etapa 5 (ângulos por cena) ainda não gerou shots/storyboard.json")
+    return _read_json(root / "storyboard" / "storyboard.json",
+                      "a etapa 4 (storyboard) ainda não gerou storyboard/storyboard.json")
 
 
 def _order_index(storyboard: dict) -> dict[tuple[str, str], tuple[int, int]]:
@@ -122,7 +122,7 @@ def take_durations(root: Path) -> dict[tuple[str, str, str], float]:
 
 
 def music_path(root: Path) -> Path | None:
-    """A trilha escolhida na etapa 7 (`audio/music.*`), ou `None`. Leitura pura."""
+    """A trilha escolhida na etapa 6 (`audio/music.*`), ou `None`. Leitura pura."""
     for ext in AUDIO_EXT:
         p = root / "audio" / f"music{ext}"
         if p.exists():
@@ -146,7 +146,7 @@ def _resolve_music(root: Path) -> str | None:
 
 # ---------- timeline ----------
 def initial_timeline(pid: str) -> dict:
-    """Timeline determinística: takes `liked` da etapa 6 na ordem do storyboard da etapa 5."""
+    """Timeline determinística: takes `liked` da etapa 5 na ordem do storyboard da etapa 4."""
     root = project_dir(pid)
     takes, storyboard = _takes(root), _storyboard(root)
     order = _order_index(storyboard)
@@ -161,7 +161,7 @@ def initial_timeline(pid: str) -> dict:
                     "in": 0.0, "out": round(duration, 3), "speed": 1.0, "blend": True, "zoom": 1.0}
             rows.append((order.get((scene, shot), (len(order) + ei, ei)), take.get("id", ""), clip))
     if not rows:
-        raise ValueError("nenhum take marcado como liked na etapa 6")
+        raise ValueError("nenhum take marcado como liked na etapa 5")
     rows.sort(key=lambda r: (r[0], r[1]))
     return {"clips": [r[2] for r in rows], "blacks": [],
             "music": {"file": _resolve_music(root), "offset": 0.0},
@@ -343,13 +343,13 @@ def propose_cuts(pid: str, offset: float | None = None, black_dur: float = PROPO
     root = project_dir(pid)
     timeline = load_timeline(pid)
     if timeline is None:
-        raise FileNotFoundError("timeline ainda não criada — abra a etapa 8 antes de propor cortes")
+        raise FileNotFoundError("timeline ainda não criada — abra a etapa 7 antes de propor cortes")
     timeline = validate_timeline(root, timeline)
     clips = timeline["clips"]
     if not clips:
         raise FileNotFoundError("timeline sem clipes")
     beats = _read_json(root / "audio" / "beats.json",
-                       "a etapa 7 (trilha) ainda não gerou audio/beats.json")
+                       "a etapa 6 (trilha) ainda não gerou audio/beats.json")
     impacts = [float(t) for t in (beats.get("impacts") or [])]
     if not impacts:
         raise ValueError("audio/beats.json sem impactos: monte os cortes manualmente")
@@ -421,7 +421,7 @@ def _shot_is_ambiguous(root: Path, shot: str) -> bool:
 
 
 def export_last_frame(pid: str, scene: str, shot: str, take: str | None = None) -> dict:
-    """Último frame do clipe -> `edit/last_frames/<shot>_last.png` (aula 014: vira start frame na etapa 6)."""
+    """Último frame do clipe -> `edit/last_frames/<shot>_last.png` (aula 014: vira start frame na etapa 5)."""
     root = project_dir(pid)
     entry = find_take(root, scene, shot, take)
     video = _resolve(root, entry.get("file", ""), f"take {scene}/{shot}")

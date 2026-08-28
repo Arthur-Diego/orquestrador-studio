@@ -1,4 +1,4 @@
-"""Contrato HTTP da etapa 7 (Trilha) — sem rede, CLI e ffmpeg fakeados quando preciso."""
+"""Contrato HTTP da etapa 6 (Trilha) — sem rede, CLI e ffmpeg fakeados quando preciso."""
 import pytest
 
 from tests.conftest import make_audio
@@ -24,7 +24,7 @@ def upload(client, pid, name, tmp_path, seconds=10, bpm=120):
 
 def test_step_is_published_as_plugin(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "music")
-    assert step["status"] == "ready" and step["n"] == 7 and step["aula"] == "013"
+    assert step["status"] == "ready" and step["n"] == 6 and step["aula"] == "013"
     assert client.get("/steps/music/view.html").status_code == 200
     assert client.get("/steps/music/view.js").status_code == 200
 
@@ -193,14 +193,14 @@ def test_story_status_without_takes(client, pid):
     assert r.status_code == 200
     body = r.json()
     assert body["video"] is None and body["check"] is None and body["clips"] == 0
-    assert "etapa 6" in body["warning"] and body["product_scene"] is False
+    assert "etapa 5" in body["warning"] and body["product_scene"] is False
     assert "a história fecha" in body["question"].lower()
     assert client.get(f"/api/projects/{pid}/music/story/job").json() == {"state": "idle"}
 
 
 def test_story_render_without_takes_is_404(client, pid):
     r = client.post(f"/api/projects/{pid}/music/story/render")
-    assert r.status_code == 404 and "etapa 6" in r.json()["detail"]
+    assert r.status_code == 404 and "etapa 5" in r.json()["detail"]
 
 
 def test_story_check_records_the_decision(client, pid):
@@ -216,7 +216,7 @@ def test_story_check_records_the_decision(client, pid):
 
 
 def test_story_render_builds_the_raw_sequence(ffmpeg, client, studio_env):
-    """[cross-feature] takes com like da etapa 6 -> audio/rough_sequence.mp4, sem música."""
+    """[cross-feature] takes com like da etapa 5 -> audio/rough_sequence.mp4, sem música."""
     import threading
 
     from tests.test_edit_service import seed
@@ -246,7 +246,7 @@ def test_step_screen_follows_the_lesson_and_the_wave_contract(client):
     """Auditoria 7.3 e 7.7 + convenção de tela da wave 2 (textos revistos na wave 4)."""
     html = client.get("/steps/music/view.html").text
     js = client.get("/steps/music/view.js").text
-    assert "Etapa 7 · aula 013" in html
+    assert "Etapa 6 · aula 013" in html
     assert '<section id="guide" class="guide"></section>' in html
     assert "3 a 5" not in html, "a aula 013 não dá número de candidatas (auditoria 7.3)"
     # Wave 4 (7.03): o lede é o do protótipo; a ordem da aula ("assistir antes de escolher")
@@ -268,7 +268,7 @@ def test_step_screen_consumes_the_shell_catalog(client):
     assert html.count('<span class="pn">') == 3
     assert '<span class="pn">01</span>' in html and '<span class="pn">03</span>' in html
     assert "<details" not in html, "o protótipo só desenha `details.lesson` na etapa 1 (regra 4)"
-    assert "<style" not in html, "a etapa 7 não tem mais lacuna de catálogo do shell"
+    assert "<style" not in html, "a etapa 6 não tem mais lacuna de catálogo do shell"
     # o passo 0 da aula ganhou o layout do protótipo: player 16/9 + coluna da decisão
     assert 'class="grid2 even"' in html and 'class="player"' in html and 'class="play-big"' in html
     assert 'class="q"' in html and 'class="col g10"' in html and 'class="inline lg"' in html

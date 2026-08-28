@@ -88,9 +88,9 @@ RESET_FAKES: dict[str, list[str]] = {
              "mood/candidates/m.jpg", "mood/vibe/candidates/v.jpg", "mood/prompts.json"],
     "base": ["base/base_final.png", "base/brand.json", "base/base.md", "base/candidates/b.png"],
     "storyboard": ["storyboard/scenes.json", "storyboard/storyboard.md", "storyboard/storyboard.json",
-                   "storyboard/ideas/i.jpg", "storyboard/candidates/c.jpg"],
-    "shots": ["shots/cena01/base.png", "shots/cena01/selection.json",
-              "shots/product/ref.png", "shots/storyboard.json"],
+                   "storyboard/frames.md", "storyboard/ideas/i.jpg", "storyboard/candidates/c.jpg",
+                   "storyboard/cena01/base.png", "storyboard/cena01/selection.json",
+                   "storyboard/product/ref.png"],
     "animate": ["animate/takes.json", "animate/candidates/a.mp4", "videos/cena01/shot01_final.mp4"],
     "music": ["audio/music.mp3", "audio/beats.json", "audio/license.txt",
               "audio/rough_sequence.mp4", "audio/candidates/x.mp3"],
@@ -104,7 +104,7 @@ RESET_FAKES: dict[str, list[str]] = {
 }
 #: `jobs/<prefixo>_*.json` que as etapas com job persistido deixam no disco.
 RESET_JOB_FILES: list[str] = [
-    "jobs/mood_1.json", "jobs/base_1.json", "jobs/storyboard_1.json", "jobs/shots_1.json",
+    "jobs/mood_1.json", "jobs/base_1.json", "jobs/storyboard_1.json",
     "jobs/animate_1.json", "jobs/music_1.json", "jobs/export_1.json",
 ]
 #: Infra compartilhada que nenhuma etapa escreve hoje, mas que o reset da campanha inteira limpa.

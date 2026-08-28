@@ -12,9 +12,9 @@ from tests.conftest import make_image
 STORYBOARD = {
     "scenes": [
         {"id": "cena01", "shots": [
-            {"id": "shot01", "file": "shots/cena01/shot01_final.png", "order": 1,
+            {"id": "shot01", "file": "storyboard/cena01/shot01_final.png", "order": 1,
              "prompt": "the astronaut walks through the blizzard"},
-            {"id": "shot02", "file": "shots/cena01/shot02_final.png", "order": 2, "prompt": "close on the helmet"},
+            {"id": "shot02", "file": "storyboard/cena01/shot02_final.png", "order": 2, "prompt": "close on the helmet"},
         ]},
     ],
     "product_scene": None,
@@ -41,8 +41,8 @@ def project(studio_env, request):
     for scene in board["scenes"] + ([board["product_scene"]] if board.get("product_scene") else []):
         for shot in scene["shots"]:
             make_image(root / shot["file"])
-    (root / "shots").mkdir(parents=True, exist_ok=True)
-    (root / "shots" / "storyboard.json").write_text(json.dumps(board, ensure_ascii=False))
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "storyboard.json").write_text(json.dumps(board, ensure_ascii=False))
     return pid
 
 
@@ -63,15 +63,15 @@ def test_guide_without_storyboard_is_blocked(studio_env, guide):
     pid = studio_env["refs"].create_project("Sem shots")["id"]
     g = guide(pid)
     assert g["status"] == "blocked" and g["progress"] == 0.0
-    assert "shots/storyboard.json com os frames finais (etapa 5)" in g["missing"]
-    assert g["inputs"][0]["step"] == "shots" and "etapa 5" in g["inputs"][0]["fix"]
-    assert "Volte à etapa 5" in g["next_action"]
+    assert "storyboard/storyboard.json com os frames finais (etapa 4)" in g["missing"]
+    assert g["inputs"][0]["step"] == "storyboard" and "etapa 4" in g["inputs"][0]["fix"]
+    assert "Volte à etapa 4" in g["next_action"]
 
 
 # ---------- textos da aula (ADR-004) ----------
 def test_guide_speaks_the_language_of_the_lesson(guide, project):
     g = guide(project)
-    assert g["id"] == "animate" and g["n"] == 6 and g["aula"] == "012" and g["next_step"] == "music"
+    assert g["id"] == "animate" and g["n"] == 5 and g["aula"] == "012" and g["next_step"] == "music"
     assert "start frame + end frame" in g["what"] and "Seedance" in g["what"]
     assert "áudio do modelo desligado" in g["what"] and "em paralelo" in g["what"]
     assert "Pelo menos 2 takes por shot, 1 usável." in g["checklist"]
@@ -104,7 +104,7 @@ def test_all_ten_validations_are_reported(guide, project):
 
 
 def test_v6_1_missing_frame_is_reported_without_blocking(studio_env, svc, guide, project):
-    (studio_env["refs"].project_dir(project) / "shots" / "cena01" / "shot02_final.png").unlink()
+    (studio_env["refs"].project_dir(project) / "storyboard" / "cena01" / "shot02_final.png").unlink()
     g = guide(project)
     assert _check(g, "v6_1_frames")["status"] == "fail" and "cena01/shot02" in _check(g, "v6_1_frames")["detail"]
     assert g["status"] != "blocked", "validação nunca bloqueia (só entradas bloqueiam)"
@@ -161,7 +161,7 @@ def test_v6_7_suggests_adapting_the_idea_after_six_failures(studio_env, svc, gui
 
 
 PRODUCT = {**STORYBOARD, "product_scene": {
-    "id": "cena02", "shots": [{"id": "shot03", "file": "shots/cena02/shot03_final.png", "order": 1,
+    "id": "cena02", "shots": [{"id": "shot03", "file": "storyboard/cena02/shot03_final.png", "order": 1,
                                "prompt": "the giant can"}]}}
 
 
@@ -210,4 +210,4 @@ def test_guide_without_shots_has_no_summary(studio_env, guide):
     """Sem storyboard não há contagem — e a próxima ação continua sendo destravar a etapa 5."""
     pid = studio_env["refs"].create_project("Sem shots")["id"]
     g = guide(pid)
-    assert g["summary"] is None and "Volte à etapa 5" in g["next_action"]
+    assert g["summary"] is None and "Volte à etapa 4" in g["next_action"]
