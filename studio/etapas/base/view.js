@@ -108,20 +108,29 @@ Studio.register("base", (ctx) => {
       ? `<div class="swatches">${palette.colors.slice(0, 8).map((c) =>
           `<span class="sw" style="background:${ui.esc(c)}" title="${ui.esc(c)}"></span>`).join("")}</div>`
       : "";
+    // "Equação" da junção: [referência] + [mood] → prompt — deixa VISÍVEL que o prompt soma a
+    // situação da referência com a vibe do mood. Abaixo, o card do mood (fonte + paleta + nota).
     el.innerHTML = `
-      <div class="side">
-        <span class="eyebrow lbl">🖼️ Referência (situação)</span>
-        <div class="thumbs"><img src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy"></div>
+      <div class="bs-fuse" title="O prompt funde a situação da referência com a vibe do mood">
+        <figure class="bs-fuse-item">
+          <img class="bs-fuse-thumb" src="${ctx.files(f.file)}" alt="referência ${ui.esc(f.ref_id)}" loading="lazy">
+          <figcaption class="bs-fuse-cap">referência</figcaption>
+        </figure>
+        <span class="bs-fuse-op">+</span>
+        <figure class="bs-fuse-item bs-fuse-mood">
+          ${ui.moodMosaic(currentMoodThumbs(), {})}
+          <figcaption class="bs-fuse-cap">mood</figcaption>
+        </figure>
+        <span class="bs-fuse-arrow">→</span>
+        <span class="bs-fuse-out">prompt</span>
       </div>
-      <div class="side">
-        <div class="row wrap bs-moodhead">
-          <span class="eyebrow lbl">🎨 Mood (vibe/luz/cor)</span><span class="ext">[extensão]</span>
-        </div>
-        ${moodSourceSelectHtml()}
-        ${ui.moodMosaic(currentMoodThumbs(), {})}
-        <p class="fine">Fonte de estilo: o mood da <b>campanha</b> (etapa 2) ou um <b>mood board</b> da biblioteca.</p>${swatches}
+      <div class="row wrap bs-moodhead">
+        <span class="eyebrow lbl">🎨 Fonte do mood</span><span class="ext">[extensão]</span>
       </div>
-      <p class="join-note">O prompt ao lado funde a <b>situação da referência</b> com a <b>vibe do mood</b>.</p>`;
+      ${moodSourceSelectHtml()}
+      ${swatches}
+      <p class="fine bs-mood-note">A <b>situação</b> vem da referência; a <b>vibe, luz e cor</b> vêm do mood
+        (campanha ou um mood board). O prompt ao lado é a <b>junção</b> dos dois.</p>`;
   }
 
   // Visão anotada [extensão] (FDD §3): read-only, cada linha do prompt com um chip de proveniência

@@ -14,15 +14,11 @@
   /* base-prompt-provenance: cabeçalho de junção (mood × referência) + visão anotada das 5 linhas.
      Cores por proveniência via tokens do shell: --accent (mood), --info (referência), --ink-4
      (técnico). Só o que o catálogo do shell não cobre fica escopado `.bs-`. */
-  .bs-junction{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0;padding:12px;
+  /* Card de MOOD do painel 01 (a referência é o hero grande ao lado): bloco vertical enxuto. */
+  .bs-junction{display:block;margin:12px 0;padding:14px;
     border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
-  .bs-junction .side{flex:1 1 220px;min-width:200px}
-  .bs-junction .side>.eyebrow{display:block;margin-bottom:6px}
-  .bs-junction .thumbs{display:flex;flex-wrap:wrap;gap:6px}
-  .bs-junction .thumbs img{width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
-  .bs-junction .swatches{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-  .bs-junction .sw{width:20px;height:20px;border-radius:5px;border:1px solid var(--line)}
-  .bs-junction .join-note{flex-basis:100%;margin:0;color:var(--ink-3);font-size:13px}
+  .bs-junction .swatches{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .bs-junction .sw{width:22px;height:22px;border-radius:6px;border:1px solid var(--line)}
   .bs-prov{margin-top:12px}
   .bs-prov .prov-line{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line)}
   .bs-prov .prov-line:first-of-type{border-top:0}
@@ -53,10 +49,21 @@
   .bs-result .dl{display:inline-block;margin-top:8px}
   /* wave 5 · ponto 1: painel "M" fundido na junção — o seletor de fonte do mood e o mosaico
      quadricular vivem dentro do lado 🎨 Mood; a proveniência vira <details> recolhido. */
-  .bs-junction .bs-moodhead{gap:8px;align-items:center;margin-bottom:6px}
-  .bs-junction select#moodSource{max-width:100%;margin-bottom:8px}
-  .bs-junction .side .mood-mosaic{max-width:180px}
-  .bs-junction .side>.fine{margin:6px 0 0}
+  .bs-junction .bs-moodhead{gap:8px;align-items:center;margin-bottom:10px}
+  .bs-junction select#moodSource{width:100%;max-width:100%;margin-bottom:10px}
+  .bs-junction .mood-mosaic{max-width:260px}
+  .bs-junction .bs-mood-note{margin:10px 0 0;color:var(--ink-3);line-height:1.45}
+  /* "equação" da junção: [referência] + [mood] → prompt (a soma visível que vira o prompt). */
+  .bs-fuse{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+    padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .bs-fuse-item{margin:0;display:flex;flex-direction:column;align-items:center;gap:5px}
+  .bs-fuse-cap{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-3);
+    text-transform:uppercase;letter-spacing:.04em}
+  .bs-fuse-thumb{width:76px;height:76px;object-fit:cover;border-radius:9px;border:1px solid var(--line)}
+  .bs-fuse-mood .mood-mosaic{max-width:120px}
+  .bs-fuse-op,.bs-fuse-arrow{font-size:20px;color:var(--ink-4);font-weight:700;line-height:1}
+  .bs-fuse-out{align-self:center;padding:7px 13px;border-radius:9px;background:var(--accent-soft);
+    color:var(--accent);font-weight:600;font-size:13px;border:1px solid var(--accent-line)}
   .bs-prov-det{margin-top:12px}
   .bs-prov-det>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center;padding:6px 0}
   .bs-prov-det>summary::-webkit-details-marker{display:none}

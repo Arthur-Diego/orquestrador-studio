@@ -131,9 +131,12 @@ def test_view_shows_the_mood_reference_junction(client):
     # na junção, a contagem de painéis cai para 3 (os do curso: 01/02/03)
     assert '<div id="baseJunction"' in html and '<div id="baseProvenance"' in html
     assert html.count('<section class="panel">') == 3
-    # cabeçalho de junção: os dois lados rotulados + o texto que explica a junção
-    assert "🖼️ Referência (situação)" in js and "🎨 Mood (vibe/luz/cor)" in js
-    assert "funde a <b>situação da referência</b> com a <b>vibe do mood</b>" in js
+    # junção (ADH-OS-20260828-25): a "equação" referência + mood → prompt, com legendas e o texto
+    # que explica que o prompt é a junção dos dois (a referência já é o hero grande do painel 01)
+    assert 'class="bs-fuse"' in js and 'class="bs-fuse-thumb"' in js
+    assert ">referência</figcaption>" in js and ">mood</figcaption>" in js
+    assert 'class="bs-fuse-out">prompt' in js
+    assert "O prompt ao lado é a <b>junção</b> dos dois" in js
     # a visão anotada é read-only, marcada [extensão], com chip por proveniência e parágrafo "junção"
     assert 'class="ext">[extensão]' in js
     assert 'from-${ui.esc(p.from)}' in js and "from-join" in js
