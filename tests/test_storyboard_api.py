@@ -24,7 +24,7 @@ def base(root):
 
 def test_step_is_registered_as_plugin(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "storyboard")
-    assert step["n"] == 4 and step["status"] == "ready" and step["aula"] == "010"
+    assert step["n"] == 4 and step["status"] == "ready" and step["aula"] == "010+011"
     assert client.get("/steps/storyboard/view.html").status_code == 200
     assert client.get("/steps/storyboard/view.js").status_code == 200
 
@@ -223,7 +223,7 @@ def test_view_follows_the_wave2_screen_contract(client):
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
     assert '<section id="guide" class="guide"></section>' in html
-    assert "Etapa 4 · aula 010" in html
+    assert "Etapa 4 · aulas 010 + 011" in html
     assert 'Studio.register("storyboard"' in js
     assert 'Studio.ui.renderGuide("storyboard")' in js.replace("ui.renderGuide", "Studio.ui.renderGuide")
     # Wave 4: a etapa 4 deixou de gerar pelo CLI — não há poll, e `destroy()` continua existindo.
@@ -300,9 +300,9 @@ def test_view_uses_the_shell_catalog_after_the_redesign(client):
     """Wave 4: DOIS painéis (01 ideias, 02 cenas), sem `details.lesson`, sem painel de importação."""
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    for n in ("01", "02"):
+    for n in ("01", "02", "03", "04"):
         assert f'<span class="pn">{n}</span>' in html, n
-    assert html.count('<span class="pn">') == 2, "o protótipo desenha só dois painéis"
+    assert html.count('<span class="pn">') == 4, "ideação (01/02) + ângulos (03/04) na etapa fundida"
     assert '<details class="lesson">' not in html, "regra 4 da wave 4: `details` de aula só na etapa 1"
     assert '<div class="grid2 rev">' in html
     assert '<div id="sbScenes" class="rowlist">' in html

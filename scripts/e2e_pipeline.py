@@ -1,6 +1,6 @@
 """E2E mockado do pipeline do Orquestrador Studio — ADH-OS-20260827-02.
 
-Cria um projeto NOVO do zero via API e dirige as 11 etapas (1→11) com fixtures sintéticas
+Cria um projeto NOVO do zero via API e dirige as 10 etapas (1→10) com fixtures sintéticas
 (PNG via PIL; vídeo/áudio via ffmpeg lavfi) onde a aula exige geração externa, afirmando as
 saídas de cada etapa. Depois exercita a feature de RESET (cascata de etapa + campanha).
 
@@ -11,7 +11,7 @@ Uso direto (report determinístico + exit code):
     . .venv/bin/activate && export PATH="$HOME/.local/bin:$PATH"
     STUDIO_PROJECTS=$PWD/projects python scripts/e2e_pipeline.py [--populate-only]
 
-`--populate-only` roda só 1→11 (sem reset) e deixa o projeto cheio no disco — é o modo usado
+`--populate-only` roda só 1→10 (sem reset) e deixa o projeto cheio no disco — é o modo usado
 antes de tirar os prints (smoke_ui) com as telas populadas.
 
 Também é chamado por tests/test_e2e_pipeline.py (que injeta um client isolado + tmp dir).
@@ -69,7 +69,7 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
     check("projeto: project.json no disco", (root / "project.json").exists(), pid)
 
     steps = {s["id"]: s["status"] for s in c.get("/api/steps").json()}
-    check("catálogo: 11 etapas ready", len(steps) == 11 and all(v == "ready" for v in steps.values()),
+    check("catálogo: 10 etapas ready", len(steps) == 10 and all(v == "ready" for v in steps.values()),
           str(steps))
 
     # ---- Etapa 1 · refs (sem rede: upload + select) ----
@@ -144,40 +144,44 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
         json.loads((root / "storyboard" / "scenes.json").read_text())["scenes"]) == 5
     check("etapa 4 (storyboard): scenes.json com 5 cenas", scenes_ok)
 
-    # ---- Etapa 5 · shots ----
-    r = api("get", f"/api/projects/{pid}/shots/scenes")
+    # ---- Etapa 4 · ângulos por cena (aula 011, absorvida na etapa 4 — ADR-015) ----
+    r = api("get", f"/api/projects/{pid}/storyboard/angles/scenes")
     nscenes = len(r.json() if isinstance(r.json(), list) else r.json().get("scenes", []))
-    check("etapa 5 (shots): lê scenes.json real (5 cenas)", r.status_code == 200 and nscenes == 5,
+    check("etapa 4 (ângulos): lê scenes.json real (5 cenas)", r.status_code == 200 and nscenes == 5,
           str(nscenes))
     for sc in ("cena01", "cena02"):
-        api("post", f"/api/projects/{pid}/shots/scenes/{sc}/base", json={"source": "storyboard"},
+        api("post", f"/api/projects/{pid}/storyboard/angles/scenes/{sc}/base", json={"source": "storyboard"},
             expect=(200, 201, 404, 409, 422))
-        api("post", f"/api/projects/{pid}/shots/scenes/{sc}/base/upload",
+        api("post", f"/api/projects/{pid}/storyboard/angles/scenes/{sc}/base/upload",
             files=[("file", ("b.png", png((10, 10, 10)), "image/png"))], expect=(200, 201, 404, 422))
-        api("post", f"/api/projects/{pid}/shots/scenes/{sc}/import/upload",
+        # aula 011: cada cena com VÁRIOS ângulos (≥ 2 imagens) — é o que o animate vai ler
+        api("post", f"/api/projects/{pid}/storyboard/angles/scenes/{sc}/import/upload",
             files=[("files", ("s1.png", png((50, 60, 70)), "image/png")),
                    ("files", ("s2.png", png((80, 90, 100)), "image/png"))])
-        cs = api("get", f"/api/projects/{pid}/shots/scenes/{sc}/candidates").json()
+        cs = api("get", f"/api/projects/{pid}/storyboard/angles/scenes/{sc}/candidates").json()
         ids = [x["id"] for x in (cs if isinstance(cs, list) else cs.get("candidates", []))][:2]
-        api("post", f"/api/projects/{pid}/shots/scenes/{sc}/select",
+        api("post", f"/api/projects/{pid}/storyboard/angles/scenes/{sc}/select",
             json={"shots": [{"id": i} for i in ids]}, expect=(200, 201, 422))
-    sb = api("get", f"/api/projects/{pid}/shots/storyboard").json()
+    sb = api("get", f"/api/projects/{pid}/storyboard/angles/storyboard").json()
     nshots = sum(len(s.get("shots", [])) for s in sb.get("scenes", []))
-    check("etapa 5 (shots): storyboard.json com shots nas cenas 1–2", nshots >= 2, str(nshots))
+    check("etapa 4 (ângulos): storyboard.json com ≥ 2 frames por cena nas cenas 1–2", nshots >= 4, str(nshots))
+    check("etapa 4 (ângulos): cena01 com ≥ 2 imagens (vários ângulos, aula 011)",
+          len((sb.get("scenes") or [{}])[0].get("shots", [])) >= 2,
+          str(len((sb.get("scenes") or [{}])[0].get("shots", []))))
 
     if not ff.available():
-        check("ffmpeg disponível para etapas 6–11", False, "ffmpeg ausente do PATH")
+        check("ffmpeg disponível para etapas 5–10", False, "ffmpeg ausente do PATH")
         print(f"\nRESULTADO: {len(ok)} ok · {len(fail)} falhas")
         return ok, fail
 
     tmp = Path(os.environ.get("STUDIO_STATE", "/tmp")) / "e2e-fixtures"
     tmp.mkdir(parents=True, exist_ok=True)
 
-    # ---- Etapa 6 · animate ----
+    # ---- Etapa 5 · animate ----
     r = api("get", f"/api/projects/{pid}/animate/shots")
     plan = r.json()
     shots_plan = plan.get("shots", plan) if isinstance(plan, dict) else plan
-    check("etapa 6 (animate): plano lido do storyboard.json real", r.status_code == 200
+    check("etapa 5 (animate): plano lido do storyboard.json real", r.status_code == 200
           and len(shots_plan) >= 2, str(len(shots_plan)))
     vid = tmp / "take.mp4"
     ff.run(["-f", "lavfi", "-i", "testsrc=size=320x240:rate=30", "-f", "lavfi",
@@ -199,11 +203,11 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
                 json={"liked": True}, expect=(200, 201))
     takes = (json.loads((root / "animate" / "takes.json").read_text())
              if (root / "animate" / "takes.json").exists() else {})
-    check("etapa 6 (animate): takes.json com take liked",
+    check("etapa 5 (animate): takes.json com take liked",
           any(t.get("liked") for s in takes.get("shots", []) for t in s.get("takes", [])),
           str(len(takes.get("shots", []))) + " shots")
 
-    # ---- Etapa 7 · music ----
+    # ---- Etapa 6 · music ----
     wav = tmp / "m.wav"
     ff.run(["-f", "lavfi", "-i", "sine=frequency=220:duration=12", "-af",
             "volume='if(lt(mod(t,0.5),0.08),1,0.05)':eval=frame", str(wav)])
@@ -216,14 +220,14 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
             json={"id": mid[0], "license": "YouTube Audio Library — teste"}, expect=(200, 201))
     beats = (json.loads((root / "audio" / "beats.json").read_text())
              if (root / "audio" / "beats.json").exists() else {})
-    check("etapa 7 (music): beats.json com impactos (~120 bpm)",
+    check("etapa 6 (music): beats.json com impactos (~120 bpm)",
           bool(beats.get("impacts")) and 100 <= beats.get("bpm", 0) <= 140,
           f"bpm={beats.get('bpm')} impacts={len(beats.get('impacts', []))}")
 
-    # ---- Etapa 8 · edit ----
+    # ---- Etapa 7 · edit ----
     r = api("get", f"/api/projects/{pid}/edit/timeline")
     tl = r.json().get("timeline", r.json())
-    check("etapa 8 (edit): timeline inicial a partir de takes.json real",
+    check("etapa 7 (edit): timeline inicial a partir de takes.json real",
           r.status_code == 200 and len(tl.get("clips", [])) >= 1, str(len(tl.get("clips", []))))
     api("post", f"/api/projects/{pid}/edit/propose-cuts", json={"apply": True},
         expect=(200, 201, 422))
@@ -236,10 +240,10 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
             break
         time.sleep(2)
     master = root / "edit" / "master.mp4"
-    check("etapa 8 (edit): master.mp4 renderizado 1920x1080",
+    check("etapa 7 (edit): master.mp4 renderizado 1920x1080",
           master.exists() and ff.probe(master)["width"] == 1920, str(j.get("state")))
 
-    # ---- Etapa 9 · export ----
+    # ---- Etapa 8 · export ----
     api("post", f"/api/projects/{pid}/export/render", json={"formats": ["16x9", "9x16", "1x1"]},
         expect=(200, 201, 202))
     for _ in range(90):
@@ -250,17 +254,17 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
     api("post", f"/api/projects/{pid}/export/thumb", json={"t": 1.0}, expect=(200, 201))
     api("post", f"/api/projects/{pid}/export/qa", expect=(200, 201))
     ex = root / "export"
-    check("etapa 9 (export): 9x16 e 1x1 derivados do master",
+    check("etapa 8 (export): 9x16 e 1x1 derivados do master",
           (ex / "9x16.mp4").exists() and (ex / "1x1.mp4").exists()
           and ff.probe(ex / "9x16.mp4")["width"] == 1080, str(j.get("state")))
-    check("etapa 9 (export): qa_report.md", (ex / "qa_report.md").exists())
+    check("etapa 8 (export): qa_report.md", (ex / "qa_report.md").exists())
 
-    # ---- Etapa 10 · publish ----
+    # ---- Etapa 9 · publish ----
     # ADR-012: o portfólio conta OBRAS (projetos distintos), não arquivos. 16x9/9x16/1x1 do mesmo
     # projeto = 1 obra; o mesmo 9x16 no Instagram e no TikTok = 1 vídeo, 2 posts.
     r = api("get", f"/api/projects/{pid}/publish/exports")
     names = [e.get("name") for e in r.json().get("files", [])]
-    check("etapa 10 (publish): lista os exports reais",
+    check("etapa 9 (publish): lista os exports reais",
           any("9x16" in str(n) for n in names), str(names))
     for i, (v, net) in enumerate([("16x9.mp4", "youtube"), ("9x16.mp4", "instagram"),
                                   ("1x1.mp4", "instagram"), ("9x16.mp4", "tiktok")]):
@@ -268,15 +272,15 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
             json={"video": v, "network": net, "url": f"https://example.com/p{i}", "note": ""},
             expect=(200, 201))
     pf = api("get", f"/api/projects/{pid}/publish/portfolio").json()
-    check("etapa 10 (publish): 4 posts / 3 arquivos neste projeto; portfólio global 1/4 obras (ready=false)",
+    check("etapa 9 (publish): 4 posts / 3 arquivos neste projeto; portfólio global 1/4 obras (ready=false)",
           pf.get("count") == 4 and pf.get("videos") == 3
           and pf.get("distinct_videos") == 1 and pf.get("ready") is False,
           f"count={pf.get('count')} videos={pf.get('videos')} "
           f"obras={pf.get('distinct_videos')} ready={pf.get('ready')}")
 
-    # ---- Etapa 11 · prospect (gate + teaser) ----
+    # ---- Etapa 10 · prospect (gate + teaser) ----
     g = api("get", f"/api/projects/{pid}/prospect/gate").json()
-    check("etapa 11 (prospect): gate fechado com 1 obra publicada",
+    check("etapa 10 (prospect): gate fechado com 1 obra publicada",
           g.get("ok") is False and g.get("published") == 1, str(g.get("message")))
 
     # Abre o gate: o portfólio precisa de 4 OBRAS distintas (ADR-012). Cria 3 projetos-irmãos,
@@ -297,7 +301,7 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
             json={"video": "obra.mp4", "network": "youtube",
                   "url": f"https://example.com/obra{i}", "note": ""}, expect=(200, 201))
     g = api("get", f"/api/projects/{pid}/prospect/gate").json()
-    check("etapa 11 (prospect): gate aberto com 4 obras distintas",
+    check("etapa 10 (prospect): gate aberto com 4 obras distintas",
           g.get("ok") is True and g.get("published") >= 4, str(g.get("message")))
     r = api("post", f"/api/projects/{pid}/prospect/leads",
             json={"business": "Zé do Hambúrguer", "handle": "@zeburger",
@@ -306,7 +310,7 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
     lid = r.json().get("id") if r.status_code in (200, 201) else None
     if lid:
         dm = api("get", f"/api/projects/{pid}/prospect/leads/{lid}/dm").json()
-        check("etapa 11 (prospect): DM literal sem link",
+        check("etapa 10 (prospect): DM literal sem link",
               "portf" in json.dumps(dm, ensure_ascii=False).lower()
               and "http" not in json.dumps(dm.get("text", dm)), str(dm)[:80])
         api("post", f"/api/projects/{pid}/prospect/leads/{lid}/sent", expect=(200, 201))
@@ -320,11 +324,11 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
             time.sleep(2)
         teasers = (list((root / "prospect" / "teasers").glob("*.mp4"))
                    if (root / "prospect" / "teasers").exists() else [])
-        check("etapa 11 (prospect): teaser 5–10 s com música (take+trilha reais)",
+        check("etapa 10 (prospect): teaser 5–10 s com música (take+trilha reais)",
               bool(teasers) and 5 <= ff.probe(teasers[0])["duration"] <= 10
               and ff.probe(teasers[0])["has_audio"], str(j.get("state")))
     else:
-        check("etapa 11 (prospect): lead criado", False, "não foi possível criar lead")
+        check("etapa 10 (prospect): lead criado", False, "não foi possível criar lead")
 
     if not do_reset:
         print(f"\nRESULTADO (populate-only): {len(ok)} ok · {len(fail)} falhas")
@@ -335,7 +339,7 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
     r = api("post", f"/api/projects/{pid}/steps/base/reset", expect=(200, 201))
     cleared = set(r.json().get("cleared", [])) if r.status_code < 400 else set()
     check("reset etapa (base): 200 + cascata reportada",
-          r.status_code in (200, 201) and {"base", "storyboard", "shots", "animate", "audio",
+          r.status_code in (200, 201) and {"base", "storyboard", "animate", "audio",
                                            "edit", "export", "publish", "prospect"} <= cleared,
           str(sorted(cleared)))
     check("reset etapa (base): base e seguintes voltaram ao vazio",

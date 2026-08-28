@@ -10,7 +10,8 @@
    com as cenas em ordem — o substituto local do documento que o instrutor escreve na aula.
 
 O que a aula não ensina fica de fora: nada de roteiro por LLM, shotlist ou ângulos por cena
-(etapa 5). Desenhar continua sendo do usuário, na interface da Higgsfield (ADR-002).
+nesta mesma etapa (ver `angles.py`, ADR-015). Desenhar continua sendo do usuário, na interface
+da Higgsfield (ADR-002).
 """
 from __future__ import annotations
 
@@ -25,6 +26,12 @@ from .. import higgsfield as hf
 from ..common import ingest
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
+from .angles import registry  # noqa: F401
+
+# Re-export do registry de jobs dos ângulos (ADR-015): o serviço de ideação e o de ângulos são a
+# mesma etapa 4. O reset (`studio/common/reset.py._registries`) descobre os registros da etapa
+# procurando `_registry`/`registry` neste módulo, então o registry dos ângulos (`registry`, importado
+# acima) precisa aparecer aqui.
 
 log = logging.getLogger("studio.storyboard")
 
@@ -41,8 +48,8 @@ COUNTS = {"uncertain": 4, "tweak": 1}
 SUFFIX = "Keep everything else identical, realistic."
 
 # A aula 010 termina em "selecionar, fazer upscale, corrigir elementos"; no Studio o upscale mora
-# na etapa 5 (auditoria 4.1) — a etapa 4 avisa em vez de fingir que faz.
-UPSCALE_NOTE = "O upscale das ideias acontece na etapa 5 (aula 011), depois de escolher os ângulos."
+# na seção de ângulos desta mesma etapa (aula 011, ADR-015) — feito depois de escolher os frames.
+UPSCALE_NOTE = "O upscale acontece na seção de ângulos (aula 011) desta etapa, depois de escolher os frames."
 
 # Modelos do caminho pago (CLI). A aula e o plano só citam o Nano Banana; o GPT Image 2 é
 # alternativa aprovada na wave 2 e entra marcada `[extensão]` (auditoria 4.4), nunca como padrão.

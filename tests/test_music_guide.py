@@ -38,7 +38,7 @@ def check(g: dict, cid: str) -> dict:
 
 def test_guide_speaks_the_lesson_before_anything_else(client, project):
     g = guide(client, project)
-    assert g["id"] == "music" and g["n"] == 7 and g["aula"] == "013" and g["next_step"] == "edit"
+    assert g["id"] == "music" and g["n"] == 6 and g["aula"] == "013" and g["next_step"] == "edit"
     assert "assista tudo de uma vez, sem cortar nada" in g["what"]
     assert "Não edite antes de escolher a trilha" in g["what"]
     assert "A trilha foi escolhida antes de qualquer corte." in g["checklist"]
@@ -48,9 +48,9 @@ def test_guide_speaks_the_lesson_before_anything_else(client, project):
 def test_guide_blocks_without_storyboard_and_liked_takes(client, project, root):
     g = guide(client, project)
     assert g["status"] == "blocked" and g["progress"] == 0.0
-    assert "shots/storyboard.json com a ordem das cenas (etapa 5)" in g["missing"]
-    assert "≥ 1 take com like por cena (etapa 6)" in g["missing"]
-    assert [i["step"] for i in g["inputs"]] == ["shots", "animate"]
+    assert "storyboard/storyboard.json com a ordem das cenas (etapa 4)" in g["missing"]
+    assert "≥ 1 take com like por cena (etapa 5)" in g["missing"]
+    assert [i["step"] for i in g["inputs"]] == ["storyboard", "animate"]
 
     seed(root, liked=(True, False, True), music=False)
     g = guide(client, project)
@@ -80,12 +80,12 @@ def test_guide_outputs_follow_the_lesson_order(client, project, root, studio_env
 def test_guide_warns_about_a_missing_product_scene(client, project, root):
     seed(root, music=False)
     aviso = check(guide(client, project), "product_scene")
-    assert aviso["status"] == "warn" and "Crie a cena do produto na etapa 5" in aviso["fix"]
+    assert aviso["status"] == "warn" and "Crie a cena do produto na etapa 4" in aviso["fix"]
     assert "termine mostrando o produto" in aviso["detail"]
 
-    data = json.loads((root / "shots" / "storyboard.json").read_text())
+    data = json.loads((root / "storyboard" / "storyboard.json").read_text())
     data["product_scene"] = {"id": "produto", "shots": []}
-    (root / "shots" / "storyboard.json").write_text(json.dumps(data))
+    (root / "storyboard" / "storyboard.json").write_text(json.dumps(data))
     assert check(guide(client, project), "product_scene")["status"] == "ok"
 
 
@@ -114,7 +114,7 @@ def test_guide_is_done_after_the_whole_lesson(ffmpeg_or_skip, client, project, r
 
     g = guide(client, project)
     assert g["status"] == "done" and g["progress"] == 1.0 and g["missing"] == []
-    assert "etapa 8" in g["next_action"]
+    assert "etapa 7" in g["next_action"]
     origem = check(g, "license")
     assert origem["status"] == "warn" and "[extensão]" in origem["label"], "licença é extensão, não da aula"
 

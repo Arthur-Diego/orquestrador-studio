@@ -1,4 +1,4 @@
-"""Etapa 7 — Trilha (aula 013): assistir a história inteira e só então escolher a música.
+"""Etapa 6 — Trilha (aula 013): assistir a história inteira e só então escolher a música.
 
 A aula começa ANTES da trilha: "colocar todas as cenas em ordem na timeline, sem cortar nada…
 o objetivo não é editar, é enxergar a história como um todo" e decidir se a história fecha ou se
@@ -11,7 +11,7 @@ várias músicas na biblioteca (YouTube Audio Library, Artlist, Epidemic; a aula
 escolher "sentindo" e usar as batidas fortes como marcação de onde algo acontece. Aqui isso vira:
 reunir candidatas (upload / Downloads / histórico do CLI / geração paga por `sonilo_music`
 `[extensão]`) →
-ouvir na UI → escolher UMA → detectar batidas e impactos em `audio/beats.json`, que a etapa 8
+ouvir na UI → escolher UMA → detectar batidas e impactos em `audio/beats.json`, que a etapa 7
 consome. A origem/licença da faixa é um campo opcional `[extensão]` — a aula não fala em licença.
 """
 from __future__ import annotations
@@ -355,8 +355,8 @@ def set_story_check(pid: str, closed: bool, note: str = "") -> dict:
 
 
 def _product_scene(root: Path) -> dict | None:
-    """A cena extra do produto vive na etapa 5 (ADR-011); aqui só se mostra se ela existe."""
-    f = root / "shots" / "storyboard.json"
+    """A cena extra do produto vive na etapa 4 (ADR-011); aqui só se mostra se ela existe."""
+    f = root / "storyboard" / "storyboard.json"
     if not f.exists():
         return None
     try:
@@ -369,7 +369,7 @@ def _product_scene(root: Path) -> dict | None:
 def _story_timeline(pid: str) -> dict:
     """Sequência bruta: os takes com like na ordem do storyboard, sem música, sem corte nenhum.
 
-    Reaproveita a etapa 8 (`edit.initial_timeline`) em modo leitura — nada é gravado em
+    Reaproveita a etapa 7 (`edit.initial_timeline`) em modo leitura — nada é gravado em
     `edit/timeline.json`: a aula 013 é explícita em que aqui ainda não se edita.
     """
     from ..edit import service as edit_svc

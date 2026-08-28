@@ -1,4 +1,4 @@
-"""Etapa 7 — a aula 013 inteira: assistir a história, decidir se ela fecha, escolher a trilha e
+"""Etapa 6 — a aula 013 inteira: assistir a história, decidir se ela fecha, escolher a trilha e
 marcar as batidas. A origem/licença é campo opcional `[extensão]` (auditoria 7.4)."""
 import json
 import threading
@@ -176,7 +176,7 @@ def test_select_writes_music_license_and_beats(ffmpeg, studio_env, music, projec
     assert "Frost Rider" in lic and "frost_rider.wav" in lic and "Declarado em:" in lic
     saved = json.loads((root / "audio" / "beats.json").read_text())
     assert saved["bpm"] == r["beats"]["bpm"] and 60 <= saved["bpm"] <= 200
-    assert saved.keys() >= {"bpm", "beats", "impacts", "duration"}, "contrato lido pela etapa 8"
+    assert saved.keys() >= {"bpm", "beats", "impacts", "duration"}, "contrato lido pela etapa 7"
     assert sum(c["selected"] for c in music.list_candidates(project)) == 1
 
 
@@ -233,7 +233,7 @@ def test_select_without_ffmpeg_keeps_the_choice_and_warns(ffmpeg, monkeypatch, s
 
 def test_select_never_leaves_beats_of_the_previous_track(ffmpeg, monkeypatch, studio_env, music, project, tmp_path):
     """Invariante da seção 6: se a análise falhar com o ffmpeg presente, é melhor ficar sem
-    beats.json do que com as batidas da trilha anterior — a etapa 8 cortaria no lugar errado."""
+    beats.json do que com as batidas da trilha anterior — a etapa 7 cortaria no lugar errado."""
     music.import_upload(project, [("a.wav", audio_bytes(tmp_path, "a.wav", seconds=10, bpm=120)),
                                   ("b.mp3", audio_bytes(tmp_path, "b.mp3", seconds=8, bpm=100))])
     ids = [c["id"] for c in music.list_candidates(project)]
@@ -328,21 +328,21 @@ def test_story_status_reports_the_scenes_and_the_product_scene(studio_env, music
     from tests.test_edit_service import seed
     root = studio_env["refs"].project_dir(project)
     vazio = music.story_status(project)
-    assert vazio["clips"] == 0 and "etapa 6" in vazio["warning"] and vazio["product_scene"] is False
+    assert vazio["clips"] == 0 and "etapa 5" in vazio["warning"] and vazio["product_scene"] is False
 
     seed(root)
     cheio = music.story_status(project)
     assert cheio["clips"] == 3 and cheio["duration"] == 15.0 and cheio["warning"] is None
     assert cheio["video"] is None and cheio["product_scene"] is False
 
-    data = _json.loads((root / "shots" / "storyboard.json").read_text())
+    data = _json.loads((root / "storyboard" / "storyboard.json").read_text())
     data["product_scene"] = {"id": "produto", "shots": []}
-    (root / "shots" / "storyboard.json").write_text(_json.dumps(data))
+    (root / "storyboard" / "storyboard.json").write_text(_json.dumps(data))
     assert music.story_status(project)["product_scene"] is True
 
 
 def test_story_render_never_writes_the_edit_timeline(ffmpeg, studio_env, music, project):
-    """A aula 013 é explícita: aqui ainda não se edita — a etapa 8 não pode ser tocada."""
+    """A aula 013 é explícita: aqui ainda não se edita — a etapa 7 não pode ser tocada."""
     from tests.test_edit_service import seed
     root = studio_env["refs"].project_dir(project)
     seed(root, real=True, seconds=1)

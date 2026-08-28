@@ -40,12 +40,12 @@ def _idea(client, pid, color=(10, 20, 30)):
 
 def test_guide_is_blocked_without_the_campaign_base(client, pid):
     g = guide(client, pid)
-    assert g["id"] == "storyboard" and g["n"] == 4 and g["aula"] == "010"
+    assert g["id"] == "storyboard" and g["n"] == 4 and g["aula"] == "010+011"
     assert g["status"] == "blocked" and g["progress"] == 0.0
     assert "base/base_final.png (etapa 3)" in g["missing"]
     assert g["inputs"][0]["step"] == "base", "o painel oferece o atalho para a etapa que produz"
     assert "etapa 3" in g["next_action"]
-    assert g["next_step"] == "shots"
+    assert g["next_step"] == "animate"
 
 
 def test_guide_texts_come_from_the_lesson(client, pid, root):
@@ -54,13 +54,13 @@ def test_guide_texts_come_from_the_lesson(client, pid, root):
     assert "Draw to Edit" in g["what"] and "Multi Shot" in g["what"]
     assert "começo, descoberta, ação e desfecho" in g["what"]
     assert any("4 imagens quando incerto" in c for c in g["checklist"])
-    assert any("etapa 5" in c for c in g["checklist"]), "V4.1: o upscale mora na etapa 5"
+    assert any("upscalado" in c for c in g["checklist"]), "V4.1: o guia diz onde o upscale acontece"
 
 
 def test_guide_walks_from_todo_to_done(client, pid, root):
     make_image(root / "base" / "base_final.png")
     g = guide(client, pid)
-    assert g["status"] == "todo" and [o["status"] for o in g["outputs"]] == ["todo", "todo", "todo"]
+    assert g["status"] == "todo" and all(o["status"] == "todo" for o in g["outputs"])
 
     img = _idea(client, pid)
     g = guide(client, pid)
@@ -68,9 +68,14 @@ def test_guide_walks_from_todo_to_done(client, pid, root):
 
     scenes = [{"text": f"cena {i}", "image": img} for i in range(1, 6)]
     client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": scenes})
+    client.post(f"/api/projects/{pid}/storyboard/render")
     g = guide(client, pid)
-    assert g["status"] == "done" and g["progress"] == 1.0 and g["missing"] == []
-    assert "siga para a" in g["next_action"].lower()
+    outs = {o["id"]: o for o in g["outputs"]}
+    # metade da ideação (aula 010) concluída…
+    assert outs["ideas"]["status"] == "ok" and outs["scenes"]["status"] == "ok"
+    assert outs["storyboard_md"]["status"] == "ok"
+    # …mas a etapa só fecha quando os ângulos (aula 011) também terminam.
+    assert g["status"] == "in_progress" and outs["storyboard_json"]["status"] == "todo"
 
 
 def test_validation_v41_counts_written_scenes(client, pid, root):

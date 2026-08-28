@@ -1,4 +1,4 @@
-"""Etapa 8 — a montagem segue a aula 014: cortes nos impactos, speed ramp, pretos, música e SFX."""
+"""Etapa 7 — a montagem segue a aula 014: cortes nos impactos, speed ramp, pretos, música e SFX."""
 from __future__ import annotations
 
 import json
@@ -31,12 +31,12 @@ def ffprobe_codecs(path: Path) -> set[str]:
 
 def seed(root: Path, *, duration: float = 5.0, liked=(True, True, True), real: bool = False,
          seconds: float = 2.0, music: bool = True, impacts=None) -> None:
-    """Fixtures dos handoffs da wave: shots/storyboard.json, animate/takes.json, audio/*."""
-    (root / "shots").mkdir(parents=True, exist_ok=True)
+    """Fixtures dos handoffs da wave: storyboard/storyboard.json, animate/takes.json, audio/*."""
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
     (root / "animate").mkdir(parents=True, exist_ok=True)
-    (root / "shots" / "storyboard.json").write_text(json.dumps({
-        "scenes": [{"id": scene, "base": f"shots/{scene}/base.png",
-                    "shots": [{"id": shot, "file": f"shots/{scene}/{shot}_final.png", "order": 1, "prompt": "x"}]}
+    (root / "storyboard" / "storyboard.json").write_text(json.dumps({
+        "scenes": [{"id": scene, "base": f"storyboard/{scene}/base.png",
+                    "shots": [{"id": shot, "file": f"storyboard/{scene}/{shot}_final.png", "order": 1, "prompt": "x"}]}
                    for scene, shot in SCENES],
         "product_scene": None}))
     dur = seconds if real else duration
@@ -106,11 +106,11 @@ def test_initial_timeline_without_liked_takes(studio_env, project, root):
 
 def test_initial_timeline_without_inputs(studio_env, project, root):
     edit = studio_env["svc"]("edit")
-    with pytest.raises(FileNotFoundError, match="etapa 6"):
+    with pytest.raises(FileNotFoundError, match="etapa 5"):
         edit.initial_timeline(project)
     seed(root)
-    (root / "shots" / "storyboard.json").unlink()
-    with pytest.raises(FileNotFoundError, match="etapa 5"):
+    (root / "storyboard" / "storyboard.json").unlink()
+    with pytest.raises(FileNotFoundError, match="etapa 4"):
         edit.initial_timeline(project)
 
 
@@ -246,7 +246,7 @@ def test_propose_cuts_without_beats(studio_env, project, root):
     edit = studio_env["svc"]("edit")
     seed(root)
     edit.get_timeline(project)
-    with pytest.raises(FileNotFoundError, match="etapa 7"):
+    with pytest.raises(FileNotFoundError, match="etapa 6"):
         edit.propose_cuts(project)
 
 
@@ -347,7 +347,7 @@ def test_export_last_frame_writes_png_and_instruction(studio_env, project, root)
     from PIL import Image
     with Image.open(png) as im:
         assert im.size == (320, 240), "mesma largura do vídeo de origem"
-    assert "etapa 6" in r["instruction"] and "start frame" in r["instruction"]
+    assert "etapa 5" in r["instruction"] and "start frame" in r["instruction"]
 
 
 def test_export_last_frame_unknown_shot(studio_env, project, root):
@@ -484,7 +484,7 @@ def test_master_requires_the_track(studio_env, project, root):
     edit = studio_env["svc"]("edit")
     seed(root, music=False)
     edit.get_timeline(project)
-    with pytest.raises(RuntimeError, match="etapa 7"):
+    with pytest.raises(RuntimeError, match="etapa 6"):
         render.start_render(project, "master")
     assert edit.music_path(root) is None
     assert not (root / "edit" / "master.mp4").exists()
@@ -502,11 +502,11 @@ def test_rough_still_renders_without_the_track(studio_env, project, root):
     job = _wait(render, project, timeout=240)
     assert job["state"] == "done", job.get("error")
     assert (root / "edit" / "rough_cut.mp4").exists()
-    assert any("escolha a música na etapa 7" in line for line in job["log"])
+    assert any("escolha a música na etapa 6" in line for line in job["log"])
 
 
 def test_build_filtergraph_writes_where_asked(studio_env, project, root):
-    """A etapa 7 reusa o grafo em modo rough para gerar audio/rough_sequence.mp4."""
+    """A etapa 6 reusa o grafo em modo rough para gerar audio/rough_sequence.mp4."""
     from studio.edit import render
     edit = studio_env["svc"]("edit")
     seed(root)

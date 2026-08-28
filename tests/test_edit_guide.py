@@ -1,4 +1,4 @@
-"""Guia da etapa 8 (aula 014): a trilha bloqueia, as batidas conferem o ritmo, o resto é aviso."""
+"""Guia da etapa 7 (aula 014): a trilha bloqueia, as batidas conferem o ritmo, o resto é aviso."""
 from __future__ import annotations
 
 import json
@@ -30,7 +30,7 @@ def check(g: dict, cid: str) -> dict:
 
 def test_guide_text_comes_from_the_lesson(client, project):
     g = guide(client, project)
-    assert g["id"] == "edit" and g["n"] == 8 and g["aula"] == "014" and g["next_step"] == "export"
+    assert g["id"] == "edit" and g["n"] == 7 and g["aula"] == "014" and g["next_step"] == "export"
     assert "o ritmo vem primeiro, o refinamento depois" in g["what"]
     assert "um pequeno zoom" in g["what"] and "SFX, ambiência, respiração, gelo, impacto" in g["what"]
     assert "Vou publicar mesmo imperfeito — o primeiro sempre será o pior." in g["checklist"]
@@ -41,7 +41,7 @@ def test_guide_blocks_without_the_track(client, project, root):
     seed(root, music=False)
     g = guide(client, project)
     assert g["status"] == "blocked"
-    assert "audio/music.* — trilha escolhida (etapa 7)" in g["missing"]
+    assert "audio/music.* — trilha escolhida (etapa 6)" in g["missing"]
     trilha = next(i for i in g["inputs"] if i["id"] == "music")
     assert trilha["step"] == "music" and "não deve editar antes de escolher a trilha" in trilha["fix"]
 
@@ -73,11 +73,11 @@ def test_guide_warns_about_sfx_and_the_product_scene(client, project, root, stud
     assert check(g, "sfx")["status"] == "warn"
     assert "formiguinha" in check(g, "sfx")["fix"]
     produto = check(g, "product_last")
-    assert produto["status"] == "todo" and "etapa 5" in produto["fix"]
+    assert produto["status"] == "todo" and "etapa 4" in produto["fix"]
 
-    data = json.loads((root / "shots" / "storyboard.json").read_text())
+    data = json.loads((root / "storyboard" / "storyboard.json").read_text())
     data["product_scene"] = {"id": "produto", "shots": []}
-    (root / "shots" / "storyboard.json").write_text(json.dumps(data))
+    (root / "storyboard" / "storyboard.json").write_text(json.dumps(data))
     fora = check(guide(client, project), "product_last")
     assert fora["status"] == "warn" and "cena03" in fora["detail"]
 
@@ -130,4 +130,4 @@ def test_guide_strip_speaks_in_short_imperatives(client, project, root):
     (root / "edit" / "master.mp4").write_bytes(b"master")
     g = guide(client, project)
     assert g["status"] == "done" and g["summary"] == "master: pronto" and g["summary_kind"] == "ok"
-    assert "etapa 9" in g["next_action"], "etapa concluída mantém o texto padrão"
+    assert "etapa 8" in g["next_action"], "etapa concluída mantém o texto padrão"

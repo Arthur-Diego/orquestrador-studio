@@ -1,4 +1,4 @@
-"""Rotas da etapa 10 — Publicar (aula 015).
+"""Rotas da etapa 9 — Publicar (aula 015).
 
 O núcleo converte `KeyError` (projeto ou post inexistente) em 404. Aqui só traduzimos
 `FileNotFoundError` (vídeo fora de `export/`) em 404 e `ValueError` (validação) em 422.

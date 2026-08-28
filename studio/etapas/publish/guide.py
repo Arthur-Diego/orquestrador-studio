@@ -1,4 +1,4 @@
-"""Guia da etapa 10 (aula 015) — leitura pura dos artefatos do projeto.
+"""Guia da etapa 9 (aula 015) — leitura pura dos artefatos do projeto.
 
 O dever de casa da aula é *"criar pelo menos quatro vídeos e publicá-los"*: quatro **obras**,
 não quatro arquivos do mesmo comercial. Por isso a saída "portfólio" é global (ADR-012) e é
@@ -38,16 +38,16 @@ def guide(pid: str) -> dict:
 
     g = Guide(META).text(WHAT, CHECKLIST)
 
-    g.input("exports", "export/*.mp4 (etapa 9)", exports > 0,
+    g.input("exports", "export/*.mp4 (etapa 8)", exports > 0,
             detail=f"{exports} arquivo(s) em export/",
-            fix="Volte à etapa 9 e gere o formato da rede onde você vai publicar", step="export")
+            fix="Volte à etapa 8 e gere o formato da rede onde você vai publicar", step="export")
 
     g.output("post", "Este vídeo publicado e registrado", bool(posts),
              detail=f"{len(posts)} publicação(ões) neste projeto" if posts
              else "poste na rede e cole o link aqui")
     g.output("portfolio", f"Portfólio global {glob_n}/{goal} vídeos", status["ready"],
              detail=(f"{glob_n} projeto(s) com post registrado"
-                     + ("" if status["ready"] else f" — {status['missing']} para destravar a etapa 11")))
+                     + ("" if status["ready"] else f" — {status['missing']} para destravar a etapa 10")))
 
     if videos > 1:
         g.check("mesmo_projeto", "Formatos do mesmo comercial contam como 1 vídeo", "warn",

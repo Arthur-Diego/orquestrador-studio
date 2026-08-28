@@ -48,7 +48,7 @@ def api(method, path, expect=(200, 201, 202), **kw):
 
 
 steps = {s["id"]: s["status"] for s in c.get("/api/steps").json()}
-check("catálogo: 11 etapas ready", all(v == "ready" for v in steps.values()), str(steps))
+check("catálogo: 10 etapas ready", all(v == "ready" for v in steps.values()), str(steps))
 
 # ---- Etapa 3 · base (consome refs + mood reais) ----
 r = api("get", f"/api/projects/{PID}/base/prompts")
@@ -75,20 +75,20 @@ r = api("put", f"/api/projects/{PID}/storyboard/scenes", json={"scenes": scenes}
 api("post", f"/api/projects/{PID}/storyboard/render", expect=(200, 201, 422))
 check("storyboard: scenes.json com 5 cenas", (ROOT / "storyboard" / "scenes.json").exists() and len(json.loads((ROOT / "storyboard" / "scenes.json").read_text())["scenes"]) == 5)
 
-# ---- Etapa 5 · shots (consome scenes.json + base + palette) ----
-r = api("get", f"/api/projects/{PID}/shots/scenes")
-check("shots: lê scenes.json real (5 cenas)", r.status_code == 200 and len(r.json() if isinstance(r.json(), list) else r.json().get("scenes", [])) == 5, str(r.json())[:160])
+# ---- Etapa 4 · ângulos por cena (aula 011, absorvida na etapa 4 — ADR-015) ----
+r = api("get", f"/api/projects/{PID}/storyboard/angles/scenes")
+check("ângulos: lê scenes.json real (5 cenas)", r.status_code == 200 and len(r.json() if isinstance(r.json(), list) else r.json().get("scenes", [])) == 5, str(r.json())[:160])
 for sc in ("cena01", "cena02"):
-    api("post", f"/api/projects/{PID}/shots/scenes/{sc}/base", json={"source": "storyboard"}, expect=(200, 201, 404, 409, 422))
-    api("post", f"/api/projects/{PID}/shots/scenes/{sc}/base/upload", files=[("file", ("b.png", png((10, 10, 10)), "image/png"))], expect=(200, 201, 404, 422))
-    api("post", f"/api/projects/{PID}/shots/scenes/{sc}/import/upload", files=[("files", ("s1.png", png((50, 60, 70)), "image/png")), ("files", ("s2.png", png((80, 90, 100)), "image/png"))])
-    cs = api("get", f"/api/projects/{PID}/shots/scenes/{sc}/candidates").json()
+    api("post", f"/api/projects/{PID}/storyboard/angles/scenes/{sc}/base", json={"source": "storyboard"}, expect=(200, 201, 404, 409, 422))
+    api("post", f"/api/projects/{PID}/storyboard/angles/scenes/{sc}/base/upload", files=[("file", ("b.png", png((10, 10, 10)), "image/png"))], expect=(200, 201, 404, 422))
+    api("post", f"/api/projects/{PID}/storyboard/angles/scenes/{sc}/import/upload", files=[("files", ("s1.png", png((50, 60, 70)), "image/png")), ("files", ("s2.png", png((80, 90, 100)), "image/png"))])
+    cs = api("get", f"/api/projects/{PID}/storyboard/angles/scenes/{sc}/candidates").json()
     ids = [x["id"] for x in (cs if isinstance(cs, list) else cs.get("candidates", []))][:2]
-    api("post", f"/api/projects/{PID}/shots/scenes/{sc}/select", json={"shots": [{"id": i} for i in ids]}, expect=(200, 201, 422))
-sb = api("get", f"/api/projects/{PID}/shots/storyboard").json()
-check("shots: storyboard.json com shots nas cenas 1–2", sum(len(s.get("shots", [])) for s in sb.get("scenes", [])) >= 2, str(sb)[:160])
+    api("post", f"/api/projects/{PID}/storyboard/angles/scenes/{sc}/select", json={"shots": [{"id": i} for i in ids]}, expect=(200, 201, 422))
+sb = api("get", f"/api/projects/{PID}/storyboard/angles/storyboard").json()
+check("ângulos: storyboard.json com ≥ 2 frames por cena (cenas 1–2)", sum(len(s.get("shots", [])) for s in sb.get("scenes", [])) >= 4, str(sb)[:160])
 
-# ---- Etapa 6 · animate (consome storyboard.json) ----
+# ---- Etapa 5 · animate (consome storyboard.json) ----
 r = api("get", f"/api/projects/{PID}/animate/shots")
 plan = r.json()
 shots_plan = plan.get("shots", plan) if isinstance(plan, dict) else plan
@@ -111,7 +111,7 @@ if ff.available():
     takes = json.loads((ROOT / "animate" / "takes.json").read_text()) if (ROOT / "animate" / "takes.json").exists() else {}
     check("animate: takes.json com take liked", any(t.get("liked") for s in takes.get("shots", []) for t in s.get("takes", [])), str(takes)[:160])
 
-    # ---- Etapa 7 · music ----
+    # ---- Etapa 6 · music ----
     wav = tmp / "m.wav"
     ff.run(["-f", "lavfi", "-i", "sine=frequency=220:duration=12", "-af", "volume='if(lt(mod(t,0.5),0.08),1,0.05)':eval=frame", str(wav)])
     api("post", f"/api/projects/{PID}/music/import/upload", files=[("files", ("m.wav", wav.read_bytes(), "audio/wav"))])
@@ -122,7 +122,7 @@ if ff.available():
     beats = json.loads((ROOT / "audio" / "beats.json").read_text()) if (ROOT / "audio" / "beats.json").exists() else {}
     check("music: beats.json com impactos (~120 bpm)", bool(beats.get("impacts")) and 100 <= beats.get("bpm", 0) <= 140, str({k: (v if not isinstance(v, list) else len(v)) for k, v in beats.items()}))
 
-    # ---- Etapa 8 · edit (consome takes + beats + storyboard) ----
+    # ---- Etapa 7 · edit (consome takes + beats + storyboard) ----
     r = api("get", f"/api/projects/{PID}/edit/timeline")
     check("edit: timeline inicial a partir de takes.json real", r.status_code == 200 and len(r.json().get("timeline", r.json()).get("clips", [])) >= 1, str(r.json())[:160])
     api("post", f"/api/projects/{PID}/edit/propose-cuts", json={"apply": True}, expect=(200, 201, 422))
@@ -135,7 +135,7 @@ if ff.available():
     master = ROOT / "edit" / "master.mp4"
     check("edit: master.mp4 renderizado 1920x1080", master.exists() and ff.probe(master)["width"] == 1920, str(j)[:160])
 
-    # ---- Etapa 9 · export (consome master) ----
+    # ---- Etapa 8 · export (consome master) ----
     r = api("post", f"/api/projects/{PID}/export/render", json={"formats": ["16x9", "9x16", "1x1"]}, expect=(200, 201, 202))
     for _ in range(90):
         j = api("get", f"/api/projects/{PID}/export/job").json()
@@ -148,7 +148,7 @@ if ff.available():
     check("export: 9x16 e 1x1 derivados do master", (ex / "9x16.mp4").exists() and (ex / "1x1.mp4").exists() and ff.probe(ex / "9x16.mp4")["width"] == 1080, str(j)[:120])
     check("export: qa_report.md", (ex / "qa_report.md").exists())
 
-    # ---- Etapa 10 · publish (consome export) ----
+    # ---- Etapa 9 · publish (consome export) ----
     r = api("get", f"/api/projects/{PID}/publish/exports")
     names = [e.get("name") for e in r.json().get("files", [])]
     check("publish: lista os exports reais", any("9x16" in str(n) for n in names), str(names))
@@ -158,7 +158,7 @@ if ff.available():
     # ADR-012: o portfólio conta OBRAS distintas (projetos), não vídeos de um mesmo projeto.
     check("publish: 3 vídeos distintos em 4 posts → ready=false (decisão 1)", pf.get("distinct_videos") == 3 and pf.get("ready") is False, str(pf))
 
-    # ---- Etapa 11 · prospect (gate + teaser) ----
+    # ---- Etapa 10 · prospect (gate + teaser) ----
     g = api("get", f"/api/projects/{PID}/prospect/gate").json()
     check("prospect: gate fechado com 3 vídeos distintos", g.get("ok") is False, str(g))
     # publica um 4º vídeo distinto para abrir o gate

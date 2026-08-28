@@ -1,4 +1,4 @@
-"""Guia da etapa 7 (aula 013) — leitura pura dos artefatos do projeto.
+"""Guia da etapa 6 (aula 013) — leitura pura dos artefatos do projeto.
 
 A aula manda, nesta ordem: (1) pôr todas as cenas em ordem e assistir tudo sem cortar nada,
 (2) decidir se a história fecha ou se falta cena, (3) só então escolher a trilha. O guia reflete
@@ -36,7 +36,7 @@ def _music_file(pid: str) -> str | None:
 
 
 def _liked_by_scene(takes: dict) -> dict[str, int]:
-    """Quantos takes com like cada cena tem em `animate/takes.json` (a etapa 6 não é reexecutada)."""
+    """Quantos takes com like cada cena tem em `animate/takes.json` (a etapa 5 não é reexecutada)."""
     out: dict[str, int] = {}
     for entry in takes.get("shots") or []:
         scene = entry.get("scene", "")
@@ -57,20 +57,20 @@ def _liked_duration(takes: dict) -> float:
 def guide(pid: str) -> dict:
     g = Guide(META).text(WHAT, CHECKLIST)
 
-    storyboard = read_json(pid, "shots/storyboard.json", default={}) or {}
+    storyboard = read_json(pid, "storyboard/storyboard.json", default={}) or {}
     scenes = [s for s in (storyboard.get("scenes") or []) if s.get("id")]
     takes = read_json(pid, "animate/takes.json", default={}) or {}
     liked = _liked_by_scene(takes)
     sem_take = [s["id"] for s in scenes if not liked.get(s["id"])]
 
     # --- entradas (aula 013: "todas as cenas em ordem") ---
-    g.input("storyboard", "shots/storyboard.json com a ordem das cenas (etapa 5)", bool(scenes),
-            fix="Volte à etapa 5 e escolha um ângulo por cena", step="shots")
-    g.input("takes_liked", "≥ 1 take com like por cena (etapa 6)",
+    g.input("storyboard", "storyboard/storyboard.json com a ordem das cenas (etapa 4)", bool(scenes),
+            fix="Volte à etapa 4 e escolha um ângulo por cena", step="storyboard")
+    g.input("takes_liked", "≥ 1 take com like por cena (etapa 5)",
             bool(scenes) and not sem_take,
             detail=(f"sem take escolhido: {', '.join(sem_take)}" if sem_take
                     else f"{sum(liked.values())} takes com like em {len(scenes)} cenas" if scenes else None),
-            fix="Volte à etapa 6, gere os takes que faltam e marque o melhor de cada cena",
+            fix="Volte à etapa 5, gere os takes que faltam e marque o melhor de cada cena",
             step="animate")
 
     # --- saídas (a decisão da aula vem antes da trilha) ---
@@ -80,7 +80,7 @@ def guide(pid: str) -> dict:
     decidido = isinstance(check, dict) and "closed" in check
     g.output("story_check", 'audio/story_check.json (decisão "a história fecha?")', decidido,
              detail=(None if not decidido else
-                     "história fechada" if check.get("closed") else "falta cena/encerramento — volte à etapa 5"))
+                     "história fechada" if check.get("closed") else "falta cena/encerramento — volte à etapa 4"))
     g.output("music", "audio/music.* (trilha escolhida)", bool(music), detail=music)
     g.output("beats", "audio/beats.json (batidas fortes)", bool(beats.get("beats")),
              detail=(f"{beats.get('bpm')} bpm · {len(beats.get('beats') or [])} batidas · "
@@ -96,7 +96,7 @@ def guide(pid: str) -> dict:
     g.check("product_scene", "Cena do produto no fim (encerramento comercial)",
             "ok" if tem_produto else "warn",
             detail=None if tem_produto else "a aula manda que o comercial termine mostrando o produto",
-            fix=None if tem_produto else "Crie a cena do produto na etapa 5 e anime na etapa 6")
+            fix=None if tem_produto else "Crie a cena do produto na etapa 4 e anime na etapa 5")
 
     soma = _liked_duration(takes)
     trilha = float(beats.get("duration") or 0)
@@ -107,7 +107,7 @@ def guide(pid: str) -> dict:
         g.check("track_length", "Trilha cobre a história inteira",
                 "ok" if trilha + 0.5 >= soma else "warn",
                 detail=f"trilha {trilha:.1f}s · takes {soma:.1f}s",
-                fix=None if trilha + 0.5 >= soma else "Escolha uma faixa mais longa ou corte cenas na etapa 8")
+                fix=None if trilha + 0.5 >= soma else "Escolha uma faixa mais longa ou corte cenas na etapa 7")
 
     if music:
         g.check("license", "Origem da trilha declarada [extensão]",

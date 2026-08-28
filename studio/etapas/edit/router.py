@@ -1,4 +1,4 @@
-"""Rotas da etapa 8 — Montagem no ritmo (aula 014)."""
+"""Rotas da etapa 7 — Montagem no ritmo (aula 014)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -102,7 +102,7 @@ def put_timeline(pid: str, req: TimelineReq):
 
 @router.post("/api/projects/{pid}/edit/timeline/reset")
 def reset_timeline(pid: str):
-    """Recria a timeline inicial — usar depois de gerar takes novos na etapa 6."""
+    """Recria a timeline inicial — usar depois de gerar takes novos na etapa 5."""
     try:
         return edit.get_timeline(pid, force_new=True)
     except (FileNotFoundError, ValueError) as e:
@@ -154,7 +154,7 @@ async def upload_sfx(pid: str, files: list[UploadFile] = File(...), prompt: str 
 
 @router.post("/api/projects/{pid}/edit/render")
 def start_render(pid: str, req: RenderReq):
-    """`rough` é a prévia de ritmo (sai sem música, com aviso); `master` exige a trilha da etapa 7."""
+    """`rough` é a prévia de ritmo (sai sem música, com aviso); `master` exige a trilha da etapa 6."""
     refs.project_dir(pid)
     if not ff.available():
         raise HTTPException(409, NO_FFMPEG)

@@ -89,8 +89,8 @@ def test_confirm_cost_still_precedes_paid_generations(client):
 
 
 def test_deterministic_generators_do_not_open_a_modal(client):
-    """Storyboard ("Montar instrução") e shots ("Gerar prompt") são determinísticos: sem modal."""
-    for step in ("storyboard", "shots"):
+    """Storyboard: "Montar instrução" e "Gerar prompt" (ângulos) são determinísticos: sem modal."""
+    for step in ("storyboard",):
         js = _view(client, step)
         assert "ui.progress(" not in js, f"{step} não chama o bot — não deve abrir o modal de fases"
         assert "progressJob(" not in js, f"{step} não roda job desta etapa pelo CLI"

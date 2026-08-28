@@ -1,4 +1,4 @@
-"""Rotas da etapa 11 — Prospecção (aula 001).
+"""Rotas da etapa 10 — Prospecção (aula 001).
 
 Tradução de exceções do serviço (padrão das outras etapas): `FileNotFoundError` → 404,
 `ValueError` → 422, `RuntimeError` (inclui `GateClosed` e job em andamento) → 409.

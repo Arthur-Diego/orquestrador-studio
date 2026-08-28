@@ -1,6 +1,6 @@
-"""Etapa 9 — Export (aula 014); QA e thumb são `[extensão]`.
+"""Etapa 8 — Export (aula 014); QA e thumb são `[extensão]`.
 
-A etapa 8 entrega um único `edit/master.mp4` 16:9. A aula 014 termina em *"publique o seu
+A etapa 7 entrega um único `edit/master.mp4` 16:9. A aula 014 termina em *"publique o seu
 trabalho, mesmo imperfeito"* — ela não ensina QA nem export. A escolha do formato pelo destino
 (9:16 para Reels/TikTok, 16:9 para YouTube) vem do plano §1.4; a aula 007 só fala de formato de
 **imagem** no Midjourney. O 1:1 é opcional `[extensão]`.
@@ -64,7 +64,7 @@ def _require_ffmpeg() -> None:
 def _require_master(root: Path) -> Path:
     p = _master_path(root)
     if not p.exists():
-        raise FileNotFoundError("edit/master.mp4 não encontrado; conclua a etapa 8")
+        raise FileNotFoundError("edit/master.mp4 não encontrado; conclua a etapa 7")
     return p
 
 
@@ -218,7 +218,7 @@ def _hf_status() -> dict:
 
 
 def list_outputs(pid: str) -> list[dict]:
-    """Arquivos entregáveis em `export/` (ignora `previews/` e arquivos internos). Contrato consumido pela etapa 10."""
+    """Arquivos entregáveis em `export/` (ignora `previews/` e arquivos internos). Contrato consumido pela etapa 9."""
     root = project_dir(pid)
     edir = root / "export"
     avail = ff.available()
@@ -365,7 +365,7 @@ def _qa_checks(master: dict, saidas: list[dict]) -> list[dict]:
     """Checks **por critério** (duração, resolução, áudio, formatos que faltam) — wave 4.
 
     `items` continua sendo o relatório por arquivo (é o que vai para `qa_report.md`); `checks`
-    é a leitura do mesmo relatório na frase da aula, que é o que a etapa 9 desenha no grid.
+    é a leitura do mesmo relatório na frase da aula, que é o que a etapa 8 desenha no grid.
     """
     checks: list[dict] = []
     prontos = [i for i in saidas if i.get("exists")]
@@ -386,8 +386,8 @@ def _qa_checks(master: dict, saidas: list[dict]) -> list[dict]:
             checks.append({"kind": "warn", "text": f"{texto} — esperado {w}×{h} · h264"})
 
     mudo = not master.get("has_audio") or any(not i.get("has_audio") for i in prontos)
-    checks.append({"kind": "fail", "text": "Áudio ausente — bloqueia; a trilha da etapa 7 é obrigatória"}
-                  if mudo else {"kind": "ok", "text": "Áudio presente (trilha da etapa 7)"})
+    checks.append({"kind": "fail", "text": "Áudio ausente — bloqueia; a trilha da etapa 6 é obrigatória"}
+                  if mudo else {"kind": "ok", "text": "Áudio presente (trilha da etapa 6)"})
 
     faltam = [RATIO[i["format"]] for i in saidas if not i.get("exists")]
     if faltam:
@@ -405,7 +405,7 @@ def qa_report(pid: str) -> dict:
     edir = root / "export"
     items: list[dict] = []
 
-    # 9.5: a trilha é obrigatória desde a etapa 7; master mudo não é "atenção", é bloqueio.
+    # 9.5: a trilha é obrigatória desde a etapa 6; master mudo não é "atenção", é bloqueio.
     mchecks = [_check("audio", m["has_audio"], blocking=True), _check("duration", m["duration"] > 0)]
     items.append({"file": MASTER, "exists": True, "duration": m["duration"], "width": m["width"], "height": m["height"],
                   "fps": m["fps"], "vcodec": m["vcodec"], "acodec": m["acodec"], "has_audio": m["has_audio"],
@@ -461,11 +461,11 @@ def qa_report(pid: str) -> dict:
 
 
 _REASONS = {
-    "exists": "arquivo ausente (renderize na etapa 9)",
+    "exists": "arquivo ausente (renderize na etapa 8)",
     "resolution": "resolução diferente da esperada",
     "duration": "duração fora da tolerância de 0,5 s em relação ao master",
     "vcodec": "codec de vídeo diferente de h264",
-    "audio": "áudio ausente — BLOQUEIO: a trilha da etapa 7 precisa estar no arquivo",
+    "audio": "áudio ausente — BLOQUEIO: a trilha da etapa 6 precisa estar no arquivo",
     "size": "arquivo vazio",
 }
 
@@ -477,7 +477,7 @@ def _qa_markdown(pid: str, generated: str, items: list[dict]) -> str:
         f"Projeto: {pid} · Gerado: {generated} · Fonte: {MASTER}",
         "Checklist técnico [extensão] do que o ffprobe mede: duração, resolução, fps, codec e áudio.",
         "Não avalia gosto. Aula 014: publique mesmo que o primeiro fique fraco.",
-        "Só uma checagem bloqueia: áudio ausente (a trilha da etapa 7 é obrigatória).",
+        "Só uma checagem bloqueia: áudio ausente (a trilha da etapa 6 é obrigatória).",
         "",
         "| Arquivo | Duração (s) | Resolução | fps | Vídeo | Áudio | Áudio presente | Tamanho | Veredito |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",

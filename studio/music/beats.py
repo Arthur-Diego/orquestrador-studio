@@ -1,7 +1,7 @@
 """Detecção de batidas e impactos da trilha escolhida (aula 013).
 
 A aula diz: "nessa batida forte tem que acontecer alguma coisa". Este módulo transforma isso
-em números para a etapa 8 — `bpm`, `beats` (a grade do ritmo) e `impacts` (as batidas fortes).
+em números para a etapa 7 — `bpm`, `beats` (a grade do ritmo) e `impacts` (as batidas fortes).
 
 Sem librosa: o ffmpeg decodifica a trilha para PCM mono float32 e o numpy faz o resto
 (envelope de energia → autocorrelação para o tempo → grade de batidas → picos). É determinístico:
@@ -147,7 +147,7 @@ def pick_impacts(env: np.ndarray, beats: list[float], sr: int = SR, hop: int = H
 
 def analyze(path: str | Path, sr: int = SR, hop: int = HOP, k: float = K, min_gap: float = MIN_GAP,
             bpm_range: tuple[int, int] = BPM_RANGE) -> dict:
-    """{'bpm', 'beats', 'impacts', 'duration', 'analysis_ms'} — o contrato lido pela etapa 8."""
+    """{'bpm', 'beats', 'impacts', 'duration', 'analysis_ms'} — o contrato lido pela etapa 7."""
     t0 = time.perf_counter()
     y = decode_pcm(path, sr)
     duration = round(len(y) / sr, 3)

@@ -1,4 +1,4 @@
-"""Etapa 11 — Prospecção: a aula 001 no serviço (gate, script literal, contador, teaser, pitch)."""
+"""Etapa 10 — Prospecção: a aula 001 no serviço (gate, script literal, contador, teaser, pitch)."""
 import json
 import time
 from datetime import date, datetime, timedelta
@@ -227,7 +227,7 @@ def test_lead_inexistente_e_404(svc, root):
             fn(root, "ninguem")
 
 
-# ---------- teaser: um take da etapa 6 + a trilha da etapa 7 ----------
+# ---------- teaser: um take da etapa 5 + a trilha da etapa 6 ----------
 def takes_json(root, duration=6):
     (root / "animate").mkdir(parents=True, exist_ok=True)
     (root / "animate" / "takes.json").write_text(json.dumps({"shots": [{"scene": "cena01", "shot": "shot01", "takes": [
@@ -237,7 +237,7 @@ def takes_json(root, duration=6):
 
 
 def test_pick_take_prefere_o_liked_e_valida(svc, root):
-    with pytest.raises(FileNotFoundError, match="Etapa 6"):
+    with pytest.raises(FileNotFoundError, match="Etapa 5"):
         svc.pick_take(root)
     takes_json(root)
     for name in ("shot01_take1.mp4", "shot01_take2.mp4"):
@@ -250,7 +250,7 @@ def test_pick_take_prefere_o_liked_e_valida(svc, root):
 
 
 def test_find_music_aponta_a_etapa_7(svc, root):
-    with pytest.raises(FileNotFoundError, match="Etapa 7"):
+    with pytest.raises(FileNotFoundError, match="Etapa 6"):
         svc.find_music(root)
     (root / "audio").mkdir(parents=True, exist_ok=True)
     (root / "audio" / "music.wav").write_bytes(b"x")
@@ -267,7 +267,7 @@ def test_teaser_exige_que_a_empresa_tenha_respondido(svc, root):
     with pytest.raises(ValueError, match="depois que a empresa responder"):
         svc.start_teaser(root, "p", lid), "DM enviada ainda não é resposta"
     svc.mark_replied(root, lid)
-    with pytest.raises(FileNotFoundError, match="Etapa 6"):
+    with pytest.raises(FileNotFoundError, match="Etapa 5"):
         svc.start_teaser(root, "p", lid)   # passou do gate da resposta e chegou nos artefatos
 
 
@@ -280,13 +280,13 @@ def test_teaser_valida_antes_de_iniciar_o_job(svc, root, monkeypatch):
     monkeypatch.setattr(svc.ff, "available", lambda: True)
     with pytest.raises(ValueError, match="entre 5 e 10"):
         svc.start_teaser(root, "p", lid, duration=12)
-    with pytest.raises(FileNotFoundError, match="Etapa 6"):
+    with pytest.raises(FileNotFoundError, match="Etapa 5"):
         svc.start_teaser(root, "p", lid)
     takes_json(root, duration=3)
     for name in ("shot01_take1.mp4", "shot01_take2.mp4"):
         (root / "videos" / "cena01" / name).parent.mkdir(parents=True, exist_ok=True)
         (root / "videos" / "cena01" / name).write_bytes(b"x")
-    with pytest.raises(FileNotFoundError, match="Etapa 7"):
+    with pytest.raises(FileNotFoundError, match="Etapa 6"):
         svc.start_teaser(root, "p", lid)
     (root / "audio").mkdir(parents=True, exist_ok=True)
     (root / "audio" / "music.wav").write_bytes(b"x")

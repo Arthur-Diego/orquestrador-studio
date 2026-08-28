@@ -1,4 +1,4 @@
-"""Rotas da etapa 9 — Export (aula 014); QA, thumb e reframe são `[extensão]`."""
+"""Rotas da etapa 8 — Export (aula 014); QA, thumb e reframe são `[extensão]`."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException

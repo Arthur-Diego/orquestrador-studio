@@ -1,4 +1,4 @@
-// Etapa 10 — Publicar (aula 015): registro manual dos posts, portfólio global e comunidade.
+// Etapa 9 — Publicar (aula 015): registro manual dos posts, portfólio global e comunidade.
 // ADR-012: o portfólio conta PROJETOS distintos com post (distinct_videos), não arquivos nem posts.
 // Wave 4: a tela é o protótipo — form de duas linhas e lista de publicações (chip · url · "nota").
 // A contagem do portfólio vive no chip do guia; a galeria de exports e o resumo global saíram.

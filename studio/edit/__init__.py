@@ -1,1 +1,1 @@
-"""Etapa 8 — Montagem no ritmo (aula 014): timeline, cortes nos impactos, SFX e render."""
+"""Etapa 7 — Montagem no ritmo (aula 014): timeline, cortes nos impactos, SFX e render."""

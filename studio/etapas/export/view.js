@@ -1,4 +1,4 @@
-// Etapa 9 — Export (aula 014): formato por rede a partir do master; o QA técnico é [extensão].
+// Etapa 8 — Export (aula 014): formato por rede a partir do master; o QA técnico é [extensão].
 // Wave 4: a tela é o protótipo — card de formato com UM botão, preview no clique da caixa e o
 // QA como grid de checks por critério. Thumb e reframe saíram da tela (as rotas continuam).
 Studio.register("export", (ctx) => {
@@ -30,7 +30,7 @@ Studio.register("export", (ctx) => {
 
   function renderChips() {
     chipFalha("#expFfmpeg", !st.ffmpeg, "ffmpeg: ausente (~/.local/bin)");
-    chipFalha("#expMaster", !st.master.exists, "master: aguardando a etapa 8");
+    chipFalha("#expMaster", !st.master.exists, "master: aguardando a etapa 7");
   }
 
   function ready() { return st && st.ffmpeg && st.master.exists; }
@@ -38,10 +38,10 @@ Studio.register("export", (ctx) => {
   // Medidas do master viram `title` do botão "Renderizar todos" (o protótipo não desenha a linha).
   function tituloMaster() {
     const m = st.master;
-    if (!m.exists) return "conclua a etapa 8 para gerar edit/master.mp4";
+    if (!m.exists) return "conclua a etapa 7 para gerar edit/master.mp4";
     if (!m.width) return "edit/master.mp4 encontrado (sem ffmpeg para medir)";
     return `edit/master.mp4 · ${m.width}x${m.height} · ${(m.duration || 0).toFixed(1)}s`
-      + `${m.has_audio ? "" : " · sem áudio (a trilha da etapa 7 é obrigatória)"}`;
+      + `${m.has_audio ? "" : " · sem áudio (a trilha da etapa 6 é obrigatória)"}`;
   }
 
   function renderFormats() {

@@ -1,19 +1,19 @@
-"""Etapa 6 — Animação (aula 012), em "modo UI" com geração paga opcional pelo CLI:
+"""Etapa 5 — Animação (aula 012), em "modo UI" com geração paga opcional pelo CLI:
 
-1. lê `shots/storyboard.json` (etapa 5) e monta o plano de takes, mesclando com o que já existe;
+1. lê `storyboard/storyboard.json` (etapa 4 — ADR-015) e monta o plano de takes, mesclando com o que já existe;
 2. sugere o prompt de movimento do take (simples, elaborado ou start/end frame) — o usuário edita;
 3. o usuário gera na interface da Higgsfield (áudio OFF, 2 takes) e importa o mp4 (upload,
    pasta Downloads ou histórico do CLI) — ou gera via CLI, pagando créditos;
 4. atribui o candidato ao shot como take K, dá "like" no usável e o Studio grava `_final.mp4`;
 5. após 3 falhas no shot, o serviço SUGERE o próximo modelo da ordem (nunca troca sozinho:
-   gasta créditos); esgotada a ordem (6 falhas), sugere adaptar a ideia — novo frame na etapa 5 —
+   gasta créditos); esgotada a ordem (6 falhas), sugere adaptar a ideia — novo frame na etapa 4 —
    ou `fallback_black` (corte para preto na montagem).
 
 No modo start/end (Kling 2.5 Turbo da aula), o par de frames é **gravado e enviado ao CLI**: ao
 escolher o modo, o par nasce `{start: frame deste shot, end: frame do próximo shot da cena}`; o
-usuário pode trocar o `end` por outro frame — inclusive um `edit/last_frames/*.png` da etapa 8.
+usuário pode trocar o `end` por outro frame — inclusive um `edit/last_frames/*.png` da etapa 7.
 
-Saída para a etapa 8 (montagem): `animate/takes.json` + `videos/cenaNN/shotMM_takeK.mp4`.
+Saída para a etapa 7 (montagem): `animate/takes.json` + `videos/cenaNN/shotMM_takeK.mp4`.
 """
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ MODE_TIPS = {
                   "Ou gere o prompt no Abrahub Creative Engine e cole aqui.",
                   "Movimento complexo? A aula sugere o Seedance no lugar do Kling."],
     "start_end": ["Dois frames seguidos da mesma cena: start = este shot, end = o próximo "
-                  "(ou um último frame da etapa 8, em edit/last_frames/).",
+                  "(ou um último frame da etapa 7, em edit/last_frames/).",
                   "A aula usa start/end para transições — câmera lenta e dramática, 10 s quando a "
                   "mudança é lenta."],
 }
@@ -83,9 +83,9 @@ def model_order() -> list[str]:
     return models or list(MODEL_ORDER)
 
 
-# ---------- storyboard (etapa 5) ----------
+# ---------- storyboard (etapa 4 — ADR-015) ----------
 def _storyboard_file(root: Path) -> Path:
-    return root / "shots" / "storyboard.json"
+    return root / "storyboard" / "storyboard.json"
 
 
 def _read_storyboard(root: Path) -> tuple[list[dict], list[str]]:
@@ -96,9 +96,9 @@ def _read_storyboard(root: Path) -> tuple[list[dict], list[str]]:
     try:
         data = json.loads(f.read_text())
     except json.JSONDecodeError as e:
-        return [], [f"shots/storyboard.json inválido: {e}"]
+        return [], [f"storyboard/storyboard.json inválido: {e}"]
     if not isinstance(data, dict):
-        return [], ["shots/storyboard.json não é um objeto JSON"]
+        return [], ["storyboard/storyboard.json não é um objeto JSON"]
     scenes = [s for s in (data.get("scenes") or []) if isinstance(s, dict)]
     product = data.get("product_scene")
     if isinstance(product, dict) and (product.get("shots") or []):
@@ -141,7 +141,7 @@ def _load_data(root: Path) -> dict:
 
 
 def _save_data(root: Path, data: dict) -> None:
-    """Gravação atômica: nenhum leitor (etapa 8) vê `takes.json` pela metade."""
+    """Gravação atômica: nenhum leitor (etapa 7) vê `takes.json` pela metade."""
     d = root / STEP
     d.mkdir(parents=True, exist_ok=True)
     tmp = d / ".takes.json.tmp"
@@ -216,7 +216,7 @@ def default_cli_mode() -> str:
 
 
 def last_frames(root: Path) -> list[str]:
-    """Últimos frames exportados pela etapa 8 (`edit/last_frames/*.png`) — ends alternativos."""
+    """Últimos frames exportados pela etapa 7 (`edit/last_frames/*.png`) — ends alternativos."""
     d = root / "edit" / "last_frames"
     if not d.is_dir():
         return []
@@ -257,7 +257,7 @@ def _public(data: dict, shot: dict) -> dict:
 
 # ---------- leitura pura (usada pelo guia da etapa) ----------
 def storyboard_entries(pid: str) -> tuple[list[dict], list[str]]:
-    """Plano da etapa 5 SEM efeito colateral (`load_plan` grava `takes.json`; o guia não pode)."""
+    """Plano da etapa 4 (ADR-015) SEM efeito colateral (`load_plan` grava `takes.json`; o guia não pode)."""
     return _read_storyboard(project_dir(pid))
 
 
@@ -271,7 +271,7 @@ def load_plan(pid: str) -> dict:
     """Plano de takes na ordem do storyboard. Cria/atualiza `animate/takes.json`."""
     root = project_dir(pid)
     if not _storyboard_file(root).exists():
-        raise FileNotFoundError("Etapa 5 ainda não produziu shots/storyboard.json")
+        raise FileNotFoundError("Etapa 4 ainda não produziu storyboard/storyboard.json")
     data, warnings = _merge(root)
     _save_data(root, data)
     shots = [_public(data, s) for s in data["shots"]]
@@ -328,7 +328,7 @@ def _auto_start_end(data: dict, entry: dict, root: Path) -> dict | None:
     """Par padrão do modo start/end: este frame → frame do próximo shot da mesma cena.
 
     Sem próximo shot (ou sem frame), devolve `None`: a tela pede um `end` manual — pode ser um
-    `edit/last_frames/*.png` da etapa 8. Nunca levanta: escolher o modo não pode falhar.
+    `edit/last_frames/*.png` da etapa 7. Nunca levanta: escolher o modo não pode falhar.
     """
     start = entry.get("image")
     nxt = _next_entry_in_scene(data, entry["scene"], entry["shot"])

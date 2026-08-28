@@ -1,4 +1,4 @@
-"""Guia da etapa 9 (aula 014) — leitura pura dos artefatos do projeto.
+"""Guia da etapa 8 (aula 014) — leitura pura dos artefatos do projeto.
 
 A aula 014 termina em *"publique o seu trabalho, mesmo imperfeito"*: ela não ensina QA, thumb
 nem export. O que existe de fato é a escolha do formato pelo destino (plano §1.4). Por isso o
@@ -24,7 +24,7 @@ WHAT = (
     "isso faz parte do processo."
 )
 CHECKLIST = [
-    "O vídeo tem trilha (etapa 7) e foi montado no ritmo (etapa 8).",
+    "O vídeo tem trilha (etapa 6) e foi montado no ritmo (etapa 7).",
     "Existe o formato da rede-alvo (9:16 e/ou 16:9).",
     "Nada importante ficou fora do corte central.",
     "Não fiquei preso na perfeição: está bom para publicar.",
@@ -58,8 +58,8 @@ def guide(pid: str) -> dict:
 
     g = Guide(META).text(WHAT, CHECKLIST)
 
-    g.input("master", "edit/master.mp4 (etapa 8)", tem_master,
-            fix="Volte à etapa 8 e renderize o master com a trilha", step="edit")
+    g.input("master", "edit/master.mp4 (etapa 7)", tem_master,
+            fix="Volte à etapa 7 e renderize o master com a trilha", step="edit")
 
     g.output("formato_alvo", alvo, exists(pid, alvo),
              detail=f"formato da rede-alvo do projeto ({aspect} · {NETWORK.get(fmt, 'rede escolhida')})")
@@ -84,14 +84,14 @@ def guide(pid: str) -> dict:
     dur = _timeline_duration(pid)
     if dur is None:
         g.check("duracao", "Duração de 30 s a 1 min (aula 016)", "todo",
-                detail="a duração aparece quando a timeline da etapa 8 existir")
+                detail="a duração aparece quando a timeline da etapa 7 existir")
     elif MIN_COMERCIAL <= dur <= MAX_COMERCIAL:
         g.check("duracao", "Duração de 30 s a 1 min (aula 016)", "ok", detail=f"{dur:g} s")
     else:
         g.check("duracao", "Duração de 30 s a 1 min (aula 016)", "warn", detail=f"{dur:g} s",
-                fix="o comercial que a aula vende tem 30 s a 1 min; ajuste a montagem na etapa 8")
+                fix="o comercial que a aula vende tem 30 s a 1 min; ajuste a montagem na etapa 7")
 
     # Resumo curto da faixa do guia (wave 4): o estado do insumo desta etapa.
-    return g.build(summary="master: pronto" if tem_master else "master: aguardando a etapa 8",
+    return g.build(summary="master: pronto" if tem_master else "master: aguardando a etapa 7",
                    next_action="Renderizar o formato da rede onde você vai publicar"
                    if tem_master and not exists(pid, alvo) else None)

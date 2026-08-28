@@ -27,7 +27,7 @@ let steps = [], projects = [], pid = null, project = null;
 let guideAll = null;              // { steps: [Guide × 11], done, total, progress, current }
 let guideById = {};               // id → Guide
 let view = "overview";            // "overview" | <id da etapa>
-// Áreas do shell: "campaign" (as 11 etapas + visão geral) e "moodboards" (biblioteca global
+// Áreas do shell: "campaign" (as 10 etapas + visão geral) e "moodboards" (biblioteca global
 // [extensão] ADR-013, campanha-independente). `moodboards` é um prefixo de rota RESERVADO —
 // um pid de projeto nunca pode ser "moodboards" (reservado em create_project).
 const MB_ROUTE = "moodboards";
@@ -186,7 +186,7 @@ function statusOf(stepId, stepStatus) {
   if (g) return g.status;
   return stepStatus === "ready" ? "unknown" : "todo";
 }
-/** Estado de cada uma das 11 etapas, na ordem do curso — alimenta os dois pipelines. */
+/** Estado de cada uma das 10 etapas, na ordem do curso — alimenta os dois pipelines. */
 function estadosDasEtapas() {
   return steps.map((s) => statusOf(s.id, s.status));
 }
@@ -292,10 +292,10 @@ function renderOverview() {
   <header class="stephead ov">
     <span class="eyebrow">Etapas 1 a 11 · aulas 009 → 015 · 001</span>
     <h2>Visão geral da campanha</h2>
-    <p class="lede">As 11 etapas do curso, na ordem das aulas, com o estado real dos artefatos. ${cur ? `Você está na <b>etapa ${esc(cur.n)} — ${esc(cur.title)}</b>.` : "Todas as etapas estão concluídas."}</p>
+    <p class="lede">As 10 etapas do curso, na ordem das aulas, com o estado real dos artefatos. ${cur ? `Você está na <b>etapa ${esc(cur.n)} — ${esc(cur.title)}</b>.` : "Todas as etapas estão concluídas."}</p>
     <div class="ov-summary">${resumo}</div>
     <div class="ov-actions"><button type="button" class="shell-reset ghost" id="btnResetCamp"
-      title="Apaga tudo o que as 11 etapas produziram; mantém nome, produto, vibe e formato">Resetar campanha [extensão]</button></div>
+      title="Apaga tudo o que as 10 etapas produziram; mantém nome, produto, vibe e formato">Resetar campanha [extensão]</button></div>
   </header>
 
   <div class="ovgrid">${steps.map(cardHtml).join("")}</div>`;
@@ -312,7 +312,7 @@ function renderNoProject() {
   <div class="empty-state">
     <span class="eyebrow">Orquestrador Studio</span>
     <h2>Nenhuma campanha ainda</h2>
-    <p class="lede">Uma campanha guarda tudo o que as 11 etapas do curso produzem: referências, mood board, imagem base, storyboard, ângulos, takes, trilha, montagem, export, publicação e prospecção.</p>
+    <p class="lede">Uma campanha guarda tudo o que as 10 etapas do curso produzem: referências, mood board, imagem base, storyboard (cenas e ângulos), takes, trilha, montagem, export, publicação e prospecção.</p>
     <button class="primary" id="btnFirst" type="button">Criar a primeira campanha</button>
   </div>`;
   $("#btnFirst").onclick = openWizard;
@@ -423,8 +423,8 @@ async function doResetStep(stepId, m) {
 /** Modal de confirmação do reset da campanha inteira (visão geral). */
 function confirmResetCampaign() {
   if (!pid) return;
-  const html = `<p>Isto apaga tudo o que as 11 etapas produziram — referências, mood board, imagem
-    base, storyboard, ângulos, takes, trilha, montagem, export, publicação e prospecção.</p>
+  const html = `<p>Isto apaga tudo o que as 10 etapas produziram — referências, mood board, imagem
+    base, storyboard (cenas e ângulos), takes, trilha, montagem, export, publicação e prospecção.</p>
     <p>O <b>nome</b>, o <b>produto</b>, a <b>vibe</b> e o <b>formato</b> da campanha são mantidos.</p>
     <p class="reset-note">Reset é uma extensão do Studio, não um passo do curso.</p>`;
   const m = window.Studio.ui.modal({

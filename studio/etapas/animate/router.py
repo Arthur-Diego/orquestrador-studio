@@ -1,4 +1,4 @@
-"""Rotas da etapa 6 — Animação (aula 012)."""
+"""Rotas da etapa 5 — Animação (aula 012)."""
 from __future__ import annotations
 
 from typing import Callable

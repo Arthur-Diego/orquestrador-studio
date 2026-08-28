@@ -1,4 +1,4 @@
-"""Guia da etapa 11 (aula 001 = 016) — leitura pura dos artefatos do projeto.
+"""Guia da etapa 10 (aula 001 = 016) — leitura pura dos artefatos do projeto.
 
 O portfólio que destrava esta etapa é **global** (ADR-012): o projeto criado para o negócio do
 lead nunca terá quatro vídeos publicados, então contar dentro dele deixava a etapa inutilizável
@@ -72,7 +72,7 @@ def guide(pid: str) -> dict:
 
     g.input("portfolio", f"Portfólio global de {gate['required']} vídeos publicados", gate["ok"],
             detail=f"{gate['published']}/{gate['required']} projetos com post registrado",
-            fix="Publique quatro vídeos diferentes (um por projeto) na etapa 10", step="publish")
+            fix="Publique quatro vídeos diferentes (um por projeto) na etapa 9", step="publish")
 
     g.output("leads", "prospect/leads.json com leads cadastrados", bool(leads),
              detail=f"{len(leads)} lead(s)" if leads else "cadastre os pequenos negócios que você já acompanha")

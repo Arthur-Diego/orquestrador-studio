@@ -1,4 +1,4 @@
-"""Etapa 11 — o guia por etapa (aula 001 = 016): gate global, DM personalizada, teaser e pitch."""
+"""Etapa 10 — o guia por etapa (aula 001 = 016): gate global, DM personalizada, teaser e pitch."""
 import json
 
 import pytest
@@ -47,11 +47,11 @@ def novo_lead(client, pid, **kw):
 # ---------- entrada: o portfólio é global ----------
 def test_guia_bloqueado_pelo_portfolio_global(client, pid):
     g = guide(client, pid)
-    assert g["status"] == "blocked" and g["n"] == 11 and g["aula"] == "001"
+    assert g["status"] == "blocked" and g["n"] == 10 and g["aula"] == "001"
     entrada = g["inputs"][0]
     assert entrada["step"] == "publish" and entrada["status"] == "fail"
     assert entrada["detail"] == "0/4 projetos com post registrado"
-    assert g["next_step"] is None, "etapa 11 é a última do curso"
+    assert g["next_step"] is None, "etapa 10 é a última do curso"
 
 
 def test_guia_cita_os_segmentos_da_aula(client, pid):

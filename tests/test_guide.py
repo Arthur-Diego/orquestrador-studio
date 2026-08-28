@@ -60,7 +60,7 @@ def test_validations_never_block_and_reject_invalid_status(studio_env):
 def test_next_step_comes_from_the_course_catalog(studio_env):
     from studio.common import guide as G
     assert G.next_step_id("refs") == "mood"
-    assert G.next_step_id("prospect") is None, "etapa 11 é a última"
+    assert G.next_step_id("prospect") is None, "etapa 10 é a última"
     assert G.next_step_id("nao-existe") is None
     assert G.Guide(META).output("a", "a", True).build()["next_step"] == "storyboard"
     assert G.Guide(META).output("a", "a", True).build(next_step=None)["next_step"] is None
@@ -135,7 +135,7 @@ def test_generic_guide_is_unknown_and_carries_the_error(studio_env):
 def test_discover_exposes_an_optional_guide_hook(studio_env):
     from studio.etapas import discover
     plugins = discover()
-    assert len(plugins) == 11
+    assert len(plugins) == 10
     for sid, p in plugins.items():
         assert "guide" in p, f"{sid} sem a chave guide na descoberta"
         assert p["guide"] is None or callable(p["guide"])
@@ -185,7 +185,7 @@ def test_summary_travels_over_http(studio_env, client, monkeypatch):
     assert g["summary"] == "18 escolhidas" and g["summary_kind"] == "ok"
     agg = client.get(f"/api/projects/{pid}/guide").json()
     assert agg["steps"][0]["summary"] == "18 escolhidas"
-    assert all("summary" in s and "summary_kind" in s for s in agg["steps"]), "campo fixo nas 11"
+    assert all("summary" in s and "summary_kind" in s for s in agg["steps"]), "campo fixo nas 10"
 
 
 def test_step_guide_route_404s(studio_env, client):
@@ -216,9 +216,9 @@ def test_aggregate_guide_counts_progress_and_current(studio_env, client, monkeyp
     monkeypatch.setitem(app_module.PLUGINS["refs"], "guide", _fake_hook("refs", True))
     monkeypatch.setitem(app_module.PLUGINS["mood"], "guide", _fake_hook("mood", False))
     agg = client.get(f"/api/projects/{pid}/guide").json()
-    assert agg["total"] == 11 and len(agg["steps"]) == 11
+    assert agg["total"] == 10 and len(agg["steps"]) == 10
     assert [s["id"] for s in agg["steps"]][:3] == ["refs", "mood", "base"], "ordem do curso"
-    assert agg["done"] == 1 and agg["progress"] == round(1 / 11, 2)
+    assert agg["done"] == 1 and agg["progress"] == round(1 / 10, 2)
     assert agg["current"] == "mood", "primeira etapa não concluída"
 
 

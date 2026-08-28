@@ -1,4 +1,4 @@
-"""Etapa 8 pela API: timeline, cortes nos impactos, SFX, último frame e render."""
+"""Etapa 7 pela API: timeline, cortes nos impactos, SFX, último frame e render."""
 from __future__ import annotations
 
 import pytest
@@ -40,7 +40,7 @@ def test_get_timeline_creates_then_reads(client, project, root):
 
 def test_get_timeline_without_inputs_is_404(client, project, root):
     r = client.get(url(project, "/timeline"))
-    assert r.status_code == 404 and "etapa 6" in r.json()["detail"]
+    assert r.status_code == 404 and "etapa 5" in r.json()["detail"]
 
 
 def test_get_timeline_without_liked_is_422(client, project, root):
@@ -113,7 +113,7 @@ def test_propose_cuts_without_beats_is_404(client, project, root):
     seed(root)
     client.get(url(project, "/timeline"))
     r = client.post(url(project, "/propose-cuts"), json={})
-    assert r.status_code == 404 and "etapa 7" in r.json()["detail"]
+    assert r.status_code == 404 and "etapa 6" in r.json()["detail"]
 
 
 def test_propose_cuts_and_apply(client, project, root):
@@ -178,7 +178,7 @@ def test_last_frame_returns_png_and_instruction(client, project, root):
     r = client.post(url(project, "/last-frame"), json={"scene": "cena01", "shot": "shot01", "take": "take1"})
     assert r.status_code == 200, r.text
     assert r.json()["file"] == "edit/last_frames/shot01_last.png"
-    assert "etapa 6" in r.json()["instruction"]
+    assert "etapa 5" in r.json()["instruction"]
     assert (root / "edit" / "last_frames" / "shot01_last.png").exists()
 
 
@@ -256,13 +256,13 @@ def test_render_master_end_to_end(client, project, root):
 
 # ---------- fidelidade à aula (wave 2) ----------
 def test_master_without_track_is_409(client, project, root):
-    """Auditoria 8.2: o master não sai sem a trilha da etapa 7; o rough continua liberado."""
+    """Auditoria 8.2: o master não sai sem a trilha da etapa 6; o rough continua liberado."""
     if not has_ffmpeg():
         pytest.skip("ffmpeg não disponível")
     seed(root, music=False)
     client.get(url(project, "/timeline"))
     r = client.post(url(project, "/render"), json={"target": "master"})
-    assert r.status_code == 409 and "etapa 7" in r.json()["detail"]
+    assert r.status_code == 409 and "etapa 6" in r.json()["detail"]
     assert client.post(url(project, "/render"), json={"target": "rough"}).status_code == 200
 
 
@@ -285,7 +285,7 @@ def test_step_screen_carries_the_lesson_texts(client):
     """Auditoria 8.5, 8.9, 8.10 + convenção de tela da wave 2 (textos revistos na wave 4)."""
     html = client.get("/steps/edit/view.html").text
     js = client.get("/steps/edit/view.js").text
-    assert "Etapa 8 · aula 014" in html
+    assert "Etapa 7 · aula 014" in html
     assert '<section id="guide" class="guide"></section>' in html
     # Wave 4 (8.23): a lista da aula vive no texto da dropzone, como no protótipo.
     assert "gelo, ambiência, respiração, impacto" in html, "lista literal da aula (8.9)"

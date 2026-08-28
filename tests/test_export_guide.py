@@ -1,4 +1,4 @@
-"""Etapa 9 — o guia por etapa (aula 014) e os textos de tela corrigidos pela auditoria 9.1/9.2.
+"""Etapa 8 — o guia por etapa (aula 014) e os textos de tela corrigidos pela auditoria 9.1/9.2.
 
 Tudo por HTTP e por leitura pura de artefatos (ADR-003/ADR-008): nenhum teste aqui chama
 ffprobe, e o hook do guia também não pode.
@@ -38,9 +38,9 @@ def timeline(studio_env, pid, seconds):
 # ---------- estado ----------
 def test_guia_bloqueado_sem_o_master_da_etapa_8(client, pid):
     g = guide(client, pid)
-    assert g["status"] == "blocked" and g["n"] == 9 and g["aula"] == "014"
+    assert g["status"] == "blocked" and g["n"] == 8 and g["aula"] == "014"
     assert g["inputs"][0]["step"] == "edit" and g["inputs"][0]["status"] == "fail"
-    assert "edit/master.mp4 (etapa 8)" in g["missing"]
+    assert "edit/master.mp4 (etapa 7)" in g["missing"]
     assert "publicar mesmo que o primeiro fique ruim" in g["what"]
     assert g["next_step"] == "publish"
 
@@ -110,7 +110,7 @@ def test_guia_nao_escreve_nada_no_projeto(client, studio_env, pid):
 
 # ---------- chip-resumo da faixa do guia (wave 4, 9.4) ----------
 def test_resumo_do_guia_e_o_estado_do_master(client, studio_env, pid):
-    assert guide(client, pid)["summary"] == "master: aguardando a etapa 8"
+    assert guide(client, pid)["summary"] == "master: aguardando a etapa 7"
     write(studio_env, pid, "edit/master.mp4")
     g = guide(client, pid)
     assert g["summary"] == "master: pronto" and g["summary_kind"] is None
@@ -122,7 +122,7 @@ def test_resumo_do_guia_e_o_estado_do_master(client, studio_env, pid):
 # ---------- textos de tela (auditoria 9.1, 9.2 e wave 4) ----------
 def test_tela_atribui_o_formato_ao_destino_e_marca_a_extensao(client):
     html = client.get("/steps/export/view.html").text
-    assert "Etapa 9 · aula 014" in html, "9.2: a aula 007 fala de imagem no Midjourney, não de export"
+    assert "Etapa 8 · aula 014" in html, "9.2: a aula 007 fala de imagem no Midjourney, não de export"
     assert "aulas 007 e 014" not in html
     # Wave 4 (9.3): a lede é a do protótipo — o destino escolhe o formato e o corte é central.
     assert "O destino escolhe o formato" in html and "Corte central" in html
