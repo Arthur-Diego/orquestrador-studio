@@ -300,6 +300,10 @@ Este é exatamente o conteúdo de `storyboard/scenes.json` (schema da wave).
 - Formato do arquivo: título `# Storyboard: <project.name>`, linha com produto e vibe de `project.json`, depois um bloco por cena: `## Cena N` + texto + `![cenaNN](ideas/<file>)` quando houver imagem (caminho relativo a `storyboard/`), e rodapé com data e "Imagem base: base/base_final.png".
 
 **Contrato 12: custo e geração por CLI (alternativa paga)**
+> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
+> ADH-OS-20260829-37 (QA AP-21). A tela não oferece controle para `cost`/`generate`/`job` do painel
+> 01 (a aula ensina esse passo na UI da Higgsfield); o backend continua vivo e testado. Pinado pelo
+> caso de QA `C-STORYBOARD-13`.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/storyboard/cost` e `POST /api/projects/{pid}/storyboard/generate`; `GET /api/projects/{pid}/storyboard/job`
 - Método: POST / POST / GET

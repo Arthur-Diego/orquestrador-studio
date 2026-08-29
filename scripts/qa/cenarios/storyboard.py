@@ -370,16 +370,24 @@ def p01_drop_painel(page, ctx):
                       f"{antes}→{depois} ideias; toast='{t}'")
 
 
-@caso("C-STORYBOARD-13", "geração paga de ideias pelo CLI (/cost + /generate) não tem comando na tela")
+@caso("C-STORYBOARD-13", "geração paga de ideias: rota só por API (decisão AP-21), sem comando no painel 01")
 def p01_gerar_cli(page, ctx):
+    """Decisão do dono do produto (ADH-OS-20260829-37, QA AP-21): `POST /storyboard/cost`,
+    `/generate` e `GET /storyboard/job` ficam como `[extensão]` **só por API** — a wave 4 tirou o
+    bloco pago da tela (a aula ensina esse passo na UI da Higgsfield) e as rotas não voltam para a
+    UI nem são removidas (têm testes e coleção Postman). O caso pina os dois lados da decisão."""
     botoes = page.locator("#sbIdeas button").evaluate_all(
         "els => els.map(e => (e.id || '') + ':' + (e.textContent || '').trim())")
-    if any("crédito" in b.lower() or "gerar via cli" in b.lower() for b in botoes):
-        return H.Resultado.falha(f"apareceu um comando pago no painel 01: {botoes}")
-    return H.Resultado.bloqueado(
-        "o router expõe POST /storyboard/cost, /generate e GET /storyboard/job (geração paga das "
-        f"ideias), mas nenhum controle do painel 01 os aciona — botões presentes: {botoes}. "
-        "Sem comando na UI não há como exercitar o caminho pago da ideação nem o modal de custo dele.")
+    na_tela = [b for b in botoes if "crédito" in b.lower() or "gerar via cli" in b.lower()]
+    r = _json(page, ctx, "post", _sb(ctx.pid_cheio, "/cost"),
+              {"model": "nano_banana_2", "kind": "edit", "text": INSTRUCAO, "count": 1})
+    corpo = r.json() if r.ok else {"status": r.status, "detail": (r.json() or {}).get("detail", "")}
+    viva = (r.ok and isinstance(corpo.get("per_image"), (int, float)) and corpo["per_image"] > 0) \
+        or 400 <= r.status < 500
+    res = H.verifica(not na_tela and viva,
+                     f"painel 01 sem comando pago e /storyboard/cost vivo: {corpo}",
+                     f"comandos pagos na tela={na_tela} · /storyboard/cost http={r.status} body={corpo}")
+    return res.esperando(r.status) if not r.ok else res
 
 
 # ======================================================================================
@@ -1148,14 +1156,23 @@ def p04_produto_remover_estado(page, ctx):
                       "storyboard/product/candidates.json, então o painel 04 diz que há escolha onde não há.", ev)
 
 
-@caso("C-STORYBOARD-50", "upscale e geração paga dos ângulos não têm comando na tela")
+@caso("C-STORYBOARD-50", "upscale e geração paga dos ângulos: rotas só por API (decisão AP-21)")
 def p04_upscale(page, ctx):
+    """Decisão do dono do produto (ADH-OS-20260829-37, QA AP-21): `POST /angles/scenes/{cena}/
+    upscale|cost|generate` (e as equivalentes de `product`) ficam como `[extensão]` **só por API** —
+    a aula 011 gera e upscala na UI da Higgsfield, e o painel 04 só marca 'já upscalei estes na UI'.
+    As rotas não voltam para a tela nem são removidas (testes + coleção Postman)."""
     _abrir_cena_angulos(page, ctx, "cena01")
     botoes = page.locator("#scenePanel button, #shotsGallery button").evaluate_all(
         "els => els.map(e => (e.textContent || '').trim()).filter(Boolean)")
-    if any("upscale" in b.lower() and "já upscalei" not in b.lower() for b in botoes):
-        return H.Resultado.falha(f"apareceu comando de upscale na tela: {botoes}")
-    return H.Resultado.bloqueado(
-        "o router expõe POST /angles/scenes/{cena}/upscale, /cost e /generate (aula 011 pelo CLI), mas o "
-        f"painel 04 só oferece o checkbox 'já upscalei estes na UI' — botões visíveis: {botoes}. "
-        "Sem comando na UI não dá para exercitar o upscale 2x nem a geração paga dos ângulos offline.")
+    na_tela = [b for b in botoes if "upscale" in b.lower() and "já upscalei" not in b.lower()]
+    r = _json(page, ctx, "post", _ang(ctx.pid_cheio, "/scenes/cena01/cost"),
+              {"model": "nano_banana_2", "prompts": ["QA: rota só por API"], "count": 1})
+    corpo = r.json() if r.ok else {"status": r.status, "detail": (r.json() or {}).get("detail", "")}
+    viva = (r.ok and isinstance(corpo.get("total"), (int, float)) and corpo["total"] > 0) \
+        or 400 <= r.status < 500
+    res = H.verifica(not na_tela and viva,
+                     f"painel 04 sem comando de upscale/geração e /angles/.../cost vivo: "
+                     f"total={corpo.get('total')}",
+                     f"comandos na tela={na_tela} · /angles/scenes/cena01/cost http={r.status} body={corpo}")
+    return res.esperando(r.status) if not r.ok else res

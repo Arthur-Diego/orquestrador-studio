@@ -435,13 +435,20 @@ def story_vazio(page, ctx):
                       f"botão off={off} chip='{chip}' placeholder ▶={play} story={ {k: story[k] for k in ('clips', 'warning')} }")
 
 
-@caso("C-MUSIC-17", "geração de trilha por CLI (sonilo_music) não tem comando na tela")
+@caso("C-MUSIC-17", "geração de trilha por CLI: rota só por API (decisão AP-21), sem comando na tela")
 def gerar_por_cli(page, ctx):
+    """Decisão do dono do produto (ADH-OS-20260829-37, QA AP-21): `POST /music/generate/cost` e
+    `/music/generate` ficam como `[extensão]` **só por API** — a wave 4 tirou o bloco da tela (a aula
+    013 gera a trilha na UI da Higgsfield e o Studio importa) e as rotas não voltam para a UI nem são
+    removidas (testes + coleção Postman)."""
     botoes = page.locator("#main button").evaluate_all("els => els.map(e => (e.textContent || '').trim())")
+    na_tela = [b for b in botoes if "gerar" in b.lower() and ("cli" in b.lower() or "crédito" in b.lower())]
     custo = H.api(page, ctx, "post", f"{_base(ctx)}/generate/cost",
                   data=json.dumps({"prompt": "qa", "duration": 30, "count": 1}), headers=JSON)
     estado = custo.json() if custo.ok else {"status": custo.status}
-    return H.Resultado.bloqueado(
-        "a etapa 6 não expõe geração por CLI na UI (wave 4 tirou o bloco da tela); as rotas "
-        f"POST /music/generate/cost e /music/generate seguem no backend (cost={estado}). "
-        f"Botões da tela: {botoes}")
+    viva = (custo.ok and isinstance(estado.get("per_track"), (int, float)) and estado["per_track"] > 0) \
+        or 400 <= custo.status < 500
+    res = H.verifica(not na_tela and viva,
+                     f"tela sem comando de geração paga e /music/generate/cost vivo: {estado}",
+                     f"comandos na tela={na_tela} · /music/generate/cost http={custo.status} body={estado}")
+    return res.esperando(custo.status) if not custo.ok else res
