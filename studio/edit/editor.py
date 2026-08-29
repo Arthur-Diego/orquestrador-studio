@@ -309,10 +309,11 @@ def normalize_transition(raw: dict) -> dict | None:
         return None
     known = ("fade", "dissolve", "slide", "zoom", "wipe", "blur", "flash",
              "glitch", "spin", "push", "pull", "mask", "directional")
-    ttype = raw.get("type")
+    # o painel manda o rótulo ("Glitch"); a lista canônica é minúscula — normalizar a caixa
+    ttype = _s(raw.get("type", ""), 40).strip().lower()
     cfg = raw.get("config") if isinstance(raw.get("config"), dict) else {}
-    direction = cfg.get("direction")
-    easing = cfg.get("easing")
+    direction = _s(cfg.get("direction", ""), 20).strip().lower()
+    easing = _s(cfg.get("easing", ""), 20).strip().lower()
     return {
         "id": _clean_id(raw.get("id"), "tr"),
         "from": _clean_id(raw.get("from"), "c"),

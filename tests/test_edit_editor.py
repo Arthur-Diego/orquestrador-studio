@@ -198,6 +198,18 @@ def test_ids_generated_when_missing(tmp_path):
     assert e["tracks"][0]["items"][0]["id"]
 
 
+def test_transition_type_is_case_insensitive(tmp_path):
+    """AP-09: o painel manda o rótulo ("Glitch"); sem normalizar a caixa tudo virava dissolve."""
+    e = ed.normalize_editor(tmp_path, {"transitions": [
+        {"id": "tr1", "from": "c1", "to": "c2", "type": "Glitch"},
+        {"id": "tr2", "from": "c2", "to": "c3", "type": " Wipe ",
+         "config": {"direction": "Right", "easing": "Ease-In"}},
+        {"id": "tr3", "from": "c3", "to": "c4", "type": "inexistente"}]})
+    assert [t["type"] for t in e["transitions"]] == ["glitch", "wipe", "dissolve"]
+    assert e["transitions"][1]["config"]["direction"] == "right"
+    assert e["transitions"][1]["config"]["easing"] == "ease-in"
+
+
 def test_overlay_keeps_shape_and_text(tmp_path):
     """AP-07: elemento do painel Elementos guarda `shape` + `text` — sem isso vira quadrado vazio."""
     e = ed.normalize_editor(tmp_path, {"tracks": [
