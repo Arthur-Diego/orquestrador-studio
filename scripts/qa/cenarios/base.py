@@ -192,6 +192,7 @@ def juncao(page, ctx):
 def mood_source(page, ctx):
     _board_curado(page, ctx)
     _abrir(page, ctx)
+    _passo_situacao(page)   # o seletor vive na junção, que só existe no passo "situação"
     api = H.api(page, ctx, "get", f"/api/projects/{ctx.pid_cheio}/base/mood-sources").json()
     opcoes = page.locator("#moodSource option").evaluate_all(
         "els => els.map(e => ({v: e.value, t: e.textContent.trim()}))")
