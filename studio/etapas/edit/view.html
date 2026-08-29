@@ -49,6 +49,12 @@
   .ved-fallback{display:none}
   .ved .mono{font-family:"IBM Plex Mono",monospace}
   .ved .kick{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--vkick)}
+  /* Rótulo "kick" FORA do root do editor (modal Exportar). Nunca reusar a classe `.ved` aqui:
+     ela é o root `position:fixed;inset:0;z-index:20` e cobriria o modal inteiro. */
+  .ved-kick{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-5)}
+  .modal .ved-pick{border-color:var(--line-2);background:var(--surface);color:var(--ink-3)}
+  .modal .ved-pick:hover{border-color:var(--ctl-hover);color:var(--ink)}
+  .modal .ved-pick.on{border-color:var(--accent);background:var(--accent-soft-2);color:var(--accent)}
 
   /* ---------- HEADER 50px ---------- */
   .ved-top{height:50px;flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--vhead);border-bottom:1px solid var(--vbd)}

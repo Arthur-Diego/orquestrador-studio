@@ -848,9 +848,9 @@ Studio.register("edit", (ctx) => {
     let expRes = RES.find((r) => r[1] == p.width) ? RES.find((r) => r[1] == p.width)[0] : "1080p", expFps = p.fps, expQual = "alta";
     const pills = (arr, cur, cls) => arr.map((v) => `<button class="ved-pick" data-${cls}="${v}" style="flex:1"${v == cur ? " data-on=1" : ""}>${v}</button>`).join("");
     ui.modal({ title: "Exportar vídeo", subtitle: "Renderiza o master com ffmpeg",
-      html: `<div class="ved kick" style="margin-bottom:4px">Resolução</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exRes">${pills(RES.map((r) => r[0]), expRes, "res")}</div>
-        <div class="ved kick" style="margin-bottom:4px">FPS</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exFps">${pills(FPS_CHOICES.map((f) => f + " fps"), expFps + " fps", "fps")}</div>
-        <div class="ved kick" style="margin-bottom:4px">Qualidade</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exQ">${pills(["baixa", "média", "alta"], expQual, "q")}</div>
+      html: `<div class="ved-kick" style="margin-bottom:4px">Resolução</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exRes">${pills(RES.map((r) => r[0]), expRes, "res")}</div>
+        <div class="ved-kick" style="margin-bottom:4px">FPS</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exFps">${pills(FPS_CHOICES.map((f) => f + " fps"), expFps + " fps", "fps")}</div>
+        <div class="ved-kick" style="margin-bottom:4px">Qualidade</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exQ">${pills(["baixa", "média", "alta"], expQual, "q")}</div>
         <div style="font-size:11px;color:#8B93A0">formato MP4 (H.264) · proporção ${p.aspect} · duração ${fmtTC(duration())} · saída ${expRes} · ${expFps}fps · ${expQual}</div>
         <p style="font-size:11px;color:#8B93A0;margin-top:8px">Entram no master.mp4: o backbone da aula 014 + textos, legendas, overlays, efeitos (blur/sharpen/grain) e ajustes de cor. Transições ainda só no preview.</p>`,
       actions: [{ label: "Rough cut", onClick: (m) => { m.close(); startRender("rough", null); } }, { label: "Renderizar", primary: true, onClick: (m) => {

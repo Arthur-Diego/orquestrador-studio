@@ -142,12 +142,6 @@ def _no_ponto(page, seletor: str) -> str:
         seletor)
 
 
-def _clique_dom(page, seletor: str) -> None:
-    """Clique despachado no elemento (contorna overlay) — usado só onde o mouse está bloqueado."""
-    page.locator(seletor).dispatch_event("click")
-    page.wait_for_timeout(200)
-
-
 # ---------------------------------------------------------------- barra superior
 @caso("C-EDIT-01", "editor monta as 5 regiões e as 6 faixas da timeline")
 def layout(page, ctx):
@@ -320,8 +314,8 @@ def render_rough(page, ctx):
     antes = alvo.stat().st_mtime if alvo.exists() else 0
     page.locator("#edExport").click()
     H.modal(page).wait_for()
-    # clique despachado no DOM: o mouse está bloqueado pelo overlay `.ved.kick` (ver C-EDIT-09)
-    _clique_dom(page, ".modal-actions button[data-act='0']")   # Rough cut
+    page.locator(".modal-actions button[data-act='0']").click()   # Rough cut
+    page.wait_for_timeout(200)
     page.wait_for_timeout(500)
     prog = page.locator(".modal .prog-steps").count()
     fechou = H.esperar_modal_sumir(page, 180_000)
@@ -344,10 +338,10 @@ def render_master(page, ctx):
     antes = alvo.stat().st_mtime if alvo.exists() else 0
     page.locator("#edExport").click()
     H.modal(page).wait_for()
-    _clique_dom(page, "#exRes button[data-res='720p']")
-    _clique_dom(page, "#exFps button[data-fps='24 fps']")
-    _clique_dom(page, "#exQ button[data-q='baixa']")
-    _clique_dom(page, ".modal-actions button[data-act='1']")      # Renderizar
+    page.locator("#exRes button[data-res='720p']").click()
+    page.locator("#exFps button[data-fps='24 fps']").click()
+    page.locator("#exQ button[data-q='baixa']").click()
+    page.locator(".modal-actions button[data-act='1']").click()   # Renderizar
     fechou = H.esperar_modal_sumir(page, 180_000)
     page.wait_for_timeout(500)
     jobs = sorted((root / "jobs").glob("edit_render_*.json"), key=lambda p: p.stat().st_mtime)
