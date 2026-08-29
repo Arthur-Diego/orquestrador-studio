@@ -77,6 +77,18 @@ Studio.register("base", (ctx) => {
     renderProvenance();
   }
 
+  // Descarta o texto editado na tela quando o backend traz um texto novo que deve mandar.
+  // Limpar `edits` não basta: o `renderPrompt` seguinte guarda o textarea AINDA na tela (com o
+  // texto velho) de volta em `edits`, e ele venceria o prompt recém-gerado (C-BASE-09). Por isso
+  // o textarea sai do DOM aqui — e, com `chave`, o que não está sendo descartado é preservado.
+  function descartarEdicao(chave) {
+    const ta = $("#basePrompts").querySelector("textarea");
+    if (ta) edits[ta.dataset.k] = ta.value;
+    if (chave) delete edits[chave];
+    else Object.keys(edits).forEach((k) => delete edits[k]);
+    $("#basePrompts").innerHTML = "";
+  }
+
   // base-prompt-provenance: as thumbs do mood que vão ao bot (board escolhido ou mood da campanha).
   function currentMoodThumbs() {
     if (boardSel) return boardImgUrls;
@@ -226,7 +238,7 @@ Studio.register("base", (ctx) => {
     const gen = () => api(url("prompts/generate"), { method: "POST", body: JSON.stringify(body) });
     const aplicar = (e) => {
       toast(`Prompt ${e.source === "claude" ? "escrito pelo bot" : "do template"} (${e.seconds || 0}s)`);
-      Object.keys(edits).forEach((k) => delete edits[k]);   // o texto novo do bot manda
+      descartarEdicao();   // o texto novo do bot manda
       return loadPrompts().then(() => ctx.guide());
     };
     if (!usaBot) {
@@ -506,7 +518,7 @@ Studio.register("base", (ctx) => {
       $("#btnBrand").onclick = async () => {
         try {
           await api(url("brand"), { method: "POST", body: JSON.stringify({ name: $("#brandName").value, description: $("#brandDesc").value }) });
-          delete edits.label;   // a instrução de rótulo é reescrita a partir da marca nova
+          descartarEdicao("label");   // a instrução de rótulo é reescrita a partir da marca nova
           toast("Marca salva"); await loadPrompts(); ctx.guide();
         } catch (err) { toast(err.message); }
       };

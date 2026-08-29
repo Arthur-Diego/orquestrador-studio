@@ -249,6 +249,11 @@ def gerar_prompt(page, ctx):
     _passo_situacao(page)
     antes = len(H.api(page, ctx, "get", f"/api/projects/{ctx.pid_cheio}/base/prompts/history").json())
     page.locator("#promptInstruction").fill("")
+    # Rascunho sujo no card ANTES de gerar: o texto do bot tem de vencer a edição da tela. Sem
+    # isso o caso só pegava o defeito quando a referência ainda não tinha prompt salvo (por isso
+    # passava na rodada isolada e falhava na de integração).
+    sujo = "RASCUNHO QA — deve ser substituído pelo prompt do bot"
+    page.locator("#basePrompts textarea").fill(sujo)
     page.locator("#btnPrompt").click()
     passos = _passos_do_modal(page)
     fechou = H.esperar_modal_sumir(page, 60000)
@@ -257,10 +262,11 @@ def gerar_prompt(page, ctx):
     texto = page.locator("#basePrompts textarea").input_value()
     hist = H.api(page, ctx, "get", f"/api/projects/{ctx.pid_cheio}/base/prompts/history").json()
     ev = H.evidencia(page, ctx, "base-gerar-prompt")
-    return H.verifica(len(passos) >= 2 and fechou and "[QA-FAKE" in texto and len(hist) == antes + 1
-                      and hist[0]["source"] == "claude",
+    return H.verifica(len(passos) >= 2 and fechou and "[QA-FAKE" in texto and sujo not in texto
+                      and len(hist) == antes + 1 and hist[0]["source"] == "claude",
                       f"modal com {len(passos)} passos e prompt do bot (toast='{t}')",
                       f"passos={passos} fechou={fechou} texto='{texto[:70]}' "
+                      f"rascunho ainda na tela={sujo in texto} "
                       f"histórico {antes}→{len(hist)} source={hist[0].get('source') if hist else None}", ev)
 
 
