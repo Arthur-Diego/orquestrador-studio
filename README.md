@@ -2,10 +2,10 @@
 
 Ferramenta local para executar, **etapa por etapa e sem desviar do roteiro**, o método de
 produção de vídeo com IA do curso *"O Orquestrador — Iniciante"* (ABRAhub): referências →
-mood board → imagem base → storyboard → ângulos → animação → trilha → montagem → export →
-publicação → prospecção. Backend FastAPI + frontend estático; sem build, sem banco.
+mood board → imagem base → storyboard (cenas e ângulos) → animação → trilha → montagem →
+export → publicação → prospecção. Backend FastAPI + frontend estático; sem build, sem banco.
 
-**Estado (2026-08-25):** as **11 etapas** do curso estão implementadas como plugins (wave 1 do
+**Estado (2026-08-25):** as **10 etapas** do curso estão implementadas como plugins (wave 1 do
 `/dd-parallel`, 385 testes). Geração de imagem/vídeo continua em "modo UI" (você gera na
 interface da Higgsfield e importa) ou via CLI logado. Plano completo em `docs/plano/`.
 
@@ -58,34 +58,33 @@ referência, com o mood"; "sessão nova sem viés" quando o prompt não entregou
 rótulo pela sua marca (campo `brand`, `[extensão]`, 3 variações); upscale 2x importado e
 conferido → `base/base_final.png` + `base/base.md` com a cadeia situação → rótulo → upscale.
 
-### 4 · Storyboard (aula 010)
-Instruções de edição uma por vez (presets literais da aula, "gerar 4 / gerar 1"), Draw to Edit
-na UI, ideias importadas, 5 cenas em texto → `storyboard/scenes.json` + `storyboard.md`.
+### 4 · Storyboard (aulas 010 + 011; cena do produto, aula 013)
+Duas metades da mesma etapa. **Cenas:** instruções de edição uma por vez (presets literais da
+aula, "gerar 4 / gerar 1"), Draw to Edit na UI, ideias importadas, 5 cenas em texto →
+`storyboard/scenes.json` + `storyboard.md`. **Ângulos por cena:** base → "me traga outro ponto de
+vista…" → importar → escolher e ordenar → upscale; aviso "acerte cores e luz antes do multishot"
+com a paleta → `shots/storyboard.json`.
 
-### 5 · Ângulos por cena (aula 011 + cena do produto, aula 013)
-Por cena: base → "me traga outro ponto de vista…" → importar → escolher e ordenar → upscale;
-aviso "acerte cores e luz antes do multishot" com a paleta → `shots/storyboard.json`.
-
-### 6 · Animação (aula 012)
+### 5 · Animação (aula 012)
 Por shot: prompt simples/elaborado/start-end, 2 takes, "like", nome `videos/cenaNN/shotMM_takeK.mp4`;
 troca de modelo **sugerida** após 3 falhas; corte para preto como fallback → `animate/takes.json`.
 
-### 7 · Trilha (aula 013)
+### 6 · Trilha (aula 013)
 Candidatas por upload/Downloads/histórico ou `sonilo_music` via CLI; escolha "sentindo" no player;
 batidas e impactos detectados (numpy + ffmpeg) → `audio/music.*`, `audio/beats.json`, `license.txt`.
 
-### 8 · Montagem no ritmo (aula 014)
+### 7 · Montagem no ritmo (aula 014)
 Timeline dos takes escolhidos, cortes propostos nos impactos, velocidade com mistura de quadros,
 pretos, offset da música, fade, SFX, último frame para transição colada → `edit/master.mp4`
 (1920×1080/30 fps, H.264/AAC) — tudo por ffmpeg.
 
-### 9 · Export e QA (aulas 007/014)
+### 8 · Export e QA (aulas 007/014)
 `16x9`, `9x16`, `1x1`, thumb e `qa_report.md` técnico (sem juízo estético). Reframe via CLI opcional.
 
-### 10 · Publicar (aula 015)
+### 9 · Publicar (aula 015)
 Registro manual dos posts (rede, URL, feedback); portfólio pronto com **4 vídeos distintos**.
 
-### 11 · Prospecção (aula 001)
+### 10 · Prospecção (aula 001)
 Gate de 4 vídeos; leads; DM com o script literal (sem links, envio humano); teaser de 5–10 s com
 música a partir de um take + trilha; follow-up para a call; `pitch.md` com a tabela de etapas.
 
@@ -94,11 +93,11 @@ música a partir de um take + trilha; follow-up para a call; `pitch.md` com a ta
 ```
 studio/
   app.py              núcleo da API (projetos, catálogo, estáticos) + montagem dos plugins
-  steps.py            catálogo das 11 etapas (ordem, aula); `ready` vem dos plugins
+  steps.py            catálogo das 10 etapas (ordem, aula); `ready` vem dos plugins
   etapas/<id>/        plugin da etapa: META, router.py, view.html, view.js (descoberta automática)
   config.py           caminhos e layout        higgsfield.py  ponte com o CLI (subprocess --json)
   common/             ingest (imagem/vídeo/áudio), JobRegistry, ffmpeg, guide — API transversal das etapas
-  <etapa>/service.py  serviço de cada etapa (refs, mood, base, storyboard, shots, animate, music, edit, export, publish, prospect)
+  <etapa>/service.py  serviço de cada etapa (refs, mood, base, storyboard + angles, animate, music, edit, export, publish, prospect)
   web/                shell da SPA: index.html, style.css, app.js + ui.js/ui.css (Studio.ui: componentes compartilhados)
 tests/                pytest sem rede/navegador (serviços, API, ponte, plugins)
 docs/                 contexto do projeto — ver CLAUDE.md (gitflow, dd, guidelines, adrs, domains, agents, plano)
@@ -108,7 +107,7 @@ projects/             dados dos projetos de vídeo (local, ignorado pelo git)
 **Guia por etapa:** cada tela diz o que a aula manda fazer, o que falta e qual é a próxima ação —
 calculado no backend lendo os artefatos do projeto (`studio/common/guide.py`, hook opcional
 `studio/etapas/<id>/guide.py`). Rotas: `GET|PATCH /api/projects/{pid}` (campos `name, product,
-vibe, aspect_ratio` `[extensão]`, `brand` `[extensão]`), `GET /api/projects/{pid}/guide` (as 11
+vibe, aspect_ratio` `[extensão]`, `brand` `[extensão]`), `GET /api/projects/{pid}/guide` (as 10
 etapas + progresso da campanha), `GET /api/projects/{pid}/guide/{etapa}` e
 `GET /api/higgsfield/status?refresh=1` (cache de 60 s). Contrato para quem implementa etapa:
 `docs/domains/studio/waves/wave-2-api-transversal.md`.
@@ -122,7 +121,7 @@ Variáveis: `STUDIO_PROJECTS`, `STUDIO_STATE`, `STUDIO_DOWNLOADS`, `PORT`.
   `Task-Id` (`OS-NNN` ou `ADH-OS-<data>-<seq>`), promoção `develop → main` por PR.
 - CI: `.github/workflows/ci.yml` (ruff + pytest) e `task-id-check.yml`.
 - Smoke visual fora do CI (ADR-008): `python scripts/smoke_ui.py http://127.0.0.1:8765 <pid> <pasta> [dark] [--timers]`
-  — prints das 11 telas, erros de JS e prova de que nenhum timer sobrevive à troca de tela.
+  — prints das 10 telas, erros de JS e prova de que nenhum timer sobrevive à troca de tela.
 - QA E2E completo fora do CI (skill `qa-studio`, `/qa-studio [telas]`): ambiente isolado com fakes
   de `higgsfield`/`claude` (`make qa-up RUN=x`), seed de campanha inteira (`make qa-seed`), cenários
   Playwright por tela (`make qa-run TELAS="refs mood"`), auditoria de API + newman (`make qa-api`),

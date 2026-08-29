@@ -45,7 +45,7 @@ Todo o contexto deste repositório vive em `docs/`. Não há contexto em `contex
   modo paralelo: `docs/dd-parallel.md`
 - Guidelines: `docs/guidelines/python-development-guidelines.md` (seguir sempre)
 - Domínios (HLD): `docs/domains/<dominio>/hld.md` — ler antes de mexer no domínio.
-  Domínios: `studio` (app/web/plugins), `higgsfield` (ponte com o CLI) e um por etapa: `refs` (1), `mood` (2), `base` (3), `storyboard` (4), `shots` (5), `animate` (6), `music` (7), `edit` (8), `export` (9), `publish` (10), `prospect` (11). Contratos entre etapas: `docs/domains/studio/waves/wave-1.md`
+  Domínios: `studio` (app/web/plugins), `higgsfield` (ponte com o CLI) e um por etapa: `refs` (1), `mood` (2), `base` (3), `storyboard` (4 — cenas **e** ângulos por cena; a documentação dos ângulos fica no domínio `shots`, que não é etapa própria), `animate` (5), `music` (6), `edit` (7), `export` (8), `publish` (9), `prospect` (10). Contratos entre etapas: `docs/domains/studio/waves/wave-1.md`
 - FDDs: `docs/domains/<dominio>/features/` — fonte de verdade de comportamento por etapa;
   nascem sob demanda via `dd-feature`
 - Diagramas: `docs/domains/<dominio>/diagrams/{mermaid,c4}/`
