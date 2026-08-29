@@ -49,6 +49,12 @@
   .ved-fallback{display:none}
   .ved .mono{font-family:"IBM Plex Mono",monospace}
   .ved .kick{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--vkick)}
+  /* Rótulo "kick" FORA do root do editor (modal Exportar). Nunca reusar a classe `.ved` aqui:
+     ela é o root `position:fixed;inset:0;z-index:20` e cobriria o modal inteiro. */
+  .ved-kick{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-5)}
+  .modal .ved-pick{border-color:var(--line-2);background:var(--surface);color:var(--ink-3)}
+  .modal .ved-pick:hover{border-color:var(--ctl-hover);color:var(--ink)}
+  .modal .ved-pick.on{border-color:var(--accent);background:var(--accent-soft-2);color:var(--accent)}
 
   /* ---------- HEADER 50px ---------- */
   .ved-top{height:50px;flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--vhead);border-bottom:1px solid var(--vbd)}
@@ -98,6 +104,8 @@
   .ved-mcard .th{aspect-ratio:16/10;position:relative;display:flex;align-items:center;justify-content:center;color:var(--vtx2);font-size:18px}
   .ved-mcard .th video,.ved-mcard .th img{width:100%;height:100%;object-fit:cover}
   .ved-mcard .th .ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;text-shadow:0 1px 4px #000}
+  .ved-mcard .mv2{position:absolute;right:4px;top:4px;z-index:2;border:1px solid var(--vbd2);background:rgba(8,9,12,.62);color:#fff;border-radius:5px;font-size:8px;letter-spacing:.04em;padding:2px 5px;line-height:1.3}
+  .ved-mcard .mv2:hover{border-color:var(--vac);color:var(--vac)}
   .ved-mcard .cap{padding:5px 7px}
   .ved-mcard .nm{font-size:10.5px;color:var(--vtx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ved-mcard .mt{font-size:9px;color:var(--vtx5)}
@@ -110,7 +118,9 @@
   .ved-row .rmid{flex:1;min-width:0}
   .ved-row .rn{font-size:12px;color:var(--vtx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ved-row .rs{font-size:10px;color:var(--vtx4)}
-  .ved-row .radd{width:24px;height:24px;border-radius:6px;border:1px solid var(--vbd2);background:transparent;color:var(--vac);font-size:14px;flex:none}
+  /* O rótulo manda na largura: "aplicar" estourava a caixa fixa de 24 px e desalinhava os ＋/✕. */
+  .ved-row .radd{min-width:24px;height:24px;padding:0 7px;border-radius:6px;border:1px solid var(--vbd2);background:transparent;color:var(--vac);font-size:11px;line-height:1;flex:none;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+  .ved-row .radd.ic{padding:0;font-size:14px}
   .ved-feature{width:100%;display:flex;align-items:center;gap:7px;justify-content:center;background:var(--vacd);border:1px solid rgba(79,200,217,.4);color:var(--vac);border-radius:8px;padding:9px;font-size:12px;margin-bottom:10px}
 
   .ved-pgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -128,6 +138,14 @@
   .ved-ph-empty{position:absolute;inset:0;background:repeating-linear-gradient(135deg,#0d2a30 0 22px,#0a1418 22px 44px)}
   .ved-cliplabel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.55);color:var(--vtx2);font-size:11px;padding:5px 12px;border-radius:20px;font-family:"IBM Plex Mono",monospace;pointer-events:none}
   .ved-layer{position:absolute;transform-origin:center;will-change:transform;cursor:move;pointer-events:auto}
+  /* Elementos do painel Elementos: as formas geométricas são desenhadas (não são caractere).
+     Medidas em % do palco para acompanhar a proporção/resolução do projeto. */
+  .ved-layer.shape{background:var(--vac);border-radius:4px}
+  .ved-layer.shape-rect{width:28%;height:18%}
+  .ved-layer.shape-circle{width:20%;height:0;padding-bottom:20%;border-radius:50%}
+  .ved-layer.shape-bar{width:72%;height:5%;border-radius:3px}
+  .ved-layer.shape-lower{width:46%;height:13%;border-radius:6px;background:linear-gradient(90deg,var(--vac),rgba(0,0,0,.05))}
+  .ved-layer.shape-bg{width:100%;height:100%;border-radius:0;background:rgba(0,0,0,.55)}
   .ved-black{position:absolute;inset:0;background:#000}
   .ved-bbox{position:absolute;border:1.5px solid var(--vac);pointer-events:none}
   .ved-bbox .h{position:absolute;width:9px;height:9px;background:#fff;border:1.5px solid var(--vac);border-radius:2px;pointer-events:auto}
@@ -136,7 +154,9 @@
   .ved-bbox .h.sw{bottom:-5px;left:-5px;cursor:nesw-resize}.ved-bbox .h.se{bottom:-5px;right:-5px;cursor:nwse-resize}
   .ved-guide{position:absolute;background:var(--vac);opacity:.9;pointer-events:none;z-index:5}
   .ved-guide.v{width:1px;top:0;bottom:0}.ved-guide.h{height:1px;left:0;right:0}
-  .ved-pctl{flex:none;display:flex;align-items:center;gap:10px;padding:10px 16px}
+  /* com a sidebar do studio o centro fica estreito: sem quebrar linha, o ⛶ escorregava para
+     debaixo do painel direito e não recebia mais o clique. */
+  .ved-pctl{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:10px;row-gap:6px;padding:10px 16px}
   .ved-pctl .pb{width:30px;height:30px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--vtx3);font-size:13px;display:inline-flex;align-items:center;justify-content:center}
   .ved-pctl .pb:hover{color:var(--vtx);background:var(--vbd)}
   .ved-pctl .pb.play{width:38px;height:38px;border-radius:50%;background:var(--vac);color:#04222a;box-shadow:0 0 14px var(--vacglow);font-size:14px}
@@ -240,6 +260,6 @@
 
 <!-- Guia da aula 014 (hook puro guide.py): "gelo, ambiência, respiração, impacto", ritmo, dever
      de casa. O editor o abre no modal pelo botão "?". Fidelidade ao curso acessível no editor. -->
-<section id="guide" class="guide"></section>
+<section id="guide" class="guide ved-fallback"></section>
 
 <div class="ved" id="ved"></div>

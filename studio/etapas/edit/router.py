@@ -38,6 +38,9 @@ class BlackReq(BaseModel):
 class MusicReq(BaseModel):
     file: str | None = None
     offset: float = 0.0
+    # [extensão] painel de propriedades da trilha (editor): ausentes = não tocados pelo usuário
+    volume: float | None = None
+    muted: bool | None = None
 
 
 class SfxReq(BaseModel):

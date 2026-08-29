@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import uuid
 from datetime import date, datetime
 from pathlib import Path
 
+from ..common import atomic
 from ..config import PROJECTS_DIR
 from ..refs.service import project_dir
 
@@ -63,12 +63,9 @@ URL_RE = re.compile(r"^https?://\S+$", re.IGNORECASE)
 
 # ---------- escrita atômica ----------
 def _write_atomic(path: Path, text: str) -> Path:
-    """Grava em `.tmp` e renomeia: um erro no meio nunca substitui o arquivo bom."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
-    return path
+    """Grava num temporário ÚNICO e renomeia (`common.atomic`): um erro no meio nunca substitui o
+    arquivo bom, e duas gravações simultâneas não disputam o mesmo `.tmp`."""
+    return atomic.write_text_atomic(path, text)
 
 
 def _save_log(root: Path, posts: list[dict]) -> None:

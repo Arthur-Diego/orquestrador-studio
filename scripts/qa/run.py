@@ -190,14 +190,15 @@ def main(argv: list[str]) -> int:
     nav.fechar()
     resultado["fim"] = datetime.now(timezone.utc).isoformat()
     saida = Path(a.saida) if a.saida else run_dir / "resultados.json"
-    if a.casos and saida.exists():   # revalidação: mescla por id em cima do resultado anterior
+    parcial = bool(a.casos or a.telas or a.so_auditoria)
+    if parcial and saida.exists():   # execução parcial: mescla em cima do resultado anterior da rodada
         antigo = json.loads(saida.read_text())
         ids = {c["id"] for c in resultado["casos"]}
         antigo["casos"] = [c for c in antigo.get("casos", []) if c["id"] not in ids] + resultado["casos"]
         chaves = {(x["tela"], x["tema"], x["viewport"]) for x in resultado["auditorias"]}
         antigo["auditorias"] = [x for x in antigo.get("auditorias", [])
                                 if (x["tela"], x["tema"], x["viewport"]) not in chaves] + resultado["auditorias"]
-        antigo["revalidacoes"] = antigo.get("revalidacoes", []) + [{"quando": resultado["fim"], "casos": sorted(ids)}]
+        antigo["revalidacoes"] = antigo.get("revalidacoes", []) + [{"quando": resultado["fim"], "casos": sorted(ids), "telas": telas}]
         resultado = antigo
     saida.write_text(json.dumps(resultado, ensure_ascii=False, indent=1))
 

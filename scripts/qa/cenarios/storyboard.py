@@ -161,6 +161,15 @@ def _abrir_cena_angulos(page, ctx, sid: str) -> None:
     page.wait_for_timeout(900)
 
 
+def _limpar_selecao_galeria(page) -> None:
+    """Reabrir a cena remarca os frames já escolhidos: desmarca tudo antes de montar uma ordem nova
+    (clicar num card marcado desmarca), para o caso não depender do que ficou salvo no seed."""
+    marcados = page.locator("#shotsGallery .card.sel")
+    for _ in range(marcados.count()):
+        marcados.first.click()
+    page.wait_for_timeout(200)
+
+
 def _mp4s(ctx, pid: str, sid: str) -> list[str]:
     d = ctx.projeto(pid) / "storyboard" / sid / "video"
     return sorted(p.name for p in d.glob("*.mp4")) if d.exists() else []
@@ -944,6 +953,7 @@ def p04_salvar_ordem(page, ctx):
     if cards.count() < 2:
         return H.Resultado.bloqueado(f"cena01 com {cards.count()} candidato(s) — o caso precisa de 2")
     page.locator("#shotsUpscaled").uncheck()
+    _limpar_selecao_galeria(page)
     cards.nth(0).click()
     cards.nth(1).click()
     page.wait_for_timeout(300)
@@ -972,6 +982,7 @@ def p04_upscaled(page, ctx):
     if cards.count() < 2:
         return H.Resultado.bloqueado("cena01 sem candidatos suficientes")
     page.locator("#shotsUpscaled").check()
+    _limpar_selecao_galeria(page)
     cards.nth(0).click()
     cards.nth(1).click()
     page.locator("#btnShotsSave").click()

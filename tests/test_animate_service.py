@@ -534,3 +534,48 @@ def test_cost_sends_the_same_params_as_generate(svc, project, studio_env, monkey
     root = _root(studio_env, project)
     entry = {"image": "storyboard/cena01/shot01_final.png", "prompt": "walk", "duration": 10, "start_end": None}
     assert seen == svc.build_params(entry, "kling3_0", root=root)
+
+
+# ---------- concorrência em animate/takes.json ----------
+def test_concurrent_writes_never_fail_and_never_lose_updates(svc, studio_env, project):
+    """A tela dispara GET /shots (load_plan, que grava o plano mesclado) e PUT /shots/... quase
+    juntos. Com temporário de nome fixo o `os.replace` estourava FileNotFoundError (404 no router)
+    e, sem lock, o read-modify-write de um perdia a atualização do outro."""
+    svc.load_plan(project)
+    alvos = [("cena01", "shot01"), ("cena01", "shot02"), ("cena02", "shot03")]
+    rodadas = 15
+    erros: list[str] = []
+    largada = threading.Event()
+
+    def escreve(scene, shot):
+        largada.wait(5)
+        try:
+            for n in range(rodadas):
+                svc.update_shot(project, scene, shot, prompt=f"QA {scene}/{shot} {n}")
+        except Exception as e:
+            erros.append(f"escrita {scene}/{shot}: {e!r}")
+
+    def recarrega():
+        largada.wait(5)
+        try:
+            for _ in range(rodadas):
+                svc.load_plan(project)
+        except Exception as e:
+            erros.append(f"leitura: {e!r}")
+
+    threads = [threading.Thread(target=escreve, args=alvo) for alvo in alvos]
+    threads += [threading.Thread(target=recarrega) for _ in alvos]
+    for t in threads:
+        t.start()
+    largada.set()
+    for t in threads:
+        t.join(30)
+
+    assert not erros, f"escrita concorrente falhou: {erros[:3]}"
+    root = _root(studio_env, project)
+    data = json.loads((root / "animate" / "takes.json").read_text())
+    prompts = {(s["scene"], s["shot"]): s["prompt"] for s in data["shots"]}
+    assert prompts == {alvo: f"QA {alvo[0]}/{alvo[1]} {rodadas - 1}" for alvo in alvos}, \
+        "read-modify-write sem lock perdeu a atualização de algum shot"
+    sobras = [f.name for f in (root / "animate").iterdir() if f.name.endswith(".tmp")]
+    assert not sobras, f"temporários de escrita deixados para trás: {sobras}"

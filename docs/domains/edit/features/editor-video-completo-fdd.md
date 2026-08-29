@@ -112,7 +112,7 @@ Rotas sob `/api/projects/{pid}/edit/`. **Todas retrocompatíveis** — campos no
   ],
   "transitions": [ { "id":"tr_1","from":"c_001","to":"c_002","type":"dissolve","duration":0.5,"config":{"direction":"left","easing":"ease"} } ],
   "markers":    [ { "id":"mk_1","at":1.2,"name":"Hook" } ],
-  "ui":         { "zoom": 40, "snap": true }
+  "ui":         { "zoom": 1, "snap": true }
 }
 ```
 
@@ -120,6 +120,10 @@ Rotas sob `/api/projects/{pid}/edit/`. **Todas retrocompatíveis** — campos no
 - `version` inteiro (default 1). `project.width/height` em [16, 8192]; `fps` ∈ {24,25,30,50,60} (clamp ao mais próximo); `aspect` ∈ `{"16:9","9:16","1:1","4:5","4:3","21:9","custom"}`.
 - `tracks[].type` ∈ `{"video","overlay","text","caption","audio","music","sfx"}`; `height` em [28, 200]; `name` string ≤ 80; `locked/visible/muted` bool.
 - Item: `id` string ≤ 64 (gerado se ausente); `start ≥ 0`; `end ≥ start` quando presente; strings de texto ≤ 5000; `opacity/volume` em [0,1]; `rotation` em [-360,360]; `gain` em [-40,12]; `duration` de transição em [0,3]. Valores fora da faixa são **clampados** (autosave nunca falha por um slider); tipos irrecuperáveis → o item é descartado com contagem preservada em log (não derruba o save).
+- `clip_fx[cid]`: `transform`/`effects`/`filters` sempre; `audio` (aba Áudio do clipe: `volume` em [0,2] — o slider vai a 150% —, `muted`, `fadeIn`/`fadeOut` em [0,30], `normalize`/`enhance`/`denoise` bool) e `presetCss` (CSS do preset, ≤ 200) só quando o frontend os grava. `filters.preset` (id do preset do painel Filtros, string ≤ 40) é preservado junto dos sliders numéricos. `vfx` (aba Vídeo do clipe: dict de bools nas chaves `crop`/`chroma`/`stabilize`/`removebg`/`freeze`/`reverse`, chave desconhecida descartada) e `radius` (border radius do quadro, inteiro em [0, 200]) também sobrevivem ao round-trip só quando o frontend os grava.
+- Fora do bloco `editor`, no backbone: `music.volume` (em [0,2]) e `music.muted` (bool) são **opcionais** (`[extensão]`, painel Áudio da trilha), validados em `service.validate_timeline` e presentes no round-trip só quando enviados — timeline da aula 014 continua `{"file","offset"}`.
+- Item de `overlay`: além de `src`/`clip`/`mediaId`, preserva `shape` (id da forma do painel Elementos — `rect`, `circle`, `arrow`, `bar`, `ice`, `bolt`, `bg`, `lower`; string ≤ 16, glifos antigos continuam aceitos) e `text` (rótulo do elemento na timeline, ≤ 5000) quando presentes. No preview, `rect`/`circle`/`bar`/`lower`/`bg` são desenhados em CSS (`.ved-layer.shape-<id>`); `arrow`/`ice`/`bolt` seguem como glifo.
+- `ui.zoom` é o **fator** de zoom da timeline em [0.25, 4] (default `1` = 100%; o px/s efetivo é do frontend, `PPS_BASE × zoom`) e `ui.snap` é bool. Valor acima de 4 é resquício do formato antigo (px/s) e volta ao default.
 - **Segurança:** todo `file`/`src` passa por checagem de path traversal (reusa a regra de `service._resolve` — dentro de `projects/<pid>`); caminho que escapa → `ValueError` (422). Existência **não** é exigida (mídia pode ser referência relativa já garantida pelo frontend), só a segurança do caminho.
 - Limites: ≤ 40 tracks, ≤ 4000 itens no total, ≤ 500 transitions, ≤ 500 markers (proteção de tamanho; excedente truncado com aviso).
 

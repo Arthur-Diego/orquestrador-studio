@@ -53,7 +53,7 @@ Studio.register("base", (ctx) => {
   function promptCard(label, text, key) {
     return `<div class="prompt"><div class="row"><span class="eyebrow">${ui.esc(label)}</span>
       <button type="button" class="link copy" data-k="${ui.esc(key)}">Copiar</button><span class="ok"></span></div>
-      <textarea data-k="${ui.esc(key)}">${ui.esc(text)}</textarea></div>`;
+      <textarea data-k="${ui.esc(key)}" aria-label="${ui.esc(label)}">${ui.esc(text)}</textarea></div>`;
   }
 
   // Um card só, de largura total: o da referência selecionada. Quando o passo ativo é "rótulo"
@@ -75,6 +75,18 @@ Studio.register("base", (ctx) => {
     ui.autosize(el.querySelectorAll("textarea"));
     renderJunction();
     renderProvenance();
+  }
+
+  // Descarta o texto editado na tela quando o backend traz um texto novo que deve mandar.
+  // Limpar `edits` não basta: o `renderPrompt` seguinte guarda o textarea AINDA na tela (com o
+  // texto velho) de volta em `edits`, e ele venceria o prompt recém-gerado (C-BASE-09). Por isso
+  // o textarea sai do DOM aqui — e, com `chave`, o que não está sendo descartado é preservado.
+  function descartarEdicao(chave) {
+    const ta = $("#basePrompts").querySelector("textarea");
+    if (ta) edits[ta.dataset.k] = ta.value;
+    if (chave) delete edits[chave];
+    else Object.keys(edits).forEach((k) => delete edits[k]);
+    $("#basePrompts").innerHTML = "";
   }
 
   // base-prompt-provenance: as thumbs do mood que vão ao bot (board escolhido ou mood da campanha).
@@ -226,7 +238,7 @@ Studio.register("base", (ctx) => {
     const gen = () => api(url("prompts/generate"), { method: "POST", body: JSON.stringify(body) });
     const aplicar = (e) => {
       toast(`Prompt ${e.source === "claude" ? "escrito pelo bot" : "do template"} (${e.seconds || 0}s)`);
-      Object.keys(edits).forEach((k) => delete edits[k]);   // o texto novo do bot manda
+      descartarEdicao();   // o texto novo do bot manda
       return loadPrompts().then(() => ctx.guide());
     };
     if (!usaBot) {
@@ -293,13 +305,23 @@ Studio.register("base", (ctx) => {
     if (sel && !cands.some((c) => c.id === sel)) sel = null;
     if (!stepTouched) {
       const proximo = CHAIN.find(([k]) => !chain[k]);
-      step = proximo ? proximo[0] : "upscale";
+      const novo = proximo ? proximo[0] : "upscale";
+      // O card do painel 01 LÊ `step`: mudar o passo sem repintá-lo deixava stepper e card
+      // discordando ao abrir a etapa (C-BASE-33). Sem referência o painel mostra o gate da
+      // etapa 1 (`loadPrompts` falhou) — aí não se repinta por cima dele.
+      if (novo !== step) { step = novo; if (refs.length) renderPrompt(); }
     }
     render();
   }
 
-  function render() {
+  // Só a marcação da candidata: classe `.sel` no card + gate do botão. Sem reescrever o innerHTML
+  // da galeria, para o `dblclick` continuar achando o card do 1º clique.
+  function marcarSelecao() {
     $("#btnBaseSelect").disabled = !sel;
+    $("#baseGallery").querySelectorAll(".card").forEach((c) => c.classList.toggle("sel", c.dataset.id === sel));
+  }
+
+  function render() {
     renderChain();
     updateCliButton();
     // Sem filtro e sem contador (auditoria #31): a galeria mostra tudo; vazia, não desenha nada.
@@ -311,6 +333,7 @@ Studio.register("base", (ctx) => {
       sel: sel === c.id,
       title: c.prompt || c.name || "",
     })).join("");
+    marcarSelecao();
     renderFinalCard();
   }
 
@@ -495,7 +518,7 @@ Studio.register("base", (ctx) => {
       $("#btnBrand").onclick = async () => {
         try {
           await api(url("brand"), { method: "POST", body: JSON.stringify({ name: $("#brandName").value, description: $("#brandDesc").value }) });
-          delete edits.label;   // a instrução de rótulo é reescrita a partir da marca nova
+          descartarEdicao("label");   // a instrução de rótulo é reescrita a partir da marca nova
           toast("Marca salva"); await loadPrompts(); ctx.guide();
         } catch (err) { toast(err.message); }
       };
@@ -522,9 +545,13 @@ Studio.register("base", (ctx) => {
             kind: step, ref_id: refId || null }) }), before);
         } catch (err) { toast(err.message); }
       };
+      // Marcar/desmarcar só troca a classe do card (como a etapa 1 faz em #gallery): re-renderizar
+      // a galeria no 1º clique destruía o card antes do `dblclick`, que caía no container e não
+      // achava `.card` — a imagem nunca abria (C-BASE-27).
       $("#baseGallery").addEventListener("click", (e) => {
         const card = e.target.closest(".card"); if (!card) return;
-        sel = sel === card.dataset.id ? null : card.dataset.id; render();
+        sel = sel === card.dataset.id ? null : card.dataset.id;
+        marcarSelecao();
       });
       $("#baseGallery").addEventListener("dblclick", (e) => {
         const card = e.target.closest(".card"); if (!card) return;
@@ -542,7 +569,10 @@ Studio.register("base", (ctx) => {
     },
     async onProject() {
       if (!ctx.pid()) return;
-      sel = null; stepTouched = false; boardSel = null;
+      // A instância da etapa sobrevive à troca de campanha: zere o estado do closure aqui, senão
+      // o passo ativo e o texto editado da campanha anterior vazam para a nova.
+      sel = null; stepTouched = false; boardSel = null; step = "situation";
+      Object.keys(edits).forEach((k) => delete edits[k]);
       loadBrand();
       loadMoodSources();
       await loadPrompts();

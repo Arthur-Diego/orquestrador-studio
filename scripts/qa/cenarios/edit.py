@@ -142,12 +142,6 @@ def _no_ponto(page, seletor: str) -> str:
         seletor)
 
 
-def _clique_dom(page, seletor: str) -> None:
-    """Clique despachado no elemento (contorna overlay) — usado só onde o mouse está bloqueado."""
-    page.locator(seletor).dispatch_event("click")
-    page.wait_for_timeout(200)
-
-
 # ---------------------------------------------------------------- barra superior
 @caso("C-EDIT-01", "editor monta as 5 regiões e as 6 faixas da timeline")
 def layout(page, ctx):
@@ -320,8 +314,8 @@ def render_rough(page, ctx):
     antes = alvo.stat().st_mtime if alvo.exists() else 0
     page.locator("#edExport").click()
     H.modal(page).wait_for()
-    # clique despachado no DOM: o mouse está bloqueado pelo overlay `.ved.kick` (ver C-EDIT-09)
-    _clique_dom(page, ".modal-actions button[data-act='0']")   # Rough cut
+    page.locator(".modal-actions button[data-act='0']").click()   # Rough cut
+    page.wait_for_timeout(200)
     page.wait_for_timeout(500)
     prog = page.locator(".modal .prog-steps").count()
     fechou = H.esperar_modal_sumir(page, 180_000)
@@ -344,10 +338,10 @@ def render_master(page, ctx):
     antes = alvo.stat().st_mtime if alvo.exists() else 0
     page.locator("#edExport").click()
     H.modal(page).wait_for()
-    _clique_dom(page, "#exRes button[data-res='720p']")
-    _clique_dom(page, "#exFps button[data-fps='24 fps']")
-    _clique_dom(page, "#exQ button[data-q='baixa']")
-    _clique_dom(page, ".modal-actions button[data-act='1']")      # Renderizar
+    page.locator("#exRes button[data-res='720p']").click()
+    page.locator("#exFps button[data-fps='24 fps']").click()
+    page.locator("#exQ button[data-q='baixa']").click()
+    page.locator(".modal-actions button[data-act='1']").click()   # Renderizar
     fechou = H.esperar_modal_sumir(page, 180_000)
     page.wait_for_timeout(500)
     jobs = sorted((root / "jobs").glob("edit_render_*.json"), key=lambda p: p.stat().st_mtime)
@@ -469,14 +463,29 @@ def legenda_gerar(page, ctx):
 
 @caso("C-EDIT-19", "painel Legendas oferece adicionar legenda manual (o toast do #capGen manda usar)")
 def legenda_add_manual(page, ctx):
-    _painel(page, "captions")
-    painel = page.locator("#edPanel")
-    botoes = painel.locator("button").all_text_contents()
-    add = painel.locator("button:not(#capGen):not([data-del])").count()
-    ev = H.evidencia(page, ctx, "C-EDIT-19-legenda-add", full_page=False)
-    return H.verifica(add > 0, f"{add} botão(ões) de adicionar legenda",
-                      "painel Legendas só tem '✨ Gerar legendas da narração' (que avisa 'Use + legenda "
-                      f"manual') e os ✕ dos itens — não há como criar legenda manual. botões={botoes}", ev)
+    orig = _tl_api(page, ctx)
+    try:
+        _painel(page, "captions")
+        painel = page.locator("#edPanel")
+        botoes = painel.locator("button").all_text_contents()
+        add = painel.locator("button:not(#capGen):not([data-del])")
+        if not add.count():
+            ev = H.evidencia(page, ctx, "C-EDIT-19-legenda-add", full_page=False)
+            return H.verifica(False, "",
+                              "painel Legendas só tem '✨ Gerar legendas da narração' (que avisa 'Use + "
+                              f"legenda manual') e os ✕ dos itens — não há como criar legenda manual. "
+                              f"botões={botoes}", ev)
+        add.first.click()
+        ok, tl = _esperar_disco(page, ctx, lambda x: len(_track(x, "t_cap").get("items") or []) == 1)
+        it = (_track(tl, "t_cap").get("items") or [{}])[0]
+        na_timeline = page.locator(".ved-lane[data-tid='t_cap'] .ved-clip[data-uid]").count()
+        no_preview = page.locator("#edStage .ved-layer.caption").count()
+        ev = H.evidencia(page, ctx, "C-EDIT-19-legenda-add", full_page=False)
+        return H.verifica(ok and na_timeline == 1 and no_preview == 1 and bool(it.get("text")),
+                          f"legenda manual '{it.get('text')}' criada na faixa LEGENDAS",
+                          f"botões={botoes}; item no disco={it} timeline={na_timeline} preview={no_preview}", ev)
+    finally:
+        _restaurar(page, ctx, orig)
 
 
 @caso("C-EDIT-20", "painel Legendas lista o item da faixa e o ✕ apaga")
@@ -487,7 +496,7 @@ def legenda_delete(page, ctx):
         semente["editor"] = {"version": 1, "project": {"width": 1920, "height": 1080, "fps": 30, "aspect": "16:9"},
                              "tracks": [{"id": "t_cap", "type": "caption", "name": "LEGENDAS", "height": 30,
                                          "items": [{"id": "cp_qa", "start": 0.0, "end": 1.0, "text": "legenda QA"}]}],
-                             "clip_fx": {}, "transitions": [], "markers": [], "ui": {"zoom": 40, "snap": True}}
+                             "clip_fx": {}, "transitions": [], "markers": [], "ui": {"zoom": 1, "snap": True}}
         H.api(page, ctx, "put", f"/api/projects/{ctx.pid_cheio}/edit/timeline",
               data=json.dumps(semente), headers=JSON)
         page.reload()
@@ -1003,11 +1012,11 @@ def ripple(page, ctx):
         ok, tl = _esperar_disco(page, ctx, lambda x: len(x["clips"]) == 1)
         _sel_clipe(page, 0)
         page.locator("#tRipple").click()
+        aviso = H.esperar_toast(page, "ao menos um clipe")
         page.wait_for_timeout(1500)
         final = _tl_disco(ctx)
-        aviso = H.toast(page)
         ev = H.evidencia(page, ctx, "C-EDIT-43-ripple", full_page=False)
-        return H.verifica(ok and len(final.get("clips", [])) >= 1,
+        return H.verifica(ok and bool(aviso) and len(final.get("clips", [])) >= 1,
                           f"ripple removeu 1 clipe e parou em {len(final.get('clips', []))}",
                           f"1º ripple deixou {len(tl['clips'])} clipe(s); 2º ripple deixou "
                           f"{len(final.get('clips', []))} (esperado ≥1, como no #tDel) toast='{aviso}'", ev)
@@ -1177,3 +1186,172 @@ def persistencia(page, ctx):
                           f"GET itens={itens} DOM texto={texto_dom} markers={markers_dom}", ev)
     finally:
         _restaurar(page, ctx, orig)
+
+
+# ---------------------------------------------------------------- áudio do preview
+def _semente_longa(page, ctx, sfx=None) -> None:
+    """Alonga os clipes para 2 s cada (timeline de ~4 s) — janela confortável para ouvir o áudio."""
+    nova = json.loads(json.dumps(_tl_api(page, ctx)))
+    for c in nova["clips"]:
+        c["in"], c["out"] = 0.0, 2.0
+    if sfx is not None:
+        nova["sfx"] = sfx
+    H.api(page, ctx, "put", f"/api/projects/{ctx.pid_cheio}/edit/timeline",
+          data=json.dumps(nova), headers=JSON)
+    page.reload()
+    H.esperar_tela(page)
+
+
+def _tocar(page) -> None:
+    if (page.locator("#pcPlay").text_content() or "").strip() != "❚❚":
+        page.locator("#pcPlay").click()
+
+
+def _parar(page) -> None:
+    if (page.locator("#pcPlay").text_content() or "").strip() == "❚❚":
+        page.locator("#pcPlay").click()
+
+
+@caso("C-EDIT-52", "trilha do projeto toca no preview (<audio> no palco, sai do pausado e anda)")
+def musica_toca(page, ctx):
+    orig = _tl_api(page, ctx)
+    if not (orig.get("music") or {}).get("file"):
+        return H.Resultado.bloqueado("campanha sem trilha escolhida na etapa 6 — nada para tocar")
+    try:
+        _semente_longa(page, ctx)
+        estado = ("() => { const a = document.getElementById('edMusic'); return {existe: !!a,"
+                  " no_palco: !!(a && a.parentElement && a.parentElement.id === 'edStage'),"
+                  " paused: a ? a.paused : null, t: a ? +a.currentTime.toFixed(3) : null} }")
+        montado = page.evaluate(estado)
+        page.locator("#pcStart").click()
+        page.wait_for_timeout(150)
+        _tocar(page)
+        tocou = True
+        try:
+            page.wait_for_function(
+                "() => { const a = document.getElementById('edMusic');"
+                " return !!a && !a.paused && a.currentTime > 0.05 }", timeout=6000)
+        except Exception:  # noqa: BLE001 - trilha muda é o achado do caso
+            tocou = False
+        durante = page.evaluate(estado)
+        _parar(page)
+        ev = H.evidencia(page, ctx, "C-EDIT-52-musica-toca", full_page=False)
+        return H.verifica(montado["existe"] and montado["no_palco"] and tocou,
+                          f"<audio id=edMusic> no palco; durante o play {durante}",
+                          f"ao montar a tela={montado}; durante o play={durante} — o elemento da trilha "
+                          "é descartado pelo re-render do palco e `syncMusic` força currentTime enquanto "
+                          "o arquivo carrega, então a música nunca sai do zero", ev)
+    finally:
+        _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-53", "SFX ganha <audio> próprio e dispara quando o playhead cruza o seu `at`")
+def sfx_toca(page, ctx):
+    orig = _tl_api(page, ctx)
+    fonte = (orig.get("music") or {}).get("file")
+    if not fonte:
+        return H.Resultado.bloqueado("sem arquivo de áudio no projeto para usar como SFX")
+    try:
+        _semente_longa(page, ctx, sfx=[{"file": fonte, "at": 0.8, "gain": -6}])
+        estado = ("() => { const a = document.querySelector('#edStage audio[data-sfx]');"
+                  " return {elementos: document.querySelectorAll('#edStage audio[data-sfx]').length,"
+                  " paused: a ? a.paused : null, t: a ? +a.currentTime.toFixed(3) : null,"
+                  " vol: a ? +a.volume.toFixed(3) : null} }")
+        montado = page.evaluate(estado)
+        page.locator("#pcStart").click()
+        page.wait_for_timeout(150)
+        antes = page.evaluate(estado)
+        _tocar(page)
+        disparou = True
+        try:
+            page.wait_for_function(
+                "() => { const a = document.querySelector('#edStage audio[data-sfx]');"
+                " return !!a && a.currentTime > 0 }", timeout=8000)
+        except Exception:  # noqa: BLE001 - SFX mudo é o achado do caso
+            disparou = False
+        durante = page.evaluate(estado)
+        _parar(page)
+        ev = H.evidencia(page, ctx, "C-EDIT-53-sfx-toca", full_page=False)
+        # ganho -6 dB ≈ 0.501 do volume global (80%) → ~0.40
+        ganho_ok = durante["vol"] is not None and abs(durante["vol"] - 0.8 * 0.501) < 0.05
+        return H.verifica(montado["elementos"] == 1 and antes["paused"] is True and disparou and ganho_ok,
+                          f"1 <audio data-sfx> no palco; ao cruzar 0.8 s {durante}",
+                          f"ao montar={montado} antes do play={antes} durante={durante} — o editor não "
+                          "cria elemento de áudio para `timeline.sfx`, então os efeitos nunca soam", ev)
+    finally:
+        _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-54", "elemento do painel guarda o id da forma e o preview desenha a forma (não um caractere)")
+def elemento_forma(page, ctx):
+    orig = _tl_api(page, ctx)
+    try:
+        _painel(page, "elements")
+        page.locator("#edPanel .ved-row[data-el='circle']").click()
+        ok, _ = _esperar_disco(page, ctx, lambda x: len(_track(x, "v2").get("items") or []) == 1)
+        page.reload()
+        H.esperar_tela(page)
+        tl = _tl_api(page, ctx)
+        it = (_track(tl, "v2").get("items") or [{}])[0]
+        camada = page.locator("#edStage .ved-layer.overlay")
+        classes = (camada.first.get_attribute("class") or "") if camada.count() else ""
+        texto = (camada.first.text_content() or "").strip() if camada.count() else ""
+        caixa = camada.first.bounding_box() if camada.count() else None
+        ev = H.evidencia(page, ctx, "C-EDIT-54-elemento-forma", full_page=False)
+        desenhou = "shape-circle" in classes and not texto and bool(caixa) and caixa["width"] > 8
+        return H.verifica(ok and it.get("shape") == "circle" and desenhou,
+                          f"shape='{it.get('shape')}' classes='{classes}' caixa={caixa}",
+                          f"item no disco={it} (esperado shape='circle'); camada no preview classes="
+                          f"'{classes}' texto='{texto}' caixa={caixa} — o painel grava o glifo em vez do "
+                          "id da forma e o preview escreve o caractere no lugar de desenhar a forma", ev)
+    finally:
+        _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-55", "vídeo do painel Mídia vai para a faixa VÍDEO 2 (overlay com src de vídeo)")
+def video_na_v2(page, ctx):
+    orig = _tl_api(page, ctx)
+    try:
+        _painel(page, "media")
+        botao = page.locator("#mList .ved-mcard[data-cid] .mv2")
+        if not botao.count():
+            return H.Resultado.falha("nenhum card de vídeo do painel Mídia oferece enviar para VÍDEO 2 "
+                                     "— `addMediaItem` manda todo vídeo para o backbone (VÍDEO 1)")
+        botao.first.click()
+        ok, tl = _esperar_disco(page, ctx, lambda x: len(_track(x, "v2").get("items") or []) == 1)
+        it = (_track(tl, "v2").get("items") or [{}])[0]
+        na_timeline = page.locator(".ved-lane[data-tid='v2'] .ved-clip[data-uid]").count()
+        no_preview = page.locator("#edStage .ved-layer.overlay video").count()
+        ev = H.evidencia(page, ctx, "C-EDIT-55-video-v2", full_page=False)
+        return H.verifica(ok and str(it.get("src", "")).endswith(".mp4") and na_timeline == 1
+                          and no_preview == 1 and len(tl.get("clips") or []) == len(orig["clips"]),
+                          f"overlay de vídeo na v2: src={it.get('src')} ({it.get('start')}→{it.get('end')})",
+                          f"item no disco={it}; faixa v2 na timeline={na_timeline} <video> no preview="
+                          f"{no_preview}; clipes do backbone={len(tl.get('clips') or [])} "
+                          f"(esperado {len(orig['clips'])}, o vídeo não pode virar clipe do VÍDEO 1)", ev)
+    finally:
+        _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-56", "botão de ação das linhas dos painéis cabe o rótulo e fica alinhado à direita")
+def radd_cabe(page, ctx):
+    medir = """() => [...document.querySelectorAll('#edPanel .ved-row')].slice(0, 3).map((r) => {
+        const b = r.querySelector('.radd'); if (!b) return null;
+        const rb = b.getBoundingClientRect(), rr = r.getBoundingClientRect();
+        return {texto: (b.textContent || '').trim(), scroll: b.scrollWidth, client: b.clientWidth,
+                estoura: b.scrollWidth > b.clientWidth + 1,
+                dentro: rb.right <= rr.right + 1 && rb.left >= rr.left - 1,
+                folga: +(rr.right - rb.right).toFixed(1)}; }).filter(Boolean)"""
+    _painel(page, "effects")
+    texto = page.evaluate(medir)          # rótulo textual ("aplicar")
+    _painel(page, "elements")
+    glifo = page.evaluate(medir)          # glifo ("＋")
+    ev = H.evidencia(page, ctx, "C-EDIT-56-radd", full_page=False)
+    linhas = texto + glifo
+    folgas = [x["folga"] for x in linhas]
+    ok = (bool(texto) and bool(glifo)
+          and all(not x["estoura"] and x["dentro"] for x in linhas)
+          and max(folgas) - min(folgas) < 1.5)          # todos alinhados na mesma margem direita
+    return H.verifica(ok, f"aplicar={texto[0] if texto else None} ＋={glifo[0] if glifo else None}",
+                      f"painel Efeitos={texto}; painel Elementos={glifo} — `.ved-row .radd` tem largura "
+                      "fixa de 24 px: o rótulo 'aplicar' estoura a caixa e os ＋/✕ desalinham", ev)

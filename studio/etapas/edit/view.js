@@ -38,6 +38,9 @@ Studio.register("edit", (ctx) => {
   const EFFECTS = ["Blur", "Sharpen", "Glow", "Vignette", "Grain", "Noise", "Shake", "Chromatic", "Glitch", "Pixelate", "RGB Split", "Motion Blur", "Zoom", "Lens"];
   const FILTERS = [["cinetico", "Cinético", "contrast(1.1) saturate(1.15)"], ["frost", "Frost", "hue-rotate(-10deg) brightness(1.05) saturate(1.1)"], ["neon", "Neon", "saturate(1.6) contrast(1.1)"], ["mono", "Mono", "grayscale(1) contrast(1.1)"], ["warm", "Warm", "sepia(.25) saturate(1.2)"], ["cool", "Cool", "hue-rotate(-14deg) saturate(1.1)"], ["vivid", "Vivid", "saturate(1.5) contrast(1.08)"], ["fade", "Fade", "contrast(.9) brightness(1.08) saturate(.85)"]];
   const ELEMENTS = [["rect", "Retângulo", "▭"], ["circle", "Círculo", "●"], ["arrow", "Seta", "➜"], ["bar", "Barra inferior", "▬"], ["ice", "Sticker gelo", "❄"], ["bolt", "Ícone raio", "⚡"], ["bg", "Background", "▩"], ["lower", "Lower third", "▤"]];
+  // formas do painel Elementos desenhadas em CSS no preview (as demais continuam glifo)
+  const SHAPES_CSS = ["rect", "circle", "bar", "lower", "bg"];
+  const GLIFO = Object.fromEntries(ELEMENTS.map(([id, , ic]) => [id, ic]));
   const TEXT_PRESETS = [["title", "Título", "display 64px", { size: 64, weight: 800 }], ["subtitle", "Subtítulo", "medium 34px", { size: 34, weight: 600 }], ["body", "Texto simples", "body 22px", { size: 22, weight: 400 }], ["headline", "Headline", "bold 48px", { size: 48, weight: 800, uppercase: true }], ["lower", "Lower third", "nome + cargo", { size: 30, weight: 700, align: "left" }], ["cta", "CTA", "botão", { size: 34, weight: 800, bg: "#4FC8D9" }], ["custom", "Customizado", "em branco", { size: 40, weight: 500 }]];
   const ADJ = [["exposure", "Exposição"], ["brightness", "Brilho"], ["contrast", "Contraste"], ["saturation", "Saturação"], ["temperature", "Temperatura"], ["hue", "Matiz"], ["highlights", "Highlights"], ["shadows", "Shadows"], ["sharpen", "Nitidez"], ["vignette", "Vinheta"]];
   // ordem fixa das 6 tracks (topo→base) e a track do editor (não-backbone) por tipo
@@ -152,36 +155,89 @@ Studio.register("edit", (ctx) => {
 
   // ------------------------------------------------------------ PLAYBACK
   const videoPool = new Map();
+  const sfxPool = new Map();          // file → <audio> do SFX (um por arquivo)
+  let musicAudio = null;              // <audio id="edMusic"> — guardado aqui porque o re-render
+                                      // do palco descarta o elemento e a trilha ficava muda
   function videoFor(file) {
     if (!file) return null;
     if (videoPool.has(file)) return videoPool.get(file);
     const v = document.createElement("video");
     v.preload = "metadata"; v.muted = true; v.playsInline = true; v.src = ctx.files(file); v.style.display = "none";
     v.addEventListener("error", () => v.dataset.err = "1");
-    videoPool.set(file, v); const stage = document.getElementById("edStage"); if (stage) stage.appendChild(v);
+    videoPool.set(file, v); attachPool();
     return v;
   }
+  /** `renderRoot` recria o innerHTML do editor: os <video>/<audio> do pool ficam órfãos e o
+   *  preview zera (e a trilha emudece). Reancorá-los no palco a cada render. */
+  function attachPool() {
+    const stage = document.getElementById("edStage"); if (!stage) return;
+    videoPool.forEach((v) => { if (v.parentNode !== stage) stage.appendChild(v); });
+    sfxPool.forEach((a) => { if (a.parentNode !== stage) stage.appendChild(a); });
+    if (musicAudio && musicAudio.parentNode !== stage) stage.appendChild(musicAudio);
+  }
+  /** Cria/atualiza os elementos de áudio da timeline (trilha + um por SFX) no palco. */
+  function mountAudio() {
+    if (!St.timeline || !document.getElementById("edStage")) return;
+    musicEl();
+    const files = new Set((St.timeline.sfx || []).map((s) => s.file).filter(Boolean));
+    sfxPool.forEach((a, f) => { if (!files.has(f)) { a.pause(); a.remove(); sfxPool.delete(f); } });
+    files.forEach((f) => sfxEl(f));
+    attachPool();
+  }
   function musicEl() {
-    let a = document.getElementById("edMusic"); const mf = (St.timeline.music || {}).file;
-    if (!mf) { if (a) a.pause(); return null; }
-    if (!a) { a = document.createElement("audio"); a.id = "edMusic"; a.preload = "auto"; document.getElementById("edStage").appendChild(a); }
-    const want = ctx.files(mf); if (a.dataset.src !== want) { a.src = want; a.dataset.src = want; }
+    const mf = (St.timeline.music || {}).file;
+    if (!mf) { if (musicAudio) { musicAudio.pause(); musicAudio.remove(); musicAudio = null; } return null; }
+    if (!musicAudio) { musicAudio = document.createElement("audio"); musicAudio.id = "edMusic"; musicAudio.preload = "auto"; }
+    const stage = document.getElementById("edStage"); if (stage && musicAudio.parentNode !== stage) stage.appendChild(musicAudio);
+    const want = ctx.files(mf); if (musicAudio.dataset.src !== want) { musicAudio.src = want; musicAudio.dataset.src = want; }
+    return musicAudio;
+  }
+  function sfxEl(file) {
+    if (!file) return null;
+    let a = sfxPool.get(file);
+    if (!a) { a = document.createElement("audio"); a.preload = "auto"; a.dataset.sfx = file; sfxPool.set(file, a); }
+    const want = ctx.files(file); if (a.dataset.src !== want) { a.src = want; a.dataset.src = want; }
+    const stage = document.getElementById("edStage"); if (stage && a.parentNode !== stage) stage.appendChild(a);
     return a;
+  }
+  /** Ganho do SFX é dB (painel: −40…+12) — o <audio> quer 0…1. */
+  const gainVol = (db) => clamp(Math.pow(10, num(db, 0) / 20), 0, 1);
+  function sfxVolume(s) { return St.muted ? 0 : clamp((St.vol / 100) * gainVol(s.gain), 0, 1); }
+  /** Dispara cada SFX quando o playhead cruza o seu `at` (respeitando mudo/volume global). */
+  function syncSfx(de, ate) {
+    (St.timeline.sfx || []).forEach((s) => {
+      const a = sfxEl(s.file); if (!a) return;
+      a.volume = sfxVolume(s);
+      const at = num(s.at);
+      if (St.playing && at >= de - 1e-3 && at <= ate + 1e-3 && (a.paused || a.ended)) {
+        try { a.currentTime = 0; } catch (e) {}
+        a.play().catch(() => {});
+      }
+    });
+  }
+  function pauseSfx(rebobinar) {
+    sfxPool.forEach((a) => { a.pause(); if (rebobinar) { try { a.currentTime = 0; } catch (e) {} } });
+  }
+  /** Mudo/volume global e volume da trilha valem para tudo que está soando agora. */
+  function syncVolumes() {
+    syncMusic();
+    (St.timeline.sfx || []).forEach((s) => { const a = sfxPool.get(s.file); if (a) a.volume = sfxVolume(s); });
   }
   function segAt(t) { const segs = segments(); for (const s of segs) if (t >= s.start - 1e-4 && t < s.start + s.dur - 1e-4) return s; return segs[segs.length - 1] || null; }
 
   function play() {
     if (St.playing || duration() <= 0) return;
     St.playing = true; if (St.playhead >= duration() - 0.02) St.playhead = 0; playClock = performance.now();
-    const mu = musicEl(); if (mu) { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); mu.volume = (St.muted || (St.timeline.music || {}).muted) ? 0 : (St.vol / 100) * num((St.timeline.music || {}).volume, 1); mu.play().catch(() => {}); }
+    const mu = musicEl(); if (mu) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} mu.volume = musicVolume(); mu.play().catch(() => {}); }
     setPlayIcon(); loopTick();
   }
-  function pause() { St.playing = false; if (raf) cancelAnimationFrame(raf), raf = null; videoPool.forEach((v) => v.pause()); const mu = document.getElementById("edMusic"); if (mu) mu.pause(); setPlayIcon(); }
+  function pause() { St.playing = false; if (raf) cancelAnimationFrame(raf), raf = null; videoPool.forEach((v) => v.pause()); if (musicAudio) musicAudio.pause(); pauseSfx(false); setPlayIcon(); }
   function togglePlay() { St.playing ? pause() : play(); }
   function setPlayIcon() { const b = document.getElementById("pcPlay"); if (b) b.textContent = St.playing ? "❚❚" : "▶"; }
 
   function loopTick() {
     const now = performance.now(), dt = (now - playClock) / 1000; playClock = now;
+    const antes = St.playhead;
     const seg = segAt(St.playhead);
     if (seg && seg.kind === "clip") {
       const v = videoFor(seg.clip.file);
@@ -192,15 +248,25 @@ Studio.register("edit", (ctx) => {
       } else St.playhead += dt;
     } else St.playhead += dt;
     if (St.playhead >= duration() - 0.01) { if (St.loop) { seekTo(0); if (St.playing) playClock = performance.now(); } else { St.playhead = duration(); pause(); } }
-    syncMusic(); paintPlayhead(); renderPreview();
+    syncMusic(); syncSfx(Math.min(antes, St.playhead), Math.max(antes, St.playhead));
+    paintPlayhead(); renderPreview();
     if (St.playing) raf = requestAnimationFrame(loopTick);
   }
-  function syncMusic() { const mu = document.getElementById("edMusic"); if (!mu) return; const want = num((St.timeline.music || {}).offset) + St.playhead; if (St.playing && Math.abs(mu.currentTime - want) > 0.3) mu.currentTime = clamp(want, 0, 1e6); mu.volume = (St.muted || (St.timeline.music || {}).muted) ? 0 : (St.vol / 100) * num((St.timeline.music || {}).volume, 1); }
+  function musicVolume() { const m = St.timeline.music || {}; return (St.muted || m.muted) ? 0 : clamp((St.vol / 100) * num(m.volume, 1), 0, 1); }
+  function syncMusic() {
+    const mu = musicAudio; if (!mu) return;
+    const want = num((St.timeline.music || {}).offset) + St.playhead;
+    // só ressincronizar com o arquivo já decodificável: forçar `currentTime` durante o load
+    // rebobina a trilha a cada frame e ela nunca sai do zero.
+    if (St.playing && mu.readyState >= 2 && Math.abs(mu.currentTime - want) > 0.3) mu.currentTime = clamp(want, 0, 1e6);
+    mu.volume = musicVolume();
+  }
   function seekTo(t) {
     const was = St.playing; if (was) pause();
     St.playhead = clamp(t, 0, duration()); const seg = segAt(St.playhead);
     if (seg && seg.kind === "clip") { const v = videoFor(seg.clip.file); if (v) { try { v.currentTime = num(seg.clip.in) + (St.playhead - seg.start) * num(seg.clip.speed, 1); } catch (e) {} } }
-    const mu = document.getElementById("edMusic"); if (mu) mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6);
+    const mu = musicEl(); if (mu && mu.readyState >= 1) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} }
+    pauseSfx(true);
     paintPlayhead(); renderPreview(); if (was) play();
   }
   function step(frames) { seekTo(St.playhead + frames / fps()); }
@@ -260,7 +326,8 @@ Studio.register("edit", (ctx) => {
         if (tr.type === "overlay") {
           if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
           else if (o.src) { const v = document.createElement("video"); v.src = ctx.files(o.src); v.muted = true; v.style.maxWidth = "60vw"; try { v.currentTime = t - num(o.start); } catch (e) {} el.appendChild(v); }
-          else { el.textContent = o.shape || "▦"; el.style.color = "#fff"; el.style.fontSize = (stage.clientHeight * 0.12) + "px"; }
+          else if (SHAPES_CSS.includes(o.shape)) el.classList.add("shape", "shape-" + o.shape);
+          else { el.textContent = GLIFO[o.shape] || o.shape || "▦"; el.style.color = "#fff"; el.style.fontSize = (stage.clientHeight * 0.12) + "px"; }
         } else {
           const s = o.style || {};
           el.textContent = s.uppercase ? (o.text || "").toUpperCase() : (o.text || "");
@@ -290,8 +357,37 @@ Studio.register("edit", (ctx) => {
   function scheduleSave() { if (!St.autosave) { setStatus("dirty"); return; } if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => save(true), 900); }
   async function save(silent) {
     if (!St.timeline || !ctx.pid()) return; setStatus("saving");
-    try { const r = await api(`${base()}/timeline`, { method: "PUT", body: JSON.stringify(serialize()) }); St.timeline = r.timeline; setStatus("saved"); if (!silent) toast(`Salvo · ${r.duration}s`); ctx.guide(); }
-    catch (err) { setStatus("error"); if (!silent) toast(err.message); }
+    try {
+      const r = await api(`${base()}/timeline`, { method: "PUT", body: JSON.stringify(serialize()) });
+      adopt(St.timeline, r.timeline);        // NUNCA `St.timeline = r.timeline` (ver adopt)
+      setStatus("saved"); if (!silent) toast(`Salvo · ${r.duration}s`); ctx.guide();
+      renderTimeline(); renderPreview();
+    } catch (err) { setStatus("error"); if (!silent) toast(err.message); }
+  }
+  /** Copia a timeline normalizada devolvida pelo PUT sobre a que está na tela, PRESERVANDO a
+   *  identidade dos objetos que os handlers já montados capturaram (clipe, item de faixa, entrada
+   *  de `clip_fx`…). Trocar a referência fazia a edição seguinte cair numa cópia órfã e sumir. */
+  function adopt(dst, src) {
+    if (dst === src || src === undefined) return dst;
+    if (Array.isArray(src)) {
+      if (!Array.isArray(dst)) return src;
+      const porId = new Map();
+      dst.forEach((x) => { if (x && typeof x === "object" && x.id != null && !porId.has(x.id)) porId.set(x.id, x); });
+      const novo = src.map((s, i) => {
+        if (!s || typeof s !== "object") return s;
+        const atual = (s.id != null && porId.get(s.id))
+          || (s.id == null && dst[i] && typeof dst[i] === "object" && !Array.isArray(dst[i]) === !Array.isArray(s) ? dst[i] : null);
+        return atual ? adopt(atual, s) : s;
+      });
+      dst.length = 0; novo.forEach((x) => dst.push(x)); return dst;
+    }
+    if (src && typeof src === "object") {
+      if (!dst || typeof dst !== "object" || Array.isArray(dst)) return src;
+      Object.keys(dst).forEach((k) => { if (!(k in src)) delete dst[k]; });
+      Object.keys(src).forEach((k) => { dst[k] = adopt(dst[k], src[k]); });
+      return dst;
+    }
+    return src;
   }
   function serialize() {
     const tl = St.timeline;
@@ -302,7 +398,7 @@ Studio.register("edit", (ctx) => {
     if (!ctx.pid()) { St.timeline = null; renderRoot(); return; }
     try { const r = await api(`${base()}/timeline`); St.timeline = r.timeline; }
     catch (err) { St.timeline = null; renderRoot(); toast(err.message); return; }
-    ed(); St.zoom = clamp(num(ed().ui.zoom, 1), 0.25, 6); St.snap = ed().ui.snap !== false;
+    ed(); St.zoom = clamp(num(ed().ui.zoom, 1), 0.25, 4); St.snap = ed().ui.snap !== false;
     try { St.beats = await api(`/api/projects/${ctx.pid()}/music/beats`); } catch (e) { St.beats = null; }
     St.history = []; St.future = []; St.selection = []; St.playhead = 0;
     renderAll(); seekTo(0);
@@ -318,6 +414,7 @@ Studio.register("edit", (ctx) => {
     // mídia/texto pela lateral; "recriar dos takes" fica no painel Mídia quando a timeline está vazia.
     r.innerHTML = headerHTML() + bodyHTML() + timelineHTML();
     bindHeader(); bindLeft(); bindPreview(); bindTimeline(); bindPointer();
+    mountAudio();
     fit(); stageBox(); renderPanel(); renderProps(); renderTimeline(); renderPreview(); paintPlayhead(); setStatus(St.saveStatus); setPlayIcon();
   }
 
@@ -335,9 +432,9 @@ Studio.register("edit", (ctx) => {
       <div class="ved-spacer"></div>
       <div class="ved-hgroup">
         <label class="ved-check"><input type="checkbox" id="edAuto" ${St.autosave ? "checked" : ""}>autosave</label>
-        <div class="ved-selwrap"><span class="kick">Proporção</span><select id="edAspect">${opt(Object.keys(ASPECTS), p.aspect, (a) => [a, a])}</select></div>
-        <div class="ved-selwrap"><span class="kick">Resolução</span><select id="edRes">${opt(RES, p.width, (a) => [a[1], a[0]])}</select></div>
-        <div class="ved-selwrap"><span class="kick">FPS</span><select id="edFps">${opt(FPS_CHOICES, p.fps, (a) => [a, a])}</select></div>
+        <div class="ved-selwrap"><span class="kick">Proporção</span><select id="edAspect" aria-label="Proporção do projeto">${opt(Object.keys(ASPECTS), p.aspect, (a) => [a, a])}</select></div>
+        <div class="ved-selwrap"><span class="kick">Resolução</span><select id="edRes" aria-label="Resolução do projeto">${opt(RES, p.width, (a) => [a[1], a[0]])}</select></div>
+        <div class="ved-selwrap"><span class="kick">FPS</span><select id="edFps" aria-label="FPS do projeto">${opt(FPS_CHOICES, p.fps, (a) => [a, a])}</select></div>
         <button class="ved-ib" id="edGuide" title="Guia da aula 014">?</button>
         <button class="ved-ib" id="edFull" title="Tela cheia">⛶</button>
         <button class="ved-btn" id="edSaveBtn">Salvar</button>
@@ -382,7 +479,7 @@ Studio.register("edit", (ctx) => {
           <button class="loop${St.loop ? " on" : ""}" id="pcLoop" title="Loop">⟲ loop</button>
           <div class="ved-spacer"></div>
           <button class="pb" id="pcMute" title="Mudo">🔊</button>
-          <input type="range" id="pcVol" min="0" max="100" value="${St.vol}">
+          <input type="range" id="pcVol" aria-label="Volume do preview" min="0" max="100" value="${St.vol}">
           <button class="pb" id="pcFs" title="Tela cheia">⛶</button>
         </div>
       </div>
@@ -397,8 +494,8 @@ Studio.register("edit", (ctx) => {
     document.getElementById("pcPrev").onclick = () => step(-1);
     document.getElementById("pcNext").onclick = () => step(1);
     document.getElementById("pcLoop").onclick = () => { St.loop = !St.loop; document.getElementById("pcLoop").classList.toggle("on", St.loop); };
-    document.getElementById("pcMute").onclick = () => { St.muted = !St.muted; document.getElementById("pcMute").textContent = St.muted ? "🔈" : "🔊"; syncMusic(); };
-    document.getElementById("pcVol").oninput = (e) => { St.vol = num(e.target.value, 80); syncMusic(); };
+    document.getElementById("pcMute").onclick = () => { St.muted = !St.muted; document.getElementById("pcMute").textContent = St.muted ? "🔈" : "🔊"; syncVolumes(); };
+    document.getElementById("pcVol").oninput = (e) => { St.vol = num(e.target.value, 80); syncVolumes(); };
     document.getElementById("pcFs").onclick = toggleFullscreen;
     document.getElementById("edStage").addEventListener("pointerdown", (e) => {
       const h = e.target.closest(".h"); if (h) return startBBox(e, h.dataset.h);
@@ -414,6 +511,7 @@ Studio.register("edit", (ctx) => {
   function renderPanel() {
     const el = document.getElementById("edPanel"); if (!el) return;
     ({ media: pMedia, text: pText, captions: pCaptions, audio: pAudio, transitions: pTransitions, effects: pEffects, filters: pFilters, elements: pElements, adjust: pAdjust, library: pLibrary }[St.panel] || pMedia)(el);
+    rotular(el);
   }
   function pMedia(el) {
     const clips = St.timeline.clips || [], media = St.mediaLib || [];
@@ -423,31 +521,37 @@ Studio.register("edit", (ctx) => {
       <div class="ved-mgrid" id="mList"></div>`;
     if (!clips.length) { const b = document.getElementById("mReset"); if (b) b.onclick = resetTimeline; }
     const list = document.getElementById("mList");
-    const clipCards = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("");
-    const mediaCards = media.map((m) => `<div class="ved-mcard" draggable="true" data-mid="${m.id}" title="${esc(m.name)}"><div class="th">${m.kind === "video" ? `<video preload="metadata" muted src="${ctx.files(m.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(m.file)}">`}</div><div class="cap"><div class="nm">${esc(m.name)}</div><div class="mt">${m.kind === "video" ? (m.duration || 0).toFixed(1) + "s" : "img"}</div></div></div>`).join("");
+    const clipCards = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span><button class="mv2" data-v2c="${c.id}" title="Enviar para a faixa VÍDEO 2">→ VÍDEO 2</button>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("");
+    const mediaCards = media.map((m) => `<div class="ved-mcard" draggable="true" data-mid="${m.id}" title="${esc(m.name)}"><div class="th">${m.kind === "video" ? `<video preload="metadata" muted src="${ctx.files(m.file)}#t=0.1"></video><span class="ov">▶</span><button class="mv2" data-v2="${m.id}" title="Enviar para a faixa VÍDEO 2">→ VÍDEO 2</button>` : `<img src="${ctx.files(m.file)}">`}</div><div class="cap"><div class="nm">${esc(m.name)}</div><div class="mt">${m.kind === "video" ? (m.duration || 0).toFixed(1) + "s" : "img"}</div></div></div>`).join("");
     list.innerHTML = clipCards + mediaCards + `<div class="ved-mcard add" id="mUpload"><span style="font-size:18px">⬆</span>upload +<span class="mt">novo</span></div>`;
     document.getElementById("mSearch").oninput = (e) => { const q = e.target.value.toLowerCase(); list.querySelectorAll(".ved-mcard[data-cid],.ved-mcard[data-mid]").forEach((t) => { t.style.display = t.title.toLowerCase().includes(q) ? "" : "none"; }); };
     document.getElementById("mUpload").onclick = () => document.getElementById("mUp").click();
     document.getElementById("mUp").onchange = (e) => { if (e.target.files.length) uploadMedia([...e.target.files]); };
     ui.drop(document.getElementById("mDrop"), uploadMedia);
     list.querySelectorAll("[data-cid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "clip:" + t.dataset.cid)); t.addEventListener("dblclick", () => addPipelineClip(t.dataset.cid)); });
+    list.querySelectorAll("[data-v2c]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); clipParaV2(b.dataset.v2c); });
+    list.querySelectorAll("[data-v2]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); addMediaItem(media.find((m) => m.id === b.dataset.v2), "v2"); });
     list.querySelectorAll("[data-mid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "media:" + t.dataset.mid)); t.addEventListener("dblclick", () => addMediaItem(media.find((m) => m.id === t.dataset.mid))); });
   }
   function addPipelineClip(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return; commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }); }
-  function addMediaItem(m) {
+  /** `faixa === "v2"` manda o vídeo para a faixa VÍDEO 2 (overlay com `src` de vídeo);
+   *  sem faixa, vídeo entra no backbone (VÍDEO 1) e imagem vira overlay, como antes. */
+  function addMediaItem(m, faixa) {
     if (!m) return;
+    if (m.kind === "video" && faixa === "v2") return addOverlayVideo(m.file, num(m.duration, 3), m.name);
     if (m.kind === "video") commit("adicionar vídeo", () => St.timeline.clips.push({ id: newId("c"), scene: "upload", shot: (m.name || "media").replace(/\W+/g, "_"), take: "1", file: m.file, in: 0, out: Math.max(num(m.duration, 3), 0.5), speed: 1, blend: true, zoom: 1 }));
     else commit("adicionar imagem", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), src: m.file, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
   }
   async function uploadMedia(files) { try { const r = await ui.upload(`${base()}/media/upload`, files); St.mediaLib = await api(`${base()}/media`); toast(`${r.added} mídia(s) importada(s)`); renderPanel(); } catch (err) { toast(err.message); } }
   function pText(el) {
-    el.innerHTML = phead("Texto", TEXT_PRESETS.length) + `<div class="ved-list">${TEXT_PRESETS.map(([id, nm, sub]) => `<div class="ved-row" data-t="${id}"><span class="ric">T</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${sub}</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
+    el.innerHTML = phead("Texto", TEXT_PRESETS.length) + `<div class="ved-list">${TEXT_PRESETS.map(([id, nm, sub]) => `<div class="ved-row" data-t="${id}"><span class="ric">T</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${sub}</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
     el.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => { const p = TEXT_PRESETS.find((x) => x[0] == b.dataset.t); addText(p[1] === "Customizado" ? "Texto" : p[1], p[3], "text"); });
   }
   function pCaptions(el) {
     const t = etrack("t_cap", false), items = t ? t.items : [];
-    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas da narração</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
+    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas da narração</button><button class="ved-btn" id="capAdd" style="width:100%;margin-bottom:10px">＋ legenda manual</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd ic" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
     document.getElementById("capGen").onclick = () => toast("Geração automática precisa de transcrição (pendente no projeto). Use + legenda manual.");
+    document.getElementById("capAdd").onclick = () => addText("Legenda", { size: 34, weight: 600, align: "center" }, "caption");
     el.querySelector(".ved-phead").insertAdjacentHTML("beforeend", "");
     el.querySelectorAll(".ved-row[data-uid]").forEach((r) => r.onclick = (e) => { if (e.target.dataset.del) return deleteItems([e.target.dataset.del]); selectOnly(r.dataset.uid, {}); });
   }
@@ -457,7 +561,7 @@ Studio.register("edit", (ctx) => {
     (St.timeline.sfx || []).forEach((s) => rows.push(["♪", s.file.split("/").pop(), "sfx", "sfx"]));
     St.sfxLib.forEach((s) => { if (!(St.timeline.sfx || []).some((x) => x.file === s.file)) rows.push(["♪", s.name || s.file.split("/").pop(), `${(s.duration || 0).toFixed(0)}s · biblioteca`, "lib:" + s.file]); });
     el.innerHTML = phead("Áudio", rows.length) + `<label class="drop sm" id="sfxDrop" style="display:block;margin-bottom:10px;padding:10px;border:1px dashed var(--vbd3);border-radius:8px;text-align:center;color:var(--vtx4);font-size:11px">Arraste SFX aqui (gelo, ambiência, respiração, impacto)<input id="sfxUp" type="file" accept="audio/*" multiple hidden></label>`
-      + `<div class="ved-list">${rows.map(([ic, nm, sub, act]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${esc(nm)}</div><div class="rs">${sub}</div></div><button class="radd" data-aud="${act}">＋</button></div>`).join("")}</div>`;
+      + `<div class="ved-list">${rows.map(([ic, nm, sub, act]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${esc(nm)}</div><div class="rs">${sub}</div></div><button class="radd ic" data-aud="${act}">＋</button></div>`).join("")}</div>`;
     ui.drop(document.getElementById("sfxDrop"), uploadSfx);
     el.querySelectorAll("[data-aud]").forEach((b) => b.onclick = () => { const a = b.dataset.aud; if (a.startsWith("lib:")) addSfx(a.slice(4)); });
   }
@@ -471,17 +575,17 @@ Studio.register("edit", (ctx) => {
     markFx(el);
   }
   function pFilters(el) {
-    el.innerHTML = phead("Filtros", FILTERS.length) + `<div class="ved-list">${FILTERS.map(([id, nm, css]) => `<div class="ved-row" data-fl="${id}" data-css="${css}"><span class="ric" style="background:linear-gradient(45deg,#5661c8,#c85f8a);filter:${css}">◑</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">preset</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
+    el.innerHTML = phead("Filtros", FILTERS.length) + `<div class="ved-list">${FILTERS.map(([id, nm, css]) => `<div class="ved-row" data-fl="${id}" data-css="${css}"><span class="ric" style="background:linear-gradient(45deg,#5661c8,#c85f8a);filter:${css}">◑</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">preset</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
     el.querySelectorAll("[data-fl]").forEach((b) => b.onclick = () => setFilter(b.dataset.fl, b.dataset.css));
   }
   function pElements(el) {
-    el.innerHTML = phead("Elementos", ELEMENTS.length) + `<div class="ved-list">${ELEMENTS.map(([id, nm, ic]) => `<div class="ved-row" data-el="${id}" data-ic="${ic}"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
-    el.querySelectorAll("[data-el]").forEach((b) => b.onclick = () => addOverlayShape(b.dataset.ic));
+    el.innerHTML = phead("Elementos", ELEMENTS.length) + `<div class="ved-list">${ELEMENTS.map(([id, nm, ic]) => `<div class="ved-row" data-el="${id}" data-nm="${nm}"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
+    el.querySelectorAll("[data-el]").forEach((b) => b.onclick = () => addOverlayShape(b.dataset.el, b.dataset.nm));
   }
   function pAdjust(el) { el.innerHTML = phead("Ajustes", 1) + `<div class="ved-row" style="cursor:default"><span class="ric">⚙</span><div class="rmid"><div class="rs" style="white-space:normal">Selecione um clipe — os ajustes aparecem no painel direito →</div></div></div>`; }
   function pLibrary(el) {
     const items = [["Preset · abertura", "template", "▤"], ["Preset · CTA final", "template", "▤"], ["Kit legendas neon", "estilo", "CC"], ["LUT frost", "cor", "◑"]];
-    el.innerHTML = phead("Biblioteca", items.length) + `<div class="ved-list">${items.map(([nm, tp, ic]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${tp}</div></div><button class="radd">＋</button></div>`).join("")}</div><p class="ved-hint">Presets salvos (em breve).</p>`;
+    el.innerHTML = phead("Biblioteca", items.length) + `<div class="ved-list">${items.map(([nm, tp, ic]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${tp}</div></div><button class="radd ic">＋</button></div>`).join("")}</div><p class="ved-hint">Presets salvos (em breve).</p>`;
   }
   function markFx(el) { const fx = adjustTarget(); const on = new Set((fx && fx.effects || []).filter((e) => e.enabled !== false).map((e) => (e.type || "").toLowerCase())); el.querySelectorAll("[data-ef]").forEach((b) => b.classList.toggle("on", on.has(b.dataset.ef.toLowerCase()))); }
 
@@ -490,9 +594,27 @@ Studio.register("edit", (ctx) => {
   function tabsFor(kind) { return ["music", "sfx"].includes(kind) ? ["audio", "speed"] : ["basico", "video", "audio", "speed", "ajustes"]; }
   function renderProps() {
     const el = document.getElementById("edProps"); if (!el) return;
-    if (!St.selection.length) return propsProject(el);
-    const it = findItem(St.selection[0]); if (!it) return propsProject(el);
-    propsItem(el, it);
+    const it = St.selection.length ? findItem(St.selection[0]) : null;
+    if (it) propsItem(el, it); else propsProject(el);
+    rotular(el);
+  }
+  /** Acessibilidade: liga cada <label> ao seu controle e nomeia os switches (que não têm texto
+   *  próprio) — sem isso a auditoria da tela acusa "campos sem rótulo" a cada painel. */
+  function rotular(scope) {
+    if (!scope) return;
+    scope.querySelectorAll(".ved-slider,.ved-num,.ved-inrow").forEach((row) => {
+      const lb = row.querySelector("label"), c = row.querySelector("input,select,textarea");
+      if (!lb || !c) return;
+      if (!c.id) c.id = newId("f");
+      if (!lb.getAttribute("for")) lb.setAttribute("for", c.id);
+    });
+    scope.querySelectorAll(".ved-toggle").forEach((row) => {
+      const sw = row.querySelector(".ved-sw"), txt = row.querySelector("span");
+      if (sw && txt && !sw.getAttribute("aria-label")) sw.setAttribute("aria-label", (txt.textContent || "").trim());
+    });
+    scope.querySelectorAll("textarea:not([aria-label]),input[type=text]:not([aria-label])").forEach((c) => {
+      if (!c.id || !scope.querySelector(`label[for="${c.id}"]`)) c.setAttribute("aria-label", c.placeholder || "Texto da camada");
+    });
   }
   function propsProject(el) {
     const p = proj();
@@ -615,7 +737,7 @@ Studio.register("edit", (ctx) => {
         <div class="ved-slider"><label>Fade out</label><input type="range" id="mFo" min="0" max="5" step="0.1" value="${num(St.timeline.fade_out, 1.5)}"><span class="val" id="mFov"></span></div>
         <div class="ved-toggle"><span>Mudo</span><button class="ved-sw${m.muted ? " on" : ""}" id="mMute"></button></div>`;
       bindNum("mOff", (v) => m.offset = Math.max(v, 0), "offset");
-      bindSlider("mVol", (v) => m.volume = v / 100, "volume", (v) => { document.getElementById("mVolv").textContent = v + "%"; syncMusic(); });
+      bindSlider("mVol", (v) => m.volume = v / 100, "volume", (v) => { document.getElementById("mVolv").textContent = v + "%"; syncVolumes(); });
       bindSlider("mFo", (v) => St.timeline.fade_out = v, "fade out", (v) => document.getElementById("mFov").textContent = v);
       document.getElementById("mMute").onclick = () => commit("mudo música", () => m.muted = !m.muted);
     } else {
@@ -647,7 +769,7 @@ Studio.register("edit", (ctx) => {
           <label class="ved-check" style="color:var(--vtx4)"><input type="checkbox" id="tSnap" ${St.snap ? "checked" : ""}>snap</label>
           <span class="spacer"></span>
           <span class="selinfo" id="tSel">${St.selection.length ? St.selection.length + " selecionado(s)" : "clique num clipe"}</span>
-          <div class="zoom"><button class="ved-ib" id="zOut" style="width:26px;height:24px">－</button><input type="range" id="zR" min="25" max="400" value="${St.zoom * 100 | 0}"><button class="ved-ib" id="zIn" style="width:26px;height:24px">＋</button><span class="zp">${St.zoom * 100 | 0}%</span></div>
+          <div class="zoom"><button class="ved-ib" id="zOut" style="width:26px;height:24px">－</button><input type="range" id="zR" aria-label="Zoom da timeline" min="25" max="400" value="${St.zoom * 100 | 0}"><button class="ved-ib" id="zIn" style="width:26px;height:24px">＋</button><span class="zp">${St.zoom * 100 | 0}%</span></div>
         </div>
         <div class="ved-tl-body">
           <div class="ved-tl-heads" id="edTlHeads"></div>
@@ -661,7 +783,7 @@ Studio.register("edit", (ctx) => {
     document.getElementById("tDel").onclick = () => deleteItems(St.selection);
     document.getElementById("tRipple").onclick = rippleDelete;
     document.getElementById("tMark").onclick = addMarker;
-    document.getElementById("tSnap").onchange = (e) => { St.snap = e.target.checked; ed().ui.snap = St.snap; scheduleSave(); };
+    document.getElementById("tSnap").onchange = (e) => { St.snap = e.target.checked; ed().ui.snap = St.snap; setStatus("dirty"); scheduleSave(); };
     document.getElementById("zIn").onclick = () => setZoom(St.zoom + .25);
     document.getElementById("zOut").onclick = () => setZoom(St.zoom - .25);
     document.getElementById("zR").oninput = (e) => setZoom(num(e.target.value, 100) / 100);
@@ -677,9 +799,14 @@ Studio.register("edit", (ctx) => {
     });
     // drop de mídia
     main.addEventListener("dragover", (e) => e.preventDefault());
-    main.addEventListener("drop", (e) => { e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || ""); if (d.startsWith("clip:")) addPipelineClip(d.slice(5)); else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6))); });
+    main.addEventListener("drop", (e) => {
+      e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || "");
+      const lane = e.target.closest(".ved-lane"), faixa = lane ? lane.dataset.tid : null;
+      if (d.startsWith("clip:")) { if (faixa === "v2") clipParaV2(d.slice(5)); else addPipelineClip(d.slice(5)); }
+      else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6)), faixa);
+    });
   }
-  function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); scheduleSave(); }
+  function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); setStatus("dirty"); scheduleSave(); }
 
   function renderTimeline() {
     const heads = document.getElementById("edTlHeads"), lanes = document.getElementById("edTracks"); if (!heads || !lanes) return;
@@ -799,15 +926,23 @@ Studio.register("edit", (ctx) => {
   }
   function rippleDelete() {
     const u = St.selection[0]; const it = u && findItem(u); if (!it || it.kind !== "video") return deleteItems(St.selection);
-    commit("ripple delete", () => { St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); }); St.selection = [];
+    // mesma guarda do #tDel: a montagem da aula 014 não existe sem clipe
+    if ((St.timeline.clips || []).length <= 1) return toast("A montagem precisa de ao menos um clipe");
+    commit("ripple delete", () => { St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); }); St.selection = [];
   }
   function addText(text, style, type) {
     const tid = type === "caption" ? "t_cap" : "t_txt";
     commit("adicionar " + type, () => { const t = etrack(tid, true); const it = { id: newId("tx"), start: +St.playhead.toFixed(2), end: +(St.playhead + 2.5).toFixed(2), text, style: { size: 40, weight: 700, align: "center", color: "#FFFFFF", shadow: true, ...style }, transform: { x: .5, y: type === "caption" ? .82 : .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, anim: { in: "fade", out: "fade" } }; t.items.push(it); St.selection = [it.id]; });
     renderPanel();
   }
-  function addOverlayShape(glyph) {
-    commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: glyph, shape: glyph, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+  /** Vídeo na faixa VÍDEO 2: overlay com `src` de vídeo (o preview já compõe por cima do V1). */
+  function addOverlayVideo(file, dur, rotulo) {
+    if (!file) return;
+    commit("vídeo na VÍDEO 2", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + Math.max(num(dur, 3), .5)).toFixed(2), src: file, text: rotulo || "", transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+  }
+  function clipParaV2(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (c) addOverlayVideo(c.file, clipLen(c), nameOf(c)); }
+  function addOverlayShape(shape, nome) {
+    commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: nome || shape, shape, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
   }
   function applyTransition(type) {
     const u = St.selection.find((x) => itemType(x) === "video"); if (!u) return toast("Selecione um clipe de vídeo");
@@ -848,9 +983,9 @@ Studio.register("edit", (ctx) => {
     let expRes = RES.find((r) => r[1] == p.width) ? RES.find((r) => r[1] == p.width)[0] : "1080p", expFps = p.fps, expQual = "alta";
     const pills = (arr, cur, cls) => arr.map((v) => `<button class="ved-pick" data-${cls}="${v}" style="flex:1"${v == cur ? " data-on=1" : ""}>${v}</button>`).join("");
     ui.modal({ title: "Exportar vídeo", subtitle: "Renderiza o master com ffmpeg",
-      html: `<div class="ved kick" style="margin-bottom:4px">Resolução</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exRes">${pills(RES.map((r) => r[0]), expRes, "res")}</div>
-        <div class="ved kick" style="margin-bottom:4px">FPS</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exFps">${pills(FPS_CHOICES.map((f) => f + " fps"), expFps + " fps", "fps")}</div>
-        <div class="ved kick" style="margin-bottom:4px">Qualidade</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exQ">${pills(["baixa", "média", "alta"], expQual, "q")}</div>
+      html: `<div class="ved-kick" style="margin-bottom:4px">Resolução</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exRes">${pills(RES.map((r) => r[0]), expRes, "res")}</div>
+        <div class="ved-kick" style="margin-bottom:4px">FPS</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exFps">${pills(FPS_CHOICES.map((f) => f + " fps"), expFps + " fps", "fps")}</div>
+        <div class="ved-kick" style="margin-bottom:4px">Qualidade</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exQ">${pills(["baixa", "média", "alta"], expQual, "q")}</div>
         <div style="font-size:11px;color:#8B93A0">formato MP4 (H.264) · proporção ${p.aspect} · duração ${fmtTC(duration())} · saída ${expRes} · ${expFps}fps · ${expQual}</div>
         <p style="font-size:11px;color:#8B93A0;margin-top:8px">Entram no master.mp4: o backbone da aula 014 + textos, legendas, overlays, efeitos (blur/sharpen/grain) e ajustes de cor. Transições ainda só no preview.</p>`,
       actions: [{ label: "Rough cut", onClick: (m) => { m.close(); startRender("rough", null); } }, { label: "Renderizar", primary: true, onClick: (m) => {
@@ -911,6 +1046,6 @@ Studio.register("edit", (ctx) => {
       try { St.mediaLib = await api(`${base()}/media`); } catch (e) { St.mediaLib = []; }
       await load();
     },
-    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); },
+    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); sfxPool.clear(); musicAudio = null; },
   };
 });

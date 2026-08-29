@@ -30,7 +30,7 @@ from pathlib import Path
 from PIL import Image
 
 from .. import higgsfield as hf
-from ..common import ingest
+from ..common import atomic, ingest
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -177,15 +177,15 @@ def _write_png(data: bytes, dest: Path) -> None:
     """Grava sempre PNG de verdade — o contrato da wave nomeia `base.png`/`ref.png`.
 
     Conteúdo que a Pillow não abre é erro do usuário (422), nunca 500."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_name(dest.name + ".tmp")
+    # `atomic_path` empresta um temporário ÚNICO ao lado do destino e faz a troca atômica no fim
+    # (um envio inválido não destrói a base já pronta). Com nome fixo, dois envios simultâneos da
+    # mesma cena disputavam o mesmo `.tmp`.
     try:
-        with Image.open(io.BytesIO(data)) as im:
-            im.convert("RGB").save(tmp, "PNG")
+        with atomic.atomic_path(dest) as tmp:
+            with Image.open(io.BytesIO(data)) as im:
+                im.convert("RGB").save(tmp, "PNG")
     except OSError as e:      # UnidentifiedImageError e afins
-        tmp.unlink(missing_ok=True)
         raise ValueError("arquivo não é uma imagem válida (png, jpg, jpeg ou webp)") from e
-    tmp.replace(dest)         # troca atômica: um envio inválido não destrói a base já pronta
 
 
 def _check_ext(name: str) -> None:
@@ -559,10 +559,13 @@ def select_shots(pid: str, scene: str, shots: list[dict]) -> dict:
                       "prompt": c.get("prompt") or "", "candidate": cid,
                       "upscaled": bool(item.get("upscaled") or c.get("upscaled"))})
     (sdir / "selection.json").write_text(json.dumps({"shots": saved}, ensure_ascii=False, indent=1))
-    chosen = set(ids)
+    chosen = {cid: i for i, cid in enumerate(ids, 1)}
     all_cands = ingest.load_candidates(root, step)
     for c in all_cands:
+        # `selected_order` acompanha o flag para a tela reabrir a cena na ORDEM salva (o painel 04
+        # relê os dois em GET /angles/scenes/{cena}/candidates).
         c["selected"] = c["id"] in chosen
+        c["selected_order"] = chosen.get(c["id"])
     ingest.save_candidates(root, step, all_cands)
     write_storyboard(pid)
     # Aula 011 (auditoria 5.1): "selecionar os melhores takes → aplicar upscale e baixar".
@@ -585,6 +588,13 @@ def select_product(pid: str, cand_id: str | None, upscaled: bool = False) -> dic
     if cand_id is None:
         final.unlink(missing_ok=True)
         (pdir / "selection.json").unlink(missing_ok=True)
+        # Zera o flag em `product/candidates.json` também: sem isso a tela reabria com a candidata
+        # ainda marcada e ressuscitava uma escolha que não existe mais no disco.
+        cands = ingest.load_candidates(root, step)
+        if any(c.get("selected") for c in cands):
+            for c in cands:
+                c["selected"] = False
+            ingest.save_candidates(root, step, cands)
     else:
         cands = ingest.load_candidates(root, step)
         c = next((x for x in cands if x["id"] == cand_id), None)
