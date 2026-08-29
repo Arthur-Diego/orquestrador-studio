@@ -68,11 +68,13 @@
     return (data.models || []).filter((m) => m.kind === kind)
       .map((m) => `<option value="${esc(m.id)}"${m.id === selected ? " selected" : ""}>${esc(m.label)}</option>`).join("");
   }
-  function variantOptions(modelId, selected) {
+  // `acao` = rótulo da ação da linha: entra no aria-label porque a tabela repete estes selects
+  // por linha e o cabeçalho "Modelo" sozinho não identifica qual ação está sendo editada.
+  function variantOptions(modelId, selected, acao) {
     const m = (data.models || []).find((x) => x.id === modelId);
     if (!m || !m.variant_options || !m.variant_options.length) return "";
     const opts = m.variant_options.map((v) => `<option value="${esc(v)}"${v === selected ? " selected" : ""}>${esc(v)}</option>`).join("");
-    return `<select class="cr-variant" data-vk="${esc(m.variant_key || "")}">${opts}</select>`;
+    return `<select class="cr-variant" data-vk="${esc(m.variant_key || "")}" aria-label="Variação de ${esc(acao || "")}">${opts}</select>`;
   }
   const SRC_LABEL = { code: "código", global: "global", project: "projeto" };
 
@@ -92,11 +94,11 @@
       const clearBtn = (scope === "project")
         ? `<button class="link cr-clear" type="button" data-action="${esc(a.key)}"${isOverride ? "" : " disabled"} title="Voltar ao default global/código">usar global</button>`
         : "";
-      return `<tr data-action="${esc(a.key)}" data-kind="${esc(a.kind)}">
+      return `<tr data-action="${esc(a.key)}" data-kind="${esc(a.kind)}" data-label="${esc(a.label)}">
         <td><div class="cr-act"><b>${esc(a.label)}</b><span>${esc(a.screen)}</span></div></td>
         <td class="cr-modelcell">
-          <select class="cr-model">${optionsFor(a.kind, a.model)}</select>
-          ${variantOptions(a.model, a.variant)}
+          <select class="cr-model" aria-label="Modelo de ${esc(a.label)}">${optionsFor(a.kind, a.model)}</select>
+          ${variantOptions(a.model, a.variant, a.label)}
         </td>
         <td class="cr-cost">${a.credits != null ? `${esc(a.credits)} cr` : "—"}</td>
         <td class="cr-src">${srcChip}${clearBtn}</td>
@@ -211,7 +213,7 @@
         const cell = modelSel.parentElement;
         const old = cell.querySelector(".cr-variant");
         if (old) old.remove();
-        if (m && m.variant_options && m.variant_options.length) cell.insertAdjacentHTML("beforeend", variantOptions(m.id, m.default_variant));
+        if (m && m.variant_options && m.variant_options.length) cell.insertAdjacentHTML("beforeend", variantOptions(m.id, m.default_variant, tr.dataset.label));
         cell.querySelectorAll(".cr-variant").forEach((v) => { v.onchange = save; });
         save();
       };

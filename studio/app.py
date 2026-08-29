@@ -103,7 +103,7 @@ def patch_project(pid: str, req: ProjectPatch):
 
 @app.get("/api/projects/{pid}/guide")
 def project_guide(pid: str):
-    """Guia das 11 etapas de uma vez — usado pelo menu, pela barra de progresso e pelo painel."""
+    """Guia das 10 etapas de uma vez — usado pelo menu, pela barra de progresso e pelo painel."""
     guides = _all_guides(pid)
     return {"steps": guides, **_overview(guides)}
 
@@ -134,7 +134,7 @@ def reset_step(pid: str, step: str):
 
 @app.post("/api/projects/{pid}/reset")
 def reset_campaign(pid: str):
-    """`[extensão]` Apaga tudo o que as 11 etapas produziram; mantém `project.json` (nome/produto/vibe/formato)."""
+    """`[extensão]` Apaga tudo o que as 10 etapas produziram; mantém `project.json` (nome/produto/vibe/formato)."""
     try:
         return reset_lib.reset_campaign(pid)
     except reset_lib.ResetBlocked as e:

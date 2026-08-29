@@ -305,7 +305,7 @@ function renderOverview() {
 
   $("#main").innerHTML = `
   <header class="stephead ov">
-    <span class="eyebrow">Etapas 1 a 11 · aulas 009 → 015 · 001</span>
+    <span class="eyebrow">Etapas 1 a ${steps.length} · aulas 009 → 015 · 001</span>
     <h2>Visão geral da campanha</h2>
     <p class="lede">As 10 etapas do curso, na ordem das aulas, com o estado real dos artefatos. ${cur ? `Você está na <b>etapa ${esc(cur.n)} — ${esc(cur.title)}</b>.` : "Todas as etapas estão concluídas."}</p>
     <div class="ov-summary">${resumo}</div>
