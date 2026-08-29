@@ -98,6 +98,18 @@ def test_modal_maior_escopado_no_html_sem_tocar_ui_css(html):
     assert ".sb-reorder" in html
 
 
+# ---------- ângulos por cena: reabrir a cena remarca os frames já escolhidos ----------
+def test_load_cands_reidrata_a_escolha_salva_da_cena(js):
+    """Regressão: `openScene()` zera `order`; se `loadCands()` não reidratar a escolha salva a partir
+    do candidato (`selected`/`selected_order`, como o `loadProd()` faz), reabrir a cena mostra
+    "0 escolhidos" e "Salvar ordem da cena" apaga os `shot0N_final.png` já escolhidos."""
+    i = js.index("async function loadCands()")
+    corpo = js[i:js.index("async function loadProd()", i)]
+    assert "c.selected" in corpo, "loadCands() deve reler o flag `selected` do candidato"
+    assert "selected_order" in corpo, "a ordem salva vem de `selected_order` (GET .../candidates)"
+    assert "order =" in corpo, "loadCands() deve reescrever `order` com a escolha salva"
+
+
 # ---------- sintaxe do view.js (equivalente ao `node --check`) ----------
 def test_view_js_node_check():
     node = shutil.which("node")

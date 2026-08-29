@@ -559,10 +559,13 @@ def select_shots(pid: str, scene: str, shots: list[dict]) -> dict:
                       "prompt": c.get("prompt") or "", "candidate": cid,
                       "upscaled": bool(item.get("upscaled") or c.get("upscaled"))})
     (sdir / "selection.json").write_text(json.dumps({"shots": saved}, ensure_ascii=False, indent=1))
-    chosen = set(ids)
+    chosen = {cid: i for i, cid in enumerate(ids, 1)}
     all_cands = ingest.load_candidates(root, step)
     for c in all_cands:
+        # `selected_order` acompanha o flag para a tela reabrir a cena na ORDEM salva (o painel 04
+        # relê os dois em GET /angles/scenes/{cena}/candidates).
         c["selected"] = c["id"] in chosen
+        c["selected_order"] = chosen.get(c["id"])
     ingest.save_candidates(root, step, all_cands)
     write_storyboard(pid)
     # Aula 011 (auditoria 5.1): "selecionar os melhores takes → aplicar upscale e baixar".

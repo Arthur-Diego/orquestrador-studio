@@ -226,6 +226,21 @@ def test_select_writes_final_frames_in_order_and_rewrites_storyboard(shots, stud
     assert shots.load_storyboard(project)["scenes"][0]["shots"] == []
 
 
+def test_select_marks_candidates_with_flag_and_saved_order(shots, project):
+    """Reabrir a cena remarca os frames escolhidos NA ORDEM salva: o painel 04 relê `selected` e
+    `selected_order` de GET /scenes/{cena}/candidates (sem isso, salvar de novo apagaria os finais)."""
+    a, b = _two_candidates(shots, project)
+    shots.select_shots(project, "cena01", [{"id": b, "upscaled": True}, {"id": a}])
+    cands = {c["id"]: c for c in shots.list_candidates(project, "cena01")["candidates"]}
+    assert cands[b]["selected"] is True and cands[a]["selected"] is True
+    assert cands[b]["selected_order"] == 1 and cands[a]["selected_order"] == 2
+
+    shots.select_shots(project, "cena01", [{"id": a}])
+    cands = {c["id"]: c for c in shots.list_candidates(project, "cena01")["candidates"]}
+    assert cands[a]["selected"] is True and cands[a]["selected_order"] == 1
+    assert cands[b]["selected"] is False and cands[b]["selected_order"] is None
+
+
 def test_select_rejects_unknown_or_duplicated_candidate(shots, project):
     a, _b = _two_candidates(shots, project)
     with pytest.raises(ValueError):
