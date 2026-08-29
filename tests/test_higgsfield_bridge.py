@@ -1,4 +1,8 @@
 """Ponte com o CLI da Higgsfield: montagem de flags e leitura defensiva de JSON (sem chamar o CLI)."""
+import json
+
+import pytest
+
 from studio import higgsfield as hf
 
 
@@ -178,3 +182,78 @@ def test_history_media_keeps_lone_min(monkeypatch):
     monkeypatch.setattr(hf, "_run", _fake_run(payload))
     jobs = hf.history_media("image", 10)
     assert jobs[0]["urls"] == ["https://cdn.x/d_min.webp"]
+
+
+# ---------- adapt_params: cada modelo aceita um conjunto diferente (ADH-OS-20260829-34) ----------
+def _cli_por_subcomando(respostas: dict, chamadas: list | None = None):
+    """`_run` fake que responde por (args[0], args[1]) e registra as chamadas."""
+    def run(args, timeout=120):
+        if chamadas is not None:
+            chamadas.append(list(args))
+        key = tuple(args[:2])
+        if key not in respostas:
+            return 1, "", f"sem resposta fake para {key}"
+        return 0, json.dumps(respostas[key]), ""
+    return run
+
+
+KLING26 = {"job_type": "kling2_6", "params": [{"name": n} for n in ("aspect_ratio", "duration", "prompt", "sound", "start_image")]}
+KLING30 = {"job_type": "kling3_0", "params": [{"name": n} for n in ("aspect_ratio", "duration", "end_image", "mode", "prompt", "sound", "start_image")]}
+
+
+def test_adapt_params_drops_what_the_model_does_not_declare(monkeypatch):
+    hf.reset_model_params_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", _cli_por_subcomando({("model", "get"): KLING26}))
+    out = hf.adapt_params("kling2_6", {"prompt": "p", "duration": 5, "aspect_ratio": "16:9", "mode": "pro",
+                                       "sound": False, "start_image": "/x.png"})
+    assert "mode" not in out and out["prompt"] == "p" and out["start_image"] == "/x.png"
+
+
+def test_adapt_params_keeps_everything_when_model_declares_it(monkeypatch):
+    hf.reset_model_params_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", _cli_por_subcomando({("model", "get"): KLING30}))
+    params = {"prompt": "p", "mode": "pro", "start_image": "/a.png", "end_image": "/b.png"}
+    assert hf.adapt_params("kling3_0", params) == params
+
+
+def test_adapt_params_refuses_essential_param_the_model_lacks(monkeypatch):
+    hf.reset_model_params_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", _cli_por_subcomando({("model", "get"): KLING26}))
+    with pytest.raises(RuntimeError, match="não aceita end_image"):
+        hf.adapt_params("kling2_6", {"prompt": "p", "start_image": "/a.png", "end_image": "/b.png"})
+
+
+def test_adapt_params_without_catalog_changes_nothing(monkeypatch):
+    hf.reset_model_params_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (1, "", "Error: model not found"))
+    params = {"prompt": "p", "mode": "pro"}
+    assert hf.adapt_params("modelo_x", params) == params
+
+
+def test_generate_and_cost_send_only_declared_params_and_cache_catalog(monkeypatch):
+    hf.reset_model_params_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    chamadas: list = []
+    monkeypatch.setattr(hf, "_run", _cli_por_subcomando({
+        ("model", "get"): KLING26,
+        ("generate", "cost"): {"credits": 3},
+        ("generate", "create"): {"id": "job1", "outputs": [{"video_url": "https://cdn.x/o.mp4"}]},
+    }, chamadas))
+    params = {"prompt": "p", "duration": 5, "aspect_ratio": "16:9", "mode": "pro", "sound": False, "start_image": "/x.png"}
+    assert hf.cost("kling2_6", params)["credits"] == 3
+    assert hf.generate("kling2_6", params)["urls"] == ["https://cdn.x/o.mp4"]
+    enviados = [c for c in chamadas if c[:2] in (["generate", "cost"], ["generate", "create"])]
+    assert enviados and all("--mode" not in c for c in enviados)
+    assert sum(1 for c in chamadas if c[:2] == ["model", "get"]) == 1     # catálogo cacheado
+
+
+def test_cost_reports_essential_param_error_instead_of_raising(monkeypatch):
+    hf.reset_model_params_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", _cli_por_subcomando({("model", "get"): KLING26}))
+    r = hf.cost("kling2_6", {"prompt": "p", "start_image": "/a.png", "end_image": "/b.png"})
+    assert r["credits"] is None and "end_image" in r["error"]

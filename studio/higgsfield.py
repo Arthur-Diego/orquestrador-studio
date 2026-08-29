@@ -5,12 +5,15 @@ Regra da doc oficial: nunca chamar api.higgsfield.ai direto; o CLI cuida de auth
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 BIN = shutil.which("higgsfield") or shutil.which("hf")
 IMG_URL_RE = re.compile(r"https?://[^\s\"']+\.(?:png|jpe?g|webp)(?:\?[^\s\"']*)?", re.I)
@@ -132,8 +135,59 @@ def download(url: str, dest: Path) -> Path:
     return dest
 
 
+MODEL_PARAMS_TTL = 3600.0     # segundos; `model get` é subprocess e o catálogo muda raramente
+_MODEL_PARAMS: dict[str, tuple[float, set[str] | None]] = {}
+#: Params que mudam o RESULTADO: se o modelo não os aceita, não dá para descartar em silêncio.
+ESSENTIAL_PARAMS = ("prompt", "start_image", "end_image")
+
+
+def reset_model_params_cache() -> None:
+    _MODEL_PARAMS.clear()
+
+
+def model_params(model: str, refresh: bool = False) -> set[str] | None:
+    """Nomes dos params que `model get <model>` declara (ADR-002: o catálogo vem do CLI, não do
+    código). `None` quando o CLI não responde ou não devolve `params` — nesse caso nada é filtrado
+    (comportamento anterior)."""
+    now = time.monotonic()
+    cached = _MODEL_PARAMS.get(model)
+    if cached and not refresh and now - cached[0] < MODEL_PARAMS_TTL:
+        return cached[1]
+    code, out, _err = _run(["model", "get", model], timeout=60)
+    names: set[str] | None = None
+    if code == 0:
+        data = _json(out)
+        if isinstance(data, dict) and isinstance(data.get("params"), list):
+            names = {p["name"] for p in data["params"] if isinstance(p, dict) and p.get("name")}
+    _MODEL_PARAMS[model] = (now, names)
+    return names
+
+
+def adapt_params(model: str, params: dict) -> dict:
+    """Deixa só os params que o modelo declara — cada modelo aceita um conjunto diferente
+    (ex.: `kling2_6` não tem `mode` nem `end_image`; `kling3_0` tem os dois). Param desconhecido
+    faria o CLI recusar o job inteiro ("Unknown params: mode"). Param ESSENCIAL não suportado
+    (start/end_image, prompt) muda o que seria gerado: levanta RuntimeError explicando, em vez de
+    gerar outra coisa em silêncio."""
+    known = model_params(model)
+    if known is None:
+        return dict(params)
+    unsupported = [k for k, v in params.items() if k not in known and v not in (None, "", [], ())]
+    essential = [k for k in unsupported if k in ESSENTIAL_PARAMS]
+    if essential:
+        raise RuntimeError(f"o modelo {model} não aceita {', '.join(essential)} — escolha outro modelo para "
+                           f"este tipo de geração (veja `higgsfield model get {model}`)")
+    if unsupported:
+        log.info("higgsfield.adapt_params %s", {"model": model, "descartados": unsupported})
+    return {k: v for k, v in params.items() if k in known}
+
+
 def cost(model: str, params: dict) -> dict:
     """Estimativa de créditos SEM criar job (`generate cost`). Devolve {'credits': n|None, 'raw'|'error'}."""
+    try:
+        params = adapt_params(model, params)
+    except RuntimeError as e:
+        return {"credits": None, "error": str(e)}
     code, out, err = _run(["generate", "cost", model, *_params(params)], timeout=60)
     if code != 0:
         return {"credits": None, "error": (err or out).strip()[:300]}
@@ -144,7 +198,9 @@ def cost(model: str, params: dict) -> dict:
 
 
 def generate(model: str, params: dict, timeout_s: int = 600) -> dict:
-    """Cria um job e espera. Cobra créditos. Devolve o JSON do job (com URLs) ou levanta RuntimeError."""
+    """Cria um job e espera. Cobra créditos. Devolve o JSON do job (com URLs) ou levanta RuntimeError.
+    Os params passam por `adapt_params` (só o que o modelo declara)."""
+    params = adapt_params(model, params)
     code, out, err = _run(["generate", "create", model, *_params(params), "--wait", "--wait-timeout", f"{timeout_s}s"], timeout=timeout_s + 30)
     if code != 0:
         raise RuntimeError((err or out).strip()[:400])
