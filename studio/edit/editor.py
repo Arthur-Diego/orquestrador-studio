@@ -48,6 +48,7 @@ MAX_MARKERS = 500
 MAX_EFFECTS = 40
 MAX_TEXT = 5000
 MAX_STR = 200
+MAX_SHAPE = 16        # glifo/forma de um elemento de overlay ("▦", "★", emoji…)
 
 ADJUST_KEYS = ("exposure", "brightness", "contrast", "saturation", "temperature", "hue",
                "highlights", "shadows", "whites", "blacks", "sharpen", "fade", "vignette", "grain")
@@ -233,6 +234,10 @@ def normalize_item(track_type: str, raw: dict, root: Path) -> dict | None:
             item["clip"] = _clean_id(raw.get("clip"), "c")
         if raw.get("mediaId"):
             item["mediaId"] = _s(raw.get("mediaId"), 80)
+        if raw.get("shape"):                       # elemento/glifo do painel Elementos
+            item["shape"] = _s(raw.get("shape"), MAX_SHAPE)
+        if raw.get("text") is not None:            # rótulo do elemento (aparece na timeline)
+            item["text"] = _s(raw.get("text"), MAX_TEXT)
         item["transform"] = normalize_transform(raw.get("transform"))
         item["effects"] = normalize_effects(raw.get("effects"))
         item["filters"] = normalize_filters(raw.get("filters"))

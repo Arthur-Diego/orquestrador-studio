@@ -198,6 +198,19 @@ def test_ids_generated_when_missing(tmp_path):
     assert e["tracks"][0]["items"][0]["id"]
 
 
+def test_overlay_keeps_shape_and_text(tmp_path):
+    """AP-07: elemento do painel Elementos guarda `shape` + `text` — sem isso vira quadrado vazio."""
+    e = ed.normalize_editor(tmp_path, {"tracks": [
+        {"id": "v2", "type": "overlay", "items": [
+            {"id": "ov1", "start": 0, "end": 3, "text": "★", "shape": "★"},
+            {"id": "ov2", "start": 0, "end": 1, "shape": "x" * 40, "text": "y" * (ed.MAX_TEXT + 10)},
+            {"id": "ov3", "start": 0, "end": 1}]}]})
+    itens = e["tracks"][0]["items"]
+    assert itens[0]["shape"] == "★" and itens[0]["text"] == "★"
+    assert len(itens[1]["shape"]) == ed.MAX_SHAPE and len(itens[1]["text"]) == ed.MAX_TEXT
+    assert "shape" not in itens[2] and "text" not in itens[2]   # overlay de mídia não ganha campo
+
+
 def test_ui_zoom_is_a_factor(tmp_path):
     """AP-06: o frontend grava `ui.zoom` como FATOR (0.25–4, default 1) — o backend preserva."""
     e = ed.normalize_editor(tmp_path, {"ui": {"zoom": 2.5, "snap": False}})
