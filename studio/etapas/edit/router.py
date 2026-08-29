@@ -11,6 +11,7 @@ from ...refs import service as refs
 
 router = APIRouter(tags=["edit"])
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_MEDIA_BYTES = 200 * 1024 * 1024   # [extensão] vídeos/imagens do editor podem ser maiores que SFX
 NO_FFMPEG = "ffmpeg não disponível — instale em ~/.local/bin para renderizar e exportar o último frame"
 
 
@@ -155,6 +156,28 @@ async def upload_sfx(pid: str, files: list[UploadFile] = File(...), prompt: str 
         payload.append((f.filename or "sfx.wav", data))
     try:
         return edit.import_sfx(pid, payload, prompt)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@router.get("/api/projects/{pid}/edit/media")
+def list_media(pid: str):
+    refs.project_dir(pid)
+    return edit.list_media(pid)
+
+
+@router.post("/api/projects/{pid}/edit/media/upload")
+async def upload_media(pid: str, files: list[UploadFile] = File(...)):  # noqa: B008
+    """[extensão] Upload de imagens/vídeos novos para o editor (overlay ou clipe)."""
+    refs.project_dir(pid)
+    payload = []
+    for f in files:
+        data = await f.read()
+        if len(data) > MAX_MEDIA_BYTES:
+            raise HTTPException(413, f"{f.filename}: arquivo acima de {MAX_MEDIA_BYTES // (1024 * 1024)} MB")
+        payload.append((f.filename or "media", data))
+    try:
+        return edit.import_media(pid, payload)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 

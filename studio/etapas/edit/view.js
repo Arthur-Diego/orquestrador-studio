@@ -399,15 +399,28 @@ Studio.register("edit", (ctx) => {
     ({ media: pMedia, text: pText, captions: pCaptions, audio: pAudio, transitions: pTransitions, effects: pEffects, filters: pFilters, elements: pElements, adjust: pAdjust, library: pLibrary }[St.panel] || pMedia)(el);
   }
   function pMedia(el) {
-    const clips = St.timeline.clips || [];
-    el.innerHTML = phead("Mídia", clips.length + 1) + `<input class="ved-search" id="mSearch" placeholder="Buscar…"><div class="ved-mgrid" id="mList"></div>`;
+    const clips = St.timeline.clips || [], media = St.mediaLib || [];
+    el.innerHTML = phead("Mídia", clips.length + media.length) + `<input class="ved-search" id="mSearch" placeholder="Buscar…">
+      <label class="drop sm" id="mDrop" style="display:block;margin-bottom:10px;padding:9px;border:1px dashed var(--vbd3);border-radius:8px;text-align:center;color:var(--vtx4);font-size:11px">Arraste imagens/vídeos aqui<input id="mUp" type="file" accept="video/*,image/*" multiple hidden></label>
+      <div class="ved-mgrid" id="mList"></div>`;
     const list = document.getElementById("mList");
-    list.innerHTML = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("")
-      + `<div class="ved-mcard add" id="mUpload"><span style="font-size:18px">⬆</span>upload +<span class="mt">novo</span></div>`;
-    document.getElementById("mSearch").oninput = (e) => { const q = e.target.value.toLowerCase(); list.querySelectorAll(".ved-mcard[data-cid]").forEach((t) => { t.style.display = t.title.toLowerCase().includes(q) ? "" : "none"; }); };
-    document.getElementById("mUpload").onclick = () => toast("Upload de nova mídia entra numa próxima fase; use os takes das etapas anteriores.");
-    list.querySelectorAll(".ved-mcard[data-cid]").forEach((t) => t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "clip:" + t.dataset.cid)));
+    const clipCards = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("");
+    const mediaCards = media.map((m) => `<div class="ved-mcard" draggable="true" data-mid="${m.id}" title="${esc(m.name)}"><div class="th">${m.kind === "video" ? `<video preload="metadata" muted src="${ctx.files(m.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(m.file)}">`}</div><div class="cap"><div class="nm">${esc(m.name)}</div><div class="mt">${m.kind === "video" ? (m.duration || 0).toFixed(1) + "s" : "img"}</div></div></div>`).join("");
+    list.innerHTML = clipCards + mediaCards + `<div class="ved-mcard add" id="mUpload"><span style="font-size:18px">⬆</span>upload +<span class="mt">novo</span></div>`;
+    document.getElementById("mSearch").oninput = (e) => { const q = e.target.value.toLowerCase(); list.querySelectorAll(".ved-mcard[data-cid],.ved-mcard[data-mid]").forEach((t) => { t.style.display = t.title.toLowerCase().includes(q) ? "" : "none"; }); };
+    document.getElementById("mUpload").onclick = () => document.getElementById("mUp").click();
+    document.getElementById("mUp").onchange = (e) => { if (e.target.files.length) uploadMedia([...e.target.files]); };
+    ui.drop(document.getElementById("mDrop"), uploadMedia);
+    list.querySelectorAll("[data-cid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "clip:" + t.dataset.cid)); t.addEventListener("dblclick", () => addPipelineClip(t.dataset.cid)); });
+    list.querySelectorAll("[data-mid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "media:" + t.dataset.mid)); t.addEventListener("dblclick", () => addMediaItem(media.find((m) => m.id === t.dataset.mid))); });
   }
+  function addPipelineClip(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return; commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }); }
+  function addMediaItem(m) {
+    if (!m) return;
+    if (m.kind === "video") commit("adicionar vídeo", () => St.timeline.clips.push({ id: newId("c"), scene: "upload", shot: (m.name || "media").replace(/\W+/g, "_"), take: "1", file: m.file, in: 0, out: Math.max(num(m.duration, 3), 0.5), speed: 1, blend: true, zoom: 1 }));
+    else commit("adicionar imagem", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), src: m.file, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+  }
+  async function uploadMedia(files) { try { const r = await ui.upload(`${base()}/media/upload`, files); St.mediaLib = await api(`${base()}/media`); toast(`${r.added} mídia(s) importada(s)`); renderPanel(); } catch (err) { toast(err.message); } }
   function pText(el) {
     el.innerHTML = phead("Texto", TEXT_PRESETS.length) + `<div class="ved-list">${TEXT_PRESETS.map(([id, nm, sub]) => `<div class="ved-row" data-t="${id}"><span class="ric">T</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${sub}</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
     el.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => { const p = TEXT_PRESETS.find((x) => x[0] == b.dataset.t); addText(p[1] === "Customizado" ? "Texto" : p[1], p[3], "text"); });
@@ -631,7 +644,7 @@ Studio.register("edit", (ctx) => {
     });
     // drop de mídia
     main.addEventListener("dragover", (e) => e.preventDefault());
-    main.addEventListener("drop", (e) => { e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || ""); if (d.startsWith("clip:")) { const cid = d.slice(5); const c = (St.timeline.clips || []).find((x) => x.id === cid); if (c) { commit("duplicar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }); } } });
+    main.addEventListener("drop", (e) => { e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || ""); if (d.startsWith("clip:")) addPipelineClip(d.slice(5)); else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6))); });
   }
   function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); scheduleSave(); }
 
@@ -866,6 +879,7 @@ Studio.register("edit", (ctx) => {
       if (!ctx.pid()) { St.timeline = null; renderRoot(); return; }
       try { const f = await api("/api/edit/ffmpeg"); St.hasFfmpeg = f.available; } catch (e) { St.hasFfmpeg = true; }
       try { St.sfxLib = await api(`${base()}/sfx`); } catch (e) { St.sfxLib = []; }
+      try { St.mediaLib = await api(`${base()}/media`); } catch (e) { St.mediaLib = []; }
       await load();
     },
     destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); },

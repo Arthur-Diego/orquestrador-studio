@@ -281,6 +281,18 @@ def test_timeline_accepts_zoom_and_loudnorm(client, project, root):
     assert client.put(url(project, "/timeline"), json=tl).status_code == 422
 
 
+def test_media_upload_and_list(client, project, root):
+    """[extensão] upload de imagem/vídeo novo para o editor: entra em edit/candidates e é listado."""
+    from tests.conftest import image_bytes
+    r = client.post(url(project, "/media/upload"), files=[("files", ("logo.png", image_bytes(), "image/png"))])
+    assert r.status_code == 200 and r.json()["added"] == 1
+    media = client.get(url(project, "/media")).json()
+    assert len(media) == 1 and media[0]["kind"] == "image" and media[0]["file"].startswith("edit/candidates/")
+    # extensão não suportada -> 422; e a lista de SFX não mistura imagem
+    assert client.post(url(project, "/media/upload"), files=[("files", ("x.txt", b"nope", "text/plain"))]).status_code == 422
+    assert client.get(url(project, "/sfx")).json() == []
+
+
 def test_step_screen_is_the_editor_extension(client):
     """Etapa 8 vira o EDITOR de vídeo completo [extensão] (ADR-030). A tela é o editor, marcada
     como extensão, com o slot do guia da aula 014 preservado — a fidelidade ao curso vive no

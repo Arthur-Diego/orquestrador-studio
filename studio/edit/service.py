@@ -466,3 +466,35 @@ def list_sfx(pid: str) -> list[dict]:
     return [{"id": c["id"], "name": c.get("name", ""), "file": f"edit/candidates/{c['file']}",
              "prompt": c.get("prompt", ""), "duration": c.get("duration", 0.0), "imported": c.get("imported", "")}
             for c in ingest.load_candidates(root, "edit") if c.get("kind") == "audio"]
+
+
+# ---------- mídia importada (imagens/vídeos) [extensão] do editor ----------
+def import_media(pid: str, files: list[tuple[str, bytes]]) -> dict:
+    """Upload de imagens/vídeos novos para o editor (overlay de imagem ou clipe de vídeo).
+
+    Reusa a API transversal `ingest` (dedupe por conteúdo, probe de duração no vídeo). Não é da
+    aula 014 — é [extensão]; fica em `edit/candidates/` como os SFX, separado por `kind`.
+    """
+    root = project_dir(pid)
+    img, vid = [], []
+    for name, data in files:
+        ext = Path(name or "").suffix.lower()
+        if ext in ingest.MEDIA_EXT.get("video", ()):
+            vid.append((name, data))
+        elif ext in ingest.MEDIA_EXT.get("image", ()):
+            img.append((name, data))
+        else:
+            raise ValueError(f"{name}: tipo não suportado — envie imagem ou vídeo")
+    added = 0
+    if img:
+        added += ingest.import_upload(root, "edit", img, kind="image").get("added", 0)
+    if vid:
+        added += ingest.import_upload(root, "edit", vid, kind="video").get("added", 0)
+    return {"added": added}
+
+
+def list_media(pid: str) -> list[dict]:
+    root = project_dir(pid)
+    return [{"id": c["id"], "name": c.get("name", ""), "file": f"edit/candidates/{c['file']}",
+             "kind": c.get("kind"), "duration": c.get("duration", 0.0)}
+            for c in ingest.load_candidates(root, "edit") if c.get("kind") in ("image", "video")]
