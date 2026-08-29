@@ -44,8 +44,9 @@ Padrões adotados
 | ----------- | ----------------- | ------------ |
 | `available()` / `status()` | detectar binário; `account status` → instalado/logado/plano/créditos | CLI |
 | `history_images(size)` | `generate list --image --size N` → [{id, prompt, model, created, urls[]}] | CLI |
-| `cost(model, params)` | `generate cost` (estimativa sem gastar) | CLI |
-| `generate(model, params, timeout)` | `generate create … --wait` → {raw, urls, id} | CLI |
+| `model_params(model)` / `adapt_params(model, params)` | `model get <modelo>` (catálogo cacheado 1 h) → só os params que o modelo declara vão ao CLI; param desconhecido (ex.: `mode` no `kling2_6`) é descartado com log, param essencial (`prompt`, `start_image`, `end_image`) não suportado vira `RuntimeError` explicativo em vez de gerar outra coisa | CLI |
+| `cost(model, params)` | `adapt_params` + `generate cost` (estimativa sem gastar) | CLI |
+| `generate(model, params, timeout)` | `adapt_params` + `generate create … --wait` → {raw, urls, id} | CLI |
 | `_params`, `_flatten`, `_pick`, `_json` | utilidades de mapeamento e parse | — |
 
 ---
