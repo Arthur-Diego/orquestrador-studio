@@ -21,7 +21,10 @@ import json
 import logging
 import os
 import shutil
+import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from .. import higgsfield as hf
@@ -83,6 +86,22 @@ DOWNLOADS_DEFAULT = ingest.DOWNLOADS_DEFAULT
 
 _UNSET = object()           # distingue "não informado" de "limpar" em update_shot(start_end=None)
 _registry = JobRegistry()
+#: Um lock por projeto (raiz) serializando o read-modify-write de `animate/takes.json`: a tela
+#: dispara GET /shots (que grava o plano mesclado) e PUT /shots/... quase juntos, e sem isso uma
+#: atualização sobrescreve a outra. Reentrante para não travar se um fluxo aninhar as funções.
+_locks: dict[str, threading.RLock] = {}
+_locks_guard = threading.Lock()
+
+
+@contextmanager
+def _project_lock(root: Path):
+    key = str(root)
+    with _locks_guard:
+        lock = _locks.get(key)
+        if lock is None:
+            lock = _locks[key] = threading.RLock()
+    with lock:
+        yield
 
 
 def model_order() -> list[str]:
@@ -168,12 +187,23 @@ def _load_data(root: Path) -> dict:
 
 
 def _save_data(root: Path, data: dict) -> None:
-    """Gravação atômica: nenhum leitor (etapa 7) vê `takes.json` pela metade."""
+    """Gravação atômica: nenhum leitor (etapa 7) vê `takes.json` pela metade.
+
+    O temporário é ÚNICO por escrita: com nome fixo, duas gravações simultâneas (GET /shots e
+    PUT /shots/... da própria tela) disputavam o mesmo arquivo e uma delas estourava
+    `FileNotFoundError` no `os.replace` — que o router traduzia em 404.
+    """
     d = root / STEP
     d.mkdir(parents=True, exist_ok=True)
-    tmp = d / ".takes.json.tmp"
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
-    os.replace(tmp, _takes_file(root))
+    payload = json.dumps(data, ensure_ascii=False, indent=1)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".takes.json.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(payload)
+        os.replace(tmp, _takes_file(root))
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def _blank(scene: str, shot: str, order: int = 999, image: str | None = None, scene_prompt: str = "") -> dict:
@@ -299,9 +329,10 @@ def load_plan(pid: str) -> dict:
     root = project_dir(pid)
     if not _storyboard_file(root).exists():
         raise FileNotFoundError("Etapa 4 ainda não produziu storyboard/storyboard.json")
-    data, warnings = _merge(root)
-    _save_data(root, data)
-    shots = [_public(data, s) for s in data["shots"]]
+    with _project_lock(root):
+        data, warnings = _merge(root)
+        _save_data(root, data)
+        shots = [_public(data, s) for s in data["shots"]]
     return {"shots": shots, "ready": sum(1 for s in shots if s["ready"]), "total": len(shots),
             "model_order": model_order(),
             # `[extensão]` wave 7 (ADR-021): mapa cena → 2.6 / transição start_end → 3.0 Turbo.
@@ -316,32 +347,33 @@ def update_shot(pid: str, scene: str, shot: str, *, prompt: str | None = None, m
                 duration: int | None = None, start_end=_UNSET, fallback_black: bool | None = None,
                 aspect_ratio=_UNSET, cli_mode=_UNSET) -> dict:
     root = project_dir(pid)
-    data, _ = _merge(root)
-    entry = _find(data, scene, shot)
-    if prompt is not None:
-        entry["prompt"] = prompt.strip()
-    if mode is not None:
-        if mode not in MODES:
-            raise ValueError(f"modo inválido: {mode} (use {', '.join(MODES)})")
-        entry["mode"] = mode
-    if duration is not None:
-        if duration not in DURATIONS:
-            raise ValueError(f"duração inválida: {duration} (a aula 012 usa {DURATIONS[0]} s ou {DURATIONS[1]} s)")
-        entry["duration"] = duration
-    if start_end is not _UNSET:
-        entry["start_end"] = _validate_start_end(root, entry, start_end)
-    elif mode is not None:
-        # O par acompanha o modo: escolher start/end grava o par (aula 012, Kling 2.5 Turbo);
-        # sair do modo limpa o par para não mandar `end_image` numa cena que não é de transição.
-        entry["start_end"] = _auto_start_end(data, entry, root) if mode == "start_end" else None
-    if fallback_black is not None:
-        entry["fallback_black"] = bool(fallback_black)
-    if aspect_ratio is not _UNSET:
-        entry["aspect_ratio"] = _validated_choice(aspect_ratio, ASPECT_RATIOS, "proporção")
-    if cli_mode is not _UNSET:
-        entry["cli_mode"] = _validated_choice(cli_mode, CLI_MODES, "modo do CLI")
-    _save_data(root, data)
-    return _public(data, entry)
+    with _project_lock(root):
+        data, _ = _merge(root)
+        entry = _find(data, scene, shot)
+        if prompt is not None:
+            entry["prompt"] = prompt.strip()
+        if mode is not None:
+            if mode not in MODES:
+                raise ValueError(f"modo inválido: {mode} (use {', '.join(MODES)})")
+            entry["mode"] = mode
+        if duration is not None:
+            if duration not in DURATIONS:
+                raise ValueError(f"duração inválida: {duration} (a aula 012 usa {DURATIONS[0]} s ou {DURATIONS[1]} s)")
+            entry["duration"] = duration
+        if start_end is not _UNSET:
+            entry["start_end"] = _validate_start_end(root, entry, start_end)
+        elif mode is not None:
+            # O par acompanha o modo: escolher start/end grava o par (aula 012, Kling 2.5 Turbo);
+            # sair do modo limpa o par para não mandar `end_image` numa cena que não é de transição.
+            entry["start_end"] = _auto_start_end(data, entry, root) if mode == "start_end" else None
+        if fallback_black is not None:
+            entry["fallback_black"] = bool(fallback_black)
+        if aspect_ratio is not _UNSET:
+            entry["aspect_ratio"] = _validated_choice(aspect_ratio, ASPECT_RATIOS, "proporção")
+        if cli_mode is not _UNSET:
+            entry["cli_mode"] = _validated_choice(cli_mode, CLI_MODES, "modo do CLI")
+        _save_data(root, data)
+        return _public(data, entry)
 
 
 def _validated_choice(value, allowed: tuple[str, ...], label: str) -> str | None:
@@ -456,62 +488,66 @@ def attach_take(pid: str, scene: str, shot: str, candidate_id: str, model: str |
                 prompt: str | None = None) -> dict:
     """Copia o candidato para `videos/cenaNN/shotMM_takeK.mp4` e registra o take (liked: null)."""
     root = project_dir(pid)
-    data, _ = _merge(root)
-    entry = _find(data, scene, shot)
-    cands = ingest.load_candidates(root, STEP)
-    cand = next((c for c in cands if c["id"] == candidate_id), None)
-    if cand is None:
-        raise FileNotFoundError(f"candidato não encontrado: {candidate_id}")
-    if any(t.get("candidate_id") == candidate_id for t in entry["takes"]):
-        raise RuntimeError("Este vídeo já é um take deste shot.")
-    order = model_order()
-    model = model or suggested_model(failures_of(entry)) or order[0]
-    if model not in accepted_models():
-        raise ValueError(f"modelo fora da ordem configurada: {model} ({', '.join(accepted_models())})")
-    src = root / STEP / "candidates" / cand["file"]
-    if not src.exists():
-        raise FileNotFoundError(f"arquivo do candidato ausente: {cand['file']}")
-    # A convenção da wave é .mp4; se o usuário importou .mov/.webm, manter o container real
-    ext = Path(cand["file"]).suffix.lower()
-    ext = ext if ext in VIDEO_EXT else ".mp4"
-    k = max((_take_number(t["id"]) for t in entry["takes"]), default=0) + 1
-    rel = _video_rel(scene, shot, f"take{k}", ext)
-    dest = root / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest)
-    take = {"id": f"take{k}", "file": rel, "liked": None, "model": model,
-            "prompt": (prompt if prompt is not None else entry.get("prompt")) or "",
-            "duration": entry.get("duration") or DURATIONS[0], "start_end": entry.get("start_end"),
-            "prompt_mode": entry.get("mode") or "simple",
-            "aspect_ratio": entry.get("aspect_ratio") or project_aspect_ratio(root),
-            "source": cand.get("source"), "thumb": cand.get("thumb"), "candidate_id": candidate_id}
-    entry["takes"].append(take)
-    _save_data(root, data)
-    for c in cands:
-        if c["id"] == candidate_id:
-            c["selected"] = True
-    ingest.save_candidates(root, STEP, cands)
+    with _project_lock(root):
+        data, _ = _merge(root)
+        entry = _find(data, scene, shot)
+        cands = ingest.load_candidates(root, STEP)
+        cand = next((c for c in cands if c["id"] == candidate_id), None)
+        if cand is None:
+            raise FileNotFoundError(f"candidato não encontrado: {candidate_id}")
+        if any(t.get("candidate_id") == candidate_id for t in entry["takes"]):
+            raise RuntimeError("Este vídeo já é um take deste shot.")
+        order = model_order()
+        model = model or suggested_model(failures_of(entry)) or order[0]
+        if model not in accepted_models():
+            raise ValueError(f"modelo fora da ordem configurada: {model} ({', '.join(accepted_models())})")
+        src = root / STEP / "candidates" / cand["file"]
+        if not src.exists():
+            raise FileNotFoundError(f"arquivo do candidato ausente: {cand['file']}")
+        # A convenção da wave é .mp4; se o usuário importou .mov/.webm, manter o container real
+        ext = Path(cand["file"]).suffix.lower()
+        ext = ext if ext in VIDEO_EXT else ".mp4"
+        k = max((_take_number(t["id"]) for t in entry["takes"]), default=0) + 1
+        rel = _video_rel(scene, shot, f"take{k}", ext)
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        take = {"id": f"take{k}", "file": rel, "liked": None, "model": model,
+                "prompt": (prompt if prompt is not None else entry.get("prompt")) or "",
+                "duration": entry.get("duration") or DURATIONS[0], "start_end": entry.get("start_end"),
+                "prompt_mode": entry.get("mode") or "simple",
+                "aspect_ratio": entry.get("aspect_ratio") or project_aspect_ratio(root),
+                "source": cand.get("source"), "thumb": cand.get("thumb"), "candidate_id": candidate_id}
+        entry["takes"].append(take)
+        _save_data(root, data)
+        for c in cands:
+            if c["id"] == candidate_id:
+                c["selected"] = True
+        ingest.save_candidates(root, STEP, cands)
+        result = {"take": take, "shot": _public(data, entry)}
     log.info("animate: take %s de %s/%s a partir do candidato %s", take["id"], scene, shot, candidate_id)
-    return {"take": take, "shot": _public(data, entry)}
+    return result
 
 
 def set_like(pid: str, scene: str, shot: str, take_id: str, liked: bool | None = True) -> dict:
     """Like = o take usável da aula 012: vira `shotMM_final.mp4`. Rejeitar conta como falha."""
     root = project_dir(pid)
-    data, _ = _merge(root)
-    entry = _find(data, scene, shot)
-    take = next((t for t in entry["takes"] if t["id"] == take_id), None)
-    if take is None:
-        raise FileNotFoundError(f"take não encontrado: {scene}/{shot}/{take_id}")
-    if liked is True:
-        for t in entry["takes"]:
-            if t is not take and t.get("liked") is True:
-                t["liked"] = None       # no máximo um like por shot; rejeições (False) são preservadas
-    take["liked"] = liked
-    _sync_final(root, entry)
-    _save_data(root, data)
+    with _project_lock(root):
+        data, _ = _merge(root)
+        entry = _find(data, scene, shot)
+        take = next((t for t in entry["takes"] if t["id"] == take_id), None)
+        if take is None:
+            raise FileNotFoundError(f"take não encontrado: {scene}/{shot}/{take_id}")
+        if liked is True:
+            for t in entry["takes"]:
+                if t is not take and t.get("liked") is True:
+                    t["liked"] = None   # no máximo um like por shot; rejeições (False) são preservadas
+        take["liked"] = liked
+        _sync_final(root, entry)
+        _save_data(root, data)
+        public = _public(data, entry)
     log.info("animate: like=%s em %s/%s/%s", liked, scene, shot, take_id)
-    return _public(data, entry)
+    return public
 
 
 # ---------- ponte storyboard → montagem (`[extensão]` ADR-022, R2) ----------
@@ -523,30 +559,32 @@ def register_storyboard_video(root: Path, scene: str, shot: str, order: int, src
 
     Escreve direto (sem `_merge`, que dependeria de `storyboard.json`) e mantém `shotMM_final.mp4`
     (regra do like). NÃO altera a UI nem a leitura do animate — só grava o take."""
-    data = _load_data(root)
-    entry = next((s for s in data["shots"] if s.get("scene") == scene and s.get("shot") == shot), None)
-    if entry is None:
-        entry = _blank(scene, shot, order=order)
-        data["shots"].append(entry)
-    else:
-        entry["order"] = order
-    src = root / src_rel
-    ext = src.suffix.lower() if src.suffix.lower() in VIDEO_EXT else ".mp4"
-    rel = _video_rel(scene, shot, "take1", ext)
-    dest = root / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if src.exists():
-        shutil.copy2(src, dest)
-    entry["takes"] = [{                       # um like por shot; reanimar a foto substitui o take
-        "id": "take1", "file": rel, "liked": True, "model": model, "prompt": prompt or "",
-        "duration": duration or DURATIONS[0], "start_end": None, "prompt_mode": "simple",
-        "aspect_ratio": entry.get("aspect_ratio") or project_aspect_ratio(root),
-        "source": "storyboard", "thumb": None, "candidate_id": None, "storyboard_photo": True}]
-    entry["orphan"] = False
-    _sync_final(root, entry)
-    _save_data(root, data)
+    with _project_lock(root):
+        data = _load_data(root)
+        entry = next((s for s in data["shots"] if s.get("scene") == scene and s.get("shot") == shot), None)
+        if entry is None:
+            entry = _blank(scene, shot, order=order)
+            data["shots"].append(entry)
+        else:
+            entry["order"] = order
+        src = root / src_rel
+        ext = src.suffix.lower() if src.suffix.lower() in VIDEO_EXT else ".mp4"
+        rel = _video_rel(scene, shot, "take1", ext)
+        dest = root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if src.exists():
+            shutil.copy2(src, dest)
+        entry["takes"] = [{                   # um like por shot; reanimar a foto substitui o take
+            "id": "take1", "file": rel, "liked": True, "model": model, "prompt": prompt or "",
+            "duration": duration or DURATIONS[0], "start_end": None, "prompt_mode": "simple",
+            "aspect_ratio": entry.get("aspect_ratio") or project_aspect_ratio(root),
+            "source": "storyboard", "thumb": None, "candidate_id": None, "storyboard_photo": True}]
+        entry["orphan"] = False
+        _sync_final(root, entry)
+        _save_data(root, data)
+        take = entry["takes"][0]
     log.info("animate: ponte storyboard→take (foto) %s/%s a partir de %s", scene, shot, src_rel)
-    return {"scene": scene, "shot": shot, "take": entry["takes"][0]}
+    return {"scene": scene, "shot": shot, "take": take}
 
 
 def _sync_final(root: Path, entry: dict) -> None:
@@ -667,13 +705,14 @@ def start_generate(pid: str, scene: str, shot: str, model: str, count: int = DEF
 
 
 def _bump_failure(root: Path, scene: str, shot: str) -> None:
-    data, _ = _merge(root)
-    try:
-        entry = _find(data, scene, shot)
-    except FileNotFoundError:
-        return
-    entry["cli_failures"] = int(entry.get("cli_failures") or 0) + 1
-    _save_data(root, data)
+    with _project_lock(root):
+        data, _ = _merge(root)
+        try:
+            entry = _find(data, scene, shot)
+        except FileNotFoundError:
+            return
+        entry["cli_failures"] = int(entry.get("cli_failures") or 0) + 1
+        _save_data(root, data)
 
 
 def job_status(pid: str) -> dict:
