@@ -503,36 +503,43 @@ Timers órfãos: —.
 | # | Severidade | Dono | Tela/rota | Descrição objetiva | Caso de origem | Destino | Card |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AP-01 | ALTA | backend | storyboard/animate · generate | CLI recusa params que o modelo não declara (`mode` no kling2_6) | relato | corrigido (ad94597, PR #79) | https://trello.com/c/NXgIFcFN |
-| AP-02 | ALTA | backend | animate · PUT/GET /animate/shots | temporário fixo em _save_data → 404 em escritas concorrentes | C-ANIMATE-37 | em correção (grupo C) | https://trello.com/c/veluS99A |
-| AP-03 | ALTA | frontend | edit · #edExport | modal Exportar não responde ao mouse (rótulos .ved.kick viram overlay) | C-EDIT-09 | em correção (grupo B) | https://trello.com/c/HUYFu2ns |
-| AP-04 | ALTA | frontend | edit · #edStage | preview em branco após qualquer edição | C-EDIT-50 | em correção (grupo B) | https://trello.com/c/Ojd2MoQ1 |
-| AP-05 | ALTA | frontend | edit · player | música e SFX não tocam no play | relato | em correção (grupo B) | https://trello.com/c/JmlZfKYw |
-| AP-06 | ALTA | frontend+backend | edit · autosave/zoom | 2ª edição perdida após autosave; zoom em unidade divergente | C-EDIT-36, C-EDIT-46 | em correção (grupos A+B) | https://trello.com/c/hNuGGoh2 |
-| AP-07 | ALTA | backend+frontend | edit · Elementos | servidor descarta shape/text do overlay → elementos viram quadrado | relato | em correção (grupos A+B) | https://trello.com/c/oTGSInWW |
-| AP-08 | MEDIA | backend | edit · PUT /edit/timeline | round-trip descarta clip_fx.audio, filters.preset, music.muted/volume | C-EDIT-34, 26, 38 | em correção (grupo A) | https://trello.com/c/Zyd7EFzR |
-| AP-09 | MEDIA | backend | edit · Transições | toda transição gravada como dissolve | C-EDIT-23 | em correção (grupo A) | https://trello.com/c/JcsR8RTo |
-| AP-10 | MEDIA | frontend | edit · Mídia/VÍDEO 2 | não há como pôr vídeo na faixa VÍDEO 2 | relato | em correção (grupo B) | https://trello.com/c/rP4KVVI8 |
-| AP-11 | MEDIA | frontend | edit · Legendas | sem botão '+ legenda manual' | C-EDIT-19 | em correção (grupo B) | https://trello.com/c/v4UFExzT |
-| AP-12 | MEDIA | frontend | edit · #tRipple | ripple delete zera os clipes | C-EDIT-43 | em correção (grupo B) | https://trello.com/c/XN3NB6Py |
-| AP-13 | BAIXA | frontend | edit · rail esquerdo | botões +/aplicar/✕ desalinhados (.radd 24 px) | relato | em correção (grupo B) | https://trello.com/c/HWn86Kb4 |
-| AP-14 | ALTA | frontend | storyboard · painel 04 | reabrir cena não reidrata ordem; salvar apaga shot*_final.png | C-STORYBOARD-36 | em correção (grupo D) | https://trello.com/c/zaNHAcNG |
-| AP-15 | MEDIA | backend | storyboard · product/select | remover cena do produto não zera selected | C-STORYBOARD-51 | em correção (grupo D) | https://trello.com/c/sEDc3SaC |
-| AP-16 | MEDIA | frontend | base · #baseGallery | duplo clique não abre imagem (re-render) | C-BASE-27 | em correção (grupo E) | https://trello.com/c/uegoyg2m |
-| AP-17 | MEDIA | frontend | base · stepper | card × stepper discordam ao abrir | C-BASE-33 | em correção (grupo E) | https://trello.com/c/NRlxSe7y |
+| AP-02 | ALTA | backend | animate · PUT/GET /animate/shots | temporário fixo em _save_data → 404 em escritas concorrentes | C-ANIMATE-37 | corrigido (5a39f13) | https://trello.com/c/veluS99A |
+| AP-03 | ALTA | frontend | edit · #edExport | modal Exportar não responde ao mouse (rótulos .ved.kick viram overlay) | C-EDIT-09 | corrigido (b902cdc, 031208c) | https://trello.com/c/HUYFu2ns |
+| AP-04 | ALTA | frontend | edit · #edStage | preview em branco após qualquer edição | C-EDIT-50 | corrigido (3889b09) | https://trello.com/c/Ojd2MoQ1 |
+| AP-05 | ALTA | frontend | edit · player | música e SFX não tocam no play | relato | corrigido (92a4d15) | https://trello.com/c/JmlZfKYw |
+| AP-06 | ALTA | frontend+backend | edit · autosave/zoom | 2ª edição perdida após autosave; zoom em unidade divergente | C-EDIT-36, C-EDIT-46 | corrigido (810606e + 4e9ddfb) | https://trello.com/c/hNuGGoh2 |
+| AP-07 | ALTA | backend+frontend | edit · Elementos | servidor descarta shape/text do overlay → elementos viram quadrado | relato | corrigido (3a2a446 + dd5f542) | https://trello.com/c/oTGSInWW |
+| AP-08 | MEDIA | backend | edit · PUT /edit/timeline | round-trip descarta clip_fx.audio, filters.preset, music.muted/volume | C-EDIT-34, 26, 38 | corrigido (5542c72 + 018e1d5) | https://trello.com/c/Zyd7EFzR |
+| AP-09 | MEDIA | backend | edit · Transições | toda transição gravada como dissolve | C-EDIT-23 | corrigido (a50597d) | https://trello.com/c/JcsR8RTo |
+| AP-10 | MEDIA | frontend | edit · Mídia/VÍDEO 2 | não há como pôr vídeo na faixa VÍDEO 2 | relato | corrigido (517cce2) | https://trello.com/c/rP4KVVI8 |
+| AP-11 | MEDIA | frontend | edit · Legendas | sem botão '+ legenda manual' | C-EDIT-19 | corrigido (e78350a) | https://trello.com/c/v4UFExzT |
+| AP-12 | MEDIA | frontend | edit · #tRipple | ripple delete zera os clipes | C-EDIT-43 | corrigido (3a51cb5) | https://trello.com/c/XN3NB6Py |
+| AP-13 | BAIXA | frontend | edit · rail esquerdo | botões +/aplicar/✕ desalinhados (.radd 24 px) | relato | corrigido (427fe87) | https://trello.com/c/HWn86Kb4 |
+| AP-14 | ALTA | frontend | storyboard · painel 04 | reabrir cena não reidrata ordem; salvar apaga shot*_final.png | C-STORYBOARD-36 | corrigido (237523f, 1bd568d) | https://trello.com/c/zaNHAcNG |
+| AP-15 | MEDIA | backend | storyboard · product/select | remover cena do produto não zera selected | C-STORYBOARD-51 | corrigido (3059e51) | https://trello.com/c/sEDc3SaC |
+| AP-16 | MEDIA | frontend | base · #baseGallery | duplo clique não abre imagem (re-render) | C-BASE-27 | corrigido (d0e6b79, 96b09b6) | https://trello.com/c/uegoyg2m |
+| AP-17 | MEDIA | frontend | base · stepper | card × stepper discordam ao abrir | C-BASE-33 | corrigido (3385bac) | https://trello.com/c/NRlxSe7y |
 | AP-18 | MEDIA | frontend+produto | animate · modal start/end | modelo de transição não exposto; default kling3_0_turbo sem end_image (ADR-021) | C-ANIMATE-35 | decisão humana (HARD-GATE 3) | https://trello.com/c/lUy1wmEI |
-| AP-19 | BAIXA | frontend | base/storyboard/edit/publish/creditos | campos e botões sem nome acessível | C-PUBLISH-21, C-CREDITOS-20, auditorias | em correção (grupos F+B) | https://trello.com/c/W848qTQy |
-| AP-20 | BAIXA | frontend+docs | overview/README/CLAUDE.md | textos citam 11 etapas; são 10 | C-SHELL-15 | em correção (grupo F) | https://trello.com/c/NWcw8Nqi |
+| AP-19 | BAIXA | frontend | base/storyboard/edit/publish/creditos | campos e botões sem nome acessível | C-PUBLISH-21, C-CREDITOS-20, auditorias | corrigido (61175d7 + ec7cc81) | https://trello.com/c/W848qTQy |
+| AP-20 | BAIXA | frontend+docs | overview/README/CLAUDE.md | textos citam 11 etapas; são 10 | C-SHELL-15 | corrigido (cc0c711) | https://trello.com/c/NWcw8Nqi |
 | AP-21 | BAIXA | produto | storyboard/music/export · rotas pagas | rotas de geração paga sem comando na UI | C-STORYBOARD-13/50, C-MUSIC-17, C-EXPORT-17 | decisão humana | https://trello.com/c/fIijJIXw |
+| AP-22 | MEDIA | backend | app/mood/settings/publish/prospect/angles/export | temporário de nome fixo + os.replace em 8 call sites (mesma corrida do AP-02) | derivado de C-ANIMATE-37 | corrigido (d0b1772, 25433a9) | https://trello.com/c/yLYFFIfD |
 
 ## 8. Veredito
 
 - Casos: 352 PASSA, 20 FALHA, 5 BLOQUEADO de 377.
-- Apontamentos: 9 ALTA, 9 MEDIA, 3 BAIXA — 1 corrigido (AP-01, PR #79), 18 em correção, 2 aguardando decisão humana (AP-18, AP-21).
-- Situação: REPROVADA (rodada 1) — há ALTA sem correção; reavaliar após a rodada 2.
-- PR: #79 (fix do CLI) · #80 (skill) · rodada de correções: a abrir ao fim da rodada 2.
+- Apontamentos: 22 no total (9 ALTA, 10 MEDIA, 3 BAIXA) — 20 corrigidos e revalidados (AP-01 no PR #79; AP-02…AP-17, AP-19, AP-20, AP-22 na branch fix/qa-20260829), 2 aguardando decisão humana (AP-18, AP-21).
+- Situação: APROVADA COM RESSALVAS (após a rodada 2) — nenhum ALTA aberto; ficam abertos AP-18 (MEDIA, decisão sobre o modelo de transição/ADR-021) e AP-21 (BAIXA, rotas pagas sem UI).
+- PR: #79 (fix do CLI) · #80 (skill) · PR da rodada de correções: ver card-pai (aberto ao fechar a rodada 2).
 
 ## 9. Histórico de rodadas
 
 ### Rodada 1 — 2026-08-29 03:40–04:50 (UTC)
 - Executado: 14 telas, 377 casos (light+dark, 1440x900), auditoria de API (18/18), newman (8 coleções; falhas classificadas como fixture/legado).
 - Apontamentos abertos: AP-01…AP-21 (AP-01 já corrigido em PR próprio).
+
+### Rodada 2 — 2026-08-29 05:00–06:30 (UTC) (correção + revalidação)
+- Corrigidos: AP-02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 22 (grupos A/B/C/D/E/F/G em worktrees, mergeados em fix/qa-20260829; Task-Id ADH-OS-20260829-36). Bônus: C-BASE-09 revelou e corrigiu a perda do prompt recém-gerado (96b09b6).
+- Revalidado (run r2, branch integrada): `[decisão] regressão de todas as telas — regra "studio/common/**, studio/app.py alterados" (diff do grupo G)`. 13 telas sem o editor: 320 PASSA · 1 FALHA (C-ANIMATE-35 = AP-18) · 5 BLOQUEADO de 326; editor: 56 PASSA · 0 FALHA de 56 (5 casos novos: C-EDIT-52…56); auditoria automática 0/28 com problema (era 10/28); api_audit 20 ok; newman: mesmas falhas de fixture/legado da rodada 1; pytest 884 passed.
+- Lacunas da skill corrigidas nesta rodada: auditoria ignorava recorte por ancestral rolável (falso positivo de "controle coberto"); execuções parciais do runner sobrescreviam `resultados.json` (agora mesclam).
+- Ainda abertos: AP-18 (decisão humana: modelo default de transição start/end — kling3_0_turbo não aceita end_image; contraria ADR-021), AP-21 (decisão humana: rotas pagas sem comando na UI).

@@ -488,6 +488,16 @@ AUDIT_JS = """
     const r = b.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) continue;
+    // recortado por ancestral rolável (overflow auto/scroll) = alcançável rolando, não é overlay
+    let clipped = false;
+    for (let a = b.parentElement; a && a !== document.body; a = a.parentElement) {
+      const so = getComputedStyle(a);
+      if (/(auto|scroll)/.test(so.overflowY + so.overflowX)) {
+        const ar = a.getBoundingClientRect();
+        if (cy < ar.top || cy > ar.bottom || cx < ar.left || cx > ar.right) { clipped = true; break; }
+      }
+    }
+    if (clipped) continue;
     const top = document.elementFromPoint(cx, cy);
     if (top && top !== b && !b.contains(top) && !top.contains(b) && !(b.closest('label') && b.closest('label').contains(top)))
       out.controles_cobertos.push(desc(b) + ' coberto por ' + desc(top));
