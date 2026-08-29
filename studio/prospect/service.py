@@ -17,11 +17,11 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
 import re
 from datetime import date, datetime
 from pathlib import Path
 
+from ..common import atomic
 from ..common import ffmpeg as ff
 from ..common.jobs import JobRegistry
 from ..publish import service as publish
@@ -66,10 +66,9 @@ def _slug(s: str) -> str:
 
 
 def _write_atomic(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    """Temporário ÚNICO (`common.atomic`): duas gravações simultâneas do mesmo arquivo (leads,
+    pitch) não podem disputar o mesmo `.tmp`."""
+    atomic.write_text_atomic(path, text)
 
 
 def _text(value, field: str, required: bool = False) -> str:
