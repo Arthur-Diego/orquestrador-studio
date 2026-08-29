@@ -299,6 +299,18 @@ def test_product_select_writes_product_scene_and_can_be_cleared(shots, studio_en
     assert shots.load_storyboard(project)["product_scene"] is None
 
 
+def test_product_clear_also_unmarks_the_candidate(shots, project):
+    """Remover a cena do produto apaga o flag `selected` do candidato — senão o painel 04 reabre
+    com a candidata marcada e ressuscita uma escolha que já não existe no disco."""
+    shots.set_product_ref(project, image_bytes(color=(80, 80, 80)), "geladeira.png")
+    shots.import_upload(project, "product", [("p.png", image_bytes(color=(120, 10, 10)))])
+    cid = shots.list_candidates(project, "product")["candidates"][0]["id"]
+    shots.select_product(project, cid)
+    assert shots.list_candidates(project, "product")["candidates"][0]["selected"] is True
+    shots.select_product(project, None)
+    assert shots.list_candidates(project, "product")["candidates"][0]["selected"] is False
+
+
 # ---------- geração e upscale via CLI (fakeados) ----------
 def _fake_cli(monkeypatch, shots):
     """Uma chamada ao CLI por imagem (FDD §4.5): cada `generate` devolve uma URL nova."""

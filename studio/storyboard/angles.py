@@ -588,6 +588,13 @@ def select_product(pid: str, cand_id: str | None, upscaled: bool = False) -> dic
     if cand_id is None:
         final.unlink(missing_ok=True)
         (pdir / "selection.json").unlink(missing_ok=True)
+        # Zera o flag em `product/candidates.json` também: sem isso a tela reabria com a candidata
+        # ainda marcada e ressuscitava uma escolha que não existe mais no disco.
+        cands = ingest.load_candidates(root, step)
+        if any(c.get("selected") for c in cands):
+            for c in cands:
+                c["selected"] = False
+            ingest.save_candidates(root, step, cands)
     else:
         cands = ingest.load_candidates(root, step)
         c = next((x for x in cands if x["id"] == cand_id), None)
