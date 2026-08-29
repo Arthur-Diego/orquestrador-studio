@@ -152,6 +152,9 @@ Studio.register("edit", (ctx) => {
 
   // ------------------------------------------------------------ PLAYBACK
   const videoPool = new Map();
+  const sfxPool = new Map();          // file → <audio> do SFX (um por arquivo)
+  let musicAudio = null;              // <audio id="edMusic"> — guardado aqui porque o re-render
+                                      // do palco descarta o elemento e a trilha ficava muda
   function videoFor(file) {
     if (!file) return null;
     if (videoPool.has(file)) return videoPool.get(file);
@@ -161,33 +164,77 @@ Studio.register("edit", (ctx) => {
     videoPool.set(file, v); attachPool();
     return v;
   }
-  /** `renderRoot` recria o innerHTML do editor: os <video> do pool ficam órfãos e o preview
-   *  zera depois de qualquer edição. Reancorá-los no palco a cada render. */
+  /** `renderRoot` recria o innerHTML do editor: os <video>/<audio> do pool ficam órfãos e o
+   *  preview zera (e a trilha emudece). Reancorá-los no palco a cada render. */
   function attachPool() {
     const stage = document.getElementById("edStage"); if (!stage) return;
     videoPool.forEach((v) => { if (v.parentNode !== stage) stage.appendChild(v); });
+    sfxPool.forEach((a) => { if (a.parentNode !== stage) stage.appendChild(a); });
+    if (musicAudio && musicAudio.parentNode !== stage) stage.appendChild(musicAudio);
+  }
+  /** Cria/atualiza os elementos de áudio da timeline (trilha + um por SFX) no palco. */
+  function mountAudio() {
+    if (!St.timeline || !document.getElementById("edStage")) return;
+    musicEl();
+    const files = new Set((St.timeline.sfx || []).map((s) => s.file).filter(Boolean));
+    sfxPool.forEach((a, f) => { if (!files.has(f)) { a.pause(); a.remove(); sfxPool.delete(f); } });
+    files.forEach((f) => sfxEl(f));
+    attachPool();
   }
   function musicEl() {
-    let a = document.getElementById("edMusic"); const mf = (St.timeline.music || {}).file;
-    if (!mf) { if (a) a.pause(); return null; }
-    if (!a) { a = document.createElement("audio"); a.id = "edMusic"; a.preload = "auto"; document.getElementById("edStage").appendChild(a); }
-    const want = ctx.files(mf); if (a.dataset.src !== want) { a.src = want; a.dataset.src = want; }
+    const mf = (St.timeline.music || {}).file;
+    if (!mf) { if (musicAudio) { musicAudio.pause(); musicAudio.remove(); musicAudio = null; } return null; }
+    if (!musicAudio) { musicAudio = document.createElement("audio"); musicAudio.id = "edMusic"; musicAudio.preload = "auto"; }
+    const stage = document.getElementById("edStage"); if (stage && musicAudio.parentNode !== stage) stage.appendChild(musicAudio);
+    const want = ctx.files(mf); if (musicAudio.dataset.src !== want) { musicAudio.src = want; musicAudio.dataset.src = want; }
+    return musicAudio;
+  }
+  function sfxEl(file) {
+    if (!file) return null;
+    let a = sfxPool.get(file);
+    if (!a) { a = document.createElement("audio"); a.preload = "auto"; a.dataset.sfx = file; sfxPool.set(file, a); }
+    const want = ctx.files(file); if (a.dataset.src !== want) { a.src = want; a.dataset.src = want; }
+    const stage = document.getElementById("edStage"); if (stage && a.parentNode !== stage) stage.appendChild(a);
     return a;
+  }
+  /** Ganho do SFX é dB (painel: −40…+12) — o <audio> quer 0…1. */
+  const gainVol = (db) => clamp(Math.pow(10, num(db, 0) / 20), 0, 1);
+  function sfxVolume(s) { return St.muted ? 0 : clamp((St.vol / 100) * gainVol(s.gain), 0, 1); }
+  /** Dispara cada SFX quando o playhead cruza o seu `at` (respeitando mudo/volume global). */
+  function syncSfx(de, ate) {
+    (St.timeline.sfx || []).forEach((s) => {
+      const a = sfxEl(s.file); if (!a) return;
+      a.volume = sfxVolume(s);
+      const at = num(s.at);
+      if (St.playing && at >= de - 1e-3 && at <= ate + 1e-3 && (a.paused || a.ended)) {
+        try { a.currentTime = 0; } catch (e) {}
+        a.play().catch(() => {});
+      }
+    });
+  }
+  function pauseSfx(rebobinar) {
+    sfxPool.forEach((a) => { a.pause(); if (rebobinar) { try { a.currentTime = 0; } catch (e) {} } });
+  }
+  /** Mudo/volume global e volume da trilha valem para tudo que está soando agora. */
+  function syncVolumes() {
+    syncMusic();
+    (St.timeline.sfx || []).forEach((s) => { const a = sfxPool.get(s.file); if (a) a.volume = sfxVolume(s); });
   }
   function segAt(t) { const segs = segments(); for (const s of segs) if (t >= s.start - 1e-4 && t < s.start + s.dur - 1e-4) return s; return segs[segs.length - 1] || null; }
 
   function play() {
     if (St.playing || duration() <= 0) return;
     St.playing = true; if (St.playhead >= duration() - 0.02) St.playhead = 0; playClock = performance.now();
-    const mu = musicEl(); if (mu) { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); mu.volume = (St.muted || (St.timeline.music || {}).muted) ? 0 : (St.vol / 100) * num((St.timeline.music || {}).volume, 1); mu.play().catch(() => {}); }
+    const mu = musicEl(); if (mu) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} mu.volume = musicVolume(); mu.play().catch(() => {}); }
     setPlayIcon(); loopTick();
   }
-  function pause() { St.playing = false; if (raf) cancelAnimationFrame(raf), raf = null; videoPool.forEach((v) => v.pause()); const mu = document.getElementById("edMusic"); if (mu) mu.pause(); setPlayIcon(); }
+  function pause() { St.playing = false; if (raf) cancelAnimationFrame(raf), raf = null; videoPool.forEach((v) => v.pause()); if (musicAudio) musicAudio.pause(); pauseSfx(false); setPlayIcon(); }
   function togglePlay() { St.playing ? pause() : play(); }
   function setPlayIcon() { const b = document.getElementById("pcPlay"); if (b) b.textContent = St.playing ? "❚❚" : "▶"; }
 
   function loopTick() {
     const now = performance.now(), dt = (now - playClock) / 1000; playClock = now;
+    const antes = St.playhead;
     const seg = segAt(St.playhead);
     if (seg && seg.kind === "clip") {
       const v = videoFor(seg.clip.file);
@@ -198,15 +245,25 @@ Studio.register("edit", (ctx) => {
       } else St.playhead += dt;
     } else St.playhead += dt;
     if (St.playhead >= duration() - 0.01) { if (St.loop) { seekTo(0); if (St.playing) playClock = performance.now(); } else { St.playhead = duration(); pause(); } }
-    syncMusic(); paintPlayhead(); renderPreview();
+    syncMusic(); syncSfx(Math.min(antes, St.playhead), Math.max(antes, St.playhead));
+    paintPlayhead(); renderPreview();
     if (St.playing) raf = requestAnimationFrame(loopTick);
   }
-  function syncMusic() { const mu = document.getElementById("edMusic"); if (!mu) return; const want = num((St.timeline.music || {}).offset) + St.playhead; if (St.playing && Math.abs(mu.currentTime - want) > 0.3) mu.currentTime = clamp(want, 0, 1e6); mu.volume = (St.muted || (St.timeline.music || {}).muted) ? 0 : (St.vol / 100) * num((St.timeline.music || {}).volume, 1); }
+  function musicVolume() { const m = St.timeline.music || {}; return (St.muted || m.muted) ? 0 : clamp((St.vol / 100) * num(m.volume, 1), 0, 1); }
+  function syncMusic() {
+    const mu = musicAudio; if (!mu) return;
+    const want = num((St.timeline.music || {}).offset) + St.playhead;
+    // só ressincronizar com o arquivo já decodificável: forçar `currentTime` durante o load
+    // rebobina a trilha a cada frame e ela nunca sai do zero.
+    if (St.playing && mu.readyState >= 2 && Math.abs(mu.currentTime - want) > 0.3) mu.currentTime = clamp(want, 0, 1e6);
+    mu.volume = musicVolume();
+  }
   function seekTo(t) {
     const was = St.playing; if (was) pause();
     St.playhead = clamp(t, 0, duration()); const seg = segAt(St.playhead);
     if (seg && seg.kind === "clip") { const v = videoFor(seg.clip.file); if (v) { try { v.currentTime = num(seg.clip.in) + (St.playhead - seg.start) * num(seg.clip.speed, 1); } catch (e) {} } }
-    const mu = document.getElementById("edMusic"); if (mu) mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6);
+    const mu = musicEl(); if (mu && mu.readyState >= 1) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} }
+    pauseSfx(true);
     paintPlayhead(); renderPreview(); if (was) play();
   }
   function step(frames) { seekTo(St.playhead + frames / fps()); }
@@ -324,7 +381,7 @@ Studio.register("edit", (ctx) => {
     // mídia/texto pela lateral; "recriar dos takes" fica no painel Mídia quando a timeline está vazia.
     r.innerHTML = headerHTML() + bodyHTML() + timelineHTML();
     bindHeader(); bindLeft(); bindPreview(); bindTimeline(); bindPointer();
-    attachPool();
+    mountAudio();
     fit(); stageBox(); renderPanel(); renderProps(); renderTimeline(); renderPreview(); paintPlayhead(); setStatus(St.saveStatus); setPlayIcon();
   }
 
@@ -404,8 +461,8 @@ Studio.register("edit", (ctx) => {
     document.getElementById("pcPrev").onclick = () => step(-1);
     document.getElementById("pcNext").onclick = () => step(1);
     document.getElementById("pcLoop").onclick = () => { St.loop = !St.loop; document.getElementById("pcLoop").classList.toggle("on", St.loop); };
-    document.getElementById("pcMute").onclick = () => { St.muted = !St.muted; document.getElementById("pcMute").textContent = St.muted ? "🔈" : "🔊"; syncMusic(); };
-    document.getElementById("pcVol").oninput = (e) => { St.vol = num(e.target.value, 80); syncMusic(); };
+    document.getElementById("pcMute").onclick = () => { St.muted = !St.muted; document.getElementById("pcMute").textContent = St.muted ? "🔈" : "🔊"; syncVolumes(); };
+    document.getElementById("pcVol").oninput = (e) => { St.vol = num(e.target.value, 80); syncVolumes(); };
     document.getElementById("pcFs").onclick = toggleFullscreen;
     document.getElementById("edStage").addEventListener("pointerdown", (e) => {
       const h = e.target.closest(".h"); if (h) return startBBox(e, h.dataset.h);
@@ -622,7 +679,7 @@ Studio.register("edit", (ctx) => {
         <div class="ved-slider"><label>Fade out</label><input type="range" id="mFo" min="0" max="5" step="0.1" value="${num(St.timeline.fade_out, 1.5)}"><span class="val" id="mFov"></span></div>
         <div class="ved-toggle"><span>Mudo</span><button class="ved-sw${m.muted ? " on" : ""}" id="mMute"></button></div>`;
       bindNum("mOff", (v) => m.offset = Math.max(v, 0), "offset");
-      bindSlider("mVol", (v) => m.volume = v / 100, "volume", (v) => { document.getElementById("mVolv").textContent = v + "%"; syncMusic(); });
+      bindSlider("mVol", (v) => m.volume = v / 100, "volume", (v) => { document.getElementById("mVolv").textContent = v + "%"; syncVolumes(); });
       bindSlider("mFo", (v) => St.timeline.fade_out = v, "fade out", (v) => document.getElementById("mFov").textContent = v);
       document.getElementById("mMute").onclick = () => commit("mudo música", () => m.muted = !m.muted);
     } else {
@@ -918,6 +975,6 @@ Studio.register("edit", (ctx) => {
       try { St.mediaLib = await api(`${base()}/media`); } catch (e) { St.mediaLib = []; }
       await load();
     },
-    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); },
+    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); sfxPool.clear(); musicAudio = null; },
   };
 });

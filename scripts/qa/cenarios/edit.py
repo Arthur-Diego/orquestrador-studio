@@ -1171,3 +1171,97 @@ def persistencia(page, ctx):
                           f"GET itens={itens} DOM texto={texto_dom} markers={markers_dom}", ev)
     finally:
         _restaurar(page, ctx, orig)
+
+
+# ---------------------------------------------------------------- áudio do preview
+def _semente_longa(page, ctx, sfx=None) -> None:
+    """Alonga os clipes para 2 s cada (timeline de ~4 s) — janela confortável para ouvir o áudio."""
+    nova = json.loads(json.dumps(_tl_api(page, ctx)))
+    for c in nova["clips"]:
+        c["in"], c["out"] = 0.0, 2.0
+    if sfx is not None:
+        nova["sfx"] = sfx
+    H.api(page, ctx, "put", f"/api/projects/{ctx.pid_cheio}/edit/timeline",
+          data=json.dumps(nova), headers=JSON)
+    page.reload()
+    H.esperar_tela(page)
+
+
+def _tocar(page) -> None:
+    if (page.locator("#pcPlay").text_content() or "").strip() != "❚❚":
+        page.locator("#pcPlay").click()
+
+
+def _parar(page) -> None:
+    if (page.locator("#pcPlay").text_content() or "").strip() == "❚❚":
+        page.locator("#pcPlay").click()
+
+
+@caso("C-EDIT-52", "trilha do projeto toca no preview (<audio> no palco, sai do pausado e anda)")
+def musica_toca(page, ctx):
+    orig = _tl_api(page, ctx)
+    if not (orig.get("music") or {}).get("file"):
+        return H.Resultado.bloqueado("campanha sem trilha escolhida na etapa 6 — nada para tocar")
+    try:
+        _semente_longa(page, ctx)
+        estado = ("() => { const a = document.getElementById('edMusic'); return {existe: !!a,"
+                  " no_palco: !!(a && a.parentElement && a.parentElement.id === 'edStage'),"
+                  " paused: a ? a.paused : null, t: a ? +a.currentTime.toFixed(3) : null} }")
+        montado = page.evaluate(estado)
+        page.locator("#pcStart").click()
+        page.wait_for_timeout(150)
+        _tocar(page)
+        tocou = True
+        try:
+            page.wait_for_function(
+                "() => { const a = document.getElementById('edMusic');"
+                " return !!a && !a.paused && a.currentTime > 0.05 }", timeout=6000)
+        except Exception:  # noqa: BLE001 - trilha muda é o achado do caso
+            tocou = False
+        durante = page.evaluate(estado)
+        _parar(page)
+        ev = H.evidencia(page, ctx, "C-EDIT-52-musica-toca", full_page=False)
+        return H.verifica(montado["existe"] and montado["no_palco"] and tocou,
+                          f"<audio id=edMusic> no palco; durante o play {durante}",
+                          f"ao montar a tela={montado}; durante o play={durante} — o elemento da trilha "
+                          "é descartado pelo re-render do palco e `syncMusic` força currentTime enquanto "
+                          "o arquivo carrega, então a música nunca sai do zero", ev)
+    finally:
+        _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-53", "SFX ganha <audio> próprio e dispara quando o playhead cruza o seu `at`")
+def sfx_toca(page, ctx):
+    orig = _tl_api(page, ctx)
+    fonte = (orig.get("music") or {}).get("file")
+    if not fonte:
+        return H.Resultado.bloqueado("sem arquivo de áudio no projeto para usar como SFX")
+    try:
+        _semente_longa(page, ctx, sfx=[{"file": fonte, "at": 0.8, "gain": -6}])
+        estado = ("() => { const a = document.querySelector('#edStage audio[data-sfx]');"
+                  " return {elementos: document.querySelectorAll('#edStage audio[data-sfx]').length,"
+                  " paused: a ? a.paused : null, t: a ? +a.currentTime.toFixed(3) : null,"
+                  " vol: a ? +a.volume.toFixed(3) : null} }")
+        montado = page.evaluate(estado)
+        page.locator("#pcStart").click()
+        page.wait_for_timeout(150)
+        antes = page.evaluate(estado)
+        _tocar(page)
+        disparou = True
+        try:
+            page.wait_for_function(
+                "() => { const a = document.querySelector('#edStage audio[data-sfx]');"
+                " return !!a && a.currentTime > 0 }", timeout=8000)
+        except Exception:  # noqa: BLE001 - SFX mudo é o achado do caso
+            disparou = False
+        durante = page.evaluate(estado)
+        _parar(page)
+        ev = H.evidencia(page, ctx, "C-EDIT-53-sfx-toca", full_page=False)
+        # ganho -6 dB ≈ 0.501 do volume global (80%) → ~0.40
+        ganho_ok = durante["vol"] is not None and abs(durante["vol"] - 0.8 * 0.501) < 0.05
+        return H.verifica(montado["elementos"] == 1 and antes["paused"] is True and disparou and ganho_ok,
+                          f"1 <audio data-sfx> no palco; ao cruzar 0.8 s {durante}",
+                          f"ao montar={montado} antes do play={antes} durante={durante} — o editor não "
+                          "cria elemento de áudio para `timeline.sfx`, então os efeitos nunca soam", ev)
+    finally:
+        _restaurar(page, ctx, orig)
