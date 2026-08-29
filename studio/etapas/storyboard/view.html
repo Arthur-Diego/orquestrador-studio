@@ -99,7 +99,7 @@
     <div class="col">
       <div class="row wrap">
         <select id="sbKind"></select>
-        <select id="sbPreset"><option value="">— fórmulas da aula —</option></select>
+        <select id="sbPreset" aria-label="Fórmula da aula"><option value="">— fórmulas da aula —</option></select>
       </div>
       <textarea id="sbText" rows="2" placeholder="Make the climber even smaller and more realistic"></textarea>
       <div class="row wrap">
@@ -145,13 +145,13 @@
     </div>
   </div>
   <div class="row wrap sh-builder" id="shotsBuilder">
-    <select id="promptKind">
+    <select id="promptKind" aria-label="Tipo de prompt">
       <option value="angle">Outro ponto de vista (Multi Shot)</option>
       <option value="edit">Edição numerada (uma rodada por vez)</option>
     </select>
     <input id="promptSubject" class="grow-md" placeholder="foco (ex.: the astronaut's face)" title="Enquadramentos da aula: close no rosto, foco nos pés, foco nas mãos, plano aberto com cenário">
-    <select id="promptScale"><option value="close">close</option><option value="medium">médio</option><option value="wide">aberto</option></select>
-    <select id="promptAngle"><option value="eye-level">altura dos olhos</option><option value="low">contra-plongée</option><option value="high">plongée</option></select>
+    <select id="promptScale" aria-label="Enquadramento"><option value="close">close</option><option value="medium">médio</option><option value="wide">aberto</option></select>
+    <select id="promptAngle" aria-label="Ângulo de câmera"><option value="eye-level">altura dos olhos</option><option value="low">contra-plongée</option><option value="high">plongée</option></select>
     <button id="btnPrompts" class="ghost">Gerar prompt</button>
   </div>
   <div id="editsBox" class="row wrap sh-builder hidden">

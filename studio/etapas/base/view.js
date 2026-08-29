@@ -53,7 +53,7 @@ Studio.register("base", (ctx) => {
   function promptCard(label, text, key) {
     return `<div class="prompt"><div class="row"><span class="eyebrow">${ui.esc(label)}</span>
       <button type="button" class="link copy" data-k="${ui.esc(key)}">Copiar</button><span class="ok"></span></div>
-      <textarea data-k="${ui.esc(key)}">${ui.esc(text)}</textarea></div>`;
+      <textarea data-k="${ui.esc(key)}" aria-label="${ui.esc(label)}">${ui.esc(text)}</textarea></div>`;
   }
 
   // Um card só, de largura total: o da referência selecionada. Quando o passo ativo é "rótulo"
