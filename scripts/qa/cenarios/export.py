@@ -315,8 +315,12 @@ def vazio_title(page, ctx):
 
 
 # ---------- reframe via CLI (alternativa paga; sem botão na tela desde a wave 4) ----------
-@caso("C-EXPORT-17", "reframe: custo do CLI responde em créditos (fake offline) mas não tem comando na tela")
+@caso("C-EXPORT-17", "reframe: rota só por API (decisão AP-21) — custo responde em créditos, tela sem comando")
 def reframe_custo(page, ctx):
+    """Decisão do dono do produto (ADH-OS-20260829-37, QA AP-21): `POST /export/reframe/cost` e
+    `/export/reframe` ficam como `[extensão]` **só por API** — a wave 4 tirou o painel da tela (o
+    caminho canônico da etapa é o render local por ffmpeg) e as rotas não voltam para a UI nem são
+    removidas (testes + coleção Postman)."""
     r = H.api(page, ctx, "post", f"/api/projects/{ctx.pid_cheio}/export/reframe/cost",
               data=json.dumps({"aspect_ratio": "9:16"}), headers={"content-type": "application/json"})
     body = r.json() if r.ok else {"status": r.status}

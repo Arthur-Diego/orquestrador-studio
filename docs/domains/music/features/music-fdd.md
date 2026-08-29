@@ -191,6 +191,11 @@ Corpo JSON salvo onde indicado multipart. Modelos Pydantic no `router.py`.
 | `.../music/beats` | GET | | `beats.json` | 200, 404 (ainda sem trilha) |
 | `.../music/beats` | POST | `{k?}` | `beats.json` | 200, 404 (sem trilha), 409 (ffmpeg ausente) |
 
+> **`[extensão]` `POST .../music/generate/cost` e `POST .../music/generate`: rotas sem comando na UI
+> desde a wave 4** — uso por API/coleção Postman; decisão ADH-OS-20260829-37 (QA AP-21). A wave 4
+> tirou o bloco de geração paga da tela (a aula 013 gera a trilha na UI da Higgsfield e o Studio
+> importa); o backend continua vivo e testado. Pinado pelo caso de QA `C-MUSIC-17`.
+
 Semântica: 202 em `generate` indica job iniciado; 409 em `generate` distingue job ativo (`detail`
 "job em andamento") de CLI ausente. Limites: upload 25 MB por arquivo; `generate` bloqueia até
 600 s por faixa dentro do job; `select` responde em ≤ 15 s para trilhas de até 3 min (detecção síncrona).

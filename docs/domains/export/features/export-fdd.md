@@ -238,6 +238,9 @@ def _safe_probe(path: Path) -> dict                              # _probe_full q
 ```
 
 **Contrato 5: thumb**
+> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
+> ADH-OS-20260829-37 (QA AP-21). A tela da etapa 9 não expõe o campo de tempo nem o botão "Gerar
+> thumb"; a rota continua viva e testada.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/export/thumb`
 - Método: POST
@@ -320,6 +323,10 @@ Checagens (todas objetivas): `exists`; `resolution == FORMATS[fmt]`; `abs(durati
 ```
 
 **Contrato 8: custo do reframe (opcional, CLI)**
+> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
+> ADH-OS-20260829-37 (QA AP-21). O painel de reframe saiu da tela na wave 4; o backend continua vivo
+> e testado (o caminho canônico da etapa é o render local por ffmpeg). Vale também para o contrato 9
+> (`POST /export/reframe`). Pinado pelo caso de QA `C-EXPORT-17`.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/export/reframe/cost`
 - Método: POST
@@ -336,6 +343,8 @@ Checagens (todas objetivas): `exists`; `resolution == FORMATS[fmt]`; `abs(durati
 ```
 
 **Contrato 9: reframe (opcional, CLI, job)**
+> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
+> ADH-OS-20260829-37 (QA AP-21). Ver a nota do contrato 8.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/export/reframe`
 - Método: POST

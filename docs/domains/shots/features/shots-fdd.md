@@ -222,6 +222,11 @@ Exemplo de resposta (`kind=edit&edits=Make the helmet visor tinted so the face c
 - 200: `{"scene": "cena01", "base": "shots/cena01/base.png", "candidates": [Candidate]}` com `Candidate = {id, kind:"image", source, name, prompt, file, thumb, width, height, selected, imported, order?, upscaled?, role?, parent?, job_id?, model?}` (campos do `ingest_bytes` + meta desta etapa). `file`/`thumb` relativos à raiz do projeto, servidos por `/files/{pid}/...`.
 
 **Custo e geração por CLI**
+> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
+> ADH-OS-20260829-37 (QA AP-21). O painel 04 do storyboard (onde os ângulos vivem depois da
+> ADR-015) só oferece o checkbox "já upscalei estes na UI": a aula 011 ensina gerar e upscalar na
+> UI da Higgsfield. As rotas (`…/angles/scenes/{cena}/cost|generate`, e as equivalentes de
+> `product`) seguem vivas e testadas. Pinado pelo caso de QA `C-STORYBOARD-50`.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/shots/scenes/{scene}/cost` e `POST /api/projects/{pid}/shots/scenes/{scene}/generate`
 - Método: POST, corpo `{"model": "nano_banana_2", "prompts": ["…"], "count": 4, "resolution": "2k"}`
@@ -238,6 +243,8 @@ Exemplo de resposta (`kind=edit&edits=Make the helmet visor tinted so the face c
 - 200: `registry.status(pid)` → `{"state": "idle|running|done|error", "done", "total", "added", "error", "log": [], "scene", "op": "generate|upscale"}`
 
 **Upscale por CLI**
+> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
+> ADH-OS-20260829-37 (QA AP-21). Ver a nota de "Custo e geração por CLI" acima.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/shots/scenes/{scene}/upscale`
 - Método: POST, corpo `{"id": "<candidato>", "model": "bytedance_image_upscale"}`

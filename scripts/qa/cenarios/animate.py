@@ -722,7 +722,7 @@ def takes_fora_da_faixa(page, ctx):
         _restaura(page, ctx, snap)
 
 
-@caso("C-ANIMATE-35", "modo start/end usa o modelo de transição do plano (ADR-021: cena 2.6 / transição 3.0 Turbo)")
+@caso("C-ANIMATE-35", "modo start/end usa o modelo de transição do plano (ADR-023: cena Kling 2.6 / transição Kling 3.0)")
 def modelo_da_transicao(page, ctx):
     plano = _plano(page, ctx)
     transicao = plano.get("transition_model")
@@ -737,7 +737,7 @@ def modelo_da_transicao(page, ctx):
     H.fechar_modal(page)
     return H.verifica(transicao in opts and sel == transicao,
                       f"start/end selecionou {sel}",
-                      f"o plano mapeia transição → '{transicao}' (plan.transition_model, ADR-021), mas o select "
+                      f"o plano mapeia transição → '{transicao}' (plan.transition_model, ADR-023), mas o select "
                       f"do modal só oferece {opts} e ficou em '{sel}': não há como gerar a transição start/end "
                       f"com o modelo documentado", ev)
 

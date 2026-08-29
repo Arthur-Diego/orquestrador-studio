@@ -49,7 +49,8 @@ CATALOG: dict[str, dict] = {
         "variant_key": "duration",
         "variant_options": ["5s", "10s"],
         "default_variant": "5s",
-        "note": "Image-to-video (aula 012). Custo por duração do clipe.",
+        "note": "Image-to-video (aula 012); transição start/end (ADR-023: é a Kling que aceita end frame). "
+                "Custo por duração do clipe.",
     },
     # `[extensão]` wave 7 (ADR-021): vídeo por cena no storyboard + revert do desvio do animate.
     # Kling 2.6 = modelo das CENAS (o desvio "CLI só tem 3.0" caiu: 2.6 existe no CLI). Custo
@@ -63,8 +64,9 @@ CATALOG: dict[str, dict] = {
         "default_variant": "5s",
         "note": "Image-to-video (Kling 2.6). Cena do storyboard/animação; custo medido no CLI (wave 7).",
     },
-    # `[extensão]` wave 7 (ADR-021): Kling 3.0 Turbo = modelo das TRANSIÇÕES (modo start/end), no
-    # lugar do "Kling 2.5 Turbo" da aula (inexistente no CLI). Custo medido: 5s=7,5, 10s=15.
+    # `[extensão]` wave 7 (ADR-021): Kling 3.0 Turbo era o modelo das TRANSIÇÕES (modo start/end).
+    # A ADR-023 tirou esse papel dele (o `model get` do CLI não declara `end_image` nem `mode`), mas
+    # o modelo CONTINUA na tabela: é ofertável e é o que takes antigos registram. Custo medido: 5s=7,5, 10s=15.
     "kling3_0_turbo": {
         "label": "Kling 3.0 Turbo",
         "kind": "video",

@@ -80,3 +80,19 @@ congelado acima é **estendido de forma aditiva e retrocompatível** (registrado
   registra o vídeo como TAKE **liked** em `animate/takes.json` (mp4 em `videos/<cena>/<shot>_take1.mp4`,
   `shot = foto-<stem>`) e a foto como shot aditivo em `storyboard.json`; a montagem (`edit.initial_timeline`)
   monta o clipe. A tela do `animate` não muda. Ver ADR-022 §Decisão da ponte (R2).
+
+## Atualização — modelo da transição start/end (ADR-023, 2026-08-29, ADH-OS-20260829-37)
+
+O fato medido acima ("a turbo disponível é `kling3_0_turbo` → usada para transições") estava
+**incompleto**: o custo foi medido, os **parâmetros do modelo** não. `higgsfield model get
+kling3_0_turbo --json` declara só `aspect_ratio, duration, prompt, resolution, start_image` —
+**sem `end_image` nem `mode`**. Sem `end_image` não existe transição start/end.
+
+- Default de transição passa a **`kling3_0`** (declara `aspect_ratio, duration, end_image, mode,
+  prompt, sound, start_image`): `settings.DEFAULTS["storyboard.video.transition"]` e
+  `animate.TRANSITION_MODEL`. A **cena continua `kling2_6`**.
+- Custo da transição: **5s=10, 10s=20** créditos (era 7,5/15 na turbo).
+- `kling3_0_turbo` **permanece** no `pricing.CATALOG` e em `animate.accepted_models()` — só perdeu o
+  papel de default.
+- **Regra:** o modelo de transição precisa declarar `end_image` no catálogo do CLI
+  (`hf.model_params`). Ver **ADR-023**.

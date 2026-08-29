@@ -207,6 +207,29 @@ Studio.register("animate", (ctx) => {
     };
   }
 
+  /**
+   * Modelos ofertados no modal, POR MODO (ADR-021 + ADR-023): a transição start/end é gerada com
+   * `plan.transition_model` (o único Kling que declara `end_image` no CLI) e a cena com
+   * `plan.scene_model` — nenhum dos dois é necessariamente uma entrada de `plan.model_order`, que
+   * é só a ordem de progressão por falhas. Sem o modelo do modo na lista, o usuário não tinha como
+   * gerar a transição com o modelo documentado.
+   */
+  function modelosDoModo(s, mode) {
+    const order = plan.model_order || [];
+    const alvo = mode === "start_end" ? plan.transition_model : plan.scene_model;
+    const opts = alvo && !order.includes(alvo) ? [alvo, ...order] : [...order];
+    const sel = mode === "start_end"
+      ? (alvo || opts[0] || "")
+      : (s.suggested_model || cfgModel || alvo || opts[0] || "");
+    return { opts, sel };
+  }
+
+  function modelSelect(s, mode) {
+    const { opts, sel } = modelosDoModo(s, mode);
+    return `<select class="an-model" title="${esc(plan.model_note || "")}">${opts.map((m) =>
+      `<option value="${esc(m)}"${m === sel ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>`;
+  }
+
   function modalGerar(s, n) {
     const modes = [["simple", "simples"], ["elaborate", "elaborado (câmera + ação)"], ["start_end", "start/end frame"]];
     const se = s.mode === "start_end";
@@ -236,8 +259,7 @@ Studio.register("animate", (ctx) => {
       <ul class="fine an-tips">${tipsHtml(s.mode)}</ul>
       <div class="row wrap">
         <div class="field grow-md"><span class="eyebrow lbl">modelo</span>
-          <select class="an-model" title="${esc(plan.model_note || "")}">${(plan.model_order || []).map((m) =>
-            `<option value="${esc(m)}"${m === (s.suggested_model || cfgModel || (plan.model_order || [])[0] || "") ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></div>
+          ${modelSelect(s, s.mode)}</div>
         <label class="inline">takes <input type="number" class="an-count" value="${TAKES_DA_AULA}" min="1" max="4"></label>
         <span class="chip mode an-cli">● CLI · ?</span>
       </div>
@@ -255,7 +277,7 @@ Studio.register("animate", (ctx) => {
       ],
       onClose: () => { mod = null; },
     });
-    mod.el.addEventListener("change", onModeChange);
+    mod.el.addEventListener("change", (e) => onModeChange(e, s));
     mod.el.addEventListener("click", (e) => {
       if (e.target.closest(".an-suggest")) return suggest(s);
       const card = e.target.closest("#anGallery .card");
@@ -270,13 +292,16 @@ Studio.register("animate", (ctx) => {
     hfStatus(mod.el.querySelector(".an-cli"));
   }
 
-  /** Trocar o modo revela o end frame e as dicas daquele modo — sem ida ao servidor. */
-  function onModeChange(e) {
+  /** Trocar o modo revela o end frame, as dicas e o MODELO daquele modo — sem ida ao servidor. */
+  function onModeChange(e, s) {
     const sel = e.target.closest(".an-mode"); if (!sel || !mod) return;
     const endrow = mod.el.querySelector(".an-endrow"), se = sel.value === "start_end";
     endrow.hidden = !se;
     endrow.style.display = se ? "" : "none";   // `.field {display:flex}` vence o atributo `hidden`
     mod.el.querySelector(".an-tips").innerHTML = tipsHtml(sel.value);
+    // ADR-023: o modelo acompanha o modo (transição precisa do que aceita `end_image`).
+    const modelo = mod.el.querySelector(".an-model");
+    if (modelo) modelo.outerHTML = modelSelect(s, sel.value);
   }
 
   async function suggest(s) {

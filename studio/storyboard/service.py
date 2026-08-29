@@ -619,7 +619,7 @@ def job_status(pid: str) -> dict:
 
 # ==========================================================================================
 # `[extensão]` wave 7 (ADR-021) — VÍDEO por cena (painel 02): prompt de vídeo (Claude) + geração
-# via CLI (Kling 2.6 cena / 3.0 Turbo transição). Contrato congelado em docs/domains/studio/
+# via CLI (Kling 2.6 cena / Kling 3.0 transição — ADR-023). Contrato congelado em docs/domains/studio/
 # waves/wave-7.md (§Contrato HTTP CONGELADO). Cruza a fronteira com o animate (dono de vídeo): é um
 # PREVIEW por cena que alimenta a etapa 6 — não faz o handoff automático (fora de escopo, FDD §8).
 # ==========================================================================================
@@ -779,7 +779,8 @@ def _valid_video_model(model: str) -> str:
 
 def video_model(pid: str, mode: str, override: str | None = None) -> str:
     """Modelo do vídeo. `[extensão]` ADR-022: um `override` válido do cliente vence; sem override cai
-    na resolução por servidor (ADR-021): start_end → transição (Kling 3.0 Turbo), senão cena (Kling 2.6)."""
+    na resolução por servidor (ADR-021 + ADR-023): start_end → transição (Kling 3.0, o modelo que
+    declara `end_image` no CLI), senão cena (Kling 2.6)."""
     if override:
         return _valid_video_model(override)
     action = "storyboard.video.transition" if mode == "start_end" else "storyboard.video.scene"

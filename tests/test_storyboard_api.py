@@ -391,7 +391,7 @@ def test_video_cost_route_resolves_model_by_mode(client, pid):
     assert single.json() == {"model": "kling2_6", "per_item": 10, "total": 10}
     trans = client.post(f"/api/projects/{pid}/storyboard/video/cost",
                         json={"scene_id": "cena01", "mode": "start_end", "duration": 10})
-    assert trans.json() == {"model": "kling3_0_turbo", "per_item": 15, "total": 15}
+    assert trans.json() == {"model": "kling3_0", "per_item": 20, "total": 20}   # ADR-023
 
 
 def test_video_generate_and_job_polling(client, pid, monkeypatch):
@@ -452,4 +452,4 @@ def test_status_exposes_video_models_for_the_animate_modal(client, pid):
     """`[extensão]` ADR-022: o status expõe a lista de modelos de vídeo e o default por modo."""
     st = client.get(f"/api/projects/{pid}/storyboard").json()
     assert "kling2_6" in st["video_models"] and "kling3_0_turbo" in st["video_models"]
-    assert st["video_model_defaults"] == {"single": "kling2_6", "start_end": "kling3_0_turbo"}
+    assert st["video_model_defaults"] == {"single": "kling2_6", "start_end": "kling3_0"}   # ADR-023

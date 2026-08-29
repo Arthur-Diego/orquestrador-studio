@@ -71,7 +71,7 @@ def test_plan_follows_storyboard_order_and_creates_takes_json(svc, studio_env, p
     assert [s["next_in_scene"] for s in plan["shots"]] == ["shot02", None, None]
     assert plan["total"] == 3 and plan["ready"] == 0
     assert plan["model_order"] == ["kling2_6", "seedance_2_0"], "wave 7 (ADR-021): cena passou a Kling 2.6"
-    assert plan["scene_model"] == "kling2_6" and plan["transition_model"] == "kling3_0_turbo"
+    assert plan["scene_model"] == "kling2_6" and plan["transition_model"] == "kling3_0"   # ADR-023
     data = json.loads((_root(studio_env, project) / "animate" / "takes.json").read_text())
     assert [s["shot"] for s in data["shots"]] == ["shot01", "shot02", "shot03"]
 
@@ -378,24 +378,26 @@ def test_veo_is_an_extension_outside_the_default_order(svc, monkeypatch):
 
 
 def test_the_lesson_model_note_is_published_with_the_plan(svc, project):
-    """Gate 4 do CLAUDE.md: o mapa Kling 2.6 (cena) / 3.0 Turbo (transição) é registrado, não silencioso."""
+    """Gate 4 do CLAUDE.md: o mapa Kling 2.6 (cena) / Kling 3.0 (transição, ADR-023) é registrado,
+    não silencioso — inclusive a razão de a 3.0 Turbo ter saído (não aceita end frame)."""
     plan = svc.load_plan(project)
     assert "Kling 2.6" in plan["model_note"] and "2.5 Turbo" in plan["model_note"]
-    assert "Kling 3.0 Turbo" in plan["model_note"]
+    assert "Kling 3.0" in plan["model_note"] and "3.0 Turbo não aceita end frame" in plan["model_note"]
 
 
-def test_wave7_maps_scene_to_kling26_and_transition_to_turbo_without_breaking_generate(svc, project):
-    """`[extensão]` wave 7 (ADR-021): cena → Kling 2.6, transição (start/end) → Kling 3.0 Turbo.
+def test_maps_scene_to_kling26_and_transition_to_kling30_without_breaking_generate(svc, project):
+    """ADR-023 (substitui a parte de modelo da ADR-021): cena → Kling 2.6, transição → Kling 3.0.
 
-    O desvio "CLI só tem 3.0" caiu (2.6 existe). O modelo da transição é ACEITO na geração sem
-    entrar na ordem de progressão por falhas, e o `kling3_0` legado continua aceito (default do router)."""
-    assert svc.MODEL_ORDER == ["kling2_6", "seedance_2_0"] and svc.TRANSITION_MODEL == "kling3_0_turbo"
+    A Kling 3.0 Turbo saiu do papel de transição porque o `model get` do CLI não declara `end_image`
+    nela; a transição PRECISA de um modelo que aceite o end frame. O modelo da transição é ACEITO na
+    geração sem entrar na ordem de progressão por falhas, e a 3.0 Turbo segue aceita (takes antigos)."""
+    assert svc.MODEL_ORDER == ["kling2_6", "seedance_2_0"] and svc.TRANSITION_MODEL == "kling3_0"
     assert svc.model_for_mode("simple") == "kling2_6" and svc.model_for_mode("elaborate") == "kling2_6"
-    assert svc.model_for_mode("start_end") == "kling3_0_turbo"
+    assert svc.model_for_mode("start_end") == "kling3_0"
     accepted = svc.accepted_models()
     assert {"kling2_6", "kling3_0_turbo", "kling3_0", "seedance_2_0"} <= set(accepted)
     # a transição não entra na progressão por falhas (essa segue a ordem viva)
-    assert "kling3_0_turbo" not in svc.model_order()
+    assert "kling3_0" not in svc.model_order() and "kling3_0_turbo" not in svc.model_order()
     svc.load_plan(project)
     svc.update_shot(project, "cena01", "shot01", mode="start_end", prompt="slow dramatic transition")
     with pytest.raises(ValueError):
