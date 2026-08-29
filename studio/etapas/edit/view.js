@@ -548,8 +548,9 @@ Studio.register("edit", (ctx) => {
   }
   function pCaptions(el) {
     const t = etrack("t_cap", false), items = t ? t.items : [];
-    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas da narração</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
+    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas da narração</button><button class="ved-btn" id="capAdd" style="width:100%;margin-bottom:10px">＋ legenda manual</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
     document.getElementById("capGen").onclick = () => toast("Geração automática precisa de transcrição (pendente no projeto). Use + legenda manual.");
+    document.getElementById("capAdd").onclick = () => addText("Legenda", { size: 34, weight: 600, align: "center" }, "caption");
     el.querySelector(".ved-phead").insertAdjacentHTML("beforeend", "");
     el.querySelectorAll(".ved-row[data-uid]").forEach((r) => r.onclick = (e) => { if (e.target.dataset.del) return deleteItems([e.target.dataset.del]); selectOnly(r.dataset.uid, {}); });
   }

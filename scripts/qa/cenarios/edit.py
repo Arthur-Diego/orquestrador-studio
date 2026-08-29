@@ -463,14 +463,29 @@ def legenda_gerar(page, ctx):
 
 @caso("C-EDIT-19", "painel Legendas oferece adicionar legenda manual (o toast do #capGen manda usar)")
 def legenda_add_manual(page, ctx):
-    _painel(page, "captions")
-    painel = page.locator("#edPanel")
-    botoes = painel.locator("button").all_text_contents()
-    add = painel.locator("button:not(#capGen):not([data-del])").count()
-    ev = H.evidencia(page, ctx, "C-EDIT-19-legenda-add", full_page=False)
-    return H.verifica(add > 0, f"{add} botão(ões) de adicionar legenda",
-                      "painel Legendas só tem '✨ Gerar legendas da narração' (que avisa 'Use + legenda "
-                      f"manual') e os ✕ dos itens — não há como criar legenda manual. botões={botoes}", ev)
+    orig = _tl_api(page, ctx)
+    try:
+        _painel(page, "captions")
+        painel = page.locator("#edPanel")
+        botoes = painel.locator("button").all_text_contents()
+        add = painel.locator("button:not(#capGen):not([data-del])")
+        if not add.count():
+            ev = H.evidencia(page, ctx, "C-EDIT-19-legenda-add", full_page=False)
+            return H.verifica(False, "",
+                              "painel Legendas só tem '✨ Gerar legendas da narração' (que avisa 'Use + "
+                              f"legenda manual') e os ✕ dos itens — não há como criar legenda manual. "
+                              f"botões={botoes}", ev)
+        add.first.click()
+        ok, tl = _esperar_disco(page, ctx, lambda x: len(_track(x, "t_cap").get("items") or []) == 1)
+        it = (_track(tl, "t_cap").get("items") or [{}])[0]
+        na_timeline = page.locator(".ved-lane[data-tid='t_cap'] .ved-clip[data-uid]").count()
+        no_preview = page.locator("#edStage .ved-layer.caption").count()
+        ev = H.evidencia(page, ctx, "C-EDIT-19-legenda-add", full_page=False)
+        return H.verifica(ok and na_timeline == 1 and no_preview == 1 and bool(it.get("text")),
+                          f"legenda manual '{it.get('text')}' criada na faixa LEGENDAS",
+                          f"botões={botoes}; item no disco={it} timeline={na_timeline} preview={no_preview}", ev)
+    finally:
+        _restaurar(page, ctx, orig)
 
 
 @caso("C-EDIT-20", "painel Legendas lista o item da faixa e o ✕ apaga")
