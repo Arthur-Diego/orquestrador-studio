@@ -157,6 +157,7 @@ def _timeline(root, **over):
     ({"blacks": [{"at": 1.0, "dur": 3.0}]}, "dur"),
     ({"fade_out": 9.0}, "fade_out"),
     ({"music": {"file": "audio/music.wav", "offset": -1}}, "offset"),
+    ({"music": {"file": "audio/music.wav", "offset": 0.0, "volume": 5}}, "volume"),
     ({"sfx": [{"file": "audio/music.wav", "at": 0.0, "gain": 40.0}]}, "gain"),
     ({"clips": [{"scene": "cena01", "shot": "shot01", "take": "take1", "file": "../../../etc/passwd",
                  "in": 0.0, "out": 2.0, "speed": 1.0, "blend": True}]}, "fora do projeto"),
@@ -166,6 +167,18 @@ def test_validate_rejects(studio_env, project, root, patch, message):
     seed(root)
     with pytest.raises(ValueError, match=message):
         edit.validate_timeline(root, _timeline(root, **patch))
+
+
+def test_music_keeps_volume_and_muted(studio_env, project, root):
+    """AP-08: mudo/volume da trilha (painel Áudio do editor) sobrevivem ao round-trip."""
+    edit = studio_env["svc"]("edit")
+    seed(root)
+    tl = edit.validate_timeline(root, _timeline(
+        root, music={"file": "audio/music.wav", "offset": 0.5, "volume": 1.5, "muted": True}))
+    assert tl["music"] == {"file": "audio/music.wav", "offset": 0.5, "volume": 1.5, "muted": True}
+    # sem os campos, a montagem da aula 014 continua idêntica (retrocompat)
+    plain = edit.validate_timeline(root, _timeline(root))
+    assert plain["music"] == {"file": "audio/music.wav", "offset": 0.0}
 
 
 def test_validate_missing_file_is_not_found(studio_env, project, root):

@@ -46,6 +46,7 @@ BEAT_TOL = 0.067        # 2 frames a 30 fps: "o corte caiu na batida" (auditoria
 SPEED_RANGE = (0.25, 4.0)
 ZOOM_RANGE = (1.0, 1.3)     # aula 014: "pequenos zooms"
 GAIN_RANGE = (-40.0, 12.0)
+MUSIC_VOLUME_RANGE = (0.0, 2.0)   # [extensão] slider de volume da trilha no editor (0–150%)
 FADE_RANGE = (0.0, 5.0)
 BLACK_RANGE = (0.0, 1.0)
 BLACK_SNAP = 0.25       # quadro preto cola no limite de clipe mais próximo dentro disso
@@ -245,6 +246,16 @@ def validate_timeline(root: Path, timeline: dict) -> dict:
     offset = _f(music_in.get("offset", 0.0), "música.offset")
     if offset < 0:
         raise ValueError("música: offset não pode ser negativo")
+    music = {"file": mfile, "offset": round(offset, 3)}
+    # [extensão] controles de trilha do editor (volume/mudo) — só entram quando o cliente manda.
+    if music_in.get("volume") is not None:
+        volume = _f(music_in.get("volume"), "música.volume")
+        if not MUSIC_VOLUME_RANGE[0] <= volume <= MUSIC_VOLUME_RANGE[1]:
+            raise ValueError(f"música: volume {volume} fora de "
+                             f"{MUSIC_VOLUME_RANGE[0]}–{MUSIC_VOLUME_RANGE[1]}")
+        music["volume"] = round(volume, 3)
+    if music_in.get("muted") is not None:
+        music["muted"] = bool(music_in.get("muted"))
 
     sfx = []
     for i, raw in enumerate(timeline.get("sfx") or []):
@@ -261,7 +272,7 @@ def validate_timeline(root: Path, timeline: dict) -> dict:
     if not FADE_RANGE[0] <= fade_out <= FADE_RANGE[1]:
         raise ValueError(f"fade_out {fade_out} fora de {FADE_RANGE[0]}–{FADE_RANGE[1]} s")
 
-    result = {"clips": clips, "blacks": blacks, "music": {"file": mfile, "offset": round(offset, 3)},
+    result = {"clips": clips, "blacks": blacks, "music": music,
               "sfx": sfx, "fade_out": round(fade_out, 3),
               "loudnorm": bool(timeline.get("loudnorm", True))}   # [extensão]: a aula não fala de loudness
     # [extensão] bloco `editor` opcional: só entra no round-trip quando existe (retrocompat total).

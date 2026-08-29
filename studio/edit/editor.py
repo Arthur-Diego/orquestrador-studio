@@ -33,10 +33,13 @@ ROTATION_RANGE = (-360.0, 360.0)
 POS_RANGE = (-3.0, 3.0)          # posição relativa ao canvas (0..1 é a área visível)
 UNIT_RANGE = (0.0, 1.0)          # opacidade, volume, fade normalizado
 GAIN_RANGE = (-40.0, 12.0)
+CLIP_VOLUME_RANGE = (0.0, 2.0)   # volume por clipe/trilha: o painel do editor vai a 150%
 ADJUST_RANGE = (-100.0, 100.0)   # sliders de ajuste de cor (exposição, brilho, …)
 TRANSITION_RANGE = (0.0, 3.0)
 FONT_SIZE_RANGE = (4, 400)
 FONT_WEIGHT_RANGE = (100, 900)
+UI_ZOOM_RANGE = (0.25, 4.0)      # zoom da timeline: FATOR (o px/s efetivo é do frontend)
+UI_ZOOM_DEFAULT = 1.0
 
 # Limites de tamanho (proteção; excedente é truncado com aviso, nunca derruba o save).
 MAX_TRACKS = 40
@@ -46,6 +49,7 @@ MAX_MARKERS = 500
 MAX_EFFECTS = 40
 MAX_TEXT = 5000
 MAX_STR = 200
+MAX_SHAPE = 16        # glifo/forma de um elemento de overlay ("▦", "★", emoji…)
 
 ADJUST_KEYS = ("exposure", "brightness", "contrast", "saturation", "temperature", "hue",
                "highlights", "shadows", "whites", "blacks", "sharpen", "fade", "vignette", "grain")
@@ -184,8 +188,12 @@ def normalize_effects(raw) -> list[dict]:
 
 def normalize_filters(raw: dict | None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
-    return {k: _clamp(raw.get(k, 0.0), *ADJUST_RANGE, 0.0)
-            for k in ADJUST_KEYS if k in raw and _num(raw.get(k), 0.0) != 0.0}
+    out = {k: _clamp(raw.get(k, 0.0), *ADJUST_RANGE, 0.0)
+           for k in ADJUST_KEYS if k in raw and _num(raw.get(k), 0.0) != 0.0}
+    preset = _s(raw.get("preset", ""), 40)   # id do preset do painel Filtros (não é slider)
+    if preset:
+        out["preset"] = preset
+    return out
 
 
 def normalize_audio(raw: dict | None) -> dict:
@@ -195,6 +203,24 @@ def normalize_audio(raw: dict | None) -> dict:
         "muted": _b(raw.get("muted")),
         "fadeIn": _clamp(raw.get("fadeIn", 0.0), 0.0, 30.0, 0.0),
         "fadeOut": _clamp(raw.get("fadeOut", 0.0), 0.0, 30.0, 0.0),
+    }
+
+
+def normalize_clip_audio(raw: dict | None) -> dict:
+    """Aba Áudio do clipe de vídeo (`clip_fx[cid].audio`, FDD §"paridade com o protótipo").
+
+    Volume vai até 2 (o slider do painel chega a 150%); os toggles de tratamento ficam
+    guardados aqui e entram no mix numa fase seguinte.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    return {
+        "volume": _clamp(raw.get("volume", 1.0), *CLIP_VOLUME_RANGE, 1.0),
+        "muted": _b(raw.get("muted")),
+        "fadeIn": _clamp(raw.get("fadeIn", 0.0), 0.0, 30.0, 0.0),
+        "fadeOut": _clamp(raw.get("fadeOut", 0.0), 0.0, 30.0, 0.0),
+        "normalize": _b(raw.get("normalize")),
+        "enhance": _b(raw.get("enhance")),
+        "denoise": _b(raw.get("denoise")),
     }
 
 
@@ -231,9 +257,16 @@ def normalize_item(track_type: str, raw: dict, root: Path) -> dict | None:
             item["clip"] = _clean_id(raw.get("clip"), "c")
         if raw.get("mediaId"):
             item["mediaId"] = _s(raw.get("mediaId"), 80)
+        if raw.get("shape"):                       # elemento/glifo do painel Elementos
+            item["shape"] = _s(raw.get("shape"), MAX_SHAPE)
+        if raw.get("text") is not None:            # rótulo do elemento (aparece na timeline)
+            item["text"] = _s(raw.get("text"), MAX_TEXT)
         item["transform"] = normalize_transform(raw.get("transform"))
         item["effects"] = normalize_effects(raw.get("effects"))
         item["filters"] = normalize_filters(raw.get("filters"))
+        preset_css = _s(raw.get("presetCss", ""), MAX_STR)   # CSS do preset, usado no preview
+        if preset_css:
+            item["presetCss"] = preset_css
         item["audio"] = normalize_audio(raw.get("audio"))
     elif track_type in ("audio", "music"):
         item["file"] = safe_rel(root, raw.get("file", ""), f"{track_type}.file")
@@ -276,10 +309,11 @@ def normalize_transition(raw: dict) -> dict | None:
         return None
     known = ("fade", "dissolve", "slide", "zoom", "wipe", "blur", "flash",
              "glitch", "spin", "push", "pull", "mask", "directional")
-    ttype = raw.get("type")
+    # o painel manda o rótulo ("Glitch"); a lista canônica é minúscula — normalizar a caixa
+    ttype = _s(raw.get("type", ""), 40).strip().lower()
     cfg = raw.get("config") if isinstance(raw.get("config"), dict) else {}
-    direction = cfg.get("direction")
-    easing = cfg.get("easing")
+    direction = _s(cfg.get("direction", ""), 20).strip().lower()
+    easing = _s(cfg.get("easing", ""), 20).strip().lower()
     return {
         "id": _clean_id(raw.get("id"), "tr"),
         "from": _clean_id(raw.get("from"), "c"),
@@ -292,6 +326,18 @@ def normalize_transition(raw: dict) -> dict | None:
             "easing": easing if easing in ("linear", "ease", "ease-in", "ease-out", "ease-in-out") else "ease",
         },
     }
+
+
+def normalize_ui_zoom(value) -> float:
+    """Zoom da timeline é um FATOR (0.25–4, default 1) — é assim que o frontend grava e relê.
+
+    Timelines gravadas antes desta correção guardaram px/s (2–400, default 40); qualquer valor
+    acima do fator máximo é legado e volta ao default, em vez de abrir o projeto em 400%.
+    """
+    z = _num(value, UI_ZOOM_DEFAULT)
+    if z > UI_ZOOM_RANGE[1]:
+        return UI_ZOOM_DEFAULT
+    return _clamp(z, *UI_ZOOM_RANGE, UI_ZOOM_DEFAULT)
 
 
 def normalize_marker(raw: dict) -> dict | None:
@@ -314,6 +360,11 @@ def normalize_clip_fx(raw, root: Path) -> dict:
         entry = {"transform": normalize_transform(fx.get("transform")),
                  "effects": normalize_effects(fx.get("effects")),
                  "filters": normalize_filters(fx.get("filters"))}
+        if isinstance(fx.get("audio"), dict):        # aba Áudio do clipe (volume/fades/toggles)
+            entry["audio"] = normalize_clip_audio(fx.get("audio"))
+        preset_css = _s(fx.get("presetCss", ""), MAX_STR)   # CSS do preset, usado no preview
+        if preset_css:
+            entry["presetCss"] = preset_css
         out[key] = entry
     return out
 
@@ -354,7 +405,7 @@ def normalize_editor(root: Path, raw) -> dict | None:
         "clip_fx": normalize_clip_fx(raw.get("clip_fx"), root),
         "transitions": transitions,
         "markers": markers,
-        "ui": {"zoom": _clamp(ui_raw.get("zoom", 40), 2, 400, 40),
+        "ui": {"zoom": normalize_ui_zoom(ui_raw.get("zoom", UI_ZOOM_DEFAULT)),
                "snap": _b(ui_raw.get("snap", True), True)},
     }
 
@@ -374,5 +425,5 @@ def editor_from_legacy(timeline: dict) -> dict:
         "clip_fx": {},
         "transitions": [],
         "markers": [],
-        "ui": {"zoom": 40, "snap": True},
+        "ui": {"zoom": UI_ZOOM_DEFAULT, "snap": True},
     }

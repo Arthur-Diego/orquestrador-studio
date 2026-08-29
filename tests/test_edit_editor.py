@@ -130,7 +130,7 @@ def sample_editor() -> dict:
         ],
         "transitions": [{"id": "tr1", "from": "c_a", "to": "c_b", "type": "dissolve", "duration": 0.5}],
         "markers": [{"id": "mk1", "at": 1.2, "name": "Hook"}],
-        "ui": {"zoom": 40, "snap": True},
+        "ui": {"zoom": 1.5, "snap": True},
     }
 
 
@@ -198,12 +198,75 @@ def test_ids_generated_when_missing(tmp_path):
     assert e["tracks"][0]["items"][0]["id"]
 
 
+def test_transition_type_is_case_insensitive(tmp_path):
+    """AP-09: o painel manda o rótulo ("Glitch"); sem normalizar a caixa tudo virava dissolve."""
+    e = ed.normalize_editor(tmp_path, {"transitions": [
+        {"id": "tr1", "from": "c1", "to": "c2", "type": "Glitch"},
+        {"id": "tr2", "from": "c2", "to": "c3", "type": " Wipe ",
+         "config": {"direction": "Right", "easing": "Ease-In"}},
+        {"id": "tr3", "from": "c3", "to": "c4", "type": "inexistente"}]})
+    assert [t["type"] for t in e["transitions"]] == ["glitch", "wipe", "dissolve"]
+    assert e["transitions"][1]["config"]["direction"] == "right"
+    assert e["transitions"][1]["config"]["easing"] == "ease-in"
+
+
+def test_overlay_keeps_shape_and_text(tmp_path):
+    """AP-07: elemento do painel Elementos guarda `shape` + `text` — sem isso vira quadrado vazio."""
+    e = ed.normalize_editor(tmp_path, {"tracks": [
+        {"id": "v2", "type": "overlay", "items": [
+            {"id": "ov1", "start": 0, "end": 3, "text": "★", "shape": "★"},
+            {"id": "ov2", "start": 0, "end": 1, "shape": "x" * 40, "text": "y" * (ed.MAX_TEXT + 10)},
+            {"id": "ov3", "start": 0, "end": 1}]}]})
+    itens = e["tracks"][0]["items"]
+    assert itens[0]["shape"] == "★" and itens[0]["text"] == "★"
+    assert len(itens[1]["shape"]) == ed.MAX_SHAPE and len(itens[1]["text"]) == ed.MAX_TEXT
+    assert "shape" not in itens[2] and "text" not in itens[2]   # overlay de mídia não ganha campo
+
+
+def test_ui_zoom_is_a_factor(tmp_path):
+    """AP-06: o frontend grava `ui.zoom` como FATOR (0.25–4, default 1) — o backend preserva."""
+    e = ed.normalize_editor(tmp_path, {"ui": {"zoom": 2.5, "snap": False}})
+    assert e["ui"] == {"zoom": 2.5, "snap": False}
+    assert ed.normalize_editor(tmp_path, {"ui": {"zoom": 0.25}})["ui"]["zoom"] == 0.25
+    assert ed.normalize_editor(tmp_path, {})["ui"]["zoom"] == 1.0          # default = 1x
+    assert ed.normalize_editor(tmp_path, {"ui": {"zoom": 0.01}})["ui"]["zoom"] == 0.25
+    # px/s de timelines antigas (2–400) não vira 400% de zoom: volta ao default
+    assert ed.normalize_editor(tmp_path, {"ui": {"zoom": 40}})["ui"]["zoom"] == 1.0
+    assert ed.editor_from_legacy({})["ui"]["zoom"] == 1.0
+
+
 def test_clip_fx_map(tmp_path):
     e = ed.normalize_editor(tmp_path, {"clip_fx": {
         "c_001": {"transform": {"x": 0.3}, "filters": {"brightness": 20, "desconhecido": 5}}}})
     fx = e["clip_fx"]["c_001"]
     assert fx["transform"]["x"] == 0.3
     assert fx["filters"] == {"brightness": 20.0}   # chave desconhecida descartada
+    assert "audio" not in fx                       # sem a aba Áudio tocada, nada é inventado
+
+
+def test_clip_fx_keeps_audio_and_preset(tmp_path):
+    """AP-08: aba Áudio do clipe (FDD §7.4) e preset do painel Filtros sobrevivem ao round-trip."""
+    e = ed.normalize_editor(tmp_path, {"clip_fx": {"c_001": {
+        "filters": {"contrast": 10, "preset": "cinema"}, "presetCss": "saturate(1.2) contrast(1.1)",
+        "audio": {"volume": 1.5, "muted": True, "fadeIn": 0.5, "fadeOut": 2,
+                  "normalize": True, "enhance": True, "denoise": False}}}})
+    fx = e["clip_fx"]["c_001"]
+    assert fx["audio"] == {"volume": 1.5, "muted": True, "fadeIn": 0.5, "fadeOut": 2.0,
+                           "normalize": True, "enhance": True, "denoise": False}
+    assert fx["filters"] == {"contrast": 10.0, "preset": "cinema"}
+    assert fx["presetCss"] == "saturate(1.2) contrast(1.1)"
+    assert ed.normalize_editor(tmp_path, e) == e   # idempotente
+    # volume do clipe vai a 150% sem ser cortado em 1.0, mas nada passa de 2
+    alto = ed.normalize_editor(tmp_path, {"clip_fx": {"c1": {"audio": {"volume": 9}}}})
+    assert alto["clip_fx"]["c1"]["audio"]["volume"] == 2.0
+
+
+def test_overlay_keeps_preset_css(tmp_path):
+    """AP-08: o preset de filtro também é gravado no próprio item quando o alvo é um overlay."""
+    e = ed.normalize_editor(tmp_path, {"tracks": [{"type": "overlay", "items": [
+        {"id": "ov1", "filters": {"preset": "vhs"}, "presetCss": "sepia(.3)"}]}]})
+    item = e["tracks"][0]["items"][0]
+    assert item["filters"] == {"preset": "vhs"} and item["presetCss"] == "sepia(.3)"
 
 
 # ---------- API: retrocompatibilidade e round-trip ----------
