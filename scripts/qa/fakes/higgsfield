@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Fake do CLI `higgsfield` para o QA offline (skill qa-studio).
+
+Cobre exatamente os subcomandos que `studio/higgsfield.py` usa, sempre com `--json`:
+
+    account status
+    generate list --image|--video|--audio --size N
+    generate cost <model> [params...]
+    generate create <model> [params...] --wait --wait-timeout Ns
+
+Gera mídia sintética local (PNG via PIL; MP4/MP3 via ffmpeg lavfi) em `$QA_FAKE_DIR` e devolve
+URLs `http://` servidas pelo mini servidor estático do `stack-up.sh` (`$QA_FAKE_MEDIA_URL`) — a
+ponte só reconhece URLs http(s). Toda chamada é registrada em `$QA_FAKE_DIR/fakes.log`.
+
+Injeção de falhas (variáveis de ambiente):
+    QA_FAKE_HF_FAIL=1         qualquer `generate create|cost` falha (exit 1)
+    QA_FAKE_HF_LOGGED_OUT=1   `account status` falha (CLI instalado, sem login)
+    QA_FAKE_HF_SLOW=<seg>     atraso antes de responder (testa progress modal / timeouts)
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+FAKE_DIR = Path(os.environ.get("QA_FAKE_DIR") or Path.cwd() / ".qa" / "fakes")
+MEDIA_URL = os.environ.get("QA_FAKE_MEDIA_URL", "http://127.0.0.1:8799").rstrip("/")
+VIDEO_HINTS = ("kling", "seedance", "veo", "reframe", "minimax", "wan", "video")
+AUDIO_HINTS = ("sonilo", "music", "audio", "sound")
+
+
+def log(line: str) -> None:
+    FAKE_DIR.mkdir(parents=True, exist_ok=True)
+    with (FAKE_DIR / "fakes.log").open("a", encoding="utf-8") as f:
+        f.write(f"{datetime.now(timezone.utc).isoformat()} higgsfield {line}\n")
+
+
+def out(obj) -> int:
+    print(json.dumps(obj, ensure_ascii=False))
+    return 0
+
+
+def fail(msg: str, code: int = 1) -> int:
+    print(msg, file=sys.stderr)
+    return code
+
+
+def kind_of(model: str, params: list[str]) -> str:
+    m = model.lower()
+    if "--video" in params or any(h in m for h in VIDEO_HINTS):
+        return "video"
+    if any(h in m for h in AUDIO_HINTS):
+        return "audio"
+    return "image"
+
+
+def make_media(kind: str, label: str) -> Path:
+    FAKE_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = f"{int(time.time() * 1000)}"
+    if kind == "image":
+        from PIL import Image, ImageDraw
+        path = FAKE_DIR / f"gen_{stamp}.png"
+        img = Image.new("RGB", (1024, 576), (int(stamp[-3:]) % 200 + 30, 90, 160))
+        ImageDraw.Draw(img).text((24, 24), f"[QA-FAKE] {label}"[:80], fill=(255, 255, 255))
+        img.save(path, "PNG")
+        return path
+    if kind == "video":
+        path = FAKE_DIR / f"gen_{stamp}.mp4"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=640x360:rate=24",
+                        "-f", "lavfi", "-i", "sine=frequency=440", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-shortest", str(path)], check=True)
+        return path
+    path = FAKE_DIR / f"gen_{stamp}.mp3"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220:duration=4",
+                    str(path)], check=True)
+    return path
+
+
+def main(argv: list[str]) -> int:
+    args = [a for a in argv if a != "--json"]
+    log(" ".join(argv))
+    slow = float(os.environ.get("QA_FAKE_HF_SLOW", "0") or 0)
+    if slow:
+        time.sleep(slow)
+
+    if args[:2] == ["account", "status"]:
+        if os.environ.get("QA_FAKE_HF_LOGGED_OUT"):
+            return fail("Not logged in. Run `higgsfield auth login`.")
+        return out({"email": "qa-fake@studio.local", "plan": "qa-fake", "credits": 9999})
+
+    if args[:2] == ["model", "get"]:
+        # catálogo por modelo (a ponte filtra params por aqui — `adapt_params`); espelha o CLI real
+        model = args[2] if len(args) > 2 else "unknown"
+        base = ["aspect_ratio", "duration", "prompt", "sound", "start_image"]
+        extra = {"kling3_0": ["end_image", "mode"], "seedance_2_0": ["end_image", "mode", "resolution"],
+                 "kling3_0_turbo": ["resolution"], "sonilo_music": []}
+        if model == "sonilo_music":
+            names = ["prompt", "duration"]
+        elif kind_of(model, []) == "image":
+            names = ["prompt", "aspect_ratio", "resolution", "count", "image_references"]
+        else:
+            names = base + extra.get(model, ["mode"])
+        return out({"job_type": model, "type": kind_of(model, []), "params": [{"name": n} for n in names]})
+
+    if args[:2] == ["generate", "list"]:
+        kind = "video" if "--video" in args else "audio" if "--audio" in args else "image"
+        ext = {"image": "png", "video": "mp4", "audio": "mp3"}[kind]
+        items = []
+        for i in range(3):
+            path = make_media(kind, f"history {kind} {i + 1}")
+            items.append({"id": f"fake-hist-{kind}-{i + 1}", "prompt": f"[QA-FAKE] history {kind} {i + 1}",
+                          "job_type": f"fake_{kind}", "created_at": datetime.now(timezone.utc).isoformat(),
+                          "results": [{"url": f"{MEDIA_URL}/{path.name}"}], "ext": ext})
+        return out({"items": items})
+
+    if args[:2] == ["generate", "cost"]:
+        if os.environ.get("QA_FAKE_HF_FAIL"):
+            return fail("[QA-FAKE] cost failed on purpose")
+        model = args[2] if len(args) > 2 else "unknown"
+        return out({"model": model, "credits": 7, "currency": "credits"})
+
+    if args[:2] == ["generate", "create"]:
+        if os.environ.get("QA_FAKE_HF_FAIL"):
+            return fail("[QA-FAKE] generation failed on purpose")
+        model = args[2] if len(args) > 2 else "unknown"
+        params = args[3:]
+        kind = kind_of(model, params)
+        prompt = next((params[i + 1] for i, p in enumerate(params) if p == "--prompt" and i + 1 < len(params)), "")
+        path = make_media(kind, f"{model}: {prompt}")
+        return out({"id": f"fake-job-{path.stem}", "status": "completed", "model": model,
+                    "results": [{"url": f"{MEDIA_URL}/{path.name}"}]})
+
+    return fail(f"[QA-FAKE] subcomando não suportado: {' '.join(args)}", 2)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

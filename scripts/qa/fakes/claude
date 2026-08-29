@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Fake do Claude CLI para o QA offline (skill qa-studio).
+
+`studio/common/prompter.py` chama `claude -p <prompt> --model X --output-format text --max-turns 6`
+(com `--allowedTools Read` quando há imagens) e espera um bloco ```json com `prompt`, `negative`,
+`camera`, `notes_pt`. Este fake devolve um JSON determinístico marcado `[QA-FAKE]` e registra a
+chamada em `$QA_FAKE_DIR/fakes.log`.
+
+Injeção de falhas: QA_FAKE_CLAUDE_FAIL=1 (exit 1), QA_FAKE_CLAUDE_GARBAGE=1 (texto sem JSON),
+QA_FAKE_CLAUDE_SLOW=<seg>.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+FAKE_DIR = Path(os.environ.get("QA_FAKE_DIR") or Path.cwd() / ".qa" / "fakes")
+
+
+def main(argv: list[str]) -> int:
+    FAKE_DIR.mkdir(parents=True, exist_ok=True)
+    prompt = argv[argv.index("-p") + 1] if "-p" in argv and argv.index("-p") + 1 < len(argv) else ""
+    with (FAKE_DIR / "fakes.log").open("a", encoding="utf-8") as f:
+        f.write(f"{datetime.now(timezone.utc).isoformat()} claude -p <{len(prompt)} chars> "
+                f"{' '.join(a for a in argv if a != prompt and a != '-p')}\n")
+    slow = float(os.environ.get("QA_FAKE_CLAUDE_SLOW", "0") or 0)
+    if slow:
+        time.sleep(slow)
+    if os.environ.get("QA_FAKE_CLAUDE_FAIL"):
+        print("[QA-FAKE] claude failed on purpose", file=sys.stderr)
+        return 1
+    if os.environ.get("QA_FAKE_CLAUDE_GARBAGE"):
+        print("Sorry, I cannot help with that.")
+        return 0
+    seed = hashlib.sha1(prompt.encode("utf-8")).hexdigest()[:6]
+    data = {
+        "prompt": f"[QA-FAKE {seed}] Ultra-realistic commercial product photography, centered subject, "
+                  "soft studio light, shallow depth of field, cinematic color grade, no people, no text.",
+        "negative": "people, text, watermark, blurry, low quality",
+        "camera": "85mm, f/2.8, ISO 100, eye-level",
+        "notes_pt": "Prompt gerado pelo fake do QA — sem chamada real ao Claude.",
+    }
+    print("```json\n" + json.dumps(data, ensure_ascii=False, indent=2) + "\n```")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

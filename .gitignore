@@ -31,3 +31,6 @@ harvest-report.json
 # Handoff de design e artefatos de análise — fora do git (grandes, locais)
 /Análise de codebase/
 /Análise de codebase.zip
+
+# artefatos de rodadas de QA E2E (skill qa-studio): ambientes isolados, prints, logs
+.qa/

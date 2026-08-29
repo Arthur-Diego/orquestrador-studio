@@ -89,6 +89,7 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
 | --- | --- |
 | `ft-pr` | Gate obrigatório antes de push/PR |
 | `ship-manual` | Encerrar entrega fora do SDD: commit com `ADH-OS-*` + PR para `develop` |
+| `qa-studio` | QA E2E da aplicação inteira (telas via Playwright + API + newman), cards no Trello, correção em `fix/qa-<data>` e revalidação incremental até zerar (`/qa-studio [telas]`; config em `docs/qa/config.md`) |
 | `cy-trello-mcp` | Camada de acesso ao Trello usada pelo protocolo do `/dd` |
 | `cy-create-prd`, `cy-create-tasks`, `cy-execute-task`, `cy-review-round`, `cy-fix-reviews`, `cy-final-verify`, `cy-workflow-memory` | Pipeline SDD (Compozy) — acionadas pelo `dd-feature` |
 | `compozy` | Entender capacidades e fluxo do Compozy |

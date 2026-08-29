@@ -123,6 +123,11 @@ Variáveis: `STUDIO_PROJECTS`, `STUDIO_STATE`, `STUDIO_DOWNLOADS`, `PORT`.
 - CI: `.github/workflows/ci.yml` (ruff + pytest) e `task-id-check.yml`.
 - Smoke visual fora do CI (ADR-008): `python scripts/smoke_ui.py http://127.0.0.1:8765 <pid> <pasta> [dark] [--timers]`
   — prints das 11 telas, erros de JS e prova de que nenhum timer sobrevive à troca de tela.
+- QA E2E completo fora do CI (skill `qa-studio`, `/qa-studio [telas]`): ambiente isolado com fakes
+  de `higgsfield`/`claude` (`make qa-up RUN=x`), seed de campanha inteira (`make qa-seed`), cenários
+  Playwright por tela (`make qa-run TELAS="refs mood"`), auditoria de API + newman (`make qa-api`),
+  `make qa-down`. Artefatos em `.qa/runs/<run>/` (gitignored); relatórios em `docs/qa/reports/`;
+  configuração do Trello/portas em `docs/qa/config.md`.
 - Fidelidade ao curso: gates em `CLAUDE.md`. Melhorias fora do roteiro são sugeridas, não
   implementadas sem aprovação.
 

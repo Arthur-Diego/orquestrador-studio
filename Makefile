@@ -1,4 +1,4 @@
-.PHONY: help setup hooks run test lint verify
+.PHONY: help setup hooks run test lint verify qa-up qa-seed qa-run qa-api qa-down
 
 help: ## Lista os alvos
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-10s %s\n", $$1, $$2}'
@@ -22,3 +22,16 @@ lint: ## Lint com ruff
 	. .venv/bin/activate && ruff check studio tests scripts
 
 verify: lint test ## Lint + testes (o que o CI roda)
+
+# ---- QA E2E fora do CI (skill qa-studio, ADR-008). RUN=<run-id> (padrão: local) ----
+RUN ?= local
+qa-up: ## Sobe o Studio isolado com fakes em .qa/runs/$(RUN) e faz o pré-voo
+	bash scripts/qa/stack-up.sh . $(RUN) && bash scripts/qa/check-env.sh . $(RUN)
+qa-seed: ## Popula campanha cheia + vazia + mood board na rodada $(RUN)
+	bash scripts/qa/seed.sh . $(RUN)
+qa-run: ## Roda os cenários Playwright (TELAS="refs mood" para filtrar)
+	. .qa/runs/$(RUN)/env.sh && .venv/bin/python scripts/qa/run.py --run $(RUN) $(if $(TELAS),--telas $(TELAS),)
+qa-api: ## Auditoria de API (OpenAPI + contratos + newman) da rodada $(RUN)
+	. .qa/runs/$(RUN)/env.sh && .venv/bin/python scripts/qa/api_audit.py --run $(RUN)
+qa-down: ## Derruba o servidor da rodada $(RUN) (PURGE=1 apaga os artefatos)
+	bash scripts/qa/stack-down.sh . $(RUN) $(if $(PURGE),--purge,)
