@@ -39,6 +39,16 @@ Studio.register("storyboard", (ctx) => {
     let ideas = [], scenes = [], hasBase = false;
     let instruction = "";      // instrução montada (o `.txt` mostra o texto de repouso quando vazia)
     let panelDrop = null;      // <input type="file"> criado por `ui.drop` no painel 01
+    // `[extensão]` vídeo por foto (ADR-022): PONTO ÚNICO do vínculo foto→{desc, prompt, videos}. Isolar
+    // o mapeamento aqui torna trivial migrar per-cena↔per-foto e plugar a ponte com o downstream.
+    const photoState = new Map();            // chave `${sid}:${img}` -> { desc, prompt, videos:[] }
+    let videoModels = [], videoModelDefaults = { single: "", start_end: "" };  // seletor do modal (ADR-022)
+    const pkey = (sid, img) => `${sid}:${img}`;
+    function photoMeta(sid, img) {
+      const k = pkey(sid, img);
+      if (!photoState.has(k)) photoState.set(k, { desc: "", prompt: "", videos: [] });
+      return photoState.get(k);
+    }
 
     const EMPTY_INSTRUCTION = "a instrução montada aparece aqui — os botões não gastam crédito";
     const url = (p) => `/api/projects/${ctx.pid()}/storyboard${p || ""}`;
@@ -61,6 +71,9 @@ Studio.register("storyboard", (ctx) => {
       $("#sbBase").classList.toggle("hidden", !hasBase);
       if (hasBase) $("#sbBase").src = ctx.files(st.base_image);
       $("#sbGen4").disabled = $("#sbGen1").disabled = !hasBase;
+      // `[extensão]` ADR-022: modelos de vídeo do modal "Gerar animação" (+ default por modo).
+      videoModels = st.video_models || [];
+      videoModelDefaults = st.video_model_defaults || { single: "", start_end: "" };
     }
 
     async function loadPresets() {
@@ -214,15 +227,8 @@ Studio.register("storyboard", (ctx) => {
 
     async function loadScenes() {
       scenes = (await api(url("/scenes"))).scenes;
-      renderScenes();
+      seedPhotoState(); renderScenes();
     }
-    // `[extensão]` storyboard-video (ADR-021, wave 7): opções de frame do bloco de vídeo — uma
-    // `<option>` por keyframe da cena (rótulo = nome do arquivo), com `selected` no `sel` pedido.
-    function frameOptions(images, sel) {
-      return (images || []).map((f) =>
-        `<option value="${esc(f)}"${f === sel ? " selected" : ""}>${esc(f.split("/").pop())}</option>`).join("");
-    }
-
     // Área "Ver vídeo" da cena: mostra o último take gerado (`<video controls>`) + o botão de abrir
     // em tamanho real + a nota de que o vídeo alimenta a etapa 6 (animação).
     function vidView(videos) {
@@ -236,41 +242,57 @@ Studio.register("storyboard", (ctx) => {
         </div>`;
     }
 
-    // `[extensão]` storyboard-video (ADR-021): bloco de vídeo por cena — seletor 1 frame/start→end,
-    // descrição, "Gerar prompt de vídeo" (Claude), "Gerar vídeo via CLI" (Kling) e o vídeo gerado.
-    function vidBlock(s) {
-      const images = s.images || [];
-      const desc = s.video_desc || "";
-      const prompt = s.video_prompt || "";
-      const videos = s.videos || [];
-      return `<details class="sb-vid">
-        <summary>Vídeo desta cena <span class="fine">— prompt (Claude) + geração via CLI (alimenta a etapa 6)</span></summary>
-        <div class="sb-vid-body">
-          <div class="row wrap sb-vid-frames">
-            <select class="sbVidMode" aria-label="frames do vídeo">
-              <option value="single">1 frame</option>
-              <option value="start_end">start → end</option>
-            </select>
-            <label class="inline sbVidSingle">frame <select class="sbVidImg">${frameOptions(images, s.primary)}</select></label>
-            <label class="inline sbVidPair hidden">start <select class="sbVidStart">${frameOptions(images, s.primary)}</select></label>
-            <label class="inline sbVidPair hidden">end <select class="sbVidEnd">${frameOptions(images, images[1] || images[0] || "")}</select></label>
-          </div>
-          <textarea class="txt sbVidDesc" rows="2" placeholder="o que você quer que aconteça no vídeo (em inglês)">${esc(desc)}</textarea>
-          <div class="row wrap">
-            <button type="button" class="ghost sbVidPrompt">Gerar prompt de vídeo</button>
-          </div>
-          <div class="prompt sm sbVidPromptBox${prompt ? "" : " hidden"}">
-            <div class="row"><span class="eyebrow">Prompt de vídeo</span>
-              <button type="button" class="link sbVidCopy">Copiar</button><span class="ok"></span></div>
-            <p class="txt sbVidPromptText">${esc(prompt)}</p>
-          </div>
-          <div class="row wrap">
-            <select class="sbVidDur" aria-label="duração do vídeo"><option value="5">5s</option><option value="10">10s</option></select>
-            <button type="button" class="primary sbVidGen"${prompt ? "" : " disabled"}>Gerar vídeo via CLI</button>
-          </div>
-          <div class="sbVidView">${vidView(videos)}</div>
-        </div>
-      </details>`;
+    // `[extensão]` vídeo por foto (ADR-022): uma LINHA por foto — [foto vertical | descrição + prompt +
+    // vídeo gerado | Gerar prompt / Gerar animação / reordenar]. O prompt e o vídeo são POR FOTO.
+    function photoRow(sid, img, isPrimary, pi, count) {
+      const m = photoMeta(sid, img);
+      const has = !!m.prompt;
+      return `<div class="sb-photorow" data-img="${esc(img)}" data-pi="${pi}">
+         <div class="sb-key${isPrimary ? " primary" : ""}" data-img="${esc(img)}" draggable="true" title="clique para ver em tamanho real · arraste para reordenar">
+            <img loading="lazy" src="${esc(ctx.files(img))}" alt="">
+            <button type="button" class="sb-star" data-star="${esc(img)}" title="${isPrimary ? "principal da cena" : "marcar como principal"}">★</button>
+            <button type="button" class="sb-rm" data-rm="${esc(img)}" title="remover imagem">✕</button>
+         </div>
+         <div class="sb-photocol">
+            <textarea class="txt sbVidDesc" rows="2" placeholder="o que acontece no vídeo desta foto (em inglês)">${esc(m.desc)}</textarea>
+            <div class="prompt sm sbVidPromptBox${has ? "" : " hidden"}">
+              <div class="row"><span class="eyebrow">Prompt de vídeo</span>
+                <button type="button" class="link sbVidCopy">Copiar</button><span class="ok"></span></div>
+              <p class="txt sbVidPromptText">${esc(m.prompt)}</p>
+            </div>
+            <div class="sbVidView">${vidView(m.videos)}</div>
+         </div>
+         <div class="sb-photoacts">
+            <button type="button" class="ghost mini sbVidPrompt" title="gerar o prompt de vídeo desta foto (Claude)">Gerar prompt</button>
+            <button type="button" class="primary mini sbAnim" title="gerar a animação desta foto (Higgsfield)">Gerar animação</button>
+            <div class="sb-photo-reorder">
+              <button type="button" class="ghost mini sbPhotoUp" title="subir foto"${pi === 0 ? " disabled" : ""}>↑</button>
+              <button type="button" class="ghost mini sbPhotoDown" title="descer foto"${pi >= count - 1 ? " disabled" : ""}>↓</button>
+            </div>
+         </div>
+       </div>`;
+    }
+
+    // Semeia o ponto único a partir do que o backend devolve (`scene.photos`, ADR-022).
+    function seedPhotoState() {
+      photoState.clear();
+      scenes.forEach((s) => {
+        const ph = s.photos || {};
+        (s.images || []).forEach((img) => {
+          const e = ph[img] || {};
+          photoState.set(pkey(s.id || "", img),
+            { desc: e.video_desc || "", prompt: e.video_prompt || "", videos: (e.videos || []).slice() });
+        });
+      });
+    }
+
+    // Lê os textareas/prompt das linhas-foto de volta para o ponto único (antes de collect/persist).
+    function syncPhotoDom(el, sid) {
+      el.querySelectorAll(".sb-photorow").forEach((pr) => {
+        const m = photoMeta(sid, pr.dataset.img);
+        const d = pr.querySelector(".sbVidDesc"); if (d) m.desc = d.value;
+        const p = pr.querySelector(".sbVidPromptText"); if (p) m.prompt = p.textContent;
+      });
     }
 
     function renderScenes() {
@@ -278,52 +300,60 @@ Studio.register("storyboard", (ctx) => {
       $("#sbScenes").innerHTML = scenes.map((s, i) => {
         const arc = arcOf(i + 1, total);
         const images = s.images || [];
-        // `[extensão]` cena-multi-keyframe (ADR-018): mini-galeria da cena — cada keyframe com a
-        // marca de principal (★) e o "✕" de remover; a última célula é o "+ imagem" (abre o picker).
-        // Wave 7: a foto é maior e clicável — o clique (fora dos botões) abre o lightbox tamanho real.
-        const keys = images.map((img) => {
-          const isPrimary = img === s.primary;
-          return `<div class="sb-key${isPrimary ? " primary" : ""}" data-img="${esc(img)}" title="clique para ver em tamanho real">
-             <img loading="lazy" src="${esc(ctx.files(img))}" alt="">
-             <button type="button" class="sb-star" data-star="${esc(img)}" title="${isPrimary ? "principal da cena" : "marcar como principal"}">★</button>
-             <button type="button" class="sb-rm" data-rm="${esc(img)}" title="remover imagem">✕</button>
-           </div>`;
-        }).join("");
-        return `<div class="scene-row" data-i="${i}" data-sid="${esc(s.id || "")}" data-images="${esc(images.join("|"))}" data-primary="${esc(s.primary || "")}" data-videos="${esc((s.videos || []).join("|"))}">
-           <span class="mom" data-mom="${esc(momOf(arc.label))}" title="Cena ${i + 1} · ${esc(arc.label)}">${esc(arc.label)}</span>
-           <textarea class="txt sbTxt" rows="1" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
-           <div class="sb-gallery">${keys}<div class="thumb pick sb-pick" tabindex="0" role="button" title="adicionar imagem à cena"></div></div>
-           ${vidBlock(s)}
-           <div class="acts">
-             <button type="button" class="ghost mini sbUp" title="subir">↑</button><button type="button" class="ghost mini sbDown" title="descer">↓</button><button type="button" class="ghost mini sbDel" title="remover">✕</button>
+        const sid = s.id || "";
+        const rows = images.map((img, pi) => photoRow(sid, img, img === s.primary, pi, images.length)).join("");
+        return `<div class="scene-row" data-i="${i}" data-sid="${esc(sid)}" data-images="${esc(images.join("|"))}" data-primary="${esc(s.primary || "")}" data-videos="${esc((s.videos || []).join("|"))}">
+           <div class="sb-scenehead">
+             <span class="mom" data-mom="${esc(momOf(arc.label))}" title="Cena ${i + 1} · ${esc(arc.label)}">${esc(arc.label)}</span>
+             <textarea class="txt sbTxt" rows="1" placeholder="${esc(arc.label)}: ${esc(arc.hint)} (ex.: close no astronauta andando na nevasca)">${esc(s.text)}</textarea>
+             <div class="acts">
+               <button type="button" class="ghost mini sbUp" title="subir cena">↑</button><button type="button" class="ghost mini sbDown" title="descer cena">↓</button><button type="button" class="ghost mini sbDel" title="remover cena">✕</button>
+             </div>
            </div>
+           <div class="sb-phototable">${rows}<div class="thumb pick sb-pick" tabindex="0" role="button" title="adicionar imagem à cena"></div></div>
          </div>`;
       }).join("");
       ui.autosize("#sbScenes textarea.sbTxt");
       ui.autosize("#sbScenes textarea.sbVidDesc");
     }
+
+    // `[extensão]` ADR-022: além de text/images/primary, envia o mapa `photos` (por foto) e espelha a
+    // foto principal no par por-cena (retrocompat). `id` volta para as chaves do ponto único.
     function collect() {
-      return [...document.querySelectorAll("#sbScenes .scene-row")].map((el) => ({
-        text: el.querySelector(".sbTxt").value,
-        images: el.dataset.images ? el.dataset.images.split("|").filter(Boolean) : [],
-        primary: el.dataset.primary || null,
-        // `[extensão]` storyboard-video (ADR-021): campos aditivos persistidos junto no PUT /scenes.
-        video_desc: (el.querySelector(".sbVidDesc") || {}).value || "",
-        video_prompt: (el.querySelector(".sbVidPromptText") || {}).textContent || "",
-        videos: el.dataset.videos ? el.dataset.videos.split("|").filter(Boolean) : [],
-      }));
+      return [...document.querySelectorAll("#sbScenes .scene-row")].map((el) => {
+        const sid = el.dataset.sid || "";
+        const images = el.dataset.images ? el.dataset.images.split("|").filter(Boolean) : [];
+        const primary = el.dataset.primary || null;
+        syncPhotoDom(el, sid);
+        const photos = {};
+        images.forEach((img) => {
+          const m = photoMeta(sid, img);
+          photos[img] = { video_desc: m.desc || "", video_prompt: m.prompt || "", videos: (m.videos || []).slice() };
+        });
+        const prim = primary ? photoMeta(sid, primary) : { desc: "", prompt: "", videos: [] };
+        return {
+          id: sid || null, text: el.querySelector(".sbTxt").value, images, primary, photos,
+          video_desc: prim.desc || "", video_prompt: prim.prompt || "", videos: (prim.videos || []).slice(),
+        };
+      });
     }
 
     // ---------- vídeo por cena (wave 7, contrato congelado wave-7.md) ----------
     const sceneLabelOf = (sid) => String(sid || "").replace(/^cena0*/, "cena ");
     const rowBySid = (sid) => document.querySelector(`#sbScenes .scene-row[data-sid="${(window.CSS && CSS.escape) ? CSS.escape(sid) : sid}"]`);
 
-    function framesOf(box) {
+    // Linha de uma foto específica dentro da cena (para atualizar o vídeo no lugar, sem re-render).
+    const photoRowEl = (sid, img) => {
+      const sc = rowBySid(sid); if (!sc) return null;
+      return [...sc.querySelectorAll(".sb-photorow")].find((pr) => pr.dataset.img === img) || null;
+    };
+
+    // `[extensão]` ADR-022: frames do modal — single usa a própria foto; start_end usa a foto como
+    // START e a 2ª imagem escolhida como END (transição, aula 012).
+    function modalFrames(box, img) {
       const mode = box.querySelector(".sbVidMode").value;
-      if (mode === "start_end") {
-        return { mode, start_image: box.querySelector(".sbVidStart").value || null, end_image: box.querySelector(".sbVidEnd").value || null };
-      }
-      return { mode, image: box.querySelector(".sbVidImg").value || null };
+      if (mode === "start_end") return { mode, start_image: img, end_image: box.querySelector(".sbVidEnd").value || null };
+      return { mode, image: img };
     }
 
     // Lightbox tamanho real (foto ou mp4) — modal escopado alargado via CSS `.modal:has(.sb-lightbox)`.
@@ -343,84 +373,150 @@ Studio.register("storyboard", (ctx) => {
       catch (err) { /* silencioso: os campos de vídeo passam a persistir com a Frente A (wave-7) */ }
     }
 
-    async function genVideoPrompt(box) {
-      const sid = box.dataset.sid;
+    // Gera o prompt de vídeo POR FOTO (frames = a própria foto). `container` = a linha-foto OU o modal;
+    // ambos têm `.sbVidDesc`/`.sbVidPromptBox`/`.sbVidPromptText`. Grava no ponto único (photoState).
+    async function genVideoPrompt(container, sid, img) {
       if (!sid) return toast("Salve as cenas primeiro.");
-      const description = box.querySelector(".sbVidDesc").value.trim();
+      const descEl = container.querySelector(".sbVidDesc");
+      const description = (descEl ? descEl.value : "").trim();
       const p = ui.progress({ title: "Gerar prompt de vídeo", subtitle: "o Claude escreve o prompt de movimento" });
       p.step("Chamando o Claude…");
       try {
-        const r = await api(url("/video-prompt"), { method: "POST", body: JSON.stringify({ scene_id: sid, description, frames: framesOf(box) }) });
-        box.querySelector(".sbVidPromptText").textContent = r.prompt || "";
-        box.querySelector(".sbVidPromptBox").classList.toggle("hidden", !r.prompt);
-        box.querySelector(".sbVidGen").disabled = !r.prompt;
+        const r = await api(url("/video-prompt"), { method: "POST", body: JSON.stringify({ scene_id: sid, description, frames: { mode: "single", image: img } }) });
+        const box = container.querySelector(".sbVidPromptBox"), txt = container.querySelector(".sbVidPromptText");
+        if (txt) txt.textContent = r.prompt || "";
+        if (box) box.classList.toggle("hidden", !r.prompt);
+        const m = photoMeta(sid, img); m.desc = description; m.prompt = r.prompt || "";
+        // Reflete no outro lugar (linha↔modal) para o `syncPhotoDom` do collect() não apagar o prompt.
+        const pr = photoRowEl(sid, img);
+        if (pr && pr !== container.closest(".sb-photorow")) {
+          const rt = pr.querySelector(".sbVidPromptText"); if (rt) rt.textContent = m.prompt;
+          const rb = pr.querySelector(".sbVidPromptBox"); if (rb) rb.classList.toggle("hidden", !m.prompt);
+          const rd = pr.querySelector(".sbVidDesc"); if (rd) rd.value = m.desc;
+        }
         p.ok("Prompt pronto");
         p.note(`<span class="fine">fonte: ${esc(r.source || "claude")}${r.seconds ? ` · sugestão ${esc(r.seconds)}s` : ""}</span>`);
         persistVideo();
       } catch (err) { p.fail(err.message); }
     }
 
-    async function genVideo(box) {
-      const sid = box.dataset.sid;
+    // `[extensão]` ADR-022: modal "Gerar animação" (referência: Higgsfield) — preview da foto, duração,
+    // MODELO selecionável, single OU start→end com 2ª imagem, e o vídeo gerado. Contrato /video/* real.
+    function modalAnimate(sid, img) {
       if (!sid) return toast("Salve as cenas primeiro.");
-      const prompt = box.querySelector(".sbVidPromptText").textContent.trim();
+      const sceneEl = rowBySid(sid);
+      const images = sceneEl && sceneEl.dataset.images ? sceneEl.dataset.images.split("|").filter(Boolean) : [];
+      const others = images.filter((x) => x !== img);
+      const m0 = photoMeta(sid, img);
+      const models = videoModels.length ? videoModels : [videoModelDefaults.single].filter(Boolean);
+      const modelOpts = models.map((mm) => `<option value="${esc(mm)}">${esc(mm)}</option>`).join("");
+      const endOpts = others.map((f) => `<option value="${esc(f)}">${esc(f.split("/").pop())}</option>`).join("");
+      const html = `<div class="sb-anim">
+          <div class="sb-anim-preview">
+            <img src="${esc(ctx.files(img))}" alt="">
+            <span class="lbl">start / referência: ${esc(img.split("/").pop())}</span>
+          </div>
+          <div class="sb-anim-ctrls">
+            <textarea class="txt sbVidDesc" rows="2" placeholder="o que acontece no vídeo (em inglês)">${esc(m0.desc)}</textarea>
+            <div class="row wrap"><button type="button" class="ghost mini sbVidPrompt">Gerar prompt de vídeo</button></div>
+            <div class="prompt sm sbVidPromptBox${m0.prompt ? "" : " hidden"}">
+              <div class="row"><span class="eyebrow">Prompt de vídeo</span>
+                <button type="button" class="link sbVidCopy">Copiar</button><span class="ok"></span></div>
+              <p class="txt sbVidPromptText">${esc(m0.prompt)}</p>
+            </div>
+            <div class="row wrap">
+              <label class="field"><span class="eyebrow lbl">duração</span>
+                <select class="sbVidDur"><option value="5">5s</option><option value="10">10s</option></select></label>
+              <label class="field"><span class="eyebrow lbl">modelo</span>
+                <select class="sbVidModel" title="modelo de vídeo (Higgsfield)">${modelOpts}</select></label>
+            </div>
+            <div class="row wrap">
+              <label class="field"><span class="eyebrow lbl">frames</span>
+                <select class="sbVidMode">
+                  <option value="single">1 frame (esta foto)</option>
+                  <option value="start_end"${others.length ? "" : " disabled"}>start → end (2ª imagem)</option>
+                </select></label>
+              <label class="field sbVidPair hidden"><span class="eyebrow lbl">end frame (2ª imagem)</span>
+                <select class="sbVidEnd">${endOpts}</select></label>
+            </div>
+            <span class="fine">start = esta foto; end = a 2ª imagem escolhida (transição, aula 012).</span>
+            <div class="sbVidView">${vidView(m0.videos)}</div>
+          </div>
+        </div>`;
+      const m = ui.modal({
+        title: `Gerar animação · ${sceneLabelOf(sid)}`,
+        subtitle: "Higgsfield (Kling) via CLI — duração, modelo e start/end frame.",
+        html,
+        actions: [{ label: "Gerar animação (gasta créditos)", kind: "primary", close: false, onClick: (mm) => runAnimate(mm, sid, img) }],
+      });
+      const modelSel = m.el.querySelector(".sbVidModel");
+      const setModelDefault = (mode) => {
+        const def = mode === "start_end" ? videoModelDefaults.start_end : videoModelDefaults.single;
+        if (def && [...modelSel.options].some((o) => o.value === def)) modelSel.value = def;
+      };
+      setModelDefault("single");
+      m.el.querySelector(".sbVidMode").addEventListener("change", (e) => {
+        const se = e.target.value === "start_end";
+        m.el.querySelectorAll(".sbVidPair").forEach((n) => n.classList.toggle("hidden", !se));
+        setModelDefault(e.target.value);
+      });
+      m.el.addEventListener("click", (e) => {
+        if (e.target.closest(".sbVidPrompt")) return genVideoPrompt(m.el, sid, img);
+        if (e.target.closest(".sbVidCopy")) return copyVidPrompt(m.el);
+        const vv = e.target.closest(".sbVidView [data-video]");
+        if (vv) { e.preventDefault(); window.open(ctx.files(vv.dataset.video), "_blank"); }
+      });
+    }
+
+    async function runAnimate(mm, sid, img) {
+      const prompt = (mm.el.querySelector(".sbVidPromptText").textContent || "").trim();
       if (!prompt) return toast("Gere o prompt de vídeo primeiro.");
-      const mode = box.querySelector(".sbVidMode").value;
-      const duration = +box.querySelector(".sbVidDur").value;
-      const frames = framesOf(box);
+      const mode = mm.el.querySelector(".sbVidMode").value;
+      const duration = +mm.el.querySelector(".sbVidDur").value;
+      const model = mm.el.querySelector(".sbVidModel").value || null;
+      const frames = modalFrames(mm.el, img);
+      if (mode === "start_end" && !frames.end_image) return toast("Escolha a 2ª imagem (end frame).");
       try {
         const ok = await ui.confirmCost(
-          () => api(url("/video/cost"), { method: "POST", body: JSON.stringify({ scene_id: sid, mode, duration }) }),
-          `Gerar vídeo de ${sceneLabelOf(sid)} (${duration}s)`);
+          () => api(url("/video/cost"), { method: "POST", body: JSON.stringify({ scene_id: sid, mode, duration, model }) }),
+          `Gerar animação de ${sceneLabelOf(sid)} (${duration}s)`);
         if (!ok) return;
-        const body = { scene_id: sid, prompt, mode, duration };
-        if (mode === "start_end") { body.start_image = frames.start_image; body.end_image = frames.end_image; }
-        else body.image = frames.image;
+        const body = { scene_id: sid, prompt, mode, duration, model, photo: img };
+        if (mode === "start_end") { body.start_image = img; body.end_image = frames.end_image; }
+        else body.image = img;
+        mm.close();
         ui.progressJob({
-          title: `Gerar vídeo · ${sceneLabelOf(sid)}`,
+          title: `Gerar animação · ${sceneLabelOf(sid)}`,
           subtitle: "Higgsfield (Kling) via CLI",
           start: () => api(url("/video/generate"), { method: "POST", body: JSON.stringify(body) }),
-          jobUrl: url(`/video/job?scene_id=${encodeURIComponent(sid)}`),
-          done: async (j) => onVideoDone(sid, j),
+          jobUrl: url(`/video/job?scene_id=${encodeURIComponent(sid)}&photo=${encodeURIComponent(img)}`),
+          done: async (j) => onVideoDone(sid, img, j),
         }).catch((err) => toast(err.message));
       } catch (err) { toast(err.message); }
     }
 
-    function onVideoDone(sid, j) {
+    function onVideoDone(sid, img, j) {
       if (!j || !j.video) { toast("Job concluído (sem vídeo)."); return; }
-      const box = rowBySid(sid);
-      if (!box) return;
-      const videos = box.dataset.videos ? box.dataset.videos.split("|").filter(Boolean) : [];
-      videos.push(j.video);
-      box.dataset.videos = videos.join("|");
-      box.querySelector(".sbVidView").innerHTML = vidView(videos);
+      const m = photoMeta(sid, img);
+      m.videos = (m.videos || []).concat(j.video);
+      const pr = photoRowEl(sid, img);           // atualiza o vídeo no lugar (sem re-render/clobber)
+      if (pr) { const v = pr.querySelector(".sbVidView"); if (v) v.innerHTML = vidView(m.videos); }
       toast("Vídeo gerado · usado na etapa 6 (animação)");
       persistVideo(); ctx.guide();
     }
 
-    async function copyVidPrompt(box) {
-      const ok = await ui.copy(box.querySelector(".sbVidPromptText").textContent);
-      const eco = box.querySelector(".sbVidCopy").parentElement.querySelector(".ok");
+    async function copyVidPrompt(container) {
+      const ok = await ui.copy(container.querySelector(".sbVidPromptText").textContent);
+      const eco = container.querySelector(".sbVidCopy").parentElement.querySelector(".ok");
       if (eco) { eco.textContent = ok ? "copiado ✓" : "copie à mão"; setTimeout(() => (eco.textContent = ""), 1500); }
     }
 
     // ---------- salvar/reordenar cenas ----------
-    // Preserva os campos de vídeo digitados na tela quando o backend (pré-integração) ainda não os
-    // devolve, para o PUT /scenes não apagar o que o usuário acabou de escrever.
-    function mergeVideo(server, local) {
-      return (server || []).map((s, i) => {
-        const l = local[i] || {};
-        return {
-          ...s,
-          video_desc: s.video_desc != null ? s.video_desc : (l.video_desc || ""),
-          video_prompt: s.video_prompt != null ? s.video_prompt : (l.video_prompt || ""),
-          videos: (s.videos && s.videos.length) ? s.videos : (l.videos || []),
-        };
-      });
-    }
     async function saveScenes(list) {
       const r = await api(url("/scenes"), { method: "PUT", body: JSON.stringify({ scenes: list }) });
-      scenes = mergeVideo(r.scenes, list); renderScenes();
+      // `[extensão]` ADR-022: o backend já persiste o mapa `photos` (desc/prompt/vídeos por foto);
+      // re-semeia o ponto único a partir da verdade do servidor.
+      scenes = r.scenes; seedPhotoState(); renderScenes();
       await loadStatus(); ctx.guide();
       return r;
     }
@@ -481,6 +577,21 @@ Studio.register("storyboard", (ctx) => {
       await loadIdeas(); await loadStatus(); ctx.guide();
     }
 
+    // `[extensão]` ADR-022: reordena UMA foto dentro da cena `i` (↑/↓) e persiste a ordem de images[].
+    function reorderPhoto(i, img, dir) {
+      scenes = collect();
+      const s = scenes[i]; if (!s || !img) return;
+      const from = s.images.indexOf(img), to = from + dir;
+      if (from < 0 || to < 0 || to >= s.images.length) return;
+      s.images.splice(to, 0, s.images.splice(from, 1)[0]);
+      renderScenes(); persistOrder();
+    }
+    // Persiste a ordem/estado atual (silencioso, sem re-render) — usado pelo reorder de fotos.
+    async function persistOrder() {
+      try { await api(url("/scenes"), { method: "PUT", body: JSON.stringify({ scenes: collect() }) }); }
+      catch (err) { toast(err.message); }
+    }
+
     return {
       init() {
         $("#sbKind").onchange = kindHint;
@@ -501,32 +612,29 @@ Studio.register("storyboard", (ctx) => {
         if (panelDrop) panelDrop.accept = "image/*";
         $("#sbCounts").onclick = importModal;
 
-        $("#sbAdd").onclick = () => { scenes = collect().concat({ text: "", images: [], primary: null, videos: [] }); renderScenes(); };
+        $("#sbAdd").onclick = () => { scenes = collect().concat({ id: null, text: "", images: [], primary: null, photos: {} }); renderScenes(); };
         $("#sbReorder").onclick = reorderModal;
-        $("#sbScenes").addEventListener("change", (e) => {
-          if (!e.target.classList.contains("sbVidMode")) return;
-          const box = e.target.closest(".scene-row"); if (!box) return;
-          const se = e.target.value === "start_end";
-          box.querySelectorAll(".sbVidSingle").forEach((n) => n.classList.toggle("hidden", se));
-          box.querySelectorAll(".sbVidPair").forEach((n) => n.classList.toggle("hidden", !se));
-        });
+        // Clique nas linhas-foto: ★ principal, ✕ remover, lightbox na foto, "+ foto", Gerar prompt,
+        // Gerar animação (modal), copiar, abrir vídeo, reordenar foto ↑/↓; e as ações da cena.
         $("#sbScenes").addEventListener("click", (e) => {
           const box = e.target.closest(".scene-row"); if (!box) return;
-          const i = +box.dataset.i;
+          const i = +box.dataset.i, sid = box.dataset.sid || "";
+          const pr = e.target.closest(".sb-photorow"), img = pr ? pr.dataset.img : null;
           const star = e.target.closest(".sb-star");
           if (star) return setPrimary(i, star.dataset.star);
           const rm = e.target.closest(".sb-rm");
           if (rm) return removeImage(i, rm.dataset.rm);
           if (e.target.closest(".sb-pick")) return pickerModal(i);
-          // Wave 7: clique na foto (fora de ★/✕) abre o lightbox; ações do bloco de vídeo.
           const key = e.target.closest(".sb-key");
           if (key && !e.target.closest("button")) return lightbox(key.dataset.img);
-          if (e.target.closest(".sbVidPrompt")) return genVideoPrompt(box);
-          if (e.target.closest(".sbVidGen")) return genVideo(box);
-          if (e.target.closest(".sbVidCopy")) return copyVidPrompt(box);
+          if (e.target.closest(".sbVidPrompt")) return genVideoPrompt(pr, sid, img);
+          if (e.target.closest(".sbAnim")) return modalAnimate(sid, img);
+          if (e.target.closest(".sbVidCopy")) return copyVidPrompt(pr);
           const vv = e.target.closest(".sbVidView [data-video]");
           if (vv) return window.open(ctx.files(vv.dataset.video), "_blank");
-          if (e.target.closest(".sb-vid")) return;   // cliques dentro do bloco de vídeo não mexem na cena
+          if (e.target.closest(".sbPhotoUp")) return reorderPhoto(i, img, -1);
+          if (e.target.closest(".sbPhotoDown")) return reorderPhoto(i, img, 1);
+          if (pr) return;   // outros cliques dentro da linha-foto não mexem na cena
           scenes = collect();
           if (e.target.classList.contains("sbDel")) scenes.splice(i, 1);
           else if (e.target.classList.contains("sbUp") && i > 0) scenes.splice(i - 1, 0, scenes.splice(i, 1)[0]);
@@ -534,9 +642,35 @@ Studio.register("storyboard", (ctx) => {
           else return;
           renderScenes();
         });
+        // Reordenar FOTOS dentro da cena por arrastar (a foto é a alça); a ordem persiste no PUT /scenes.
+        let dragImg = null, dragScene = null;
+        $("#sbScenes").addEventListener("dragstart", (e) => {
+          const key = e.target.closest(".sb-key"); if (!key) return;
+          const pr = key.closest(".sb-photorow"); if (!pr) return;
+          dragImg = pr.dataset.img; dragScene = +pr.closest(".scene-row").dataset.i; pr.classList.add("dragging");
+        });
+        $("#sbScenes").addEventListener("dragend", () => {
+          document.querySelectorAll("#sbScenes .sb-photorow.dragging").forEach((n) => n.classList.remove("dragging"));
+          dragImg = null; dragScene = null;
+        });
+        $("#sbScenes").addEventListener("dragover", (e) => {
+          const pr = e.target.closest(".sb-photorow");
+          if (pr && dragImg !== null && +pr.closest(".scene-row").dataset.i === dragScene) e.preventDefault();
+        });
+        $("#sbScenes").addEventListener("drop", (e) => {
+          const pr = e.target.closest(".sb-photorow"); if (!pr || dragImg === null) return;
+          const i = +pr.closest(".scene-row").dataset.i; if (i !== dragScene) return;
+          e.preventDefault();
+          scenes = collect();
+          const s = scenes[i]; if (!s) return;
+          const from = s.images.indexOf(dragImg), to = s.images.indexOf(pr.dataset.img);
+          if (from < 0 || to < 0 || from === to) return;
+          s.images.splice(to, 0, s.images.splice(from, 1)[0]);
+          renderScenes(); persistOrder();
+        });
         $("#sbScenes").addEventListener("keydown", (e) => {
           if (e.key !== "Enter" && e.key !== " ") return;
-          const t = e.target.closest(".thumb"); if (!t) return;
+          const t = e.target.closest(".sb-pick"); if (!t) return;
           e.preventDefault(); pickerModal(+t.closest(".scene-row").dataset.i);
         });
         $("#sbSave").onclick = async () => {

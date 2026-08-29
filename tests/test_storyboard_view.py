@@ -27,11 +27,12 @@ def html() -> str:
     return VIEW_HTML.read_text(encoding="utf-8")
 
 
-# ---------- elementos novos por cena (bloco de vídeo) ----------
-@pytest.mark.parametrize("cls", [".sbVidDesc", ".sbVidPrompt", ".sbVidGen", ".sbVidPromptBox", ".sbVidView"])
+# ---------- elementos por FOTO (ADR-022): descrição, prompt, modal de animação ----------
+@pytest.mark.parametrize("cls", [".sbVidDesc", ".sbVidPrompt", ".sbVidPromptBox", ".sbVidView",
+                                 ".sbVidModel", ".sbAnim"])
 def test_video_block_classes_presentes(js, cls):
     token = cls.lstrip(".")
-    assert token in js, f"classe do bloco de vídeo ausente no view.js: {cls}"
+    assert token in js, f"classe do bloco de vídeo por foto ausente no view.js: {cls}"
 
 
 def test_botao_reordenar_presente(html, js):
@@ -48,7 +49,24 @@ def test_gerar_prompt_aponta_para_video_prompt(js):
 def test_gerar_video_aponta_para_generate_e_job(js):
     assert '"/video/generate"' in js
     assert "/video/job?scene_id=" in js
-    assert "genVideo" in js and "sbVidGen" in js
+    # `[extensão]` ADR-022: a geração vive no modal "Gerar animação" (por foto), com seletor de modelo.
+    assert "modalAnimate" in js and "runAnimate" in js and "sbAnim" in js
+    assert "photo:" in js and "sbVidModel" in js, "o modal manda a foto dona e o modelo escolhido"
+
+
+def test_layout_por_foto_com_reorder_e_fotos_verticais(js, html):
+    """`[extensão]` ADR-022: cada foto é uma LINHA (.sb-photorow) na tabela sem bordas; foto vertical."""
+    assert "sb-photorow" in js and "sb-phototable" in js and "function photoRow" in js
+    # reorder de fotos dentro da cena (↑/↓ e arrastar), persistido pela ordem de images[] no PUT /scenes.
+    assert "reorderPhoto" in js and "persistOrder" in js and "dragstart" in js and "sbPhotoUp" in js
+    # fotos verticais (retrato ~3:4) no CSS escopado do view.html.
+    assert ".sb-key{" in html and "height:128px" in html
+
+
+def test_modal_animacao_tem_modelo_do_status(js):
+    """`[extensão]` ADR-022: o modal usa a lista de modelos vinda do status (seletor que faltava)."""
+    assert "video_models" in js and "videoModelDefaults" in js and "sbVidModel" in js
+    assert "sbVidDur" in js and "sbVidMode" in js
 
 
 def test_custo_aponta_para_video_cost(js):

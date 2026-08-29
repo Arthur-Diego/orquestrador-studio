@@ -2,20 +2,20 @@
   /* Escopo `.sb-` (ideação) e `.sh-` (ângulos) da etapa 4 (ADR-015). O que sobra aqui é lacuna do
      shell: o overlay "escolher imagem" da thumb da cena, e a ação hover-only dentro de um `.rowcard`. */
   .sb-base{align-self:start}
-  /* `[extensão]` cena-multi-keyframe (ADR-018): mini-galeria de keyframes por cena. */
-  .sb-gallery{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  /* Wave 7 (ADR-021): fotos maiores (~110px) e clicáveis — o clique na foto abre o lightbox. */
-  .sb-key{position:relative;width:110px;height:110px;border-radius:8px;overflow:hidden;border:1px solid var(--line-2);cursor:zoom-in}
+  /* `[extensão]` vídeo por foto (ADR-022): fotos VERTICAIS (retrato ~3:4) e clicáveis (lightbox). */
+  .sb-key{position:relative;width:96px;height:128px;border-radius:8px;overflow:hidden;border:1px solid var(--line-2);cursor:zoom-in;flex:0 0 auto}
   .sb-key img{width:100%;height:100%;object-fit:cover;display:block}
   .sb-key.primary{border-color:#4FC8D9;box-shadow:0 0 0 2px rgba(79,200,217,.55)}
+  .sb-key.dragover{border-color:#4FC8D9;box-shadow:0 0 0 2px rgba(79,200,217,.35)}
   .sb-key .sb-star,.sb-key .sb-rm{position:absolute;top:2px;border:0;border-radius:5px;padding:0 5px;
     font-size:11px;line-height:1.5;cursor:pointer;background:rgba(0,0,0,.6);color:#9FE3EE}
   .sb-key .sb-star{left:2px}
   .sb-key.primary .sb-star{color:#FFD54A}
   .sb-key .sb-rm{right:2px;color:#F2A5A5}
   .sb-key .sb-star:hover,.sb-key .sb-rm:hover{background:rgba(0,0,0,.82);color:#D7F4F9}
-  .sb-pick{width:110px;height:110px;position:relative;cursor:pointer;display:grid;place-items:center}
-  .sb-pick::after{content:"+ imagem";font-family:"IBM Plex Mono",monospace;font-size:9px;color:#9FE3EE;text-align:center;line-height:1.2}
+  .sb-pick{width:96px;height:128px;position:relative;cursor:pointer;display:grid;place-items:center;
+    border:1px dashed var(--line-2);border-radius:8px}
+  .sb-pick::after{content:"+ foto";font-family:"IBM Plex Mono",monospace;font-size:9px;color:#9FE3EE;text-align:center;line-height:1.2}
   .sb-pick:hover,.sb-pick:focus-visible{outline:1px dashed rgba(79,200,217,.5)}
   .sh-scene-id{font-size:11px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sh-builder{margin-bottom:14px}
@@ -26,26 +26,39 @@
   #sceneList .sh-act:hover{background:rgba(0,0,0,.78);color:#D7F4F9}
   #sceneList .rowcard:hover .sh-act,#sceneList .rowcard:focus-within .sh-act{opacity:1}
 
-  /* Wave 7 (ADR-021) — reflow da linha da cena para caber a galeria de fotos maiores + o bloco de
-     vídeo: [momento | texto] em cima; a galeria de keyframes e o bloco de vídeo ocupam a linha
-     inteira abaixo. Escopo desta view (só o storyboard desenha `.scene-row`). */
-  #sbScenes .scene-row{grid-template-columns:76px minmax(0,1fr);align-items:start;padding:12px 14px}
-  #sbScenes .scene-row .sb-gallery,#sbScenes .scene-row .sb-vid{grid-column:1 / -1}
-  #sbScenes .scene-row textarea.sbTxt{padding-top:2px}
-
-  /* Bloco de vídeo por cena. */
-  .sb-vid{border-top:1px dashed var(--line);padding-top:8px;margin-top:2px}
-  .sb-vid>summary{cursor:pointer;font-size:var(--fs-sm);color:var(--ink-3);list-style:none}
-  .sb-vid>summary::-webkit-details-marker{display:none}
-  .sb-vid>summary::before{content:"▸ ";color:var(--ink-4)}
-  .sb-vid[open]>summary::before{content:"▾ "}
-  .sb-vid-body{display:flex;flex-direction:column;gap:10px;margin-top:10px}
-  .sb-vid-frames{align-items:center}
-  .sb-vid .sbVidDesc{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  /* `[extensão]` vídeo por foto (ADR-022) — a cena empilha um cabeçalho [momento | texto | ↑↓✕] e
+     uma TABELA SEM BORDAS de fotos: cada foto é uma linha [foto vertical | descrição/prompt |
+     Gerar prompt/animação]. Escopo desta view (só o storyboard desenha `.scene-row`). */
+  #sbScenes .scene-row{display:block;padding:12px 14px}
+  .sb-scenehead{display:grid;grid-template-columns:76px minmax(0,1fr) auto;gap:10px;align-items:start}
+  .sb-scenehead textarea.sbTxt{padding-top:2px}
+  .sb-phototable{display:flex;flex-direction:column;gap:14px;margin-top:12px}
+  .sb-phototable:empty{display:none}
+  .sb-photorow{display:grid;grid-template-columns:96px minmax(0,1fr) minmax(120px,auto);gap:12px;align-items:start}
+  .sb-photorow.dragging{opacity:.5}
+  .sb-photocol{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .sb-photoacts{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+  .sb-photo-reorder{display:flex;gap:4px}
+  .sb-photo-reorder button{flex:1}
+  /* Descrição por foto + player do vídeo gerado. */
+  .sbVidDesc{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:8px;
     padding:8px 10px;font:inherit;font-size:var(--fs-sm);color:var(--ink);resize:none;overflow:hidden;field-sizing:content}
-  .sb-vid .sbVidDesc:focus{outline:none;box-shadow:var(--ring)}
-  .sb-vid .sbVidView{display:flex;flex-direction:column;gap:6px}
-  .sb-vid .sbVidPlayer{max-width:360px;width:100%;border-radius:8px;border:1px solid var(--line-2);display:block}
+  .sbVidDesc:focus{outline:none;box-shadow:var(--ring)}
+  .sbVidView{display:flex;flex-direction:column;gap:6px}
+  .sbVidView:empty{display:none}
+  .sbVidPlayer{max-width:320px;width:100%;border-radius:8px;border:1px solid var(--line-2);display:block}
+
+  /* Modal "Gerar animação" (referência: Higgsfield) — escopado no view.html (sem tocar ui.css). */
+  .modal:has(.sb-anim){width:min(760px,100%)}
+  .sb-anim{display:grid;grid-template-columns:200px minmax(0,1fr);gap:16px;align-items:start}
+  .sb-anim-preview{position:relative}
+  .sb-anim-preview img{width:100%;border-radius:8px;border:1px solid var(--line-2);display:block}
+  .sb-anim-preview .lbl{display:block;margin-top:6px;font-size:var(--fs-sm);color:var(--ink-3)}
+  .sb-anim-ctrls{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .sb-anim-ctrls .row.wrap{gap:10px}
+  .sb-anim-ctrls select{width:100%}
+  .sb-anim .sbVidPlayer{max-width:100%}
+  @media (max-width:620px){.sb-anim{grid-template-columns:1fr}}
 
   /* Modal maior de reordenação — largura própria via `:has`, sem tocar o `.modal` do ui.css. */
   .modal:has(.sb-reorder){width:min(920px,100%)}

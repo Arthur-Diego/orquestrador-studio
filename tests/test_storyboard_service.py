@@ -117,7 +117,7 @@ def test_save_scenes_renumbers_by_order_and_writes_md(sb, project, root):
     reordered = sb.save_scenes(project, [{"text": "A lata cai"}, {"text": "Close no astronauta"}])["scenes"]
     # `[extensão]` wave 7 (ADR-021): campos aditivos de vídeo (retrocompat) no schema da cena.
     assert reordered[0] == {"id": "cena01", "n": 1, "text": "A lata cai", "images": [], "primary": None,
-                            "video_desc": "", "video_prompt": "", "videos": []}
+                            "video_desc": "", "video_prompt": "", "videos": [], "photos": {}}
 
 
 def test_save_scenes_limits_and_image_must_live_in_ideas(sb, project, base):
@@ -272,7 +272,11 @@ def test_status_counts_ideas_scenes_and_base(sb, project, root, base):
     sb.save_scenes(project, [{"text": "Close no astronauta"}, {"text": ""}])
     st = sb.status(project)
     assert st == {"base_image": "base/base_final.png", "has_base": True, "ideas": 1, "selected": 1,
-                  "scenes": 2, "scenes_with_text": 1, "storyboard_md": "storyboard/storyboard.md"}
+                  "scenes": 2, "scenes_with_text": 1, "storyboard_md": "storyboard/storyboard.md",
+                  # `[extensão]` vídeo por foto (ADR-022): seletor de modelo do modal "Gerar animação".
+                  "video_models": sb._video_model_ids(),
+                  "video_model_defaults": {"single": sb.video_model(project, "single"),
+                                           "start_end": sb.video_model(project, "start_end")}}
 
 
 # ---------- alternativa paga pelo CLI ----------
@@ -479,6 +483,128 @@ def test_video_cost_resolves_model_by_mode(sb, project):
     assert trans == {"model": "kling3_0_turbo", "per_item": 15, "total": 15}
     with pytest.raises(sb.Invalid):
         sb.video_cost(project, "cena01", "single", 7)
+
+
+# ---------- `[extensão]` vídeo por FOTO (ADR-022) ----------
+def test_video_cost_accepts_client_model_override(sb, project):
+    """ADR-022: um `model` válido do cliente vence a resolução por servidor; inválido → Invalid."""
+    r = sb.video_cost(project, "cena01", "single", 5, model="seedance_2_0")
+    assert r["model"] == "seedance_2_0"
+    with pytest.raises(sb.Invalid):
+        sb.video_cost(project, "cena01", "single", 5, model="nano_banana_2")   # não é vídeo
+    with pytest.raises(sb.Invalid):
+        sb.video_cost(project, "cena01", "single", 5, model="inexistente")
+
+
+def test_video_generate_per_photo_stores_under_the_owning_photo(sb, project, monkeypatch, root):
+    """ADR-022: com `photo`, o mp4 é numerado por foto e gravado em `photos[foto]`, sem tocar o par
+    por-cena; o `model` do cliente é respeitado."""
+    a, b = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a, b], "primary": a}])
+    sent = _fake_video_cli(monkeypatch, sb)
+    sb.start_video_generate(project, "cena01", "dolly na foto A", "single", 5,
+                            {"image": a}, photo=a, model="seedance_2_0")
+    for _ in range(100):
+        if sb.video_job_status(project, "cena01", photo=a)["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    job = sb.video_job_status(project, "cena01", photo=a)
+    stem = Path(a).stem
+    rel = f"storyboard/cena01/video/{stem}_take_1.mp4"
+    assert job["state"] == "done" and job["video"] == rel and (root / rel).exists()
+    assert sent["model"] == "seedance_2_0"
+    scene = sb.load_scenes(project)["scenes"][0]
+    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "dolly na foto A", "videos": [rel]}
+    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "videos": []}
+    assert scene["videos"] == [], "vídeo por foto não polui o par por-cena (legado)"
+
+
+def test_video_generate_two_photos_same_scene_run_isolated(sb, project, monkeypatch):
+    """ADR-022: a chave do JobRegistry é por (cena, foto) — duas fotos da mesma cena não colidem."""
+    a, b = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a, b], "primary": a}])
+    gate = threading.Event()
+    _fake_video_cli(monkeypatch, sb, gate=gate)
+    sb.start_video_generate(project, "cena01", "p", "single", 5, {"image": a}, photo=a)
+    with pytest.raises(sb.Precondition):                       # mesma foto em andamento → recusa
+        sb.start_video_generate(project, "cena01", "p", "single", 5, {"image": a}, photo=a)
+    assert sb.video_job_status(project, "cena01", photo=b)["state"] == "idle"   # outra foto não colide
+    gate.set()
+    for _ in range(100):
+        if sb.video_job_status(project, "cena01", photo=a)["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    assert sb.video_job_status(project, "cena01", photo=a)["state"] == "done"
+
+
+def test_scene_photos_migrates_legacy_per_scene_to_primary(sb, project, root):
+    """ADR-022: cena antiga (par por-cena, sem `photos`) lê com o par migrado para a foto principal."""
+    a, b = _two_ideas(sb, project)
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "scenes.json").write_text(json.dumps({"scenes": [
+        {"id": "cena01", "n": 1, "text": "t", "images": [a, b], "primary": a,
+         "video_prompt": "prompt legado", "videos": ["storyboard/cena01/video/take_1.mp4"]}]}))
+    scene = sb.load_scenes(project)["scenes"][0]
+    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "prompt legado",
+                                  "videos": ["storyboard/cena01/video/take_1.mp4"]}
+    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "videos": []}
+
+
+# ---------- ponte storyboard → montagem (`[extensão]` ADR-022, R2) ----------
+def _gen_photo_video(sb, project, scene, img, prompt="dolly", photo=None):
+    sb.start_video_generate(project, scene, prompt, "single", 5, {"image": img}, photo=photo or img)
+    for _ in range(100):
+        if sb.video_job_status(project, scene, photo=photo or img)["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+
+
+def test_photo_video_bridges_into_montage_as_liked_take(sb, project, root, monkeypatch):
+    """ADR-022 (ponte R2): vídeo por FOTO → take **liked** em animate/takes.json → a montagem
+    (edit.initial_timeline) monta um clipe com aquele vídeo, sem tocar a tela do animate."""
+    from studio.animate import service as animate
+    from studio.edit import service as edit
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    _fake_video_cli(monkeypatch, sb)
+    _gen_photo_video(sb, project, "cena01", a)
+    # 1) virou take liked em animate/takes.json, com o mp4 sob videos/
+    shot = next(s for s in animate.stored_takes(project)["shots"] if s["scene"] == "cena01")
+    assert len(shot["takes"]) == 1
+    take = shot["takes"][0]
+    assert take["liked"] is True and take["source"] == "storyboard"
+    assert take["file"].startswith("videos/cena01/") and (root / take["file"]).exists()
+    # 2) a montagem monta um clipe determinístico com aquele vídeo (storyboard.json foi criado aditivo)
+    tl = edit.initial_timeline(project)
+    assert any(c["file"] == take["file"] for c in tl["clips"])
+
+
+def test_photo_reanimation_replaces_the_bridged_take(sb, project, monkeypatch):
+    """ADR-022: reanimar a MESMA foto substitui o take (um like por shot), sem duplicar clipes."""
+    from studio.animate import service as animate
+    from studio.edit import service as edit
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    _fake_video_cli(monkeypatch, sb)
+    _gen_photo_video(sb, project, "cena01", a, prompt="take um")
+    _gen_photo_video(sb, project, "cena01", a, prompt="take dois")
+    shot = next(s for s in animate.stored_takes(project)["shots"] if s["scene"] == "cena01")
+    assert len(shot["takes"]) == 1 and shot["takes"][0]["liked"] is True
+    assert len(edit.initial_timeline(project)["clips"]) == 1, "um clipe por foto, sem duplicar"
+
+
+def test_per_scene_preview_without_photo_does_not_reach_montage(sb, project, monkeypatch):
+    """ADR-022: sem `photo` (preview por-cena, wave-7), nada é registrado no downstream (retrocompat)."""
+    from studio.animate import service as animate
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    _fake_video_cli(monkeypatch, sb)
+    sb.start_video_generate(project, "cena01", "dolly", "single", 5, {"image": a})   # sem photo
+    for _ in range(100):
+        if sb.video_job_status(project, "cena01")["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    assert animate.stored_takes(project)["shots"] == [], "preview por-cena não vira take da montagem"
 
 
 def test_video_generate_single_saves_take_and_persists_scene(sb, project, monkeypatch, root):

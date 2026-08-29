@@ -50,3 +50,22 @@ Arquivos: `studio/etapas/storyboard/view.js` (`makeIdeation`) + `view.html`. **C
 
 ### 7. Fora de escopo
 Backend/rotas/modelos (Frente A). Não tocar a metade "ângulos" (aula 011) nem o shell.
+
+---
+
+### Atualização — vídeo por FOTO (ADR-022, `[extensão]`, task ADH-OS-20260828-31)
+
+Reformulação do dono (via app): o painel 02 passa a desenhar **uma linha por FOTO** numa tabela sem
+bordas `[foto vertical | descrição + prompt + vídeo | Gerar prompt / Gerar animação / reordenar]`.
+- Fotos **verticais** (retrato ~3:4, `.sb-key`) e **reordenáveis dentro da cena** (↑/↓ e arrastar a
+  foto), persistindo a ordem de `images[]` no `PUT /scenes`.
+- **Prompt e vídeo por foto** (ponto único `photoState`, chave `cena:img`), gravados no mapa
+  `scene.photos[img]` (backend ADR-022). "Gerar prompt" usa a própria foto como frame.
+- **Modal "Gerar animação"** (estilo Higgsfield, `ui.modal`+`ui.progressJob`): preview da foto,
+  **duração**, **seletor de MODELO** (de `status.video_models`, o que faltava), `single` ou
+  `start→end` com 2ª imagem (start = a foto; end = escolha). Envia `photo` + `model` ao `/video/*`.
+- Arquivos do front: só `view.js` + `view.html` (CSS escopado).
+- **Ponte (R2, decidida — ADR-022):** ao gerar o vídeo de uma foto, ele vira um TAKE **liked** em
+  `animate/takes.json` e a foto vira um shot aditivo em `storyboard.json`, então a montagem (etapa
+  `edit`) monta o clipe com aquele vídeo — a tela do `animate` não muda (só recebe). Backend:
+  `storyboard.service._bridge_video_downstream` + `animate.service.register_storyboard_video`.

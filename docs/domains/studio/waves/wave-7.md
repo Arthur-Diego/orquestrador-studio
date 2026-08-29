@@ -63,3 +63,20 @@ view.js` + `view.html`. **Ninguém toca** `ui.js`/`ui.css`/`style.css`/`app.py`/
 Vídeo no storyboard cruza a fronteira com o animate (dono de vídeo) — é **preview por cena** que
 alimenta a etapa 6; marcado `[extensão]`, registrado em **ADR-021** (vídeo-preview no storyboard +
 mapa de modelos Kling). Aprovado explicitamente pelo dono do produto.
+
+## Atualização — vídeo por FOTO (ADR-022, `[extensão]`, task ADH-OS-20260828-31)
+
+O dono reformulou (usando o app): o vídeo passa de **por cena** para **por FOTO**. O contrato
+congelado acima é **estendido de forma aditiva e retrocompatível** (registrado em **ADR-022**):
+- `scenes.json` ganha `photos: { <img> : {video_desc, video_prompt, videos} }` (o par por-cena
+  legado migra para `photos[principal]` na leitura); `PUT /scenes` (`SceneIn.photos`) persiste o mapa.
+- `POST /video/cost` e `POST /video/generate` ganham `model?` **opcional** (ausente = resolução por
+  servidor de hoje — cena→Kling 2.6 / transição→3.0-turbo); `POST /video/generate` ganha `photo?`
+  (foto dona → grava em `storyboard/<cena>/video/<foto>_take_K.mp4` e em `photos[foto]`);
+  `GET /video/job` ganha `photo?` (job por foto). Sem `photo`/`model` = comportamento wave-7 idêntico.
+- `GET /storyboard` (status) expõe `video_models` (catálogo `kind:video`) + `video_model_defaults`
+  para o **seletor de modelo** do modal "Gerar animação" (que antes não existia na tela).
+- **Ponte (R2, decidida):** os vídeos por-foto **viram os clipes da montagem** — `_bridge_video_downstream`
+  registra o vídeo como TAKE **liked** em `animate/takes.json` (mp4 em `videos/<cena>/<shot>_take1.mp4`,
+  `shot = foto-<stem>`) e a foto como shot aditivo em `storyboard.json`; a montagem (`edit.initial_timeline`)
+  monta o clipe. A tela do `animate` não muda. Ver ADR-022 §Decisão da ponte (R2).

@@ -158,6 +158,11 @@ def status(pid: str) -> dict:
         "ideas": len(cands), "selected": sum(1 for c in cands if c.get("selected")),
         "scenes": len(scenes), "scenes_with_text": sum(1 for s in scenes if s["text"].strip()),
         "storyboard_md": MD_FILE if (root / MD_FILE).exists() else None,
+        # `[extensão]` vídeo por foto (ADR-022): modelos ofertáveis no modal "Gerar animação" e o
+        # default por modo (o seletor pré-seleciona; ausente no pedido = resolução por servidor).
+        "video_models": _video_model_ids(),
+        "video_model_defaults": {"single": video_model(pid, "single"),
+                                 "start_end": video_model(pid, "start_end")},
     }
 
 
@@ -345,7 +350,7 @@ def _blank_scenes(n: int = DEFAULT_SCENES) -> list[dict]:
     # `[extensão]` wave 7 (ADR-021): cena vazia também expõe os campos de vídeo (contrato: GET /scenes
     # sempre traz video_desc/video_prompt/videos).
     return [{"id": f"cena{i:02d}", "n": i, "text": "", "images": [], "primary": None,
-             "video_desc": "", "video_prompt": "", "videos": []} for i in range(1, n + 1)]
+             "video_desc": "", "video_prompt": "", "videos": [], "photos": {}} for i in range(1, n + 1)]
 
 
 def _scene_images(s: dict) -> tuple[list[str], str | None]:
@@ -379,6 +384,29 @@ def _scene_videos(s: dict) -> list[str]:
     return [v for v in videos if not (v in seen or seen.add(v))]
 
 
+def _scene_photos(s: dict, images: list[str], primary: str | None) -> dict:
+    """`[extensão]` vídeo por FOTO (ADR-022): mapa `img_rel -> {video_prompt, videos}`, só para as
+    imagens da cena. Aditivo/retrocompatível (ADR-018/021): cena antiga sem `photos` mas com o par
+    por-cena (`video_prompt`/`videos`) vê esse par migrado para a foto **principal** na leitura."""
+    raw = s.get("photos") if isinstance(s.get("photos"), dict) else {}
+    out: dict[str, dict] = {}
+    for img in images:
+        entry = raw.get(img) if isinstance(raw.get(img), dict) else {}
+        vd = (entry.get("video_desc") or "").strip()
+        vp = (entry.get("video_prompt") or "").strip()
+        vids = entry.get("videos")
+        vids = [v for v in vids if v] if isinstance(vids, list) else []
+        if img == primary:                       # migração do par por-cena (ADR-022)
+            vd = vd or (s.get("video_desc") or "").strip()
+            vp = vp or (s.get("video_prompt") or "").strip()
+            if not vids and isinstance(s.get("videos"), list):
+                vids = [v for v in s["videos"] if v]
+        seen: set[str] = set()
+        out[img] = {"video_desc": vd, "video_prompt": vp,
+                    "videos": [v for v in vids if not (v in seen or seen.add(v))]}
+    return out
+
+
 def _normalize(scenes: list[dict]) -> list[dict]:
     """`id` e `n` são sempre recalculados pela ordem recebida — cliente não decide numeração."""
     out = []
@@ -389,7 +417,9 @@ def _normalize(scenes: list[dict]) -> list[dict]:
                     "images": images, "primary": primary,
                     "video_desc": (s.get("video_desc") or "").strip(),
                     "video_prompt": (s.get("video_prompt") or "").strip(),
-                    "videos": _scene_videos(s)})
+                    "videos": _scene_videos(s),
+                    # `[extensão]` vídeo por foto (ADR-022): mapa aditivo img -> {video_prompt, videos}.
+                    "photos": _scene_photos(s, images, primary)})
     return out
 
 
@@ -451,6 +481,22 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
             if ok and ok not in checked_videos:
                 checked_videos.append(ok)
         s["videos"] = checked_videos
+        # `[extensão]` vídeo por foto (ADR-022): poda `photos` para as imagens válidas e valida
+        # (leniente — não derruba o save) os mp4 de cada foto sob storyboard/<cena>/video/.
+        photos: dict[str, dict] = {}
+        for img in checked:
+            pe = s["photos"].get(img) or {}
+            pv: list[str] = []
+            for v in (pe.get("videos") or []):
+                try:
+                    okv = _check_video(root, v)
+                except Invalid:
+                    okv = None
+                if okv and okv not in pv:
+                    pv.append(okv)
+            photos[img] = {"video_desc": (pe.get("video_desc") or "").strip(),
+                           "video_prompt": (pe.get("video_prompt") or "").strip(), "videos": pv}
+        s["photos"] = photos
     _write_scenes(root, norm)
     md = _write_md(root, norm)
     log.info("scenes_saved %s", {"pid": pid, "scenes": len(norm), "with_image": sum(1 for s in norm if s["images"])})
@@ -652,10 +698,21 @@ def _check_video(root: Path, rel: str | None) -> str | None:
     return f"{STEP}/{inside.as_posix()}"
 
 
-def _next_video_rel(root: Path, scene_id: str) -> str:
+def _photo_stem(photo: str | None) -> str:
+    """`[extensão]` ADR-022: prefixo de arquivo seguro derivado da foto dona do vídeo (`""` se nenhuma)."""
+    if not photo:
+        return ""
+    return re.sub(r"[^A-Za-z0-9_-]", "", Path(photo).stem) or "foto"
+
+
+def _next_video_rel(root: Path, scene_id: str, photo: str | None = None) -> str:
+    """Próximo mp4 da cena. `[extensão]` ADR-022: com `photo`, numera por foto
+    (`<stem>_take_K.mp4`); sem `photo`, mantém o caminho por-cena de sempre (`take_K.mp4`)."""
     d = _video_dir(root, scene_id)
-    used = [int(m.group(1)) for p in d.glob("take_*.mp4") if (m := re.search(r"take_(\d+)", p.stem))] if d.exists() else []
-    return f"{STEP}/{scene_id}/video/take_{max(used, default=0) + 1}.mp4"
+    prefix = f"{_photo_stem(photo)}_take_" if photo else "take_"
+    used = [int(m.group(1)) for p in d.glob(f"{prefix}*.mp4")
+            if (m := re.search(r"take_(\d+)$", p.stem))] if d.exists() else []
+    return f"{STEP}/{scene_id}/video/{prefix}{max(used, default=0) + 1}.mp4"
 
 
 # ---------- prompt de vídeo (Claude, papel `motion`) ----------
@@ -708,8 +765,23 @@ def video_prompt(pid: str, scene_id: str, description: str, frames: dict | None 
 
 
 # ---------- geração de vídeo via CLI (Kling) ----------
-def video_model(pid: str, mode: str) -> str:
-    """Modelo resolvido no servidor: start_end → transição (Kling 3.0 Turbo), senão cena (Kling 2.6)."""
+def _video_model_ids() -> list[str]:
+    """`[extensão]` ADR-022: ids de modelo de vídeo ofertáveis no seletor (catálogo `pricing`, kind video)."""
+    return [m["id"] for m in pricing.list_models("video")]
+
+
+def _valid_video_model(model: str) -> str:
+    """`[extensão]` ADR-022: um override de modelo do cliente precisa ser um modelo de VÍDEO conhecido."""
+    if not pricing.known(model) or pricing.CATALOG[model]["kind"] != "video":
+        raise Invalid(f"modelo de vídeo inválido: {model}")
+    return model
+
+
+def video_model(pid: str, mode: str, override: str | None = None) -> str:
+    """Modelo do vídeo. `[extensão]` ADR-022: um `override` válido do cliente vence; sem override cai
+    na resolução por servidor (ADR-021): start_end → transição (Kling 3.0 Turbo), senão cena (Kling 2.6)."""
+    if override:
+        return _valid_video_model(override)
     action = "storyboard.video.transition" if mode == "start_end" else "storyboard.video.scene"
     return settings.default_for(action, pid)["model"]
 
@@ -732,34 +804,107 @@ def _video_build_params(root: Path, prompt: str, mode: str, duration: int, frame
     return params
 
 
-def _append_scene_video(root: Path, scene_id: str, rel: str, prompt: str) -> None:
-    """Anexa o mp4 gerado à cena em scenes.json (campo aditivo `videos`) e grava o `video_prompt`."""
+def _append_scene_video(root: Path, scene_id: str, rel: str, prompt: str, photo: str | None = None) -> None:
+    """Anexa o mp4 gerado a `scenes.json` e regrava o storyboard.md.
+
+    `[extensão]` ADR-022: com `photo` (foto dona, ∈ `images`), grava em `photos[photo]` (par por foto);
+    sem `photo`, mantém o comportamento por-cena de sempre (`videos`/`video_prompt` da cena)."""
     scenes = _read_scenes(root)
     for s in scenes:
-        if s["id"] == scene_id:
+        if s["id"] != scene_id:
+            continue
+        if photo and photo in s["images"]:
+            pe = s["photos"].setdefault(photo, {"video_prompt": "", "videos": []})
+            pv = [v for v in pe["videos"] if v != rel] + [rel]
+            pe["videos"] = pv[-VIDEO_KEEP:]
+            if prompt.strip():
+                pe["video_prompt"] = prompt.strip()
+        else:
             vids = [v for v in s["videos"] if v != rel] + [rel]
             s["videos"] = vids[-VIDEO_KEEP:]
             if prompt.strip():
                 s["video_prompt"] = prompt.strip()
-            _write_scenes(root, scenes)
-            _write_md(root, scenes)
-            return
+        _write_scenes(root, scenes)
+        _write_md(root, scenes)
+        return
 
 
-def video_cost(pid: str, scene_id: str, mode: str, duration: int) -> dict:
-    """Custo medido (offline, ADR-016) do vídeo da cena: `{model, per_item, total}`. Uma geração por cena."""
+def video_cost(pid: str, scene_id: str, mode: str, duration: int, model: str | None = None) -> dict:
+    """Custo medido (offline, ADR-016) do vídeo da cena: `{model, per_item, total}`. Uma geração por
+    foto/cena. `[extensão]` ADR-022: `model` opcional do cliente vence a resolução por servidor."""
     _valid_scene_id(scene_id)
     _valid_mode(mode)
     dur = _valid_duration(duration)
-    model = video_model(pid, mode)
+    model = video_model(pid, mode, model)
     per = pricing.estimate(model, {"duration": f"{dur}s"}).get("credits")
     return {"model": model, "per_item": per, "total": per}
 
 
+def _bridge_shot_id(photo: str) -> str:
+    """`[extensão]` ADR-022: shot id estável por FOTO (derivado do stem da imagem), namespacado com
+    `foto-` para nunca colidir com os `shotNN` dos ângulos (aula 011)."""
+    return f"foto-{_photo_stem(photo)}"
+
+
+def _bridge_register_storyboard_shot(root: Path, scene_id: str, shot: str, order: int, image_rel: str) -> None:
+    """`[extensão]` ADR-022 (ponte R2): garante `storyboard/storyboard.json` com a cena + o shot da
+    FOTO (ADITIVO e não-destrutivo) para a montagem (etapa edit) ordenar e não falhar por
+    storyboard.json ausente. Shots de ângulos (aula 011), se existirem, são PRESERVADOS.
+
+    Limitação registrada: `angles.rebuild_storyboard` regrava o arquivo por inteiro a partir das
+    seleções de ângulo; se o usuário rodar a metade de ângulos depois, os shots de foto saem do
+    storyboard.json (mas os takes seguem em animate/takes.json e entram na montagem por fallback)."""
+    f = root / STEP / "storyboard.json"
+    board = _read_json(f, None)
+    if not isinstance(board, dict) or not isinstance(board.get("scenes"), list):
+        board = {"scenes": []}
+    sc = next((s for s in board["scenes"] if isinstance(s, dict) and s.get("id") == scene_id), None)
+    if sc is None:
+        sc = {"id": scene_id, "base": f"{STEP}/{scene_id}/base.png", "shots": []}
+        board["scenes"].append(sc)
+    if not isinstance(sc.get("shots"), list):
+        sc["shots"] = []
+    entry = {"id": shot, "file": image_rel, "order": order, "prompt": ""}
+    existing = next((sh for sh in sc["shots"] if isinstance(sh, dict) and sh.get("id") == shot), None)
+    if existing is None:
+        sc["shots"].append(entry)
+    else:
+        existing.update(entry)
+    sc["shots"].sort(key=lambda sh: sh.get("order") if isinstance(sh.get("order"), int) else 0)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(board, ensure_ascii=False, indent=1))
+
+
+def _bridge_video_downstream(root: Path, scene_id: str, photo: str | None, video_rel: str,
+                             duration: int, model: str, prompt: str) -> None:
+    """`[extensão]` ADR-022 — PONTO ÚNICO da ponte storyboard→downstream (`animate`/montagem), R2.
+
+    Decisão do dono: os vídeos por FOTO **viram os clipes da montagem**. Ao gerar o vídeo de uma
+    foto, ele é registrado como um TAKE **liked** em `animate/takes.json` (a montagem, etapa edit,
+    lê takes.json + storyboard.json) e a foto é registrada como um shot em `storyboard.json` (aditivo,
+    não-destrutivo). A tela do `animate` não muda — só recebe o take. Sem `photo` (preview por-cena),
+    nada é registrado (retrocompatível). Reanimar a foto substitui o take (um like por shot)."""
+    if not photo:
+        return
+    scenes = _read_scenes(root)
+    sc = next((s for s in scenes if s["id"] == scene_id), None)
+    if not sc or photo not in sc["images"]:
+        return
+    order = sc["images"].index(photo) + 1
+    shot = _bridge_shot_id(photo)
+    _bridge_register_storyboard_shot(root, scene_id, shot, order, photo)
+    # Import TARDIO: `animate` não importa `storyboard`, então não há ciclo; e a costura fica isolada.
+    from ..animate import service as animate
+    animate.register_storyboard_video(root, scene_id, shot, order, video_rel,
+                                      duration=duration, model=model, prompt=prompt)
+
+
 def start_video_generate(pid: str, scene_id: str, prompt: str, mode: str, duration: int,
-                         frames: dict | None = None) -> dict:
-    """Gera UM vídeo da cena pelo CLI (gasta créditos), salva storyboard/<cena>/video/take_K.mp4 e
-    registra o gasto (`storyboard.video`, ADR-016). JobRegistry PRÓPRIO de vídeo, chave por cena."""
+                         frames: dict | None = None, photo: str | None = None,
+                         model: str | None = None) -> dict:
+    """Gera UM vídeo pelo CLI (gasta créditos), salva `storyboard/<cena>/video/…mp4` e registra o gasto
+    (`storyboard.video`, ADR-016). JobRegistry PRÓPRIO de vídeo. `[extensão]` ADR-022: com `photo`, a
+    chave/arquivo/registro são por FOTO; `model` opcional do cliente vence a resolução por servidor."""
     root = project_dir(pid)
     _valid_scene_id(scene_id)
     _valid_mode(mode)
@@ -768,7 +913,8 @@ def start_video_generate(pid: str, scene_id: str, prompt: str, mode: str, durati
     if not text:
         raise Invalid("Gere (ou escreva) o prompt de vídeo antes de gerar.")
     _cli_ready()
-    model = video_model(pid, mode)
+    model = video_model(pid, mode, model)
+    owner = _check_image(root, photo) if photo else None   # foto dona (∈ storyboard/ideas/), quando dada
     params = _video_build_params(root, text, mode, dur, frames or {})
     started = datetime.now()
 
@@ -777,31 +923,36 @@ def start_video_generate(pid: str, scene_id: str, prompt: str, mode: str, durati
         urls = [u for u in res["urls"] if Path(u.split("?")[0]).suffix.lower() in ingest.MEDIA_EXT["video"]]
         if not urls:
             raise RuntimeError("o CLI não devolveu URL de vídeo")
-        rel = _next_video_rel(root, scene_id)
+        rel = _next_video_rel(root, scene_id, owner)
         hf.download(urls[0], root / rel)
         # `[extensão]` livro-caixa de créditos (ADR-016): custo por clipe gerado.
         settings.record_generation(action="storyboard.video", model=model, params=params, count=1,
                                    pid=pid, step="storyboard", job_id=res.get("id"))
-        _append_scene_video(root, scene_id, rel, text)
+        _append_scene_video(root, scene_id, rel, text, owner)
+        # ADR-022 (R2): costura única — o vídeo por foto vira take liked na montagem (etapa edit).
+        _bridge_video_downstream(root, scene_id, owner, rel, dur, model, text)
         job["added"] += 1
         job["video"] = rel
         job["done"] = 1
         job["log"].append(f"vídeo salvo em {rel}")
-        log.info("video_cli_job %s", {"pid": pid, "scene": scene_id, "model": model, "mode": mode,
-                                      "state": "done", "seconds": round((datetime.now() - started).total_seconds(), 1)})
+        log.info("video_cli_job %s", {"pid": pid, "scene": scene_id, "photo": owner, "model": model,
+                                      "mode": mode, "state": "done",
+                                      "seconds": round((datetime.now() - started).total_seconds(), 1)})
 
     try:
-        return _video_registry.start(_video_key(pid, scene_id), 1, run, scene_id=scene_id, model=model)
+        return _video_registry.start(_video_key(pid, scene_id, owner), 1, run, scene_id=scene_id, model=model)
     except RuntimeError as e:
-        raise Precondition("Já existe uma geração de vídeo em andamento para esta cena.") from e
+        raise Precondition("Já existe uma geração de vídeo em andamento para esta foto/cena.") from e
 
 
-def _video_key(pid: str, scene_id: str) -> str:
-    return f"{pid}:{scene_id}"
+def _video_key(pid: str, scene_id: str, photo: str | None = None) -> str:
+    """`[extensão]` ADR-022: chave do JobRegistry por (cena, foto). Sem `photo`, a chave por-cena de sempre."""
+    return f"{pid}:{scene_id}:{_photo_stem(photo)}" if photo else f"{pid}:{scene_id}"
 
 
-def video_job_status(pid: str, scene_id: str) -> dict:
-    """Estado do job de vídeo da cena; concluído devolve `{state:"done", video:<rel mp4>}`."""
+def video_job_status(pid: str, scene_id: str, photo: str | None = None) -> dict:
+    """Estado do job de vídeo (por cena, ou por foto quando `photo` é dada); concluído devolve
+    `{state:"done", video:<rel mp4>}`."""
     _valid_scene_id(scene_id)
     return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], "video": None,
-            **_video_registry.status(_video_key(pid, scene_id))}
+            **_video_registry.status(_video_key(pid, scene_id, photo))}
