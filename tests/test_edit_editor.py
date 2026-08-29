@@ -130,7 +130,7 @@ def sample_editor() -> dict:
         ],
         "transitions": [{"id": "tr1", "from": "c_a", "to": "c_b", "type": "dissolve", "duration": 0.5}],
         "markers": [{"id": "mk1", "at": 1.2, "name": "Hook"}],
-        "ui": {"zoom": 40, "snap": True},
+        "ui": {"zoom": 1.5, "snap": True},
     }
 
 
@@ -196,6 +196,18 @@ def test_ids_generated_when_missing(tmp_path):
     e = ed.normalize_editor(tmp_path, {"tracks": [{"type": "text", "items": [{"text": "a"}]}]})
     assert e["tracks"][0]["id"]
     assert e["tracks"][0]["items"][0]["id"]
+
+
+def test_ui_zoom_is_a_factor(tmp_path):
+    """AP-06: o frontend grava `ui.zoom` como FATOR (0.25–4, default 1) — o backend preserva."""
+    e = ed.normalize_editor(tmp_path, {"ui": {"zoom": 2.5, "snap": False}})
+    assert e["ui"] == {"zoom": 2.5, "snap": False}
+    assert ed.normalize_editor(tmp_path, {"ui": {"zoom": 0.25}})["ui"]["zoom"] == 0.25
+    assert ed.normalize_editor(tmp_path, {})["ui"]["zoom"] == 1.0          # default = 1x
+    assert ed.normalize_editor(tmp_path, {"ui": {"zoom": 0.01}})["ui"]["zoom"] == 0.25
+    # px/s de timelines antigas (2–400) não vira 400% de zoom: volta ao default
+    assert ed.normalize_editor(tmp_path, {"ui": {"zoom": 40}})["ui"]["zoom"] == 1.0
+    assert ed.editor_from_legacy({})["ui"]["zoom"] == 1.0
 
 
 def test_clip_fx_map(tmp_path):

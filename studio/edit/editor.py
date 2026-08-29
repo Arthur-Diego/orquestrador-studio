@@ -37,6 +37,8 @@ ADJUST_RANGE = (-100.0, 100.0)   # sliders de ajuste de cor (exposição, brilho
 TRANSITION_RANGE = (0.0, 3.0)
 FONT_SIZE_RANGE = (4, 400)
 FONT_WEIGHT_RANGE = (100, 900)
+UI_ZOOM_RANGE = (0.25, 4.0)      # zoom da timeline: FATOR (o px/s efetivo é do frontend)
+UI_ZOOM_DEFAULT = 1.0
 
 # Limites de tamanho (proteção; excedente é truncado com aviso, nunca derruba o save).
 MAX_TRACKS = 40
@@ -294,6 +296,18 @@ def normalize_transition(raw: dict) -> dict | None:
     }
 
 
+def normalize_ui_zoom(value) -> float:
+    """Zoom da timeline é um FATOR (0.25–4, default 1) — é assim que o frontend grava e relê.
+
+    Timelines gravadas antes desta correção guardaram px/s (2–400, default 40); qualquer valor
+    acima do fator máximo é legado e volta ao default, em vez de abrir o projeto em 400%.
+    """
+    z = _num(value, UI_ZOOM_DEFAULT)
+    if z > UI_ZOOM_RANGE[1]:
+        return UI_ZOOM_DEFAULT
+    return _clamp(z, *UI_ZOOM_RANGE, UI_ZOOM_DEFAULT)
+
+
 def normalize_marker(raw: dict) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -354,7 +368,7 @@ def normalize_editor(root: Path, raw) -> dict | None:
         "clip_fx": normalize_clip_fx(raw.get("clip_fx"), root),
         "transitions": transitions,
         "markers": markers,
-        "ui": {"zoom": _clamp(ui_raw.get("zoom", 40), 2, 400, 40),
+        "ui": {"zoom": normalize_ui_zoom(ui_raw.get("zoom", UI_ZOOM_DEFAULT)),
                "snap": _b(ui_raw.get("snap", True), True)},
     }
 
@@ -374,5 +388,5 @@ def editor_from_legacy(timeline: dict) -> dict:
         "clip_fx": {},
         "transitions": [],
         "markers": [],
-        "ui": {"zoom": 40, "snap": True},
+        "ui": {"zoom": UI_ZOOM_DEFAULT, "snap": True},
     }
