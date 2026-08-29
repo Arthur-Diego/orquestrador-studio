@@ -298,8 +298,14 @@ Studio.register("base", (ctx) => {
     render();
   }
 
-  function render() {
+  // Só a marcação da candidata: classe `.sel` no card + gate do botão. Sem reescrever o innerHTML
+  // da galeria, para o `dblclick` continuar achando o card do 1º clique.
+  function marcarSelecao() {
     $("#btnBaseSelect").disabled = !sel;
+    $("#baseGallery").querySelectorAll(".card").forEach((c) => c.classList.toggle("sel", c.dataset.id === sel));
+  }
+
+  function render() {
     renderChain();
     updateCliButton();
     // Sem filtro e sem contador (auditoria #31): a galeria mostra tudo; vazia, não desenha nada.
@@ -311,6 +317,7 @@ Studio.register("base", (ctx) => {
       sel: sel === c.id,
       title: c.prompt || c.name || "",
     })).join("");
+    marcarSelecao();
     renderFinalCard();
   }
 
@@ -522,9 +529,13 @@ Studio.register("base", (ctx) => {
             kind: step, ref_id: refId || null }) }), before);
         } catch (err) { toast(err.message); }
       };
+      // Marcar/desmarcar só troca a classe do card (como a etapa 1 faz em #gallery): re-renderizar
+      // a galeria no 1º clique destruía o card antes do `dblclick`, que caía no container e não
+      // achava `.card` — a imagem nunca abria (C-BASE-27).
       $("#baseGallery").addEventListener("click", (e) => {
         const card = e.target.closest(".card"); if (!card) return;
-        sel = sel === card.dataset.id ? null : card.dataset.id; render();
+        sel = sel === card.dataset.id ? null : card.dataset.id;
+        marcarSelecao();
       });
       $("#baseGallery").addEventListener("dblclick", (e) => {
         const card = e.target.closest(".card"); if (!card) return;
