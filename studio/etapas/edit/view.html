@@ -154,7 +154,9 @@
   .ved-bbox .h.sw{bottom:-5px;left:-5px;cursor:nesw-resize}.ved-bbox .h.se{bottom:-5px;right:-5px;cursor:nwse-resize}
   .ved-guide{position:absolute;background:var(--vac);opacity:.9;pointer-events:none;z-index:5}
   .ved-guide.v{width:1px;top:0;bottom:0}.ved-guide.h{height:1px;left:0;right:0}
-  .ved-pctl{flex:none;display:flex;align-items:center;gap:10px;padding:10px 16px}
+  /* com a sidebar do studio o centro fica estreito: sem quebrar linha, o ⛶ escorregava para
+     debaixo do painel direito e não recebia mais o clique. */
+  .ved-pctl{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:10px;row-gap:6px;padding:10px 16px}
   .ved-pctl .pb{width:30px;height:30px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--vtx3);font-size:13px;display:inline-flex;align-items:center;justify-content:center}
   .ved-pctl .pb:hover{color:var(--vtx);background:var(--vbd)}
   .ved-pctl .pb.play{width:38px;height:38px;border-radius:50%;background:var(--vac);color:#04222a;box-shadow:0 0 14px var(--vacglow);font-size:14px}
@@ -258,6 +260,6 @@
 
 <!-- Guia da aula 014 (hook puro guide.py): "gelo, ambiência, respiração, impacto", ritmo, dever
      de casa. O editor o abre no modal pelo botão "?". Fidelidade ao curso acessível no editor. -->
-<section id="guide" class="guide"></section>
+<section id="guide" class="guide ved-fallback"></section>
 
 <div class="ved" id="ved"></div>

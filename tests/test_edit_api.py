@@ -321,7 +321,9 @@ def test_step_screen_is_the_editor_extension(client):
     js = client.get("/steps/edit/view.js").text
     assert "Etapa 7 · aula 014" in html, "cabeçalho da aula preservado"
     assert "[extensão]" in html, "o editor completo é uma extensão do curso, marcada como tal"
-    assert '<section id="guide" class="guide"></section>' in html, "slot do guia da aula preservado"
+    # o slot do guia continua no HTML; `ved-fallback` só o esconde atrás do editor em tela cheia
+    # (o conteúdo é lido pelo botão Guia), senão a faixa do guia fica sob o root fixo `.ved`
+    assert '<section id="guide" class="guide ved-fallback"></section>' in html, "slot do guia da aula preservado"
     assert 'class="ved"' in html and 'id="ved"' in html, "container do editor"
     # o plugin continua no contrato do shell (registro, ui, ciclo de vida, guia)
     assert 'Studio.register("edit"' in js
