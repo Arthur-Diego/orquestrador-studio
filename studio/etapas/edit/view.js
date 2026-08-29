@@ -158,8 +158,14 @@ Studio.register("edit", (ctx) => {
     const v = document.createElement("video");
     v.preload = "metadata"; v.muted = true; v.playsInline = true; v.src = ctx.files(file); v.style.display = "none";
     v.addEventListener("error", () => v.dataset.err = "1");
-    videoPool.set(file, v); const stage = document.getElementById("edStage"); if (stage) stage.appendChild(v);
+    videoPool.set(file, v); attachPool();
     return v;
+  }
+  /** `renderRoot` recria o innerHTML do editor: os <video> do pool ficam órfãos e o preview
+   *  zera depois de qualquer edição. Reancorá-los no palco a cada render. */
+  function attachPool() {
+    const stage = document.getElementById("edStage"); if (!stage) return;
+    videoPool.forEach((v) => { if (v.parentNode !== stage) stage.appendChild(v); });
   }
   function musicEl() {
     let a = document.getElementById("edMusic"); const mf = (St.timeline.music || {}).file;
@@ -318,6 +324,7 @@ Studio.register("edit", (ctx) => {
     // mídia/texto pela lateral; "recriar dos takes" fica no painel Mídia quando a timeline está vazia.
     r.innerHTML = headerHTML() + bodyHTML() + timelineHTML();
     bindHeader(); bindLeft(); bindPreview(); bindTimeline(); bindPointer();
+    attachPool();
     fit(); stageBox(); renderPanel(); renderProps(); renderTimeline(); renderPreview(); paintPlayhead(); setStatus(St.saveStatus); setPlayIcon();
   }
 
