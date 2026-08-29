@@ -837,7 +837,13 @@ Studio.register("storyboard", (ctx) => {
       if (!scene || isProduct()) { cands = []; return renderCands(); }
       try { cands = (await api(`${base()}/scenes/${scene}/candidates`)).candidates; }
       catch (err) { cands = []; toast(err.message); }
-      order = order.filter((id) => cands.some((c) => c.id === id));
+      // Reidrata a escolha JÁ SALVA da cena (o backend devolve `selected`/`selected_order` por
+      // candidato), como o `loadProd()` faz com o produto: sem isso, reabrir a cena mostrava
+      // "0 escolhidos" e "Salvar ordem da cena" apagava os `shot0N_final.png` já escolhidos.
+      // Só reidrata quando não há escolha em curso na tela (ex.: importar candidatos no meio).
+      const salvos = cands.filter((c) => c.selected)
+        .sort((a, b) => (a.selected_order || 0) - (b.selected_order || 0)).map((c) => c.id);
+      order = order.length ? order.filter((id) => cands.some((c) => c.id === id)) : salvos;
       renderCands();
     }
 
