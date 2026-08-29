@@ -353,8 +353,37 @@ Studio.register("edit", (ctx) => {
   function scheduleSave() { if (!St.autosave) { setStatus("dirty"); return; } if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => save(true), 900); }
   async function save(silent) {
     if (!St.timeline || !ctx.pid()) return; setStatus("saving");
-    try { const r = await api(`${base()}/timeline`, { method: "PUT", body: JSON.stringify(serialize()) }); St.timeline = r.timeline; setStatus("saved"); if (!silent) toast(`Salvo · ${r.duration}s`); ctx.guide(); }
-    catch (err) { setStatus("error"); if (!silent) toast(err.message); }
+    try {
+      const r = await api(`${base()}/timeline`, { method: "PUT", body: JSON.stringify(serialize()) });
+      adopt(St.timeline, r.timeline);        // NUNCA `St.timeline = r.timeline` (ver adopt)
+      setStatus("saved"); if (!silent) toast(`Salvo · ${r.duration}s`); ctx.guide();
+      renderTimeline(); renderPreview();
+    } catch (err) { setStatus("error"); if (!silent) toast(err.message); }
+  }
+  /** Copia a timeline normalizada devolvida pelo PUT sobre a que está na tela, PRESERVANDO a
+   *  identidade dos objetos que os handlers já montados capturaram (clipe, item de faixa, entrada
+   *  de `clip_fx`…). Trocar a referência fazia a edição seguinte cair numa cópia órfã e sumir. */
+  function adopt(dst, src) {
+    if (dst === src || src === undefined) return dst;
+    if (Array.isArray(src)) {
+      if (!Array.isArray(dst)) return src;
+      const porId = new Map();
+      dst.forEach((x) => { if (x && typeof x === "object" && x.id != null && !porId.has(x.id)) porId.set(x.id, x); });
+      const novo = src.map((s, i) => {
+        if (!s || typeof s !== "object") return s;
+        const atual = (s.id != null && porId.get(s.id))
+          || (s.id == null && dst[i] && typeof dst[i] === "object" && !Array.isArray(dst[i]) === !Array.isArray(s) ? dst[i] : null);
+        return atual ? adopt(atual, s) : s;
+      });
+      dst.length = 0; novo.forEach((x) => dst.push(x)); return dst;
+    }
+    if (src && typeof src === "object") {
+      if (!dst || typeof dst !== "object" || Array.isArray(dst)) return src;
+      Object.keys(dst).forEach((k) => { if (!(k in src)) delete dst[k]; });
+      Object.keys(src).forEach((k) => { dst[k] = adopt(dst[k], src[k]); });
+      return dst;
+    }
+    return src;
   }
   function serialize() {
     const tl = St.timeline;
@@ -365,7 +394,7 @@ Studio.register("edit", (ctx) => {
     if (!ctx.pid()) { St.timeline = null; renderRoot(); return; }
     try { const r = await api(`${base()}/timeline`); St.timeline = r.timeline; }
     catch (err) { St.timeline = null; renderRoot(); toast(err.message); return; }
-    ed(); St.zoom = clamp(num(ed().ui.zoom, 1), 0.25, 6); St.snap = ed().ui.snap !== false;
+    ed(); St.zoom = clamp(num(ed().ui.zoom, 1), 0.25, 4); St.snap = ed().ui.snap !== false;
     try { St.beats = await api(`/api/projects/${ctx.pid()}/music/beats`); } catch (e) { St.beats = null; }
     St.history = []; St.future = []; St.selection = []; St.playhead = 0;
     renderAll(); seekTo(0);
@@ -725,7 +754,7 @@ Studio.register("edit", (ctx) => {
     document.getElementById("tDel").onclick = () => deleteItems(St.selection);
     document.getElementById("tRipple").onclick = rippleDelete;
     document.getElementById("tMark").onclick = addMarker;
-    document.getElementById("tSnap").onchange = (e) => { St.snap = e.target.checked; ed().ui.snap = St.snap; scheduleSave(); };
+    document.getElementById("tSnap").onchange = (e) => { St.snap = e.target.checked; ed().ui.snap = St.snap; setStatus("dirty"); scheduleSave(); };
     document.getElementById("zIn").onclick = () => setZoom(St.zoom + .25);
     document.getElementById("zOut").onclick = () => setZoom(St.zoom - .25);
     document.getElementById("zR").oninput = (e) => setZoom(num(e.target.value, 100) / 100);
@@ -743,7 +772,7 @@ Studio.register("edit", (ctx) => {
     main.addEventListener("dragover", (e) => e.preventDefault());
     main.addEventListener("drop", (e) => { e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || ""); if (d.startsWith("clip:")) addPipelineClip(d.slice(5)); else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6))); });
   }
-  function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); scheduleSave(); }
+  function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); setStatus("dirty"); scheduleSave(); }
 
   function renderTimeline() {
     const heads = document.getElementById("edTlHeads"), lanes = document.getElementById("edTracks"); if (!heads || !lanes) return;

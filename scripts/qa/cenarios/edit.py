@@ -481,7 +481,7 @@ def legenda_delete(page, ctx):
         semente["editor"] = {"version": 1, "project": {"width": 1920, "height": 1080, "fps": 30, "aspect": "16:9"},
                              "tracks": [{"id": "t_cap", "type": "caption", "name": "LEGENDAS", "height": 30,
                                          "items": [{"id": "cp_qa", "start": 0.0, "end": 1.0, "text": "legenda QA"}]}],
-                             "clip_fx": {}, "transitions": [], "markers": [], "ui": {"zoom": 40, "snap": True}}
+                             "clip_fx": {}, "transitions": [], "markers": [], "ui": {"zoom": 1, "snap": True}}
         H.api(page, ctx, "put", f"/api/projects/{ctx.pid_cheio}/edit/timeline",
               data=json.dumps(semente), headers=JSON)
         page.reload()
