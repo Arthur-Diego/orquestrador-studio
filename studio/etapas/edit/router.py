@@ -22,8 +22,9 @@ class ClipReq(BaseModel):
     shot: str = ""
     take: str = ""
     file: str
-    start: float = Field(0.0, alias="in")
+    src_in: float = Field(0.0, alias="in")   # ponto de entrada NO ARQUIVO (aula: `in`)
     out: float
+    start: float | None = None   # [extensão]: posição livre do clipe NA timeline (gaps)
     speed: float = 1.0
     blend: bool = True
     zoom: float = 1.0          # aula 014: "pequenos zooms" (1.0–1.3)

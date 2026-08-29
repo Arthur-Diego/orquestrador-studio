@@ -6,16 +6,43 @@
      escopada em `.ved` (o protótipo não usa CSS vars globais — aqui usamos vars locais `--v*`).
      A montagem da aula 014 (backbone) continua sendo o que o ffmpeg renderiza; o guia fica no
      botão "?" (guide.py). Root `position:fixed`, medido em JS (fit()). */
+  /* Tema LIGHT (default) — segue o design system do studio (accent teal #0B7F93). O protótipo é
+     dark; o dark abaixo replica a paleta do protótipo (#4FC8D9) e vence sob prefers-color-scheme
+     ou [data-theme=dark], igual ao mecanismo de tema do studio (documentElement[data-theme]). */
   .ved{
+    --vbg:#EEF1F5; --vpreview:#DCE0E6; --vpanel:#FFFFFF; --vhead:#F7F8FA; --vtracks:#F1F4F7;
+    --vinput:#FFFFFF; --vfilm:#c9d0d8; --vcard:#FFFFFF;
+    --vbd:#E1E5EA; --vbd2:#D5DAE0; --vbd3:#C3CAD2; --vbdh:#A9B2BC;
+    --vtx:#12161C; --vtx2:#2A3038; --vtx3:#4A525C; --vtx4:#6B7480; --vtx5:#9AA3AD; --vkick:#8A939E;
+    --vac:#0B7F93; --vac2:#0A6E80; --vacd:#DBEFF2; --vacglow:rgba(11,127,147,.28);
+    --vok:#12724F; --vamber:#9C5A0A; --vperi:#33509F; --vpurp:#7A4F9E; --vsfx:#AE2F2A; --vred:#AE2F2A;
+    position:fixed;top:0;left:var(--side-w);right:0;bottom:0;z-index:20;display:flex;flex-direction:column;
+    background:var(--vbg);color:var(--vtx);overflow:hidden;
+    font-family:"Instrument Sans",system-ui,sans-serif;font-size:12.5px;-webkit-font-smoothing:antialiased;
+  }
+  .ved-dark{
     --vbg:#0B0D10; --vpreview:#08090C; --vpanel:#0C0F13; --vhead:#0E1116; --vtracks:#0B0E12;
     --vinput:#101419; --vfilm:#0f1319; --vcard:#101419;
     --vbd:#1C222B; --vbd2:#232A34; --vbd3:#2E3641; --vbdh:#39424F;
     --vtx:#EDEFF2; --vtx2:#C9CFD8; --vtx3:#A7AFBA; --vtx4:#8B93A0; --vtx5:#6B7482; --vkick:#59616E;
     --vac:#4FC8D9; --vac2:#7BD8E4; --vacd:#05262C; --vacglow:rgba(79,200,217,.35);
     --vok:#50CF9E; --vamber:#E4A64F; --vperi:#93AAF7; --vpurp:#C79BEA; --vsfx:#E86A8E; --vred:#ff8a80;
-    position:fixed;top:0;left:var(--side-w);right:0;bottom:0;z-index:20;display:flex;flex-direction:column;
-    background:var(--vbg);color:var(--vtx);overflow:hidden;
-    font-family:"Instrument Sans",system-ui,sans-serif;font-size:12.5px;-webkit-font-smoothing:antialiased;
+  }
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .ved{
+    --vbg:#0B0D10; --vpreview:#08090C; --vpanel:#0C0F13; --vhead:#0E1116; --vtracks:#0B0E12;
+    --vinput:#101419; --vfilm:#0f1319; --vcard:#101419;
+    --vbd:#1C222B; --vbd2:#232A34; --vbd3:#2E3641; --vbdh:#39424F;
+    --vtx:#EDEFF2; --vtx2:#C9CFD8; --vtx3:#A7AFBA; --vtx4:#8B93A0; --vtx5:#6B7482; --vkick:#59616E;
+    --vac:#4FC8D9; --vac2:#7BD8E4; --vacd:#05262C; --vacglow:rgba(79,200,217,.35);
+    --vok:#50CF9E; --vamber:#E4A64F; --vperi:#93AAF7; --vpurp:#C79BEA; --vsfx:#E86A8E; --vred:#ff8a80;
+  } }
+  :root[data-theme="dark"] .ved{
+    --vbg:#0B0D10; --vpreview:#08090C; --vpanel:#0C0F13; --vhead:#0E1116; --vtracks:#0B0E12;
+    --vinput:#101419; --vfilm:#0f1319; --vcard:#101419;
+    --vbd:#1C222B; --vbd2:#232A34; --vbd3:#2E3641; --vbdh:#39424F;
+    --vtx:#EDEFF2; --vtx2:#C9CFD8; --vtx3:#A7AFBA; --vtx4:#8B93A0; --vtx5:#6B7482; --vkick:#59616E;
+    --vac:#4FC8D9; --vac2:#7BD8E4; --vacd:#05262C; --vacglow:rgba(79,200,217,.35);
+    --vok:#50CF9E; --vamber:#E4A64F; --vperi:#93AAF7; --vpurp:#C79BEA; --vsfx:#E86A8E; --vred:#ff8a80;
   }
   .ved *{box-sizing:border-box}
   .ved button{font:inherit;cursor:pointer;color:inherit}

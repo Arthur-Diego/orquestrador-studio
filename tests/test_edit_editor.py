@@ -73,6 +73,35 @@ def test_overlays_composited_with_time_gate(tmp_path):
     assert "overlay=0:0" not in " ".join(plain)
 
 
+def test_positional_gap_becomes_black(tmp_path):
+    """[extensão] clipes com `start` livre: o espaço entre eles vira preto no render."""
+    def mk(cid, f, start):
+        return {"id": cid, "scene": "c", "shot": "s", "take": "t", "file": f,
+                "in": 0.0, "out": 2.0, "speed": 1.0, "blend": True, "zoom": 1.0, "start": start}
+    tl = {"clips": [mk("c1", "videos/a.mp4", 0.0), mk("c2", "videos/b.mp4", 5.0)],
+          "blacks": [], "music": {"file": None, "offset": 0.0}, "sfx": [], "fade_out": 0.0, "loudnorm": True}
+    args, dur = render.build_filtergraph(tmp_path, tl, "master")
+    joined = " ".join(args)
+    assert "color=black" in joined                 # o gap (2s→5s) vira preto
+    assert "concat=n=3" in joined                  # clip + preto + clip
+    assert abs(dur - 7.0) < 0.05                    # 2 + 3(gap) + 2
+    # sem `start` = sequencial (colado, sem gap): concat=n=2
+    seq = {**tl, "clips": [{k: v for k, v in c.items() if k != "start"} for c in tl["clips"]]}
+    a2, _ = render.build_filtergraph(tmp_path, seq, "master")
+    assert "concat=n=2" in " ".join(a2) and "color=black" not in " ".join(a2)
+
+
+def test_put_preserves_clip_start(client, project, root):
+    """A posição livre do clipe (`start`) faz round-trip no PUT/GET."""
+    seed(root)
+    tl = client.get(_url(project, "/timeline")).json()["timeline"]
+    body = _legacy_body(tl)
+    body["clips"][0]["start"] = 3.5
+    saved = client.put(_url(project, "/timeline"), json=body).json()["timeline"]
+    assert saved["clips"][0]["start"] == 3.5
+    assert "start" not in saved["clips"][1]        # clipe sem start continua sequencial
+
+
 def test_burnin_renders_text_layer_png(tmp_path):
     from studio.edit import burnin
     editor = {"tracks": [{"type": "text", "visible": True, "items": [

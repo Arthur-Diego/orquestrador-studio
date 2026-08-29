@@ -38,15 +38,19 @@ def test_get_timeline_creates_then_reads(client, project, root):
     assert second["created"] is False
 
 
-def test_get_timeline_without_inputs_is_404(client, project, root):
+def test_get_timeline_without_inputs_opens_empty(client, project, root):
+    """[extensão] Sem insumos das etapas 4/5, o editor abre com timeline VAZIA (não bloqueia)."""
     r = client.get(url(project, "/timeline"))
-    assert r.status_code == 404 and "etapa 5" in r.json()["detail"]
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created"] is True and body["timeline"]["clips"] == []
 
 
-def test_get_timeline_without_liked_is_422(client, project, root):
+def test_get_timeline_without_liked_opens_empty(client, project, root):
+    """Sem takes com like, também abre vazio — o usuário adiciona mídia/texto no editor."""
     seed(root, liked=(False, False, False))
     r = client.get(url(project, "/timeline"))
-    assert r.status_code == 422 and "liked" in r.json()["detail"]
+    assert r.status_code == 200 and r.json()["timeline"]["clips"] == []
 
 
 def test_unknown_project_is_404(client, root):

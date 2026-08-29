@@ -140,6 +140,28 @@ def _clip_fx_chain(clip: dict, editor: dict) -> list[str]:
     return out
 
 
+def _positional_layout(clips: list[dict]) -> list[tuple]:
+    """[extensão] Layout posicional: cada clipe no seu `start` livre; espaços viram pretos (gaps).
+
+    Processa na ORDEM DO ARRAY (mesma regra do front): clipe sem `start` cai logo após o anterior
+    (append); com `start` fica fixado, e o vão antes dele vira preto. Overlap colapsa para
+    adjacência. Devolve segmentos em ordem de tempo: ("clip", i) ou ("black", dur).
+    """
+    order = sorted(range(len(clips)),
+                   key=lambda i: (float(clips[i]["start"]) if clips[i].get("start") is not None else 1e9 + i))
+    layout: list[tuple] = []
+    cursor = 0.0
+    for i in order:
+        st = clips[i].get("start")
+        start = float(st) if st is not None else cursor
+        place = max(start, cursor)
+        if place > cursor + 0.02:
+            layout.append(("black", round(place - cursor, 3)))
+        layout.append(("clip", i))
+        cursor = place + clip_length(clips[i])
+    return layout
+
+
 def build_filtergraph(root: Path, timeline: dict, target: str = "master",
                       out: Path | str | None = None, *, width: int | None = None,
                       height: int | None = None, fps: int | None = None,
@@ -166,26 +188,41 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
     editor = timeline.get("editor") or {}
     overlays = overlays or []
     blacks = timeline.get("blacks") or []
-    segments, _dropped = place_blacks(clips, blacks)
-    duration = expected_duration(timeline, segments)
+    # layout unificado (ordem de tempo): clipes + pretos. Posicional quando os clipes têm `start`
+    # livre (gaps viram pretos, [extensão]); senão sequencial (montagem da aula: colados + pretos
+    # nos cortes). Cada item vira ("clip", i, label) ou ("black", dur, label).
+    if any(c.get("start") is not None for c in clips):
+        raw_layout = _positional_layout(clips)
+    else:
+        seq, _dropped = place_blacks(clips, blacks)
+        raw_layout = [("clip", i) if k == "clip" else ("black", float(blacks[i]["dur"])) for k, i in seq]
+    render_layout: list[tuple] = []
+    bn = 0
+    for kind, val in raw_layout:
+        if kind == "clip":
+            render_layout.append(("clip", val, f"v{val}"))
+        else:
+            render_layout.append(("black", val, f"g{bn}"))
+            bn += 1
+    duration = round(sum(clip_length(clips[s[1]]) if s[0] == "clip" else s[1] for s in render_layout), 3)
     fade_out = min(float(timeline.get("fade_out", 0.0) or 0.0), duration)
 
     args: list[str] = []
     filters: list[str] = []
     index = 0
     clip_input: dict[int, int] = {}
-    black_input: dict[int, int] = {}
+    black_label_input: dict[str, int] = {}
 
     for i, clip in enumerate(clips):
         source_len = round(float(clip["out"]) - float(clip["in"]), 3)
         args += ["-ss", _num(clip["in"]), "-t", _num(source_len), "-i", str(root / clip["file"])]
         clip_input[i] = index
         index += 1
-    for kind, i in segments:
+    for kind, dur, label in render_layout:
         if kind != "black":
             continue
-        args += ["-f", "lavfi", "-t", _num(blacks[i]["dur"]), "-i", f"color=black:s={WIDTH}x{HEIGHT}:r={FPS}"]
-        black_input[i] = index
+        args += ["-f", "lavfi", "-t", _num(dur), "-i", f"color=black:s={WIDTH}x{HEIGHT}:r={FPS}"]
+        black_label_input[label] = index
         index += 1
 
     music = (timeline.get("music") or {}).get("file")
@@ -226,11 +263,12 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
         chain += _clip_fx_chain(clip, editor)   # [extensão] ajustes/efeitos por clipe
         chain.append("format=yuv420p")
         filters.append(f"[{clip_input[i]}:v]{','.join(chain)}[v{i}]")
-    for j in black_input:
-        filters.append(f"[{black_input[j]}:v]fps={FPS},setsar=1,format=yuv420p[b{j}]")
+    for kind, _dur, label in render_layout:
+        if kind == "black":
+            filters.append(f"[{black_label_input[label]}:v]fps={FPS},setsar=1,format=yuv420p[{label}]")
 
-    order = "".join(f"[v{i}]" if kind == "clip" else f"[b{i}]" for kind, i in segments)
-    filters.append(f"{order}concat=n={len(segments)}:v=1:a=0[vcat]")
+    order = "".join(f"[{seg[2]}]" for seg in render_layout)
+    filters.append(f"{order}concat=n={len(render_layout)}:v=1:a=0[vcat]")
     # composição no canvas 1920x1080: fade → camadas do editor (overlay por janela de tempo) → rescale
     base = "vcat"
     if master and fade_out > 0:
