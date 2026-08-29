@@ -432,9 +432,9 @@ Studio.register("edit", (ctx) => {
       <div class="ved-spacer"></div>
       <div class="ved-hgroup">
         <label class="ved-check"><input type="checkbox" id="edAuto" ${St.autosave ? "checked" : ""}>autosave</label>
-        <div class="ved-selwrap"><span class="kick">Proporção</span><select id="edAspect">${opt(Object.keys(ASPECTS), p.aspect, (a) => [a, a])}</select></div>
-        <div class="ved-selwrap"><span class="kick">Resolução</span><select id="edRes">${opt(RES, p.width, (a) => [a[1], a[0]])}</select></div>
-        <div class="ved-selwrap"><span class="kick">FPS</span><select id="edFps">${opt(FPS_CHOICES, p.fps, (a) => [a, a])}</select></div>
+        <div class="ved-selwrap"><span class="kick">Proporção</span><select id="edAspect" aria-label="Proporção do projeto">${opt(Object.keys(ASPECTS), p.aspect, (a) => [a, a])}</select></div>
+        <div class="ved-selwrap"><span class="kick">Resolução</span><select id="edRes" aria-label="Resolução do projeto">${opt(RES, p.width, (a) => [a[1], a[0]])}</select></div>
+        <div class="ved-selwrap"><span class="kick">FPS</span><select id="edFps" aria-label="FPS do projeto">${opt(FPS_CHOICES, p.fps, (a) => [a, a])}</select></div>
         <button class="ved-ib" id="edGuide" title="Guia da aula 014">?</button>
         <button class="ved-ib" id="edFull" title="Tela cheia">⛶</button>
         <button class="ved-btn" id="edSaveBtn">Salvar</button>
@@ -479,7 +479,7 @@ Studio.register("edit", (ctx) => {
           <button class="loop${St.loop ? " on" : ""}" id="pcLoop" title="Loop">⟲ loop</button>
           <div class="ved-spacer"></div>
           <button class="pb" id="pcMute" title="Mudo">🔊</button>
-          <input type="range" id="pcVol" min="0" max="100" value="${St.vol}">
+          <input type="range" id="pcVol" aria-label="Volume do preview" min="0" max="100" value="${St.vol}">
           <button class="pb" id="pcFs" title="Tela cheia">⛶</button>
         </div>
       </div>
@@ -511,6 +511,7 @@ Studio.register("edit", (ctx) => {
   function renderPanel() {
     const el = document.getElementById("edPanel"); if (!el) return;
     ({ media: pMedia, text: pText, captions: pCaptions, audio: pAudio, transitions: pTransitions, effects: pEffects, filters: pFilters, elements: pElements, adjust: pAdjust, library: pLibrary }[St.panel] || pMedia)(el);
+    rotular(el);
   }
   function pMedia(el) {
     const clips = St.timeline.clips || [], media = St.mediaLib || [];
@@ -593,9 +594,27 @@ Studio.register("edit", (ctx) => {
   function tabsFor(kind) { return ["music", "sfx"].includes(kind) ? ["audio", "speed"] : ["basico", "video", "audio", "speed", "ajustes"]; }
   function renderProps() {
     const el = document.getElementById("edProps"); if (!el) return;
-    if (!St.selection.length) return propsProject(el);
-    const it = findItem(St.selection[0]); if (!it) return propsProject(el);
-    propsItem(el, it);
+    const it = St.selection.length ? findItem(St.selection[0]) : null;
+    if (it) propsItem(el, it); else propsProject(el);
+    rotular(el);
+  }
+  /** Acessibilidade: liga cada <label> ao seu controle e nomeia os switches (que não têm texto
+   *  próprio) — sem isso a auditoria da tela acusa "campos sem rótulo" a cada painel. */
+  function rotular(scope) {
+    if (!scope) return;
+    scope.querySelectorAll(".ved-slider,.ved-num,.ved-inrow").forEach((row) => {
+      const lb = row.querySelector("label"), c = row.querySelector("input,select,textarea");
+      if (!lb || !c) return;
+      if (!c.id) c.id = newId("f");
+      if (!lb.getAttribute("for")) lb.setAttribute("for", c.id);
+    });
+    scope.querySelectorAll(".ved-toggle").forEach((row) => {
+      const sw = row.querySelector(".ved-sw"), txt = row.querySelector("span");
+      if (sw && txt && !sw.getAttribute("aria-label")) sw.setAttribute("aria-label", (txt.textContent || "").trim());
+    });
+    scope.querySelectorAll("textarea:not([aria-label]),input[type=text]:not([aria-label])").forEach((c) => {
+      if (!c.id || !scope.querySelector(`label[for="${c.id}"]`)) c.setAttribute("aria-label", c.placeholder || "Texto da camada");
+    });
   }
   function propsProject(el) {
     const p = proj();
@@ -750,7 +769,7 @@ Studio.register("edit", (ctx) => {
           <label class="ved-check" style="color:var(--vtx4)"><input type="checkbox" id="tSnap" ${St.snap ? "checked" : ""}>snap</label>
           <span class="spacer"></span>
           <span class="selinfo" id="tSel">${St.selection.length ? St.selection.length + " selecionado(s)" : "clique num clipe"}</span>
-          <div class="zoom"><button class="ved-ib" id="zOut" style="width:26px;height:24px">－</button><input type="range" id="zR" min="25" max="400" value="${St.zoom * 100 | 0}"><button class="ved-ib" id="zIn" style="width:26px;height:24px">＋</button><span class="zp">${St.zoom * 100 | 0}%</span></div>
+          <div class="zoom"><button class="ved-ib" id="zOut" style="width:26px;height:24px">－</button><input type="range" id="zR" aria-label="Zoom da timeline" min="25" max="400" value="${St.zoom * 100 | 0}"><button class="ved-ib" id="zIn" style="width:26px;height:24px">＋</button><span class="zp">${St.zoom * 100 | 0}%</span></div>
         </div>
         <div class="ved-tl-body">
           <div class="ved-tl-heads" id="edTlHeads"></div>
