@@ -301,10 +301,10 @@ def test_step_editor_reuses_design_system_and_lesson_stays_in_guide(client, proj
     e a aula 014 continua carregando seus textos no guia (fidelidade preservada, ADR-030)."""
     html = client.get("/steps/edit/view.html").text
     js = client.get("/steps/edit/view.js").text
-    # reutiliza os tokens do design system, não cria paleta/tipografia nova
-    assert "var(--accent" in html and "var(--line" in html and "var(--surface" in html
-    assert "Bricolage Grotesque" in html and "IBM Plex Mono" in html
-    assert "crimson" not in js and "crimson" not in html, "sem cores fora do sistema"
+    # segue o protótipo canônico: mesmas FONTES do design system + tema teal escopado em vars `--v*`
+    assert "Bricolage Grotesque" in html and "IBM Plex Mono" in html and "Instrument Sans" in html
+    assert "--vac:#4FC8D9" in html and "--vbg" in html, "paleta do protótipo escopada em vars locais"
+    assert "crimson" not in js and "crimson" not in html, "sem cores soltas fora do tema"
     # reutiliza os helpers de Studio.ui (modal, drop, upload, progressJob) em vez de reinventar
     for helper in ("ui.modal(", "ui.drop(", "ui.upload(", "ui.progressJob("):
         assert helper in js, helper
