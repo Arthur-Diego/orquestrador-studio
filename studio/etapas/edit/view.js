@@ -83,17 +83,36 @@ Studio.register("edit", (ctx) => {
 
   // ------------------------------------------------------------ MODEL (backbone → 6 tracks)
   function segments() {
-    const tl = St.timeline, clips = tl.clips || [], blacks = tl.blacks || [];
-    const segs = []; let pos = 0;
-    clips.forEach((c, i) => {
-      if (!c.id) c.id = newId("c");
-      const len = clipLen(c);
-      segs.push({ kind: "clip", clip: c, i, start: pos, dur: len });
-      pos = +(pos + len).toFixed(3);
-      const b = blacks.find((b) => Math.abs(num(b.at) - pos) <= 0.25 && num(b.dur) > 0);
-      if (b) { segs.push({ kind: "black", black: b, start: pos, dur: num(b.dur) }); pos = +(pos + num(b.dur)).toFixed(3); }
-    });
+    const clips = St.timeline.clips || [], blacks = St.timeline.blacks || [];
+    clips.forEach((c) => { if (!c.id) c.id = newId("c"); });
+    const positional = clips.some((c) => c.start != null);
+    const segs = []; let cursor = 0;
+    if (positional) {
+      // [extensão] posicional: cada clipe no seu `start` livre (gaps = pretos). Mesma regra do
+      // backend (_positional_layout): ordena por start, clipe sem start vai para o fim.
+      const order = clips.map((c, i) => i).sort((a, b) => (clips[a].start != null ? num(clips[a].start) : 1e9 + a) - (clips[b].start != null ? num(clips[b].start) : 1e9 + b));
+      order.forEach((i) => {
+        const c = clips[i], len = clipLen(c), st = c.start != null ? num(c.start) : cursor, place = Math.max(st, cursor);
+        if (place > cursor + 0.02) segs.push({ kind: "black", start: cursor, dur: +(place - cursor).toFixed(3) });
+        segs.push({ kind: "clip", clip: c, i, start: place, dur: len });
+        cursor = +(place + len).toFixed(3);
+      });
+    } else {
+      clips.forEach((c, i) => {
+        const len = clipLen(c);
+        segs.push({ kind: "clip", clip: c, i, start: cursor, dur: len });
+        cursor = +(cursor + len).toFixed(3);
+        const b = blacks.find((b) => Math.abs(num(b.at) - cursor) <= 0.25 && num(b.dur) > 0);
+        if (b) { segs.push({ kind: "black", black: b, start: cursor, dur: num(b.dur) }); cursor = +(cursor + num(b.dur)).toFixed(3); }
+      });
+    }
     return segs;
+  }
+  /** Passa a timeline para o modo posicional: fixa o `start` de cada clipe onde ele está hoje. */
+  function ensurePositions() {
+    const clips = St.timeline.clips || [];
+    if (!clips.length || clips.some((c) => c.start != null)) return;
+    segments().filter((s) => s.kind === "clip").forEach((s) => { s.clip.start = s.start; });
   }
   function duration() { const s = segments(); let d = s.length ? s[s.length - 1].start + s[s.length - 1].dur : 0; (ed().tracks || []).forEach((t) => (t.items || []).forEach((it) => { d = Math.max(d, num(it.end)); })); return +Math.max(d, 0).toFixed(3); }
 
@@ -276,7 +295,7 @@ Studio.register("edit", (ctx) => {
   }
   function serialize() {
     const tl = St.timeline;
-    return { clips: (tl.clips || []).map((c) => ({ id: c.id, scene: c.scene, shot: c.shot, take: c.take, file: c.file, in: num(c.in), out: num(c.out), speed: num(c.speed, 1), blend: c.blend !== false, zoom: num(c.zoom, 1) })),
+    return { clips: (tl.clips || []).map((c) => ({ id: c.id, scene: c.scene, shot: c.shot, take: c.take, file: c.file, in: num(c.in), out: num(c.out), speed: num(c.speed, 1), blend: c.blend !== false, zoom: num(c.zoom, 1), ...(c.start != null ? { start: num(c.start) } : {}) })),
       blacks: tl.blacks || [], music: tl.music || { file: null, offset: 0 }, sfx: tl.sfx || [], fade_out: num(tl.fade_out, 1.5), loudnorm: tl.loudnorm !== false, editor: ed() };
   }
   async function load() {
@@ -294,11 +313,9 @@ Studio.register("edit", (ctx) => {
   function renderRoot() {
     const r = root(); if (!r) return;
     if (!ctx.pid()) return void (r.innerHTML = `<div class="ved-empty"><h3>Selecione uma campanha</h3><p>Abra um projeto para montar o vídeo.</p></div>`);
-    if (!St.timeline) return void (r.innerHTML = `<div class="ved-empty"><h3>Sem timeline</h3><p>A etapa 5 precisa de takes com like e a etapa 4 de um storyboard.</p></div>`);
-    if (!(St.timeline.clips || []).length && !ed().tracks.some((t) => (t.items || []).length)) {
-      r.innerHTML = `<div class="ved-empty"><h3>Timeline vazia</h3><p>Nenhum clipe na montagem.</p><button class="ved-btn" id="edReset">Recriar a partir dos takes com like</button></div>`;
-      const b = document.getElementById("edReset"); if (b) b.onclick = resetTimeline; return;
-    }
+    if (!St.timeline) return void (r.innerHTML = `<div class="ved-empty"><h3>Sem timeline</h3><p>Não foi possível carregar a montagem. Tente reabrir a etapa.</p></div>`);
+    // O editor abre SEMPRE que há timeline — mesmo vazia (sem takes com like). O usuário adiciona
+    // mídia/texto pela lateral; "recriar dos takes" fica no painel Mídia quando a timeline está vazia.
     r.innerHTML = headerHTML() + bodyHTML() + timelineHTML();
     bindHeader(); bindLeft(); bindPreview(); bindTimeline(); bindPointer();
     fit(); stageBox(); renderPanel(); renderProps(); renderTimeline(); renderPreview(); paintPlayhead(); setStatus(St.saveStatus); setPlayIcon();
@@ -401,8 +418,10 @@ Studio.register("edit", (ctx) => {
   function pMedia(el) {
     const clips = St.timeline.clips || [], media = St.mediaLib || [];
     el.innerHTML = phead("Mídia", clips.length + media.length) + `<input class="ved-search" id="mSearch" placeholder="Buscar…">
+      ${clips.length ? "" : `<button class="ved-btn" id="mReset" style="width:100%;margin-bottom:10px">↺ Montar a partir dos takes com like</button>`}
       <label class="drop sm" id="mDrop" style="display:block;margin-bottom:10px;padding:9px;border:1px dashed var(--vbd3);border-radius:8px;text-align:center;color:var(--vtx4);font-size:11px">Arraste imagens/vídeos aqui<input id="mUp" type="file" accept="video/*,image/*" multiple hidden></label>
       <div class="ved-mgrid" id="mList"></div>`;
+    if (!clips.length) { const b = document.getElementById("mReset"); if (b) b.onclick = resetTimeline; }
     const list = document.getElementById("mList");
     const clipCards = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("");
     const mediaCards = media.map((m) => `<div class="ved-mcard" draggable="true" data-mid="${m.id}" title="${esc(m.name)}"><div class="th">${m.kind === "video" ? `<video preload="metadata" muted src="${ctx.files(m.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(m.file)}">`}</div><div class="cap"><div class="nm">${esc(m.name)}</div><div class="mt">${m.kind === "video" ? (m.duration || 0).toFixed(1) + "s" : "img"}</div></div></div>`).join("");
@@ -515,7 +534,7 @@ Studio.register("edit", (ctx) => {
       <div class="ved-slider"><label>Escala</label><input type="range" id="bSc" min="10" max="300" value="${tf.scaleX * 100 | 0}"><span class="val" id="bScv">${tf.scaleX * 100 | 0}%</span></div>
       <div class="ved-grid2"><button class="ved-btn" id="bFx" style="padding:6px">⇋ Flip X</button><button class="ved-btn" id="bFy" style="padding:6px">⇵ Flip Y</button></div>`;
     bindNum("bX", (v) => tf.x = v / 100); bindNum("bY", (v) => tf.y = v / 100); bindNum("bS", (v) => tf.scaleX = tf.scaleY = v / 100); bindNum("bR", (v) => tf.rotation = v);
-    bindNum("bD", (v) => setItemDur(it, v));
+    bindNum("bIn", (v) => setItemStart(it, v)); bindNum("bD", (v) => setItemDur(it, v));
     bindSlider("bOp", (v) => tf.opacity = v / 100, "opacidade", (v) => document.getElementById("bOpv").textContent = v + "%");
     bindSlider("bSc", (v) => tf.scaleX = tf.scaleY = v / 100, "escala", (v) => document.getElementById("bScv").textContent = v + "%");
     document.getElementById("bFx").onclick = () => commit("flip", () => tf.flipX = !tf.flipX);
@@ -535,7 +554,20 @@ Studio.register("edit", (ctx) => {
     bindSlider("vRad", (v) => fx.radius = v, "border radius", (v) => document.getElementById("vRadv").textContent = v);
   }
   function propsAudioTab(body, it) {
-    body.innerHTML = `<p class="ved-hint">O áudio do modelo entra desligado (aula 014). A trilha e os SFX ficam nas faixas MÚSICA/SFX — selecione-as para ajustar volume e fades.</p>`;
+    if (it.kind !== "video") return void (body.innerHTML = `<p class="ved-hint">Sem áudio próprio neste item.</p>`);
+    const a = clipFx(it.clip.id).audio = clipFx(it.clip.id).audio || { volume: 1, muted: false, fadeIn: 0, fadeOut: 0, normalize: false, enhance: false, denoise: false };
+    const tog = [["muted", "Mudo"], ["normalize", "Normalização"], ["enhance", "Melhorar voz"], ["denoise", "Redução de ruído"]];
+    body.innerHTML = `<div class="ved-slider"><label>Volume</label><input type="range" id="avVol" min="0" max="150" value="${a.volume * 100 | 0}"><span class="val" id="avVolv">${a.volume * 100 | 0}%</span></div>
+      <div class="ved-slider"><label>Fade in</label><input type="range" id="avFi" min="0" max="5" step="0.1" value="${a.fadeIn}"><span class="val" id="avFiv">${a.fadeIn}s</span></div>
+      <div class="ved-slider"><label>Fade out</label><input type="range" id="avFo" min="0" max="5" step="0.1" value="${a.fadeOut}"><span class="val" id="avFov">${a.fadeOut}s</span></div>
+      ${tog.map(([k, lb]) => `<div class="ved-toggle"><span>${lb}</span><button class="ved-sw${a[k] ? " on" : ""}" data-at="${k}"></button></div>`).join("")}
+      <button class="ved-linkbtn" id="avSep">✂ Separar áudio do vídeo</button>
+      <p class="ved-hint">[extensão] — na aula 014 o áudio do modelo entra desligado; estes controles ficam guardados e entram no mix numa fase seguinte.</p>`;
+    bindSlider("avVol", (v) => a.volume = v / 100, "volume clipe", (v) => document.getElementById("avVolv").textContent = v + "%");
+    bindSlider("avFi", (v) => a.fadeIn = v, "fade in", (v) => document.getElementById("avFiv").textContent = v + "s");
+    bindSlider("avFo", (v) => a.fadeOut = v, "fade out", (v) => document.getElementById("avFov").textContent = v + "s");
+    body.querySelectorAll("[data-at]").forEach((b) => b.onclick = () => commit("áudio " + b.dataset.at, () => a[b.dataset.at] = !a[b.dataset.at]));
+    document.getElementById("avSep").onclick = () => toast("Separar áudio entra no mix numa fase seguinte [extensão].");
   }
   function propsSpeed(body, it) {
     if (it.kind !== "video") return void (body.innerHTML = `<p class="ved-hint">Velocidade disponível para clipes de vídeo.</p>`);
@@ -600,6 +632,7 @@ Studio.register("edit", (ctx) => {
   function bindSlider(id, apply, label, live) { const inp = document.getElementById(id); if (!inp) return; inp.oninput = () => { apply(num(inp.value)); if (live) live(num(inp.value)); else renderPreview(); const o = document.getElementById(id + "v"); if (o && !live) o.textContent = inp.value; }; inp.onchange = () => { snapshot(label); setStatus("dirty"); scheduleSave(); }; }
   function cset(label, fn) { snapshot(label); fn(); setStatus("dirty"); scheduleSave(); renderPreview(); renderTimeline(); }
   function setItemDur(it, v) { if (it.kind === "video") { it.clip.out = num(it.clip.in) + Math.max(v, .05) * num(it.clip.speed, 1); } else { it.item.end = num(it.item.start) + Math.max(v, .2); } }
+  function setItemStart(it, v) { v = Math.max(v, 0); if (it.kind === "video") { ensurePositions(); it.clip.start = v; } else { const d = it.dur; it.item.start = v; it.item.end = v + d; } }
 
   // ============================================================ TIMELINE
   function timelineHTML() {
@@ -707,24 +740,20 @@ Studio.register("edit", (ctx) => {
   }
   function startClipDrag(e, el) {
     const uid = el.dataset.uid, it = findItem(uid); if (!it) return; if (it.track.backbone && !["video", "sfx"].includes(it.kind)) return;
-    const sx = e.clientX, x0 = it.start; let moved = false;
+    if (it.kind === "video") ensurePositions();   // primeira arrastada de vídeo → modo posicional (gaps livres)
+    const sx = e.clientX, x0 = it.kind === "video" ? num(it.clip.start, it.start) : it.start; let moved = false;
     const move = (ev) => {
       const dx = (ev.clientX - sx) / pps(); if (Math.abs(ev.clientX - sx) > 3) moved = true;
-      if (it.kind === "video") el.style.transform = `translateX(${ev.clientX - sx}px)`;
-      else { let ns = snapTime(Math.max(x0 + dx, 0), uid); el.style.left = ns * pps() + "px"; el.dataset.ns = ns; }
+      const ns = snapTime(Math.max(x0 + dx, 0), uid); el.style.left = ns * pps() + "px"; el.dataset.ns = ns;
     };
-    const up = (ev) => {
+    const up = () => {
       document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); if (!moved) return;
-      if (it.kind === "video") { const main = document.getElementById("edTlMain"); const dropX = (ev.clientX - main.getBoundingClientRect().left + main.scrollLeft) / pps(); reorderClip(uid, dropX); }
-      else if (it.kind === "sfx") commit("mover SFX", () => St.timeline.sfx[it.i].at = num(el.dataset.ns, x0));
-      else { const ns = num(el.dataset.ns, x0), d = it.dur; commit("mover", () => { it.item.start = ns; it.item.end = ns + d; }); }
+      const ns = num(el.dataset.ns, x0);
+      if (it.kind === "video") commit("mover vídeo", () => { it.clip.start = ns; });
+      else if (it.kind === "sfx") commit("mover SFX", () => St.timeline.sfx[it.i].at = ns);
+      else { const d = it.dur; commit("mover", () => { it.item.start = ns; it.item.end = ns + d; }); }
     };
     document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
-  }
-  function reorderClip(uid, dropX) {
-    const clips = St.timeline.clips; const from = clips.findIndex((c) => c.id === uid); if (from < 0) return;
-    const segs = segments().filter((s) => s.kind === "clip"); let to = segs.findIndex((s) => dropX < s.start + s.dur / 2); if (to < 0) to = clips.length - 1;
-    if (to === from) return renderTimeline(); commit("reordenar", () => { const [c] = clips.splice(from, 1); clips.splice(to, 0, c); });
   }
   function startTrim(e, el, side) {
     const uid = el.dataset.uid, it = findItem(uid); const sx = e.clientX;
@@ -756,7 +785,7 @@ Studio.register("edit", (ctx) => {
   function splitAtPlayhead() {
     const t = St.playhead, seg = segAt(t); if (!seg || seg.kind !== "clip") return toast("Posicione o playhead sobre um clipe de vídeo");
     const c = seg.clip, local = (t - seg.start) * num(c.speed, 1); if (local < .05 || local > (num(c.out) - num(c.in)) - .05) return toast("Muito perto da borda");
-    commit("dividir", () => { const i = St.timeline.clips.findIndex((x) => x.id === c.id); const a = clone(c), b = clone(c); a.out = +(num(c.in) + local).toFixed(3); b.in = a.out; b.id = newId("c"); St.timeline.clips.splice(i, 1, a, b); });
+    commit("dividir", () => { const i = St.timeline.clips.findIndex((x) => x.id === c.id); const a = clone(c), b = clone(c); a.out = +(num(c.in) + local).toFixed(3); b.in = a.out; b.id = newId("c"); if (a.start != null) b.start = +(num(a.start) + clipLen(a)).toFixed(3); St.timeline.clips.splice(i, 1, a, b); });
     toast("Clipe dividido");
   }
   function duplicateSelection() {

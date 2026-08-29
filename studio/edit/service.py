@@ -217,9 +217,16 @@ def validate_timeline(root: Path, timeline: dict) -> dict:
         if source and end > source + TOL:
             raise ValueError(f"{label}: out ({end}) passa da duração do take ({source})")
         _resolve(root, raw.get("file", ""), label)
-        clips.append({"id": _clip_id(raw), "scene": scene, "shot": shot, "take": take, "file": raw["file"],
-                      "in": round(start, 3), "out": round(end, 3), "speed": round(speed, 3),
-                      "blend": bool(raw.get("blend", True)), "zoom": round(zoom, 3)})
+        clip_out = {"id": _clip_id(raw), "scene": scene, "shot": shot, "take": take, "file": raw["file"],
+                    "in": round(start, 3), "out": round(end, 3), "speed": round(speed, 3),
+                    "blend": bool(raw.get("blend", True)), "zoom": round(zoom, 3)}
+        pos = raw.get("start")   # [extensão]: posição livre na timeline (gaps). Ausente = sequencial.
+        if pos is not None:
+            p = _f(pos, f"{label}.start")
+            if p < 0:
+                raise ValueError(f"{label}: start (posição na timeline) não pode ser negativo")
+            clip_out["start"] = round(p, 3)
+        clips.append(clip_out)
 
     blacks = []
     for i, raw in enumerate(timeline.get("blacks") or []):
@@ -337,13 +344,31 @@ def decorate(root: Path, timeline: dict) -> dict:
     return {**timeline, "clips": clips}
 
 
+def empty_timeline(root: Path) -> dict:
+    """[extensão] Timeline vazia editável — o editor abre mesmo sem takes com like (etapa 5).
+
+    Não é a montagem da aula (que parte dos takes liked); é a conveniência de já entrar no editor
+    e começar a montar (adicionar mídia/texto). Assim que houver takes, `timeline/reset` recria a
+    montagem da aula por cima.
+    """
+    return {"clips": [], "blacks": [], "music": {"file": _resolve_music(root), "offset": 0.0},
+            "sfx": [], "fade_out": DEFAULT_FADE_OUT, "loudnorm": True}
+
+
 def get_timeline(pid: str, force_new: bool = False) -> dict:
-    """GET/reset da UI: cria e persiste a timeline inicial quando não existe (ou quando forçado)."""
+    """GET/reset da UI: cria e persiste a timeline inicial quando não existe (ou quando forçado).
+
+    Sem takes com like (ou sem os insumos das etapas 4/5), abre uma timeline VAZIA editável
+    ([extensão]) em vez de bloquear — o editor precisa abrir mesmo sem montagem pronta.
+    """
     root = project_dir(pid)
     existing = None if force_new else load_timeline(pid)
     created = existing is None
     if created:
-        timeline = validate_timeline(root, initial_timeline(pid))
+        try:
+            timeline = validate_timeline(root, initial_timeline(pid))
+        except (FileNotFoundError, ValueError):
+            timeline = validate_timeline(root, empty_timeline(root))
         write_timeline(root, timeline)
     else:
         timeline = existing   # já foi validada na gravação; ler nunca falha por arquivo sumido

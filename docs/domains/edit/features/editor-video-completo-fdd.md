@@ -210,5 +210,30 @@ Herda a matriz do `edit-fdd.md` §6. Adições:
 | 8 | Atalhos, context menu, export modal, polimento | 3–7 | `view.js` | atalhos, export |
 
 Pendências registradas: burn-in/transições/overlays/efeitos no encode ffmpeg (fase 2); geração de legenda automática (depende de transcrição — não há no projeto hoje; a UI oferece legenda manual e deixa o "gerar automático" como pendência).
+
+---
+
+## Rodada 2 — melhorias (ADH-OS-20260829-32)
+
+Ajustes pedidos pelo dono, todos `[extensão]`, sobre o editor já entregue:
+
+1. **Abrir sem takes.** `service.get_timeline` passa a devolver uma **timeline vazia editável**
+   (`empty_timeline`) quando não há takes com like ou faltam os insumos das etapas 4/5, em vez de
+   404/422. O editor abre vazio (o front renderiza a UI cheia mesmo com `clips=[]`) e oferece
+   "Montar a partir dos takes com like" no painel Mídia. Retrocompat: com takes, monta a aula.
+2. **Tema light.** A paleta do editor (`--v*`) vira **theme-aware** seguindo o mecanismo do studio
+   (`documentElement[data-theme]` + `prefers-color-scheme`): **light por padrão** (accent teal
+   `#0B7F93` do design system) e **dark** (paleta do protótipo `#4FC8D9`) sob dark/`[data-theme=dark]`.
+   Só o chrome é tematizado; as cores dos clipes (TYPECOL) seguem iguais.
+3. **Posicionamento livre de vídeo com gaps.** Clipe ganha `start` opcional (posição livre na
+   timeline). Ao arrastar um clipe de vídeo, a timeline entra em **modo posicional**
+   (`ensurePositions` fixa o `start` de todos) e o clipe passa a se mover livremente, deixando
+   **espaços vazios**. No render (`_positional_layout` + `build_filtergraph`), os vãos viram
+   **pretos** (concat com black fillers); sem `start` = sequencial (montagem da aula, intacta).
+   Validado em render real: gap de 3 s → `master.mp4` de 10,5 s com o preto no lugar.
+4. **Aba Áudio do clipe de vídeo** (paridade com o protótipo): Volume, Fade in/out, Mudo,
+   Normalização, Melhorar voz, Redução de ruído, Separar áudio — guardados em `clip_fx.audio`
+   (`[extensão]`, entram no mix numa fase seguinte; a aula 014 mantém o áudio do modelo desligado).
+5. Campo **Início** editável na aba Básico; correções menores de paridade.
 </content>
 </invoke>
