@@ -21,14 +21,11 @@ import json
 import logging
 import os
 import shutil
-import tempfile
-import threading
 import time
-from contextlib import contextmanager
 from pathlib import Path
 
 from .. import higgsfield as hf
-from ..common import ingest, settings
+from ..common import atomic, ingest, settings
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -89,19 +86,8 @@ _registry = JobRegistry()
 #: Um lock por projeto (raiz) serializando o read-modify-write de `animate/takes.json`: a tela
 #: dispara GET /shots (que grava o plano mesclado) e PUT /shots/... quase juntos, e sem isso uma
 #: atualização sobrescreve a outra. Reentrante para não travar se um fluxo aninhar as funções.
-_locks: dict[str, threading.RLock] = {}
-_locks_guard = threading.Lock()
-
-
-@contextmanager
-def _project_lock(root: Path):
-    key = str(root)
-    with _locks_guard:
-        lock = _locks.get(key)
-        if lock is None:
-            lock = _locks[key] = threading.RLock()
-    with lock:
-        yield
+#: Mora em `common/atomic.py` (fonte única) desde o AP-22 — aqui é só o alias local.
+_project_lock = atomic.project_lock
 
 
 def model_order() -> list[str]:
@@ -193,17 +179,7 @@ def _save_data(root: Path, data: dict) -> None:
     PUT /shots/... da própria tela) disputavam o mesmo arquivo e uma delas estourava
     `FileNotFoundError` no `os.replace` — que o router traduzia em 404.
     """
-    d = root / STEP
-    d.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(data, ensure_ascii=False, indent=1)
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=".takes.json.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as fh:
-            fh.write(payload)
-        os.replace(tmp, _takes_file(root))
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    atomic.write_json_atomic(_takes_file(root), data, ensure_ascii=False, indent=1)
 
 
 def _blank(scene: str, shot: str, order: int = 999, image: str | None = None, scene_prompt: str = "") -> dict:
