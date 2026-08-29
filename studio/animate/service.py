@@ -514,6 +514,41 @@ def set_like(pid: str, scene: str, shot: str, take_id: str, liked: bool | None =
     return _public(data, entry)
 
 
+# ---------- ponte storyboard → montagem (`[extensão]` ADR-022, R2) ----------
+def register_storyboard_video(root: Path, scene: str, shot: str, order: int, src_rel: str,
+                              *, duration: int, model: str, prompt: str) -> dict:
+    """`[extensão]` ADR-022 (ponte R2): registra um vídeo gerado por FOTO no storyboard como um TAKE
+    **liked** em `animate/takes.json`, para a montagem (etapa edit) o consumir SEM abrir a tela do
+    animate. Idempotente por (cena, shot): reanimar a foto SUBSTITUI o take (um like por shot).
+
+    Escreve direto (sem `_merge`, que dependeria de `storyboard.json`) e mantém `shotMM_final.mp4`
+    (regra do like). NÃO altera a UI nem a leitura do animate — só grava o take."""
+    data = _load_data(root)
+    entry = next((s for s in data["shots"] if s.get("scene") == scene and s.get("shot") == shot), None)
+    if entry is None:
+        entry = _blank(scene, shot, order=order)
+        data["shots"].append(entry)
+    else:
+        entry["order"] = order
+    src = root / src_rel
+    ext = src.suffix.lower() if src.suffix.lower() in VIDEO_EXT else ".mp4"
+    rel = _video_rel(scene, shot, "take1", ext)
+    dest = root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src.exists():
+        shutil.copy2(src, dest)
+    entry["takes"] = [{                       # um like por shot; reanimar a foto substitui o take
+        "id": "take1", "file": rel, "liked": True, "model": model, "prompt": prompt or "",
+        "duration": duration or DURATIONS[0], "start_end": None, "prompt_mode": "simple",
+        "aspect_ratio": entry.get("aspect_ratio") or project_aspect_ratio(root),
+        "source": "storyboard", "thumb": None, "candidate_id": None, "storyboard_photo": True}]
+    entry["orphan"] = False
+    _sync_final(root, entry)
+    _save_data(root, data)
+    log.info("animate: ponte storyboard→take (foto) %s/%s a partir de %s", scene, shot, src_rel)
+    return {"scene": scene, "shot": shot, "take": entry["takes"][0]}
+
+
 def _sync_final(root: Path, entry: dict) -> None:
     """`shotMM_final.mp4` existe se e somente se há take com like (cópia byte a byte)."""
     liked = next((t for t in entry["takes"] if t.get("liked") is True), None)

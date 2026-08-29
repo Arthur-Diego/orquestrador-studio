@@ -76,5 +76,7 @@ congelado acima é **estendido de forma aditiva e retrocompatível** (registrado
   `GET /video/job` ganha `photo?` (job por foto). Sem `photo`/`model` = comportamento wave-7 idêntico.
 - `GET /storyboard` (status) expõe `video_models` (catálogo `kind:video`) + `video_model_defaults`
   para o **seletor de modelo** do modal "Gerar animação" (que antes não existia na tela).
-- **Pendente (decisão do dono):** a **ponte** dos vídeos por-foto para o downstream (`animate`/montagem)
-  — isolada em `service._bridge_video_downstream` (R1 = no-op hoje). Ver ADR-022 §Pendências.
+- **Ponte (R2, decidida):** os vídeos por-foto **viram os clipes da montagem** — `_bridge_video_downstream`
+  registra o vídeo como TAKE **liked** em `animate/takes.json` (mp4 em `videos/<cena>/<shot>_take1.mp4`,
+  `shot = foto-<stem>`) e a foto como shot aditivo em `storyboard.json`; a montagem (`edit.initial_timeline`)
+  monta o clipe. A tela do `animate` não muda. Ver ADR-022 §Decisão da ponte (R2).

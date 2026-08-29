@@ -1,6 +1,6 @@
 # ADR-022: Vídeo por FOTO no storyboard + modelo selecionável + ponte para o downstream `[extensão]`
 
-**Status:** Proposto (miolo aprovado pelo dono; item de ponte com o `animate`/montagem em aberto — ver §Pendências)
+**Status:** Aceito
 **Data:** 2026-08-28
 **Módulo:** STUDIO
 **Task-Id:** ADH-OS-20260828-31
@@ -39,7 +39,7 @@ gate 2/4 do `CLAUDE.md`: só entra **aprovado pelo dono** (aprovado) e **registr
   resolução por servidor de hoje (`settings.default_for` por modo). A lista ofertada vem do catálogo
   `pricing.list_models("video")`. Nada fica preso no código.
 - **Isolamento de domínio:** o storyboard não deve **reescrever a tela** do `animate`. A ponte com o
-  downstream (se houver) é **aditiva e retrocompatível** (ver Pendências).
+  downstream é **aditiva e retrocompatível** (ver §Decisão da ponte (R2)).
 
 ## Decisão
 
@@ -84,29 +84,42 @@ arrastar) persistido pela ordem de `images[]` no `PUT /scenes` (contrato já exi
 no `<style>` do `view.html` (padrão wave-7), **sem tocar** `style.css`/`ui.css`. Um "ponto único"
 (`photoState`, chave `cena:img`) mantém o mapeamento foto→{descrição, prompt} para a migração B.
 
-## Pendências (decisão do dono — em aberto)
+## Decisão da ponte (R2 — aprovada pelo dono)
 
-**Ponte storyboard→`animate`/montagem.** Hoje o downstream que a **montagem** (etapa `edit`) consome é
-`storyboard/storyboard.json` (frames dos ÂNGULOS, aula 011) + `animate/takes.json` + `videos/cenaNN/…`.
-Os vídeos-preview do painel 02 (`scenes.json`) **não** alimentam esse pipeline — são preview (ADR-021).
-As fotos do painel 02 (ideação) **não são** os shots dos ângulos (`storyboard.json`) que o `animate`
-usa. Fazer os vídeos por-foto "chegarem ao `animate` sem mudar a tela dele" exige escolher **como** e
-**onde** registrá-los. Opções (a decidir com o dono, ver relatório da task):
+**Sub-decisão do dono:** *"os vídeos por foto viram os clipes da montagem"* — as fotos animadas no
+painel 02 passam a ser a **fonte dos clipes finais** da montagem (etapa `edit`), no lugar/além dos
+shots dos ângulos (aula 011). A tela do `animate` **não muda** — só **recebe** o take.
 
-- **R1 — Preview apenas** (como ADR-021): não alimenta o downstream. Menor risco; contraria "animate só recebe".
-- **R2 — Ponte aditiva para `animate/takes.json` + `videos/`**: o storyboard registra as fotos como
-  takes do `animate` (mapa foto→(cena,shot)). Cumpre "animate só recebe", mas escreve no domínio do
-  `animate` e precisa definir o mapeamento ideação↔ângulos.
-- **R3 — Estender `storyboard.json`** (contrato storyboard→animate) para carregar os vídeos por foto.
+**Implementação (R2), na costura única `storyboard.service._bridge_video_downstream`:** ao gerar o
+vídeo de uma foto (`start_video_generate` com `photo`), a costura:
 
-Enquanto a ponte não é decidida, o vídeo por foto é gravado **local ao storyboard** (item §1), o que
-**não** fecha nenhuma das opções — a ponte é uma camada aditiva por cima.
+1. **Registra um TAKE `liked` em `animate/takes.json`** via `animate.register_storyboard_video(...)`:
+   `(scene, shot)` = `(cenaNN, foto-<stem>)`, `order` = posição da foto em `images[]`; o mp4 é copiado
+   para `videos/<cena>/<shot>_take1.mp4` (convenção do animate) e marcado `liked:true` (`source:"storyboard"`,
+   `storyboard_photo:true`). **Um like por shot**; reanimar a foto **substitui** o take.
+2. **Registra a foto como um shot em `storyboard/storyboard.json`** (aditivo e não-destrutivo): a cena
+   e o `shot` da foto entram no arquivo para a montagem **ordenar** e **não falhar** por storyboard.json
+   ausente; shots de ângulos existentes são **preservados**. `_order_index` (edit) passa a ter o shot;
+   sem ele, o `initial_timeline` já cairia no **fallback por ordem** de qualquer forma.
+
+A montagem (`edit.initial_timeline`) então monta um clipe determinístico com aquele vídeo. **Sem `photo`**
+(preview por-cena da wave-7), **nada** é registrado no downstream — retrocompatível.
+
+**Escopo/namespacing:** o `shot id` da foto é `foto-<stem-da-imagem>`, que **nunca colide** com os
+`shotNN` dos ângulos. A ponte é **aditiva** ("além"): não apaga shots de ângulos. Substituir os shots
+de ângulos ("no lugar") seria destrutivo e **não** foi feito — se o dono quiser, é decisão à parte.
+
+**Limitação registrada:** `angles.rebuild_storyboard` regrava `storyboard.json` por inteiro a partir
+das seleções de ângulo; se o usuário rodar a metade de ângulos **depois** de animar fotos, os shots de
+foto saem do `storyboard.json` (mas os takes seguem em `animate/takes.json` e entram na montagem por
+fallback de ordem). Aceitável para o fluxo do dono (painel 02 → montagem).
 
 ## Consequências
 
 - **Positivas:** entrega o fluxo por-foto pedido; modelo selecionável; retrocompat total; sem tocar o
   shell nem a tela do `animate`.
 - **Negativas / risco:** amplia a superfície do `[extensão]` sobre a fronteira 4↔6 (já aberta pela
-  ADR-021); a ponte com o downstream fica pendente de decisão e pode exigir novo ADR-filho.
+  ADR-021); a ponte R2 escreve em `animate/takes.json` e em `storyboard.json` (ver Limitação sobre o
+  rebuild dos ângulos).
 - **Supersede parcial:** estende a ADR-021 (por-cena → por-foto) sem revogá-la; a ADR-021 continua
   descrevendo o núcleo (prompt motion, JobRegistry de vídeo, custos, mapa de modelos Kling).

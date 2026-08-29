@@ -550,6 +550,63 @@ def test_scene_photos_migrates_legacy_per_scene_to_primary(sb, project, root):
     assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "videos": []}
 
 
+# ---------- ponte storyboard → montagem (`[extensão]` ADR-022, R2) ----------
+def _gen_photo_video(sb, project, scene, img, prompt="dolly", photo=None):
+    sb.start_video_generate(project, scene, prompt, "single", 5, {"image": img}, photo=photo or img)
+    for _ in range(100):
+        if sb.video_job_status(project, scene, photo=photo or img)["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+
+
+def test_photo_video_bridges_into_montage_as_liked_take(sb, project, root, monkeypatch):
+    """ADR-022 (ponte R2): vídeo por FOTO → take **liked** em animate/takes.json → a montagem
+    (edit.initial_timeline) monta um clipe com aquele vídeo, sem tocar a tela do animate."""
+    from studio.animate import service as animate
+    from studio.edit import service as edit
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    _fake_video_cli(monkeypatch, sb)
+    _gen_photo_video(sb, project, "cena01", a)
+    # 1) virou take liked em animate/takes.json, com o mp4 sob videos/
+    shot = next(s for s in animate.stored_takes(project)["shots"] if s["scene"] == "cena01")
+    assert len(shot["takes"]) == 1
+    take = shot["takes"][0]
+    assert take["liked"] is True and take["source"] == "storyboard"
+    assert take["file"].startswith("videos/cena01/") and (root / take["file"]).exists()
+    # 2) a montagem monta um clipe determinístico com aquele vídeo (storyboard.json foi criado aditivo)
+    tl = edit.initial_timeline(project)
+    assert any(c["file"] == take["file"] for c in tl["clips"])
+
+
+def test_photo_reanimation_replaces_the_bridged_take(sb, project, monkeypatch):
+    """ADR-022: reanimar a MESMA foto substitui o take (um like por shot), sem duplicar clipes."""
+    from studio.animate import service as animate
+    from studio.edit import service as edit
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    _fake_video_cli(monkeypatch, sb)
+    _gen_photo_video(sb, project, "cena01", a, prompt="take um")
+    _gen_photo_video(sb, project, "cena01", a, prompt="take dois")
+    shot = next(s for s in animate.stored_takes(project)["shots"] if s["scene"] == "cena01")
+    assert len(shot["takes"]) == 1 and shot["takes"][0]["liked"] is True
+    assert len(edit.initial_timeline(project)["clips"]) == 1, "um clipe por foto, sem duplicar"
+
+
+def test_per_scene_preview_without_photo_does_not_reach_montage(sb, project, monkeypatch):
+    """ADR-022: sem `photo` (preview por-cena, wave-7), nada é registrado no downstream (retrocompat)."""
+    from studio.animate import service as animate
+    a, _ = _two_ideas(sb, project)
+    sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
+    _fake_video_cli(monkeypatch, sb)
+    sb.start_video_generate(project, "cena01", "dolly", "single", 5, {"image": a})   # sem photo
+    for _ in range(100):
+        if sb.video_job_status(project, "cena01")["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    assert animate.stored_takes(project)["shots"] == [], "preview por-cena não vira take da montagem"
+
+
 def test_video_generate_single_saves_take_and_persists_scene(sb, project, monkeypatch, root):
     a, _ = _two_ideas(sb, project)
     sb.save_scenes(project, [{"text": "cena", "images": [a], "primary": a}])
