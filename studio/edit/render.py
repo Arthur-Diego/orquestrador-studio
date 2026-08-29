@@ -9,12 +9,14 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 
 from ..common import ffmpeg as ff
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
+from . import burnin  # [extensão] rasteriza texto/legenda/overlay do editor para o burn-in
 from .service import (
     BLACK_SNAP,
     FPS,
@@ -32,6 +34,33 @@ registry = JobRegistry()
 RENDER_TIMEOUT = 1800          # minterpolate em 1080p é lento; 600 s da API transversal é pouco
 TARGETS = {"rough": {"name": "rough_cut.mp4", "crf": "23", "preset": "veryfast"},
            "master": {"name": "master.mp4", "crf": "18", "preset": "medium"}}
+# [extensão] export com opções: resolução (mantém a proporção 16:9 do projeto), fps e qualidade.
+# Sem parâmetros, o master sai 1920x1080/30 como a aula — o comportamento atual é o default.
+QUALITY = {"low": {"crf": "28", "preset": "veryfast"},
+           "medium": {"crf": "23", "preset": "fast"},
+           "high": {"crf": "18", "preset": "medium"}}
+RES_PRESETS = {720: (1280, 720), 1080: (1920, 1080), 1440: (2560, 1440), 2160: (3840, 2160)}
+FPS_OUT = (24, 25, 30, 50, 60)
+
+
+def _out_size(width, height) -> tuple[int, int]:
+    """Resolução de saída presa a um preset 16:9 (720p–4K). Sem pedido -> 1920x1080."""
+    if not width and not height:
+        return WIDTH, HEIGHT
+    h = int(round(float(height))) if height else int(round(float(width) * HEIGHT / WIDTH))
+    nearest = min(RES_PRESETS, key=lambda k: abs(k - h))
+    return RES_PRESETS[nearest]
+
+
+def _out_fps(fps) -> int:
+    if not fps:
+        return FPS
+    return min(FPS_OUT, key=lambda c: abs(c - float(fps)))
+
+
+def _quality(quality, conf: dict) -> tuple[str, str]:
+    q = QUALITY.get(quality or "")
+    return (q["crf"], q["preset"]) if q else (conf["crf"], conf["preset"])
 AFORMAT = "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
 NO_MUSIC = ("escolha a trilha na etapa 6 antes de montar: o master não sai sem música "
             "(aula 013 — a montagem é guiada pelo som)")
@@ -74,20 +103,68 @@ def expected_duration(timeline: dict, segments: list[tuple[str, int]]) -> float:
     return round(total, 3)
 
 
+def _clip_fx_chain(clip: dict, editor: dict) -> list[str]:
+    """[extensão] Ajustes/efeitos por clipe (clip_fx do editor) → filtros ffmpeg. Função pura.
+
+    Mapeia os sliders -100..100 para `eq`/`hue` e os efeitos para `gblur`/`unsharp`. Sem clip_fx
+    para o clipe, devolve lista vazia (backbone da aula intacto).
+    """
+    fx = ((editor or {}).get("clip_fx") or {}).get(clip.get("id"))
+    if not fx:
+        return []
+    out: list[str] = []
+    f = fx.get("filters") or {}
+    eq = {}
+    bright = float(f.get("brightness", 0)) / 200 + float(f.get("exposure", 0)) / 250
+    if bright:
+        eq["brightness"] = round(bright, 4)
+    if f.get("contrast"):
+        eq["contrast"] = round(1 + float(f["contrast"]) / 100, 4)
+    if f.get("saturation"):
+        eq["saturation"] = round(max(1 + float(f["saturation"]) / 100, 0), 4)
+    if eq:
+        out.append("eq=" + ":".join(f"{k}={_num(v)}" for k, v in eq.items()))
+    if f.get("hue"):
+        out.append(f"hue=h={_num(float(f['hue']) * 1.8)}")
+    for ef in (fx.get("effects") or []):
+        if ef.get("enabled") is False:
+            continue
+        t = str(ef.get("type", "")).lower()
+        inten = float(ef.get("intensity", 0.5) or 0.5)
+        if t == "blur":
+            out.append(f"gblur=sigma={_num(inten * 10)}")
+        elif t == "sharpen":
+            out.append(f"unsharp=5:5:{_num(0.3 + inten * 1.5)}")
+        elif t == "grain":
+            out.append(f"noise=alls={int(inten * 30)}:allf=t")
+    return out
+
+
 def build_filtergraph(root: Path, timeline: dict, target: str = "master",
-                      out: Path | str | None = None) -> tuple[list[str], float]:
+                      out: Path | str | None = None, *, width: int | None = None,
+                      height: int | None = None, fps: int | None = None,
+                      quality: str | None = None, overlays: list[dict] | None = None) -> tuple[list[str], float]:
     """Argumentos completos do ffmpeg (sem o binário) + duração prevista. Não executa nada.
 
     `out` troca só o arquivo de destino (a escrita continua atômica, em `<out>.part`): a etapa 6
     reusa este mesmo grafo em modo `rough` para gerar `audio/rough_sequence.mp4`.
+
+    `width`/`height`/`fps`/`quality` são [extensão] de export: a composição é feita em 1920x1080
+    (canvas da aula) e reescalada no fim para a resolução pedida (preset 16:9), com o fps e o crf
+    escolhidos. Sem esses parâmetros o resultado é idêntico ao master atual.
     """
     if target not in TARGETS:
         raise ValueError(f"target inválido: {target} (use 'rough' ou 'master')")
+    out_w, out_h = _out_size(width, height)
+    out_fps = _out_fps(fps)
+    crf, preset = _quality(quality, TARGETS[target])
     clips = timeline.get("clips") or []
     if not clips:
         raise ValueError("timeline sem clipes")
     conf = TARGETS[target]
     master = target == "master"
+    editor = timeline.get("editor") or {}
+    overlays = overlays or []
     blacks = timeline.get("blacks") or []
     segments, _dropped = place_blacks(clips, blacks)
     duration = expected_duration(timeline, segments)
@@ -123,6 +200,12 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
             args += ["-i", str(root / sfx["file"])]
             sfx_inputs.append((index, sfx))
             index += 1
+    # [extensão] camadas do editor (texto/legenda/overlay) já rasterizadas em PNG full-frame
+    overlay_inputs: list[tuple[int, dict]] = []
+    for ov in overlays:
+        args += ["-i", str(ov["path"])]
+        overlay_inputs.append((index, ov))
+        index += 1
 
     # --- vídeo: normalizar tudo para 1920x1080/30 fps antes do concat (decisão 5 do lote) ---
     for i, clip in enumerate(clips):
@@ -140,6 +223,7 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
             chain.append(f"minterpolate=fps={FPS}:mi_mode=blend" if clip.get("blend", True) else f"fps={FPS}")
         else:
             chain.append(f"fps={FPS}")
+        chain += _clip_fx_chain(clip, editor)   # [extensão] ajustes/efeitos por clipe
         chain.append("format=yuv420p")
         filters.append(f"[{clip_input[i]}:v]{','.join(chain)}[v{i}]")
     for j in black_input:
@@ -147,10 +231,20 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
 
     order = "".join(f"[v{i}]" if kind == "clip" else f"[b{i}]" for kind, i in segments)
     filters.append(f"{order}concat=n={len(segments)}:v=1:a=0[vcat]")
+    # composição no canvas 1920x1080: fade → camadas do editor (overlay por janela de tempo) → rescale
+    base = "vcat"
     if master and fade_out > 0:
-        filters.append(f"[vcat]fade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}[vout]")
+        filters.append(f"[vcat]fade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}[vfade]")
+        base = "vfade"
+    for k, (idx, ov) in enumerate(overlay_inputs):
+        filters.append(f"[{idx}:v]scale={WIDTH}:{HEIGHT}[ovs{k}]")
+        filters.append(f"[{base}][ovs{k}]overlay=0:0:enable='between(t,{_num(ov['start'])},{_num(ov['end'])})'[vov{k}]")
+        base = f"vov{k}"
+    if (out_w, out_h) != (WIDTH, HEIGHT):
+        filters.append(f"[{base}]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
+                       f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[vout]")
     else:
-        filters.append("[vcat]null[vout]")
+        filters.append(f"[{base}]null[vout]")
 
     # --- áudio: música cortada para o ápice + SFX (só no master) ---
     audio_labels: list[str] = []
@@ -179,8 +273,8 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
     if has_audio:
         args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
     dest = Path(out) if out else root / "edit" / conf["name"]
-    args += ["-c:v", "libx264", "-preset", conf["preset"], "-crf", conf["crf"], "-pix_fmt", "yuv420p",
-             "-r", str(FPS), "-movflags", "+faststart", "-t", _num(duration), "-f", "mp4",
+    args += ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p",
+             "-r", str(out_fps), "-movflags", "+faststart", "-t", _num(duration), "-f", "mp4",
              f"{dest}.part"]
     return args, duration
 
@@ -207,9 +301,14 @@ def _adjust_to_real_durations(root: Path, timeline: dict, job: dict) -> None:
         job["done"] += 1
 
 
-def start_render(pid: str, target: str = "master") -> dict:
-    """Dispara o render em thread. RuntimeError se já houver job para o projeto (-> 409)."""
+def start_render(pid: str, target: str = "master", export: dict | None = None) -> dict:
+    """Dispara o render em thread. RuntimeError se já houver job para o projeto (-> 409).
+
+    `export` (opcional, [extensão]) = {width, height, fps, quality} para o modal de exportação;
+    ausente = master 1920x1080/30 como a aula.
+    """
     root = project_dir(pid)
+    opts = export or {}
     if target not in TARGETS:
         raise ValueError(f"target inválido: {target} (use 'rough' ou 'master')")
     stored = load_timeline(pid)
@@ -244,7 +343,19 @@ def start_render(pid: str, target: str = "master") -> dict:
                 job["log"].append(f"black at {_num(working['blacks'][j]['at'])} dur {_num(working['blacks'][j]['dur'])}")
         job["done"] += 1
 
-        args, duration = build_filtergraph(root, working, target)
+        overlays = []
+        if target == "master":
+            try:
+                overlays = burnin.render_layer_pngs(root, working.get("editor") or {}, WIDTH, HEIGHT,
+                                                    root / "edit" / "_overlays")
+                if overlays:
+                    job["log"].append(f"camadas do editor: {len(overlays)} (texto/legenda/overlay) [extensão]")
+            except Exception as e:                       # burn-in nunca derruba o render do backbone
+                job["log"].append(f"aviso: camadas do editor não rasterizadas: {e}")
+                logger.warning("edit: burn-in falhou em %s: %s", pid, e)
+        args, duration = build_filtergraph(root, working, target, width=opts.get("width"),
+                                           height=opts.get("height"), fps=opts.get("fps"),
+                                           quality=opts.get("quality"), overlays=overlays)
         job["duration"] = duration
         music = (working.get("music") or {}).get("file")
         n_sfx = len(working.get("sfx") or []) if target == "master" else 0
@@ -256,7 +367,9 @@ def start_render(pid: str, target: str = "master") -> dict:
             logger.warning("edit: rough sem música em %s", pid)
         job["done"] += 1
 
-        job["log"].append(f"encode libx264 crf {conf['crf']} preset {conf['preset']}")
+        ow, oh = _out_size(opts.get("width"), opts.get("height"))
+        ocrf, opreset = _quality(opts.get("quality"), conf)
+        job["log"].append(f"encode libx264 {ow}x{oh}@{_out_fps(opts.get('fps'))} crf {ocrf} preset {opreset}")
         stderr_tail = ""
         try:
             proc = ff.run(args, timeout=RENDER_TIMEOUT)
@@ -264,9 +377,11 @@ def start_render(pid: str, target: str = "master") -> dict:
             part.replace(final)
         except Exception as e:
             part.unlink(missing_ok=True)
+            shutil.rmtree(root / "edit" / "_overlays", ignore_errors=True)
             stderr_tail = str(e)[-400:]
-            _write_job_file(root, target, args, started, duration, None, stderr_tail)
+            _write_job_file(root, target, args, started, duration, None, stderr_tail, opts)
             raise
+        shutil.rmtree(root / "edit" / "_overlays", ignore_errors=True)
         probed = 0.0
         try:
             probed = float(ff.probe(final).get("duration") or 0)
@@ -275,20 +390,22 @@ def start_render(pid: str, target: str = "master") -> dict:
         job["log"].append(f"ok {rel} {probed:.2f}s (previsto {duration:.2f}s)")
         job["added"] = 1
         job["done"] += 1
-        _write_job_file(root, target, args, started, duration, probed, stderr_tail)
+        _write_job_file(root, target, args, started, duration, probed, stderr_tail, opts)
         logger.info("edit: render %s de %s concluído em %.2fs", target, pid, probed)
 
     return registry.start(pid, total, run, target=target, output=rel, duration=0.0)
 
 
 def _write_job_file(root: Path, target: str, args: list[str], started: str,
-                    expected: float, probed: float | None, stderr_tail: str) -> None:
+                    expected: float, probed: float | None, stderr_tail: str,
+                    export: dict | None = None) -> None:
     jobs = root / "jobs"
     jobs.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     payload = {"target": target, "args": args, "started": started,
                "finished": datetime.now().isoformat(timespec="seconds"),
-               "duration_expected": expected, "duration_probed": probed, "stderr_tail": stderr_tail}
+               "duration_expected": expected, "duration_probed": probed, "stderr_tail": stderr_tail,
+               "export": export or {}}
     (jobs / f"edit_render_{stamp}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1))
 
 

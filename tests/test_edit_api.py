@@ -281,42 +281,48 @@ def test_timeline_accepts_zoom_and_loudnorm(client, project, root):
     assert client.put(url(project, "/timeline"), json=tl).status_code == 422
 
 
-def test_step_screen_carries_the_lesson_texts(client):
-    """Auditoria 8.5, 8.9, 8.10 + convenção de tela da wave 2 (textos revistos na wave 4)."""
-    html = client.get("/steps/edit/view.html").text
-    js = client.get("/steps/edit/view.js").text
-    assert "Etapa 7 · aula 014" in html
-    assert '<section id="guide" class="guide"></section>' in html
-    # Wave 4 (8.23): a lista da aula vive no texto da dropzone, como no protótipo.
-    assert "gelo, ambiência, respiração, impacto" in html, "lista literal da aula (8.9)"
-    assert "publique o seu trabalho, mesmo imperfeito" in html, "dever de casa da aula (8.10)"
-    assert "[extensão]" in html, "normalizar volume é extensão do Studio"
-    assert 'id="editRuler"' in html and "▾ cortes nos impactos" in html, "régua de impactos (8.5)"
-    # Wave 4 (8.18/8.19/8.26): o texto de aula saiu da tela e continua no `guide.py`.
-    assert "<details" not in html, "o protótipo só desenha `details.lesson` na etapa 1 (regra 4)"
-    assert "pequeno zoom" not in html and "corte seco" not in html
-    assert "Studio.ui" in js and "destroy()" in js and "ctx.guide()" in js
+def test_media_upload_and_list(client, project, root):
+    """[extensão] upload de imagem/vídeo novo para o editor: entra em edit/candidates e é listado."""
+    from tests.conftest import image_bytes
+    r = client.post(url(project, "/media/upload"), files=[("files", ("logo.png", image_bytes(), "image/png"))])
+    assert r.status_code == 200 and r.json()["added"] == 1
+    media = client.get(url(project, "/media")).json()
+    assert len(media) == 1 and media[0]["kind"] == "image" and media[0]["file"].startswith("edit/candidates/")
+    # extensão não suportada -> 422; e a lista de SFX não mistura imagem
+    assert client.post(url(project, "/media/upload"), files=[("files", ("x.txt", b"nope", "text/plain"))]).status_code == 422
+    assert client.get(url(project, "/sfx")).json() == []
 
 
-def test_step_screen_consumes_the_shell_catalog(client):
-    """Wave 4 (ADH-OS-20260826-15): a tela é o protótipo — 3 painéis, sem `details.lesson`."""
+def test_step_screen_is_the_editor_extension(client):
+    """Etapa 8 vira o EDITOR de vídeo completo [extensão] (ADR-030). A tela é o editor, marcada
+    como extensão, com o slot do guia da aula 014 preservado — a fidelidade ao curso vive no
+    hook `guide.py` (coberto por test_edit_guide), acessível no editor pelo botão Guia."""
     html = client.get("/steps/edit/view.html").text
     js = client.get("/steps/edit/view.js").text
-    # 03 painéis numerados com `.pn`, na ordem visual do protótipo
-    assert html.count('<span class="pn">') == 3
-    assert '<span class="pn">01</span>' in html and '<span class="pn">03</span>' in html
-    # régua da trilha: `.beats.sm` pelo helper + eixo `.beats-axis` do protótipo
-    assert 'id="editRuler"' in html and 'class="beats-axis' in html
-    assert "ui.beats(" in js and "sm: true" in js
-    # clipes em `.rowlist`/`.clip-row` com `input.mini`
-    assert 'id="clips" class="rowlist"' in html
-    assert "clip-row" in js and "cin mini" in js
-    # campos de offset/fade na variante maior do catálogo e linha de SFX única (8.21/8.24)
-    assert 'class="mini lg ed-num"' in html and 'class="mini lg w44 ed-num"' in html
-    assert 'class="sfx-list"' in html and "sfx-line" in js
-    # os hooks de JS continuam existindo (as ações da aula não sumiram, só saíram do repouso)
-    for hook in ("cin", "cout", "cspeed", "czoom", "cblend", "black", "mv", "del", "sat", "sgain"):
-        assert hook in js, hook
-    assert 'class="acts"' in js and 'class="inline more"' in js, "ações e zoom só no hover (8.15/8.16)"
-    # nada mais é posicionado/colorido por style inline (era o desenho antigo da régua)
-    assert "position:absolute" not in js and "crimson" not in js
+    assert "Etapa 7 · aula 014" in html, "cabeçalho da aula preservado"
+    assert "[extensão]" in html, "o editor completo é uma extensão do curso, marcada como tal"
+    assert '<section id="guide" class="guide"></section>' in html, "slot do guia da aula preservado"
+    assert 'class="ved"' in html and 'id="ved"' in html, "container do editor"
+    # o plugin continua no contrato do shell (registro, ui, ciclo de vida, guia)
+    assert 'Studio.register("edit"' in js
+    assert "Studio.ui" in js and "destroy()" in js and "onProject()" in js and "ctx.guide()" in js
+
+
+def test_step_editor_reuses_design_system_and_lesson_stays_in_guide(client, project):
+    """O editor reusa o design system (tokens `--*` + helpers de `Studio.ui`) em vez de inventar,
+    e a aula 014 continua carregando seus textos no guia (fidelidade preservada, ADR-030)."""
+    html = client.get("/steps/edit/view.html").text
+    js = client.get("/steps/edit/view.js").text
+    # segue o protótipo canônico: mesmas FONTES do design system + tema teal escopado em vars `--v*`
+    assert "Bricolage Grotesque" in html and "IBM Plex Mono" in html and "Instrument Sans" in html
+    assert "--vac:#4FC8D9" in html and "--vbg" in html, "paleta do protótipo escopada em vars locais"
+    assert "crimson" not in js and "crimson" not in html, "sem cores soltas fora do tema"
+    # reutiliza os helpers de Studio.ui (modal, drop, upload, progressJob) em vez de reinventar
+    for helper in ("ui.modal(", "ui.drop(", "ui.upload(", "ui.progressJob("):
+        assert helper in js, helper
+    # o botão Guia abre a aula 014 (guide.py) dentro do editor
+    assert "openGuide" in js and "aula 014" in js
+    # e o guia da aula continua entregando os textos do curso (SFX de formiguinha + dever de casa)
+    g = client.get(f"/api/projects/{project}/guide/edit").json()
+    assert "SFX, ambiência, respiração, gelo, impacto" in g["what"]
+    assert "Vou publicar mesmo imperfeito — o primeiro sempre será o pior." in g["checklist"]

@@ -15,11 +15,25 @@ A timeline é o único estado da etapa: `projects/<pid>/edit/timeline.json` (ADR
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from ..common import ffmpeg as ff
 from ..common import ingest
 from ..refs.service import project_dir
+from . import editor as ed  # [extensão]: modelo do editor completo (bloco `editor`)
+
+_CLIP_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _clip_id(raw: dict) -> str:
+    """Id estável do clipe (preservado se já existir, gerado se faltar). [extensão]
+
+    Serve para o editor referenciar o clipe (propriedades visuais por clipe, transições) sem
+    depender do índice, que muda ao reordenar/dividir. Não afeta a montagem da aula 014.
+    """
+    cid = _CLIP_ID_RE.sub("", str(raw.get("id") or "").strip())[:64]
+    return cid or ed.new_id("c")
 
 # Padrão de saída da wave (decisão 5 do lote): master 1920x1080 / 30 fps / H.264 + AAC.
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
@@ -203,7 +217,7 @@ def validate_timeline(root: Path, timeline: dict) -> dict:
         if source and end > source + TOL:
             raise ValueError(f"{label}: out ({end}) passa da duração do take ({source})")
         _resolve(root, raw.get("file", ""), label)
-        clips.append({"scene": scene, "shot": shot, "take": take, "file": raw["file"],
+        clips.append({"id": _clip_id(raw), "scene": scene, "shot": shot, "take": take, "file": raw["file"],
                       "in": round(start, 3), "out": round(end, 3), "speed": round(speed, 3),
                       "blend": bool(raw.get("blend", True)), "zoom": round(zoom, 3)})
 
@@ -240,9 +254,14 @@ def validate_timeline(root: Path, timeline: dict) -> dict:
     if not FADE_RANGE[0] <= fade_out <= FADE_RANGE[1]:
         raise ValueError(f"fade_out {fade_out} fora de {FADE_RANGE[0]}–{FADE_RANGE[1]} s")
 
-    return {"clips": clips, "blacks": blacks, "music": {"file": mfile, "offset": round(offset, 3)},
-            "sfx": sfx, "fade_out": round(fade_out, 3),
-            "loudnorm": bool(timeline.get("loudnorm", True))}   # [extensão]: a aula não fala de loudness
+    result = {"clips": clips, "blacks": blacks, "music": {"file": mfile, "offset": round(offset, 3)},
+              "sfx": sfx, "fade_out": round(fade_out, 3),
+              "loudnorm": bool(timeline.get("loudnorm", True))}   # [extensão]: a aula não fala de loudness
+    # [extensão] bloco `editor` opcional: só entra no round-trip quando existe (retrocompat total).
+    editor_block = ed.normalize_editor(root, timeline.get("editor"))
+    if editor_block is not None:
+        result["editor"] = editor_block
+    return result
 
 
 def clip_length(clip: dict) -> float:
@@ -447,3 +466,35 @@ def list_sfx(pid: str) -> list[dict]:
     return [{"id": c["id"], "name": c.get("name", ""), "file": f"edit/candidates/{c['file']}",
              "prompt": c.get("prompt", ""), "duration": c.get("duration", 0.0), "imported": c.get("imported", "")}
             for c in ingest.load_candidates(root, "edit") if c.get("kind") == "audio"]
+
+
+# ---------- mídia importada (imagens/vídeos) [extensão] do editor ----------
+def import_media(pid: str, files: list[tuple[str, bytes]]) -> dict:
+    """Upload de imagens/vídeos novos para o editor (overlay de imagem ou clipe de vídeo).
+
+    Reusa a API transversal `ingest` (dedupe por conteúdo, probe de duração no vídeo). Não é da
+    aula 014 — é [extensão]; fica em `edit/candidates/` como os SFX, separado por `kind`.
+    """
+    root = project_dir(pid)
+    img, vid = [], []
+    for name, data in files:
+        ext = Path(name or "").suffix.lower()
+        if ext in ingest.MEDIA_EXT.get("video", ()):
+            vid.append((name, data))
+        elif ext in ingest.MEDIA_EXT.get("image", ()):
+            img.append((name, data))
+        else:
+            raise ValueError(f"{name}: tipo não suportado — envie imagem ou vídeo")
+    added = 0
+    if img:
+        added += ingest.import_upload(root, "edit", img, kind="image").get("added", 0)
+    if vid:
+        added += ingest.import_upload(root, "edit", vid, kind="video").get("added", 0)
+    return {"added": added}
+
+
+def list_media(pid: str) -> list[dict]:
+    root = project_dir(pid)
+    return [{"id": c["id"], "name": c.get("name", ""), "file": f"edit/candidates/{c['file']}",
+             "kind": c.get("kind"), "duration": c.get("duration", 0.0)}
+            for c in ingest.load_candidates(root, "edit") if c.get("kind") in ("image", "video")]

@@ -11,11 +11,13 @@ from ...refs import service as refs
 
 router = APIRouter(tags=["edit"])
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_MEDIA_BYTES = 200 * 1024 * 1024   # [extensão] vídeos/imagens do editor podem ser maiores que SFX
 NO_FFMPEG = "ffmpeg não disponível — instale em ~/.local/bin para renderizar e exportar o último frame"
 
 
 class ClipReq(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
+    id: str | None = None      # [extensão]: id estável do clipe (editor)
     scene: str = ""
     shot: str = ""
     take: str = ""
@@ -50,6 +52,7 @@ class TimelineReq(BaseModel):
     sfx: list[SfxReq] = []
     fade_out: float = edit.DEFAULT_FADE_OUT
     loudnorm: bool = True      # [extensão]: a aula 014 não fala de loudness (auditoria 8.4)
+    editor: dict | None = None    # [extensão]: modelo do editor completo (validado em service/editor.py)
 
 
 class ProposeReq(BaseModel):
@@ -66,6 +69,11 @@ class LastFrameReq(BaseModel):
 
 class RenderReq(BaseModel):
     target: str = "master"
+    # [extensão] opções do modal de exportação; ausentes = master 1920x1080/30 (aula 014)
+    width: int | None = None
+    height: int | None = None
+    fps: int | None = None
+    quality: str | None = None
 
 
 def _translate(e: Exception) -> HTTPException:
@@ -152,6 +160,28 @@ async def upload_sfx(pid: str, files: list[UploadFile] = File(...), prompt: str 
         raise HTTPException(422, str(e)) from e
 
 
+@router.get("/api/projects/{pid}/edit/media")
+def list_media(pid: str):
+    refs.project_dir(pid)
+    return edit.list_media(pid)
+
+
+@router.post("/api/projects/{pid}/edit/media/upload")
+async def upload_media(pid: str, files: list[UploadFile] = File(...)):  # noqa: B008
+    """[extensão] Upload de imagens/vídeos novos para o editor (overlay ou clipe)."""
+    refs.project_dir(pid)
+    payload = []
+    for f in files:
+        data = await f.read()
+        if len(data) > MAX_MEDIA_BYTES:
+            raise HTTPException(413, f"{f.filename}: arquivo acima de {MAX_MEDIA_BYTES // (1024 * 1024)} MB")
+        payload.append((f.filename or "media", data))
+    try:
+        return edit.import_media(pid, payload)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
 @router.post("/api/projects/{pid}/edit/render")
 def start_render(pid: str, req: RenderReq):
     """`rough` é a prévia de ritmo (sai sem música, com aviso); `master` exige a trilha da etapa 6."""
@@ -159,7 +189,8 @@ def start_render(pid: str, req: RenderReq):
     if not ff.available():
         raise HTTPException(409, NO_FFMPEG)
     try:
-        return render.start_render(pid, req.target)
+        export = {"width": req.width, "height": req.height, "fps": req.fps, "quality": req.quality}
+        return render.start_render(pid, req.target, export)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e)) from e
     except ValueError as e:
