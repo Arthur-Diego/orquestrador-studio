@@ -1291,3 +1291,28 @@ def elemento_forma(page, ctx):
                           "id da forma e o preview escreve o caractere no lugar de desenhar a forma", ev)
     finally:
         _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-55", "vídeo do painel Mídia vai para a faixa VÍDEO 2 (overlay com src de vídeo)")
+def video_na_v2(page, ctx):
+    orig = _tl_api(page, ctx)
+    try:
+        _painel(page, "media")
+        botao = page.locator("#mList .ved-mcard[data-cid] .mv2")
+        if not botao.count():
+            return H.Resultado.falha("nenhum card de vídeo do painel Mídia oferece enviar para VÍDEO 2 "
+                                     "— `addMediaItem` manda todo vídeo para o backbone (VÍDEO 1)")
+        botao.first.click()
+        ok, tl = _esperar_disco(page, ctx, lambda x: len(_track(x, "v2").get("items") or []) == 1)
+        it = (_track(tl, "v2").get("items") or [{}])[0]
+        na_timeline = page.locator(".ved-lane[data-tid='v2'] .ved-clip[data-uid]").count()
+        no_preview = page.locator("#edStage .ved-layer.overlay video").count()
+        ev = H.evidencia(page, ctx, "C-EDIT-55-video-v2", full_page=False)
+        return H.verifica(ok and str(it.get("src", "")).endswith(".mp4") and na_timeline == 1
+                          and no_preview == 1 and len(tl.get("clips") or []) == len(orig["clips"]),
+                          f"overlay de vídeo na v2: src={it.get('src')} ({it.get('start')}→{it.get('end')})",
+                          f"item no disco={it}; faixa v2 na timeline={na_timeline} <video> no preview="
+                          f"{no_preview}; clipes do backbone={len(tl.get('clips') or [])} "
+                          f"(esperado {len(orig['clips'])}, o vídeo não pode virar clipe do VÍDEO 1)", ev)
+    finally:
+        _restaurar(page, ctx, orig)

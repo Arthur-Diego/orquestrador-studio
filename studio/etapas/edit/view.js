@@ -520,19 +520,24 @@ Studio.register("edit", (ctx) => {
       <div class="ved-mgrid" id="mList"></div>`;
     if (!clips.length) { const b = document.getElementById("mReset"); if (b) b.onclick = resetTimeline; }
     const list = document.getElementById("mList");
-    const clipCards = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("");
-    const mediaCards = media.map((m) => `<div class="ved-mcard" draggable="true" data-mid="${m.id}" title="${esc(m.name)}"><div class="th">${m.kind === "video" ? `<video preload="metadata" muted src="${ctx.files(m.file)}#t=0.1"></video><span class="ov">▶</span>` : `<img src="${ctx.files(m.file)}">`}</div><div class="cap"><div class="nm">${esc(m.name)}</div><div class="mt">${m.kind === "video" ? (m.duration || 0).toFixed(1) + "s" : "img"}</div></div></div>`).join("");
+    const clipCards = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span><button class="mv2" data-v2c="${c.id}" title="Enviar para a faixa VÍDEO 2">→ VÍDEO 2</button>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("");
+    const mediaCards = media.map((m) => `<div class="ved-mcard" draggable="true" data-mid="${m.id}" title="${esc(m.name)}"><div class="th">${m.kind === "video" ? `<video preload="metadata" muted src="${ctx.files(m.file)}#t=0.1"></video><span class="ov">▶</span><button class="mv2" data-v2="${m.id}" title="Enviar para a faixa VÍDEO 2">→ VÍDEO 2</button>` : `<img src="${ctx.files(m.file)}">`}</div><div class="cap"><div class="nm">${esc(m.name)}</div><div class="mt">${m.kind === "video" ? (m.duration || 0).toFixed(1) + "s" : "img"}</div></div></div>`).join("");
     list.innerHTML = clipCards + mediaCards + `<div class="ved-mcard add" id="mUpload"><span style="font-size:18px">⬆</span>upload +<span class="mt">novo</span></div>`;
     document.getElementById("mSearch").oninput = (e) => { const q = e.target.value.toLowerCase(); list.querySelectorAll(".ved-mcard[data-cid],.ved-mcard[data-mid]").forEach((t) => { t.style.display = t.title.toLowerCase().includes(q) ? "" : "none"; }); };
     document.getElementById("mUpload").onclick = () => document.getElementById("mUp").click();
     document.getElementById("mUp").onchange = (e) => { if (e.target.files.length) uploadMedia([...e.target.files]); };
     ui.drop(document.getElementById("mDrop"), uploadMedia);
     list.querySelectorAll("[data-cid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "clip:" + t.dataset.cid)); t.addEventListener("dblclick", () => addPipelineClip(t.dataset.cid)); });
+    list.querySelectorAll("[data-v2c]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); clipParaV2(b.dataset.v2c); });
+    list.querySelectorAll("[data-v2]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); addMediaItem(media.find((m) => m.id === b.dataset.v2), "v2"); });
     list.querySelectorAll("[data-mid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "media:" + t.dataset.mid)); t.addEventListener("dblclick", () => addMediaItem(media.find((m) => m.id === t.dataset.mid))); });
   }
   function addPipelineClip(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return; commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }); }
-  function addMediaItem(m) {
+  /** `faixa === "v2"` manda o vídeo para a faixa VÍDEO 2 (overlay com `src` de vídeo);
+   *  sem faixa, vídeo entra no backbone (VÍDEO 1) e imagem vira overlay, como antes. */
+  function addMediaItem(m, faixa) {
     if (!m) return;
+    if (m.kind === "video" && faixa === "v2") return addOverlayVideo(m.file, num(m.duration, 3), m.name);
     if (m.kind === "video") commit("adicionar vídeo", () => St.timeline.clips.push({ id: newId("c"), scene: "upload", shot: (m.name || "media").replace(/\W+/g, "_"), take: "1", file: m.file, in: 0, out: Math.max(num(m.duration, 3), 0.5), speed: 1, blend: true, zoom: 1 }));
     else commit("adicionar imagem", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), src: m.file, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
   }
@@ -774,7 +779,12 @@ Studio.register("edit", (ctx) => {
     });
     // drop de mídia
     main.addEventListener("dragover", (e) => e.preventDefault());
-    main.addEventListener("drop", (e) => { e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || ""); if (d.startsWith("clip:")) addPipelineClip(d.slice(5)); else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6))); });
+    main.addEventListener("drop", (e) => {
+      e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || "");
+      const lane = e.target.closest(".ved-lane"), faixa = lane ? lane.dataset.tid : null;
+      if (d.startsWith("clip:")) { if (faixa === "v2") clipParaV2(d.slice(5)); else addPipelineClip(d.slice(5)); }
+      else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6)), faixa);
+    });
   }
   function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); setStatus("dirty"); scheduleSave(); }
 
@@ -903,6 +913,12 @@ Studio.register("edit", (ctx) => {
     commit("adicionar " + type, () => { const t = etrack(tid, true); const it = { id: newId("tx"), start: +St.playhead.toFixed(2), end: +(St.playhead + 2.5).toFixed(2), text, style: { size: 40, weight: 700, align: "center", color: "#FFFFFF", shadow: true, ...style }, transform: { x: .5, y: type === "caption" ? .82 : .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, anim: { in: "fade", out: "fade" } }; t.items.push(it); St.selection = [it.id]; });
     renderPanel();
   }
+  /** Vídeo na faixa VÍDEO 2: overlay com `src` de vídeo (o preview já compõe por cima do V1). */
+  function addOverlayVideo(file, dur, rotulo) {
+    if (!file) return;
+    commit("vídeo na VÍDEO 2", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + Math.max(num(dur, 3), .5)).toFixed(2), src: file, text: rotulo || "", transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+  }
+  function clipParaV2(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (c) addOverlayVideo(c.file, clipLen(c), nameOf(c)); }
   function addOverlayShape(shape, nome) {
     commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: nome || shape, shape, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
   }
