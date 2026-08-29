@@ -7,7 +7,6 @@ etapa é um plugin em `studio/etapas/<id>/` (router + view + guia opcional) desc
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -16,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import higgsfield as hf
+from .common import atomic
 from .common import guide as guide_lib
 from .common import reset as reset_lib
 from .config import MOODBOARDS_DIR, PROJECTS_DIR, WEB_DIR
@@ -153,11 +153,13 @@ def _read_project(pid: str) -> dict:
 
 
 def _write_project(pid: str, meta: dict) -> None:
-    """Escrita atômica: grava em `.tmp` e troca — nunca deixa `project.json` pela metade."""
-    path = service.project_dir(pid) / "project.json"
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=1))
-    os.replace(tmp, path)
+    """Escrita atômica com temporário único (`common.atomic`) — nunca deixa `project.json` pela metade.
+
+    O temporário de nome fixo (`project.json.tmp`) era o MESMO que a etapa 2 usa ao gravar a vibe:
+    as duas escritas colidiam e uma estourava `FileNotFoundError` no `os.replace`.
+    """
+    atomic.write_json_atomic(service.project_dir(pid) / "project.json", meta,
+                             ensure_ascii=False, indent=1)
 
 
 def _guide_of(pid: str, plugin: dict) -> dict:

@@ -96,3 +96,89 @@ def test_higgsfield_history_media_by_kind(monkeypatch):
         hf.history_media("3d")
     monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (0, json.dumps({"id": "g", "video_url": "https://c/out.mp4"}), ""))
     assert hf.generate("kling3_0", {"prompt": "p"})["urls"] == ["https://c/out.mp4"]
+
+
+# ---------- escrita atômica (AP-22) ----------
+def _tmps(d):
+    return [p.name for p in d.iterdir() if p.name.endswith(".tmp")]
+
+
+def test_atomic_write_helpers_grava_conteudo_e_nao_deixa_tmp(tmp_path):
+    import json
+
+    from studio.common import atomic
+    alvo = tmp_path / "sub" / "a.json"
+    atomic.write_json_atomic(alvo, {"vibe": "café à noite"}, ensure_ascii=False, indent=1)
+    assert json.loads(alvo.read_text()) == {"vibe": "café à noite"}
+    assert alvo.read_text() == '{\n "vibe": "café à noite"\n}', "formato do arquivo preservado"
+    atomic.write_text_atomic(alvo.with_name("b.txt"), "linha\n")
+    atomic.write_bytes_atomic(alvo.with_name("c.bin"), b"\x00\x01", fsync=True)
+    assert alvo.with_name("b.txt").read_text() == "linha\n" and alvo.with_name("c.bin").read_bytes() == b"\x00\x01"
+    assert atomic.write_json_atomic(alvo, [1], newline=True) == alvo and alvo.read_text() == "[1]\n"
+    assert _tmps(alvo.parent) == [], "nenhum temporário sobrando"
+
+
+def test_atomic_write_falha_preserva_destino_e_nao_deixa_lixo(tmp_path):
+    from studio.common import atomic
+    alvo = tmp_path / "a.json"
+    atomic.write_text_atomic(alvo, "bom")
+
+    with pytest.raises(TypeError):                   # falha DEPOIS de abrir o temporário
+        atomic.write_bytes_atomic(alvo, "não é bytes")
+    with pytest.raises(RuntimeError):
+        with atomic.atomic_path(alvo) as tmp:
+            tmp.write_text("meio")
+            raise RuntimeError("boom")
+    assert alvo.read_text() == "bom", "o arquivo bom continua de pé"
+    assert _tmps(tmp_path) == [], "temporário removido na falha"
+
+
+def test_atomic_write_concorrente_nao_estoura(tmp_path):
+    """Com temporário de nome fixo, uma das threads estourava FileNotFoundError no os.replace."""
+    from studio.common import atomic
+    alvo = tmp_path / "project.json"
+    largada, erros = threading.Barrier(3), []
+
+    def grava(n):
+        largada.wait(5)
+        for i in range(40):
+            try:
+                atomic.write_json_atomic(alvo, {"t": n, "i": i}, ensure_ascii=False, indent=1)
+            except Exception as e:  # noqa: BLE001 — o teste é justamente "não pode levantar"
+                erros.append(f"{type(e).__name__}: {e}")
+
+    ts = [threading.Thread(target=grava, args=(n,)) for n in range(3)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(20)
+    import json
+    assert erros == []
+    assert json.loads(alvo.read_text())["i"] == 39, "sempre um JSON íntegro de UMA das escritas"
+    assert _tmps(tmp_path) == []
+
+
+def test_project_lock_reentrante_e_por_raiz(tmp_path):
+    from studio.common import atomic
+    with atomic.project_lock(tmp_path):
+        with atomic.project_lock(tmp_path):          # reentrante: não trava o próprio fluxo
+            pass
+    ordem, solto = [], threading.Event()
+
+    def segura():
+        with atomic.project_lock(tmp_path / "a"):
+            ordem.append("entrou")
+            solto.wait(5)
+            ordem.append("saiu")
+
+    t = threading.Thread(target=segura)
+    t.start()
+    for _ in range(50):
+        if ordem:
+            break
+        threading.Event().wait(0.05)
+    with atomic.project_lock(tmp_path / "b"):        # outra raiz não espera
+        ordem.append("outra-raiz")
+    solto.set()
+    t.join(10)
+    assert ordem == ["entrou", "outra-raiz", "saiu"]

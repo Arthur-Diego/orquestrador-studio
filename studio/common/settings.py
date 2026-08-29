@@ -17,12 +17,11 @@ números; este módulo conhece as escolhas e o histórico.
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import STATE_DIR
-from . import pricing
+from . import atomic, pricing
 
 CONFIG_PATH = STATE_DIR / "config.json"
 LEDGER_PATH = STATE_DIR / "spend-ledger.jsonl"
@@ -84,10 +83,9 @@ def _read(path: Path) -> dict:
 
 
 def _write_atomic(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
-    os.replace(tmp, path)
+    """Temporário ÚNICO (`common.atomic`): `config.json` é global e escrito de dentro das threads
+    de job, então duas gravações simultâneas disputavam o mesmo `config.json.tmp`."""
+    atomic.write_json_atomic(path, data, ensure_ascii=False, indent=1)
 
 
 def _project_config_path(pid: str) -> Path:

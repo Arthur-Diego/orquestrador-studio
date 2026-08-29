@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import higgsfield as hf
+from ..common import atomic
 from ..common import ffmpeg as ff
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
@@ -279,22 +280,22 @@ def start_render(pid: str, formats: list[str]) -> dict:
 
     def run(job: dict) -> None:
         for i, fmt in enumerate(fmts):
-            tmp = edir / f".{fmt}.tmp.mp4"
+            dest = edir / f"{fmt}.mp4"
             copy = _can_copy(fmt, info)
             t0 = time.monotonic()
-            try:
-                ff.run(["-i", str(master), *_filter_for(fmt, info["width"], info["height"], info.get("vcodec") or ""),
-                        str(tmp)], timeout=TIMEOUT_S)
-            except subprocess.TimeoutExpired as e:
-                tmp.unlink(missing_ok=True)
-                log.warning("export render pid=%s format=%s ok=False error=timeout", pid, fmt)
-                raise RuntimeError(f"timeout ao renderizar {fmt}") from e
-            except Exception as e:  # noqa: BLE001
-                tmp.unlink(missing_ok=True)
-                log.warning("export render pid=%s format=%s ok=False error=%s", pid, fmt, str(e)[-400:])
-                raise
-            dest = edir / f"{fmt}.mp4"
-            tmp.replace(dest)   # escrita atômica: o arquivo final nunca fica parcial
+            # `atomic_path`: temporário ÚNICO no diretório do destino + troca atômica no fim (o
+            # arquivo final nunca fica parcial) e remoção do temporário em qualquer falha.
+            with atomic.atomic_path(dest, suffix=".tmp.mp4") as tmp:
+                try:
+                    ff.run(["-i", str(master),
+                            *_filter_for(fmt, info["width"], info["height"], info.get("vcodec") or ""),
+                            str(tmp)], timeout=TIMEOUT_S)
+                except subprocess.TimeoutExpired as e:
+                    log.warning("export render pid=%s format=%s ok=False error=timeout", pid, fmt)
+                    raise RuntimeError(f"timeout ao renderizar {fmt}") from e
+                except Exception as e:  # noqa: BLE001
+                    log.warning("export render pid=%s format=%s ok=False error=%s", pid, fmt, str(e)[-400:])
+                    raise
             got = _probe_full(dest)
             elapsed = time.monotonic() - t0
             job["added"] += 1
@@ -535,14 +536,13 @@ def start_reframe(pid: str, aspect_ratio: str) -> dict:
         urls = [u for u in res.get("urls") or [] if Path(u.split("?")[0]).suffix.lower() in VIDEO_EXT]
         if not urls:
             raise RuntimeError("CLI não devolveu vídeo")
-        tmp = edir / f".{fmt}.reframe.tmp.mp4"
-        try:
-            hf.download(urls[0], tmp)
-        except Exception as e:  # noqa: BLE001
-            tmp.unlink(missing_ok=True)
-            raise RuntimeError(f"download falhou: {e}") from e
         dest = edir / f"{fmt}.mp4"
-        tmp.replace(dest)
+        # Temporário ÚNICO + troca atômica; em falha o `{fmt}.mp4` bom continua de pé.
+        with atomic.atomic_path(dest, suffix=".reframe.tmp.mp4") as tmp:
+            try:
+                hf.download(urls[0], tmp)
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(f"download falhou: {e}") from e
         got = _probe_full(dest) if ff.available() else {"width": 0, "height": 0, "duration": 0.0}
         job["added"] += 1
         job["done"] = 1

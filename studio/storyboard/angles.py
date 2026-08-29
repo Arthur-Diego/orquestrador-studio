@@ -30,7 +30,7 @@ from pathlib import Path
 from PIL import Image
 
 from .. import higgsfield as hf
-from ..common import ingest
+from ..common import atomic, ingest
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -177,15 +177,15 @@ def _write_png(data: bytes, dest: Path) -> None:
     """Grava sempre PNG de verdade — o contrato da wave nomeia `base.png`/`ref.png`.
 
     Conteúdo que a Pillow não abre é erro do usuário (422), nunca 500."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_name(dest.name + ".tmp")
+    # `atomic_path` empresta um temporário ÚNICO ao lado do destino e faz a troca atômica no fim
+    # (um envio inválido não destrói a base já pronta). Com nome fixo, dois envios simultâneos da
+    # mesma cena disputavam o mesmo `.tmp`.
     try:
-        with Image.open(io.BytesIO(data)) as im:
-            im.convert("RGB").save(tmp, "PNG")
+        with atomic.atomic_path(dest) as tmp:
+            with Image.open(io.BytesIO(data)) as im:
+                im.convert("RGB").save(tmp, "PNG")
     except OSError as e:      # UnidentifiedImageError e afins
-        tmp.unlink(missing_ok=True)
         raise ValueError("arquivo não é uma imagem válida (png, jpg, jpeg ou webp)") from e
-    tmp.replace(dest)         # troca atômica: um envio inválido não destrói a base já pronta
 
 
 def _check_ext(name: str) -> None:

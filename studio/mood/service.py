@@ -18,14 +18,13 @@ O texto de aula (achar a vibe pelo sentimento, grid de 4, teto de 8) continua no
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
 
 from .. import higgsfield as hf
-from ..common import ingest, prompter, settings
+from ..common import atomic, ingest, prompter, settings
 from ..common.jobs import JobRegistry
 from ..common.palette import palette as _palette
 from ..refs.service import project_dir
@@ -297,11 +296,12 @@ def _write_project_vibe(root: Path, note: str) -> str:
         return ""
     path = root / "project.json"
     try:
-        meta = json.loads(path.read_text())
-        meta["vibe"] = note.strip()
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=1))
-        os.replace(tmp, path)
+        with atomic.project_lock(root):
+            meta = json.loads(path.read_text())
+            meta["vibe"] = note.strip()
+            # Temporário único (`common.atomic`): o `project.json.tmp` de nome fixo era o MESMO
+            # que o núcleo usa em `_write_project` — as duas escritas colidiam.
+            atomic.write_json_atomic(path, meta, ensure_ascii=False, indent=1)
         return meta["vibe"]
     except (OSError, json.JSONDecodeError):
         return ""
