@@ -624,3 +624,28 @@ cena / 3.0 Turbo transição; 2.5 Turbo inexistente no CLI), `[extensão]`; rela
 `scenes.json`). Pendências de integração (W5): auto-import dos mp4 do storyboard para o `animate`
 (handoff automático), refletir os campos novos de `scenes.json` em `wave-1.md`/"Provides", e o
 registry de vídeo (chave `pid:scene`) não é descoberto pelo `reset`.
+
+## Atualização 2026-08-29 (QA rodada 2026-08-29, decisão AP-18 — ADH-OS-20260829-37)
+
+Correção da **parte de modelo** da wave 7: o QA (caso `C-ANIMATE-35`, card
+<https://trello.com/c/lUy1wmEI>) mostrou que o default de transição da ADR-021 é inexecutável pelo
+CLI — `higgsfield model get kling3_0_turbo --json` declara só
+`aspect_ratio, duration, prompt, resolution, start_image`, **sem `end_image` nem `mode`**, e a
+transição start/end é justamente `start_image` + `end_image`.
+
+- **STUDIO/ANIMATE** — `settings.DEFAULTS["storyboard.video.transition"]` passa de `kling3_0_turbo`
+  para **`kling3_0`** (mesma família; declara `end_image` e `mode`); `animate/service.py`:
+  `TRANSITION_MODEL = "kling3_0"` e `LESSON_MODEL_NOTE` explica por que a 3.0 Turbo saiu.
+  `accepted_models()` continua aceitando `kling3_0_turbo` (takes antigos + seletor do storyboard) e
+  `pricing.CATALOG` **mantém** o modelo (só perdeu o papel de default). Custo da transição sobe de
+  7,5 para 10 créditos em 5 s.
+- **Regra nova** — o modelo de transição PRECISA declarar `end_image` no catálogo do CLI, verificado
+  por `hf.model_params` (a mesma filtragem de params introduzida em ADH-OS-20260829-34).
+- **Etapa 5 (tela)** — o `<select>` de modelo do modal "Gerar take N" (`etapas/animate/view.js`)
+  passa a incluir e pré-selecionar `plan.transition_model` no modo start/end e `plan.scene_model`
+  nos demais, em vez de só `plan.model_order` (que é a ordem de progressão por falhas).
+
+**ADR nova: ADR-023** (STUDIO) — modelo default da transição start/end passa a ser a Kling 3.0;
+**substitui parcialmente a ADR-021** (só o §Decisão 4, parte da transição — a ADR-021 recebeu nota
+no topo e nada foi apagado). Relaciona ADR-002 (ponte só via CLI), ADR-004 (fidelidade),
+ADR-016 (créditos), ADR-021 e ADR-022.

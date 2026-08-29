@@ -518,3 +518,27 @@ artefato e expõe `destroy()` parando o poll — critério cross-feature da wave
   `unknown`; chamar o guia não cria `animate/takes.json`.
 - `view.html` tem `#guide`; `view.js` tem `destroy()` e `Studio.ui`.
 - `make verify` verde (ruff + pytest) sem rede e sem navegador.
+
+### 13. Mapa de modelos vigente (ADR-021 + ADR-023) — supersede o §12.2/§12.3
+
+O mapa de modelos desta etapa mudou duas vezes depois da wave 2. O estado **vigente** é:
+
+| papel | modelo | de onde vem | custo (5 s / 10 s) |
+| --- | --- | --- | --- |
+| cena (modos `simple` e `elaborate`) | `kling2_6` | topo de `MODEL_ORDER` (ordem viva, progressão por falhas) | 10 / 20 |
+| transição (modo `start_end`) | `kling3_0` | `TRANSITION_MODEL` — fixo, **fora** da ordem viva | 10 / 20 |
+| movimento complexo | `seedance_2_0` | 2º da ordem viva (sugerido após 3 falhas) | 22,5 |
+| `[extensão]` | `veo3_1_lite` | só por `STUDIO_ANIMATE_MODELS` | 8 (clipe de 8 s) |
+
+- **Wave 7 (ADR-021):** a cena passou de `kling3_0` para `kling2_6` — o desvio "o CLI só tem 3.0"
+  caiu, a Kling 2.6 existe. `MODEL_ORDER = ["kling2_6", "seedance_2_0"]`.
+- **ADR-023 (2026-08-29, AP-18 do QA):** a transição passou de `kling3_0_turbo` para **`kling3_0`**.
+  Motivo: `higgsfield model get kling3_0_turbo --json` **não declara `end_image` nem `mode`** — a
+  transição start/end (que é `start_image` + `end_image`) não sai por ela. **Regra:** o modelo de
+  transição precisa declarar `end_image` no catálogo do CLI (`hf.model_params`).
+  `kling3_0_turbo` segue no `pricing.CATALOG` e em `accepted_models()` (takes antigos), sem papel de
+  default.
+- `GET .../animate/shots` publica o mapa: `scene_model`, `transition_model`, `model_order` e
+  `model_note` (o `LESSON_MODEL_NOTE` atualizado). A tela (modal "Gerar take N") monta o `<select>`
+  de modelo **por modo**: start/end oferece e pré-seleciona `transition_model`; os demais modos,
+  `scene_model` (ou o `suggested_model` quando há falhas). Caso de QA: `C-ANIMATE-35`.

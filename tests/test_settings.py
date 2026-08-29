@@ -65,13 +65,13 @@ def test_ledger_records_and_summarizes(studio_env):
     assert len(settings.history("p1")) == 2
 
 
-def test_storyboard_video_defaults_map_scene_to_kling26_and_transition_to_turbo(studio_env):
-    """`[extensão]` wave 7 (ADR-021): cena → Kling 2.6, transição (start/end) → Kling 3.0 Turbo;
-    o desvio do animate cai (era kling3_0)."""
+def test_storyboard_video_defaults_map_scene_to_kling26_and_transition_to_kling30(studio_env):
+    """ADR-023 (substitui a parte de modelo da ADR-021): cena → Kling 2.6, transição (start/end) →
+    Kling 3.0 — a 3.0 Turbo não declara `end_image` no catálogo do CLI."""
     from studio.common import settings
     assert {a["key"] for a in settings.ACTIONS} >= {"storyboard.video.scene", "storyboard.video.transition"}
     scene = settings.default_for("storyboard.video.scene")
     trans = settings.default_for("storyboard.video.transition")
     assert scene["model"] == "kling2_6" and scene["variant"] == "5s"
-    assert trans["model"] == "kling3_0_turbo" and trans["variant"] == "5s"
+    assert trans["model"] == "kling3_0" and trans["variant"] == "5s"
     assert settings.default_for("animate.video")["model"] == "kling2_6"

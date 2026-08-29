@@ -38,8 +38,9 @@ Arquivos: `studio/storyboard/service.py`, `studio/etapas/storyboard/router.py`,
   - `build_params`: `{prompt, image_references/start_image(+end_image), duration:int(5|10),
     aspect_ratio: da campanha, mode}`. **1 frame** → `single` (image-to-video da imagem escolhida);
     **2 frames** → `start_end` (start_image+end_image, a opção start/end do Higgsfield).
-  - **Modelo resolvido no servidor** por `settings.default_for`: `start_end`→`kling3_0_turbo`
-    (transição), senão `kling2_6` (cena). `duration` INTEIRO ao CLI (5/10).
+  - **Modelo resolvido no servidor** por `settings.default_for`: `start_end`→`kling3_0`
+    (transição — **ADR-023**, era `kling3_0_turbo`), senão `kling2_6` (cena). `duration` INTEIRO ao
+    CLI (5/10).
   - Grava `storyboard/<cena>/video/take_<K>.mp4`; `video/job` concluído devolve `{state, video:<rel>}`.
   - Gasto: `settings.record_generation(action="storyboard.video", ...)` (ADR-016).
 
@@ -54,6 +55,11 @@ Arquivos: `studio/storyboard/service.py`, `studio/etapas/storyboard/router.py`,
   `kling3_0_turbo` (`variants:{"5s":7.5,"10s":15}`, idem). Custos medidos no CLI (wave-7.md).
 - `settings`: defaults `storyboard.video.scene`=`kling2_6`, `storyboard.video.transition`=
   `kling3_0_turbo`; `animate.video`→`kling2_6` + start_end→`kling3_0_turbo`.
+  > **Atualização (ADR-023, 2026-08-29):** o default da transição passou a **`kling3_0`** em
+  > `storyboard.video.transition` e em `animate.TRANSITION_MODEL`. Motivo: `higgsfield model get
+  > kling3_0_turbo --json` **não declara `end_image` nem `mode`** — a transição start/end não sai
+  > por ela. A `kling3_0_turbo` continua no `pricing.CATALOG` (7,5/15) e em `accepted_models()`.
+  > Custo da transição: 10 créditos em 5 s (20 em 10 s).
 - `animate/service.py`: atualizar `MODEL_ORDER` e `LESSON_MODEL_NOTE` (o desvio "CLI só tem 3.0"
   caiu — 2.6 existe); mapa cena→2.6 / transição→3.0-turbo. Não quebrar o fluxo do animate.
 
@@ -61,6 +67,7 @@ Arquivos: `studio/storyboard/service.py`, `studio/etapas/storyboard/router.py`,
 `docs/adrs/generated/STUDIO/ADR-021-*.md`: vídeo-preview por cena no storyboard `[extensão]` +
 mapa de modelos Kling (2.6 cena / 3.0-turbo transição; 2.5-turbo inexistente no CLI). Relaciona
 ADR-006/016/018 e a etapa animate. Atualizar `docs/adrs/mapping.md`.
+A parte de **modelo da transição** foi substituída pela **ADR-023** (transição → `kling3_0`).
 
 ### 6. Testes
 - `test_storyboard_service`/`test_storyboard_api`: `video-prompt` (com/sem Claude via fake),

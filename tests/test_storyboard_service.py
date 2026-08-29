@@ -480,7 +480,7 @@ def test_video_cost_resolves_model_by_mode(sb, project):
     single = sb.video_cost(project, "cena01", "single", 5)
     assert single == {"model": "kling2_6", "per_item": 10, "total": 10}
     trans = sb.video_cost(project, "cena01", "start_end", 10)
-    assert trans == {"model": "kling3_0_turbo", "per_item": 15, "total": 15}
+    assert trans == {"model": "kling3_0", "per_item": 20, "total": 20}, "ADR-023: transição = Kling 3.0"
     with pytest.raises(sb.Invalid):
         sb.video_cost(project, "cena01", "single", 7)
 
@@ -623,7 +623,7 @@ def test_video_generate_single_saves_take_and_persists_scene(sb, project, monkey
     assert scene["videos"] == [rel] and scene["video_prompt"] == "Slow dolly on the can"
 
 
-def test_video_generate_start_end_sends_both_frames_with_turbo(sb, project, monkeypatch, root):
+def test_video_generate_start_end_sends_both_frames_with_kling30(sb, project, monkeypatch, root):
     a, b = _two_ideas(sb, project)
     sb.save_scenes(project, [{"text": "cena", "images": [a, b], "primary": a}])
     sent = _fake_video_cli(monkeypatch, sb)
@@ -631,7 +631,7 @@ def test_video_generate_start_end_sends_both_frames_with_turbo(sb, project, monk
                             {"start_image": a, "end_image": b})
     job = _wait_video(sb, project, "cena01")
     assert job["state"] == "done"
-    assert sent["model"] == "kling3_0_turbo" and sent["params"]["duration"] == 10
+    assert sent["model"] == "kling3_0" and sent["params"]["duration"] == 10   # ADR-023
     assert sent["params"]["start_image"].endswith(Path(a).name)
     assert sent["params"]["end_image"].endswith(Path(b).name)
 

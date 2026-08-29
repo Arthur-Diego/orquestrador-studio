@@ -1,6 +1,14 @@
 # ADR-021: Vídeo-preview por cena no storyboard + mapa de modelos Kling (2.6 cena / 3.0 Turbo transição) `[extensão]`
 
-**Status:** Aceito
+> **Parcialmente substituída pela [ADR-023](ADR-023-modelo-default-da-transicao-start-end-kling-3-0.md)
+> (2026-08-29).** Só a parte de **modelo da transição start/end** do §Decisão 4 caiu: a
+> `kling3_0_turbo` **não declara `end_image` nem `mode`** no catálogo do CLI (`higgsfield model get
+> --json`), então a transição da aula 012 não sai por ela. O default passou a ser **`kling3_0`**
+> (mesma família, aceita `start_image` + `end_image` + `mode`). Tudo o mais aqui continua vigente:
+> vídeo-preview por cena, rotas, JobRegistry por cena, campos aditivos de `scenes.json` e
+> **Kling 2.6 na cena**. Nada foi apagado deste documento.
+
+**Status:** Aceito (parte de modelo da transição substituída pela ADR-023)
 **Data:** 2026-08-28
 **Módulo:** STUDIO
 **ADRs relacionados:** [ADR-004](ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006](ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-015](ADR-015-fusao-da-etapa-5-angulos-na-etapa-4-storyboard.md), [ADR-016](ADR-016-gestao-de-creditos-custos-e-modelo-default-por-acao.md), [ADR-018](ADR-018-varias-imagens-por-cena-galeria-de-keyframes-com-principal.md)
