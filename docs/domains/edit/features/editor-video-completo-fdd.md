@@ -50,7 +50,11 @@ Restrições canônicas (recon + HLD + CLAUDE.md) que moldam o desenho:
 - Export com resolução/fps/qualidade (`render.build_filtergraph` parametrizado; escala final por `scale`+`pad`).
 - Testes: `tests/test_edit_editor.py` (normalização/validação/retrocompat) + extensão dos testes de API e de render (parâmetros de export).
 
-**Camadas novas no ENCODE ffmpeg — fase 2 (registrada, não simulada na fase 1):** burn-in de texto/legenda (`drawtext`), transições no output (`xfade`/`acrossfade`), overlays de imagem/vídeo (`overlay`), efeitos/filtros por clipe (`eq`, `gblur`, etc.) e faixas de áudio extra no mix. Na fase 1 essas camadas **aparecem no preview do browser** e são **persistidas** no `editor`; a UI deixa explícito que ainda não entram no `master.mp4`. O backbone da aula 014 (vídeo+música+SFX+pretos+fade+speed/zoom) entra no `master.mp4` como hoje.
+**Camadas novas no ENCODE ffmpeg — fase 2 (ENTREGUE, `studio/edit/burnin.py` + `render.build_filtergraph`):**
+- **Entregue e validado em render real:** burn-in de **texto e legenda** e de **overlays de imagem** — como o ffmpeg estático do projeto foi compilado **sem `drawtext`** (sem libfreetype), cada camada é **rasterizada com Pillow** num PNG RGBA full-frame (posição/escala/rotação/opacidade/estilo no Pillow) e composta com o filtro `overlay` do ffmpeg com janela de tempo (`enable='between(t,ini,fim)'`); **efeitos/filtros/ajustes por clipe** via `eq`/`hue`/`gblur`/`unsharp`/`noise` (`clip_fx`). Tudo isso entra no `master.mp4`. Validado: render real com texto+legenda+ajuste → `master.mp4` 1920×1080/7,5s com o texto visível no quadro.
+- **Ainda pendente (fase 3):** **transições** no output (`xfade`/`acrossfade`) — hoje só no preview; overlays de **vídeo** (só imagem entra no encode); faixas de **áudio extra** no mix (só a música legada + SFX). A UI rotula explicitamente o que ainda é só preview.
+
+O backbone da aula 014 (vídeo+música+SFX+pretos+fade+speed/zoom) entra no `master.mp4` como sempre.
 
 **Excluído:** reescrever o render legado; duplicar APIs; trocar o design system; qualquer geração por IA de conteúdo (texto/imagem/áudio) — o editor **organiza e edita** mídia existente; mobile completo (desktop-first, painéis colapsáveis em telas menores).
 

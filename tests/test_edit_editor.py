@@ -45,6 +45,47 @@ def test_export_quality_maps_crf(tmp_path):
     assert int(_crf(high)) < int(_crf(low))
 
 
+# ---------- fase 2: burn-in das camadas do editor no render ----------
+def test_clip_fx_chain_maps_adjustments(tmp_path):
+    tl = _mini_timeline()
+    tl["editor"] = {"clip_fx": {"c1": {"filters": {"contrast": 50, "saturation": 20, "hue": 10},
+                                       "effects": [{"type": "blur", "intensity": 0.5, "enabled": True}]}}}
+    args, _ = render.build_filtergraph(tmp_path, tl, "master")
+    joined = " ".join(args)
+    assert "eq=" in joined and "contrast=1.5" in joined
+    assert "hue=h=18" in joined
+    assert "gblur=sigma=5" in joined
+    # sem clip_fx, nenhum eq (backbone intacto)
+    plain, _ = render.build_filtergraph(tmp_path, _mini_timeline(), "master")
+    assert "eq=" not in " ".join(plain)
+
+
+def test_overlays_composited_with_time_gate(tmp_path):
+    png = tmp_path / "layer.png"
+    png.write_bytes(b"x")
+    args, _ = render.build_filtergraph(tmp_path, _mini_timeline(), "master",
+                                       overlays=[{"path": str(png), "start": 0.5, "end": 1.5}])
+    joined = " ".join(args)
+    assert "overlay=0:0:enable='between(t,0.5,1.5)'" in joined
+    assert str(png) in joined                       # o PNG entra como input
+    # sem overlays, nenhum filtro overlay (retrocompat)
+    plain, _ = render.build_filtergraph(tmp_path, _mini_timeline(), "master")
+    assert "overlay=0:0" not in " ".join(plain)
+
+
+def test_burnin_renders_text_layer_png(tmp_path):
+    from studio.edit import burnin
+    editor = {"tracks": [{"type": "text", "visible": True, "items": [
+        {"id": "tx1", "start": 0.0, "end": 2.0, "text": "GELO ZERO",
+         "style": {"size": 64, "weight": 800, "color": "#FFFFFF"},
+         "transform": {"x": .5, "y": .5, "scaleX": 1, "opacity": 1}}]}]}
+    specs = burnin.render_layer_pngs(tmp_path, editor, 1920, 1080, tmp_path / "ov")
+    assert len(specs) == 1
+    assert specs[0]["start"] == 0.0 and specs[0]["end"] == 2.0
+    from pathlib import Path as P
+    assert P(specs[0]["path"]).exists()
+
+
 # ---------- normalização pura (sem ffmpeg, sem app) ----------
 def sample_editor() -> dict:
     return {

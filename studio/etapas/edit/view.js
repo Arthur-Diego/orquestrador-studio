@@ -434,7 +434,7 @@ Studio.register("edit", (ctx) => {
     el.querySelectorAll("[data-tr]").forEach((b) => b.onclick = () => applyTransition(b.dataset.tr));
   }
   function pEffects(el) {
-    el.innerHTML = phead("Efeitos", EFFECTS.length) + `<div class="ved-list">${EFFECTS.map((e) => `<div class="ved-row" data-ef="${e}"><span class="ric">✦</span><div class="rmid"><div class="rn">${e}</div></div><button class="radd">aplicar</button></div>`).join("")}</div><p class="ved-hint">[extensão] preview no browser; no master.mp4: fase seguinte.</p>`;
+    el.innerHTML = phead("Efeitos", EFFECTS.length) + `<div class="ved-list">${EFFECTS.map((e) => `<div class="ved-row" data-ef="${e}"><span class="ric">✦</span><div class="rmid"><div class="rn">${e}</div></div><button class="radd">aplicar</button></div>`).join("")}</div><p class="ved-hint">[extensão] Blur/Sharpen/Grain entram no master.mp4; os demais aparecem no preview. Selecione um clipe.</p>`;
     el.querySelectorAll("[data-ef]").forEach((b) => b.onclick = () => toggleEffect(b.dataset.ef));
     markFx(el);
   }
@@ -810,7 +810,7 @@ Studio.register("edit", (ctx) => {
         <div class="ved kick" style="margin-bottom:4px">FPS</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exFps">${pills(FPS_CHOICES.map((f) => f + " fps"), expFps + " fps", "fps")}</div>
         <div class="ved kick" style="margin-bottom:4px">Qualidade</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exQ">${pills(["baixa", "média", "alta"], expQual, "q")}</div>
         <div style="font-size:11px;color:#8B93A0">formato MP4 (H.264) · proporção ${p.aspect} · duração ${fmtTC(duration())} · saída ${expRes} · ${expFps}fps · ${expQual}</div>
-        <p style="font-size:11px;color:#8B93A0;margin-top:8px">O backbone da aula 014 entra no master; textos/transições/efeitos, no preview (fase seguinte).</p>`,
+        <p style="font-size:11px;color:#8B93A0;margin-top:8px">Entram no master.mp4: o backbone da aula 014 + textos, legendas, overlays, efeitos (blur/sharpen/grain) e ajustes de cor. Transições ainda só no preview.</p>`,
       actions: [{ label: "Rough cut", onClick: (m) => { m.close(); startRender("rough", null); } }, { label: "Renderizar", primary: true, onClick: (m) => {
         const sel = (id, attr) => { const b = document.querySelector(`#${id} [data-on]`); return b ? b.getAttribute("data-" + attr) : null; };
         const rname = sel("exRes", "res") || expRes, r = RES.find((x) => x[0] === rname) || RES[1];

@@ -9,12 +9,14 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 
 from ..common import ffmpeg as ff
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
+from . import burnin  # [extensão] rasteriza texto/legenda/overlay do editor para o burn-in
 from .service import (
     BLACK_SNAP,
     FPS,
@@ -101,10 +103,47 @@ def expected_duration(timeline: dict, segments: list[tuple[str, int]]) -> float:
     return round(total, 3)
 
 
+def _clip_fx_chain(clip: dict, editor: dict) -> list[str]:
+    """[extensão] Ajustes/efeitos por clipe (clip_fx do editor) → filtros ffmpeg. Função pura.
+
+    Mapeia os sliders -100..100 para `eq`/`hue` e os efeitos para `gblur`/`unsharp`. Sem clip_fx
+    para o clipe, devolve lista vazia (backbone da aula intacto).
+    """
+    fx = ((editor or {}).get("clip_fx") or {}).get(clip.get("id"))
+    if not fx:
+        return []
+    out: list[str] = []
+    f = fx.get("filters") or {}
+    eq = {}
+    bright = float(f.get("brightness", 0)) / 200 + float(f.get("exposure", 0)) / 250
+    if bright:
+        eq["brightness"] = round(bright, 4)
+    if f.get("contrast"):
+        eq["contrast"] = round(1 + float(f["contrast"]) / 100, 4)
+    if f.get("saturation"):
+        eq["saturation"] = round(max(1 + float(f["saturation"]) / 100, 0), 4)
+    if eq:
+        out.append("eq=" + ":".join(f"{k}={_num(v)}" for k, v in eq.items()))
+    if f.get("hue"):
+        out.append(f"hue=h={_num(float(f['hue']) * 1.8)}")
+    for ef in (fx.get("effects") or []):
+        if ef.get("enabled") is False:
+            continue
+        t = str(ef.get("type", "")).lower()
+        inten = float(ef.get("intensity", 0.5) or 0.5)
+        if t == "blur":
+            out.append(f"gblur=sigma={_num(inten * 10)}")
+        elif t == "sharpen":
+            out.append(f"unsharp=5:5:{_num(0.3 + inten * 1.5)}")
+        elif t == "grain":
+            out.append(f"noise=alls={int(inten * 30)}:allf=t")
+    return out
+
+
 def build_filtergraph(root: Path, timeline: dict, target: str = "master",
                       out: Path | str | None = None, *, width: int | None = None,
                       height: int | None = None, fps: int | None = None,
-                      quality: str | None = None) -> tuple[list[str], float]:
+                      quality: str | None = None, overlays: list[dict] | None = None) -> tuple[list[str], float]:
     """Argumentos completos do ffmpeg (sem o binário) + duração prevista. Não executa nada.
 
     `out` troca só o arquivo de destino (a escrita continua atômica, em `<out>.part`): a etapa 6
@@ -124,6 +163,8 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
         raise ValueError("timeline sem clipes")
     conf = TARGETS[target]
     master = target == "master"
+    editor = timeline.get("editor") or {}
+    overlays = overlays or []
     blacks = timeline.get("blacks") or []
     segments, _dropped = place_blacks(clips, blacks)
     duration = expected_duration(timeline, segments)
@@ -159,6 +200,12 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
             args += ["-i", str(root / sfx["file"])]
             sfx_inputs.append((index, sfx))
             index += 1
+    # [extensão] camadas do editor (texto/legenda/overlay) já rasterizadas em PNG full-frame
+    overlay_inputs: list[tuple[int, dict]] = []
+    for ov in overlays:
+        args += ["-i", str(ov["path"])]
+        overlay_inputs.append((index, ov))
+        index += 1
 
     # --- vídeo: normalizar tudo para 1920x1080/30 fps antes do concat (decisão 5 do lote) ---
     for i, clip in enumerate(clips):
@@ -176,6 +223,7 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
             chain.append(f"minterpolate=fps={FPS}:mi_mode=blend" if clip.get("blend", True) else f"fps={FPS}")
         else:
             chain.append(f"fps={FPS}")
+        chain += _clip_fx_chain(clip, editor)   # [extensão] ajustes/efeitos por clipe
         chain.append("format=yuv420p")
         filters.append(f"[{clip_input[i]}:v]{','.join(chain)}[v{i}]")
     for j in black_input:
@@ -183,15 +231,20 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
 
     order = "".join(f"[v{i}]" if kind == "clip" else f"[b{i}]" for kind, i in segments)
     filters.append(f"{order}concat=n={len(segments)}:v=1:a=0[vcat]")
-    vtail: list[str] = []
+    # composição no canvas 1920x1080: fade → camadas do editor (overlay por janela de tempo) → rescale
+    base = "vcat"
     if master and fade_out > 0:
-        vtail.append(f"fade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}")
+        filters.append(f"[vcat]fade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}[vfade]")
+        base = "vfade"
+    for k, (idx, ov) in enumerate(overlay_inputs):
+        filters.append(f"[{idx}:v]scale={WIDTH}:{HEIGHT}[ovs{k}]")
+        filters.append(f"[{base}][ovs{k}]overlay=0:0:enable='between(t,{_num(ov['start'])},{_num(ov['end'])})'[vov{k}]")
+        base = f"vov{k}"
     if (out_w, out_h) != (WIDTH, HEIGHT):
-        # reescala o canvas 1920x1080 para a resolução de export (preset 16:9), com pad de segurança.
-        vtail.append(f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease")
-        vtail.append(f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black")
-        vtail.append("setsar=1")
-    filters.append(f"[vcat]{','.join(vtail)}[vout]" if vtail else "[vcat]null[vout]")
+        filters.append(f"[{base}]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
+                       f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[vout]")
+    else:
+        filters.append(f"[{base}]null[vout]")
 
     # --- áudio: música cortada para o ápice + SFX (só no master) ---
     audio_labels: list[str] = []
@@ -290,9 +343,19 @@ def start_render(pid: str, target: str = "master", export: dict | None = None) -
                 job["log"].append(f"black at {_num(working['blacks'][j]['at'])} dur {_num(working['blacks'][j]['dur'])}")
         job["done"] += 1
 
+        overlays = []
+        if target == "master":
+            try:
+                overlays = burnin.render_layer_pngs(root, working.get("editor") or {}, WIDTH, HEIGHT,
+                                                    root / "edit" / "_overlays")
+                if overlays:
+                    job["log"].append(f"camadas do editor: {len(overlays)} (texto/legenda/overlay) [extensão]")
+            except Exception as e:                       # burn-in nunca derruba o render do backbone
+                job["log"].append(f"aviso: camadas do editor não rasterizadas: {e}")
+                logger.warning("edit: burn-in falhou em %s: %s", pid, e)
         args, duration = build_filtergraph(root, working, target, width=opts.get("width"),
                                            height=opts.get("height"), fps=opts.get("fps"),
-                                           quality=opts.get("quality"))
+                                           quality=opts.get("quality"), overlays=overlays)
         job["duration"] = duration
         music = (working.get("music") or {}).get("file")
         n_sfx = len(working.get("sfx") or []) if target == "master" else 0
@@ -314,9 +377,11 @@ def start_render(pid: str, target: str = "master", export: dict | None = None) -
             part.replace(final)
         except Exception as e:
             part.unlink(missing_ok=True)
+            shutil.rmtree(root / "edit" / "_overlays", ignore_errors=True)
             stderr_tail = str(e)[-400:]
             _write_job_file(root, target, args, started, duration, None, stderr_tail, opts)
             raise
+        shutil.rmtree(root / "edit" / "_overlays", ignore_errors=True)
         probed = 0.0
         try:
             probed = float(ff.probe(final).get("duration") or 0)
