@@ -33,6 +33,7 @@ ROTATION_RANGE = (-360.0, 360.0)
 POS_RANGE = (-3.0, 3.0)          # posição relativa ao canvas (0..1 é a área visível)
 UNIT_RANGE = (0.0, 1.0)          # opacidade, volume, fade normalizado
 GAIN_RANGE = (-40.0, 12.0)
+CLIP_VOLUME_RANGE = (0.0, 2.0)   # volume por clipe/trilha: o painel do editor vai a 150%
 ADJUST_RANGE = (-100.0, 100.0)   # sliders de ajuste de cor (exposição, brilho, …)
 TRANSITION_RANGE = (0.0, 3.0)
 FONT_SIZE_RANGE = (4, 400)
@@ -187,8 +188,12 @@ def normalize_effects(raw) -> list[dict]:
 
 def normalize_filters(raw: dict | None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
-    return {k: _clamp(raw.get(k, 0.0), *ADJUST_RANGE, 0.0)
-            for k in ADJUST_KEYS if k in raw and _num(raw.get(k), 0.0) != 0.0}
+    out = {k: _clamp(raw.get(k, 0.0), *ADJUST_RANGE, 0.0)
+           for k in ADJUST_KEYS if k in raw and _num(raw.get(k), 0.0) != 0.0}
+    preset = _s(raw.get("preset", ""), 40)   # id do preset do painel Filtros (não é slider)
+    if preset:
+        out["preset"] = preset
+    return out
 
 
 def normalize_audio(raw: dict | None) -> dict:
@@ -198,6 +203,24 @@ def normalize_audio(raw: dict | None) -> dict:
         "muted": _b(raw.get("muted")),
         "fadeIn": _clamp(raw.get("fadeIn", 0.0), 0.0, 30.0, 0.0),
         "fadeOut": _clamp(raw.get("fadeOut", 0.0), 0.0, 30.0, 0.0),
+    }
+
+
+def normalize_clip_audio(raw: dict | None) -> dict:
+    """Aba Áudio do clipe de vídeo (`clip_fx[cid].audio`, FDD §"paridade com o protótipo").
+
+    Volume vai até 2 (o slider do painel chega a 150%); os toggles de tratamento ficam
+    guardados aqui e entram no mix numa fase seguinte.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    return {
+        "volume": _clamp(raw.get("volume", 1.0), *CLIP_VOLUME_RANGE, 1.0),
+        "muted": _b(raw.get("muted")),
+        "fadeIn": _clamp(raw.get("fadeIn", 0.0), 0.0, 30.0, 0.0),
+        "fadeOut": _clamp(raw.get("fadeOut", 0.0), 0.0, 30.0, 0.0),
+        "normalize": _b(raw.get("normalize")),
+        "enhance": _b(raw.get("enhance")),
+        "denoise": _b(raw.get("denoise")),
     }
 
 
@@ -241,6 +264,9 @@ def normalize_item(track_type: str, raw: dict, root: Path) -> dict | None:
         item["transform"] = normalize_transform(raw.get("transform"))
         item["effects"] = normalize_effects(raw.get("effects"))
         item["filters"] = normalize_filters(raw.get("filters"))
+        preset_css = _s(raw.get("presetCss", ""), MAX_STR)   # CSS do preset, usado no preview
+        if preset_css:
+            item["presetCss"] = preset_css
         item["audio"] = normalize_audio(raw.get("audio"))
     elif track_type in ("audio", "music"):
         item["file"] = safe_rel(root, raw.get("file", ""), f"{track_type}.file")
@@ -333,6 +359,11 @@ def normalize_clip_fx(raw, root: Path) -> dict:
         entry = {"transform": normalize_transform(fx.get("transform")),
                  "effects": normalize_effects(fx.get("effects")),
                  "filters": normalize_filters(fx.get("filters"))}
+        if isinstance(fx.get("audio"), dict):        # aba Áudio do clipe (volume/fades/toggles)
+            entry["audio"] = normalize_clip_audio(fx.get("audio"))
+        preset_css = _s(fx.get("presetCss", ""), MAX_STR)   # CSS do preset, usado no preview
+        if preset_css:
+            entry["presetCss"] = preset_css
         out[key] = entry
     return out
 

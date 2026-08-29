@@ -229,6 +229,32 @@ def test_clip_fx_map(tmp_path):
     fx = e["clip_fx"]["c_001"]
     assert fx["transform"]["x"] == 0.3
     assert fx["filters"] == {"brightness": 20.0}   # chave desconhecida descartada
+    assert "audio" not in fx                       # sem a aba Áudio tocada, nada é inventado
+
+
+def test_clip_fx_keeps_audio_and_preset(tmp_path):
+    """AP-08: aba Áudio do clipe (FDD §7.4) e preset do painel Filtros sobrevivem ao round-trip."""
+    e = ed.normalize_editor(tmp_path, {"clip_fx": {"c_001": {
+        "filters": {"contrast": 10, "preset": "cinema"}, "presetCss": "saturate(1.2) contrast(1.1)",
+        "audio": {"volume": 1.5, "muted": True, "fadeIn": 0.5, "fadeOut": 2,
+                  "normalize": True, "enhance": True, "denoise": False}}}})
+    fx = e["clip_fx"]["c_001"]
+    assert fx["audio"] == {"volume": 1.5, "muted": True, "fadeIn": 0.5, "fadeOut": 2.0,
+                           "normalize": True, "enhance": True, "denoise": False}
+    assert fx["filters"] == {"contrast": 10.0, "preset": "cinema"}
+    assert fx["presetCss"] == "saturate(1.2) contrast(1.1)"
+    assert ed.normalize_editor(tmp_path, e) == e   # idempotente
+    # volume do clipe vai a 150% sem ser cortado em 1.0, mas nada passa de 2
+    alto = ed.normalize_editor(tmp_path, {"clip_fx": {"c1": {"audio": {"volume": 9}}}})
+    assert alto["clip_fx"]["c1"]["audio"]["volume"] == 2.0
+
+
+def test_overlay_keeps_preset_css(tmp_path):
+    """AP-08: o preset de filtro também é gravado no próprio item quando o alvo é um overlay."""
+    e = ed.normalize_editor(tmp_path, {"tracks": [{"type": "overlay", "items": [
+        {"id": "ov1", "filters": {"preset": "vhs"}, "presetCss": "sepia(.3)"}]}]})
+    item = e["tracks"][0]["items"][0]
+    assert item["filters"] == {"preset": "vhs"} and item["presetCss"] == "sepia(.3)"
 
 
 # ---------- API: retrocompatibilidade e round-trip ----------
