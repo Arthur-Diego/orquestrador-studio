@@ -1265,3 +1265,29 @@ def sfx_toca(page, ctx):
                           "cria elemento de áudio para `timeline.sfx`, então os efeitos nunca soam", ev)
     finally:
         _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-54", "elemento do painel guarda o id da forma e o preview desenha a forma (não um caractere)")
+def elemento_forma(page, ctx):
+    orig = _tl_api(page, ctx)
+    try:
+        _painel(page, "elements")
+        page.locator("#edPanel .ved-row[data-el='circle']").click()
+        ok, _ = _esperar_disco(page, ctx, lambda x: len(_track(x, "v2").get("items") or []) == 1)
+        page.reload()
+        H.esperar_tela(page)
+        tl = _tl_api(page, ctx)
+        it = (_track(tl, "v2").get("items") or [{}])[0]
+        camada = page.locator("#edStage .ved-layer.overlay")
+        classes = (camada.first.get_attribute("class") or "") if camada.count() else ""
+        texto = (camada.first.text_content() or "").strip() if camada.count() else ""
+        caixa = camada.first.bounding_box() if camada.count() else None
+        ev = H.evidencia(page, ctx, "C-EDIT-54-elemento-forma", full_page=False)
+        desenhou = "shape-circle" in classes and not texto and bool(caixa) and caixa["width"] > 8
+        return H.verifica(ok and it.get("shape") == "circle" and desenhou,
+                          f"shape='{it.get('shape')}' classes='{classes}' caixa={caixa}",
+                          f"item no disco={it} (esperado shape='circle'); camada no preview classes="
+                          f"'{classes}' texto='{texto}' caixa={caixa} — o painel grava o glifo em vez do "
+                          "id da forma e o preview escreve o caractere no lugar de desenhar a forma", ev)
+    finally:
+        _restaurar(page, ctx, orig)

@@ -38,6 +38,9 @@ Studio.register("edit", (ctx) => {
   const EFFECTS = ["Blur", "Sharpen", "Glow", "Vignette", "Grain", "Noise", "Shake", "Chromatic", "Glitch", "Pixelate", "RGB Split", "Motion Blur", "Zoom", "Lens"];
   const FILTERS = [["cinetico", "Cinético", "contrast(1.1) saturate(1.15)"], ["frost", "Frost", "hue-rotate(-10deg) brightness(1.05) saturate(1.1)"], ["neon", "Neon", "saturate(1.6) contrast(1.1)"], ["mono", "Mono", "grayscale(1) contrast(1.1)"], ["warm", "Warm", "sepia(.25) saturate(1.2)"], ["cool", "Cool", "hue-rotate(-14deg) saturate(1.1)"], ["vivid", "Vivid", "saturate(1.5) contrast(1.08)"], ["fade", "Fade", "contrast(.9) brightness(1.08) saturate(.85)"]];
   const ELEMENTS = [["rect", "Retângulo", "▭"], ["circle", "Círculo", "●"], ["arrow", "Seta", "➜"], ["bar", "Barra inferior", "▬"], ["ice", "Sticker gelo", "❄"], ["bolt", "Ícone raio", "⚡"], ["bg", "Background", "▩"], ["lower", "Lower third", "▤"]];
+  // formas do painel Elementos desenhadas em CSS no preview (as demais continuam glifo)
+  const SHAPES_CSS = ["rect", "circle", "bar", "lower", "bg"];
+  const GLIFO = Object.fromEntries(ELEMENTS.map(([id, , ic]) => [id, ic]));
   const TEXT_PRESETS = [["title", "Título", "display 64px", { size: 64, weight: 800 }], ["subtitle", "Subtítulo", "medium 34px", { size: 34, weight: 600 }], ["body", "Texto simples", "body 22px", { size: 22, weight: 400 }], ["headline", "Headline", "bold 48px", { size: 48, weight: 800, uppercase: true }], ["lower", "Lower third", "nome + cargo", { size: 30, weight: 700, align: "left" }], ["cta", "CTA", "botão", { size: 34, weight: 800, bg: "#4FC8D9" }], ["custom", "Customizado", "em branco", { size: 40, weight: 500 }]];
   const ADJ = [["exposure", "Exposição"], ["brightness", "Brilho"], ["contrast", "Contraste"], ["saturation", "Saturação"], ["temperature", "Temperatura"], ["hue", "Matiz"], ["highlights", "Highlights"], ["shadows", "Shadows"], ["sharpen", "Nitidez"], ["vignette", "Vinheta"]];
   // ordem fixa das 6 tracks (topo→base) e a track do editor (não-backbone) por tipo
@@ -323,7 +326,8 @@ Studio.register("edit", (ctx) => {
         if (tr.type === "overlay") {
           if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
           else if (o.src) { const v = document.createElement("video"); v.src = ctx.files(o.src); v.muted = true; v.style.maxWidth = "60vw"; try { v.currentTime = t - num(o.start); } catch (e) {} el.appendChild(v); }
-          else { el.textContent = o.shape || "▦"; el.style.color = "#fff"; el.style.fontSize = (stage.clientHeight * 0.12) + "px"; }
+          else if (SHAPES_CSS.includes(o.shape)) el.classList.add("shape", "shape-" + o.shape);
+          else { el.textContent = GLIFO[o.shape] || o.shape || "▦"; el.style.color = "#fff"; el.style.fontSize = (stage.clientHeight * 0.12) + "px"; }
         } else {
           const s = o.style || {};
           el.textContent = s.uppercase ? (o.text || "").toUpperCase() : (o.text || "");
@@ -568,8 +572,8 @@ Studio.register("edit", (ctx) => {
     el.querySelectorAll("[data-fl]").forEach((b) => b.onclick = () => setFilter(b.dataset.fl, b.dataset.css));
   }
   function pElements(el) {
-    el.innerHTML = phead("Elementos", ELEMENTS.length) + `<div class="ved-list">${ELEMENTS.map(([id, nm, ic]) => `<div class="ved-row" data-el="${id}" data-ic="${ic}"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
-    el.querySelectorAll("[data-el]").forEach((b) => b.onclick = () => addOverlayShape(b.dataset.ic));
+    el.innerHTML = phead("Elementos", ELEMENTS.length) + `<div class="ved-list">${ELEMENTS.map(([id, nm, ic]) => `<div class="ved-row" data-el="${id}" data-nm="${nm}"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
+    el.querySelectorAll("[data-el]").forEach((b) => b.onclick = () => addOverlayShape(b.dataset.el, b.dataset.nm));
   }
   function pAdjust(el) { el.innerHTML = phead("Ajustes", 1) + `<div class="ved-row" style="cursor:default"><span class="ric">⚙</span><div class="rmid"><div class="rs" style="white-space:normal">Selecione um clipe — os ajustes aparecem no painel direito →</div></div></div>`; }
   function pLibrary(el) {
@@ -899,8 +903,8 @@ Studio.register("edit", (ctx) => {
     commit("adicionar " + type, () => { const t = etrack(tid, true); const it = { id: newId("tx"), start: +St.playhead.toFixed(2), end: +(St.playhead + 2.5).toFixed(2), text, style: { size: 40, weight: 700, align: "center", color: "#FFFFFF", shadow: true, ...style }, transform: { x: .5, y: type === "caption" ? .82 : .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, anim: { in: "fade", out: "fade" } }; t.items.push(it); St.selection = [it.id]; });
     renderPanel();
   }
-  function addOverlayShape(glyph) {
-    commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: glyph, shape: glyph, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+  function addOverlayShape(shape, nome) {
+    commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: nome || shape, shape, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
   }
   function applyTransition(type) {
     const u = St.selection.find((x) => itemType(x) === "video"); if (!u) return toast("Selecione um clipe de vídeo");
