@@ -1331,3 +1331,27 @@ def video_na_v2(page, ctx):
                           f"(esperado {len(orig['clips'])}, o vídeo não pode virar clipe do VÍDEO 1)", ev)
     finally:
         _restaurar(page, ctx, orig)
+
+
+@caso("C-EDIT-56", "botão de ação das linhas dos painéis cabe o rótulo e fica alinhado à direita")
+def radd_cabe(page, ctx):
+    medir = """() => [...document.querySelectorAll('#edPanel .ved-row')].slice(0, 3).map((r) => {
+        const b = r.querySelector('.radd'); if (!b) return null;
+        const rb = b.getBoundingClientRect(), rr = r.getBoundingClientRect();
+        return {texto: (b.textContent || '').trim(), scroll: b.scrollWidth, client: b.clientWidth,
+                estoura: b.scrollWidth > b.clientWidth + 1,
+                dentro: rb.right <= rr.right + 1 && rb.left >= rr.left - 1,
+                folga: +(rr.right - rb.right).toFixed(1)}; }).filter(Boolean)"""
+    _painel(page, "effects")
+    texto = page.evaluate(medir)          # rótulo textual ("aplicar")
+    _painel(page, "elements")
+    glifo = page.evaluate(medir)          # glifo ("＋")
+    ev = H.evidencia(page, ctx, "C-EDIT-56-radd", full_page=False)
+    linhas = texto + glifo
+    folgas = [x["folga"] for x in linhas]
+    ok = (bool(texto) and bool(glifo)
+          and all(not x["estoura"] and x["dentro"] for x in linhas)
+          and max(folgas) - min(folgas) < 1.5)          # todos alinhados na mesma margem direita
+    return H.verifica(ok, f"aplicar={texto[0] if texto else None} ＋={glifo[0] if glifo else None}",
+                      f"painel Efeitos={texto}; painel Elementos={glifo} — `.ved-row .radd` tem largura "
+                      "fixa de 24 px: o rótulo 'aplicar' estoura a caixa e os ＋/✕ desalinham", ev)

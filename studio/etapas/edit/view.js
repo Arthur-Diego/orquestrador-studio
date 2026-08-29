@@ -543,12 +543,12 @@ Studio.register("edit", (ctx) => {
   }
   async function uploadMedia(files) { try { const r = await ui.upload(`${base()}/media/upload`, files); St.mediaLib = await api(`${base()}/media`); toast(`${r.added} mídia(s) importada(s)`); renderPanel(); } catch (err) { toast(err.message); } }
   function pText(el) {
-    el.innerHTML = phead("Texto", TEXT_PRESETS.length) + `<div class="ved-list">${TEXT_PRESETS.map(([id, nm, sub]) => `<div class="ved-row" data-t="${id}"><span class="ric">T</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${sub}</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
+    el.innerHTML = phead("Texto", TEXT_PRESETS.length) + `<div class="ved-list">${TEXT_PRESETS.map(([id, nm, sub]) => `<div class="ved-row" data-t="${id}"><span class="ric">T</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${sub}</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
     el.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => { const p = TEXT_PRESETS.find((x) => x[0] == b.dataset.t); addText(p[1] === "Customizado" ? "Texto" : p[1], p[3], "text"); });
   }
   function pCaptions(el) {
     const t = etrack("t_cap", false), items = t ? t.items : [];
-    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas da narração</button><button class="ved-btn" id="capAdd" style="width:100%;margin-bottom:10px">＋ legenda manual</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
+    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas da narração</button><button class="ved-btn" id="capAdd" style="width:100%;margin-bottom:10px">＋ legenda manual</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd ic" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
     document.getElementById("capGen").onclick = () => toast("Geração automática precisa de transcrição (pendente no projeto). Use + legenda manual.");
     document.getElementById("capAdd").onclick = () => addText("Legenda", { size: 34, weight: 600, align: "center" }, "caption");
     el.querySelector(".ved-phead").insertAdjacentHTML("beforeend", "");
@@ -560,7 +560,7 @@ Studio.register("edit", (ctx) => {
     (St.timeline.sfx || []).forEach((s) => rows.push(["♪", s.file.split("/").pop(), "sfx", "sfx"]));
     St.sfxLib.forEach((s) => { if (!(St.timeline.sfx || []).some((x) => x.file === s.file)) rows.push(["♪", s.name || s.file.split("/").pop(), `${(s.duration || 0).toFixed(0)}s · biblioteca`, "lib:" + s.file]); });
     el.innerHTML = phead("Áudio", rows.length) + `<label class="drop sm" id="sfxDrop" style="display:block;margin-bottom:10px;padding:10px;border:1px dashed var(--vbd3);border-radius:8px;text-align:center;color:var(--vtx4);font-size:11px">Arraste SFX aqui (gelo, ambiência, respiração, impacto)<input id="sfxUp" type="file" accept="audio/*" multiple hidden></label>`
-      + `<div class="ved-list">${rows.map(([ic, nm, sub, act]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${esc(nm)}</div><div class="rs">${sub}</div></div><button class="radd" data-aud="${act}">＋</button></div>`).join("")}</div>`;
+      + `<div class="ved-list">${rows.map(([ic, nm, sub, act]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${esc(nm)}</div><div class="rs">${sub}</div></div><button class="radd ic" data-aud="${act}">＋</button></div>`).join("")}</div>`;
     ui.drop(document.getElementById("sfxDrop"), uploadSfx);
     el.querySelectorAll("[data-aud]").forEach((b) => b.onclick = () => { const a = b.dataset.aud; if (a.startsWith("lib:")) addSfx(a.slice(4)); });
   }
@@ -574,17 +574,17 @@ Studio.register("edit", (ctx) => {
     markFx(el);
   }
   function pFilters(el) {
-    el.innerHTML = phead("Filtros", FILTERS.length) + `<div class="ved-list">${FILTERS.map(([id, nm, css]) => `<div class="ved-row" data-fl="${id}" data-css="${css}"><span class="ric" style="background:linear-gradient(45deg,#5661c8,#c85f8a);filter:${css}">◑</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">preset</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
+    el.innerHTML = phead("Filtros", FILTERS.length) + `<div class="ved-list">${FILTERS.map(([id, nm, css]) => `<div class="ved-row" data-fl="${id}" data-css="${css}"><span class="ric" style="background:linear-gradient(45deg,#5661c8,#c85f8a);filter:${css}">◑</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">preset</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
     el.querySelectorAll("[data-fl]").forEach((b) => b.onclick = () => setFilter(b.dataset.fl, b.dataset.css));
   }
   function pElements(el) {
-    el.innerHTML = phead("Elementos", ELEMENTS.length) + `<div class="ved-list">${ELEMENTS.map(([id, nm, ic]) => `<div class="ved-row" data-el="${id}" data-nm="${nm}"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div></div><button class="radd">＋</button></div>`).join("")}</div>`;
+    el.innerHTML = phead("Elementos", ELEMENTS.length) + `<div class="ved-list">${ELEMENTS.map(([id, nm, ic]) => `<div class="ved-row" data-el="${id}" data-nm="${nm}"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
     el.querySelectorAll("[data-el]").forEach((b) => b.onclick = () => addOverlayShape(b.dataset.el, b.dataset.nm));
   }
   function pAdjust(el) { el.innerHTML = phead("Ajustes", 1) + `<div class="ved-row" style="cursor:default"><span class="ric">⚙</span><div class="rmid"><div class="rs" style="white-space:normal">Selecione um clipe — os ajustes aparecem no painel direito →</div></div></div>`; }
   function pLibrary(el) {
     const items = [["Preset · abertura", "template", "▤"], ["Preset · CTA final", "template", "▤"], ["Kit legendas neon", "estilo", "CC"], ["LUT frost", "cor", "◑"]];
-    el.innerHTML = phead("Biblioteca", items.length) + `<div class="ved-list">${items.map(([nm, tp, ic]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${tp}</div></div><button class="radd">＋</button></div>`).join("")}</div><p class="ved-hint">Presets salvos (em breve).</p>`;
+    el.innerHTML = phead("Biblioteca", items.length) + `<div class="ved-list">${items.map(([nm, tp, ic]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${tp}</div></div><button class="radd ic">＋</button></div>`).join("")}</div><p class="ved-hint">Presets salvos (em breve).</p>`;
   }
   function markFx(el) { const fx = adjustTarget(); const on = new Set((fx && fx.effects || []).filter((e) => e.enabled !== false).map((e) => (e.type || "").toLowerCase())); el.querySelectorAll("[data-ef]").forEach((b) => b.classList.toggle("on", on.has(b.dataset.ef.toLowerCase()))); }
 

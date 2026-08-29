@@ -118,7 +118,9 @@
   .ved-row .rmid{flex:1;min-width:0}
   .ved-row .rn{font-size:12px;color:var(--vtx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ved-row .rs{font-size:10px;color:var(--vtx4)}
-  .ved-row .radd{width:24px;height:24px;border-radius:6px;border:1px solid var(--vbd2);background:transparent;color:var(--vac);font-size:14px;flex:none}
+  /* O rótulo manda na largura: "aplicar" estourava a caixa fixa de 24 px e desalinhava os ＋/✕. */
+  .ved-row .radd{min-width:24px;height:24px;padding:0 7px;border-radius:6px;border:1px solid var(--vbd2);background:transparent;color:var(--vac);font-size:11px;line-height:1;flex:none;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+  .ved-row .radd.ic{padding:0;font-size:14px}
   .ved-feature{width:100%;display:flex;align-items:center;gap:7px;justify-content:center;background:var(--vacd);border:1px solid rgba(79,200,217,.4);color:var(--vac);border-radius:8px;padding:9px;font-size:12px;margin-bottom:10px}
 
   .ved-pgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
