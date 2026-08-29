@@ -1012,11 +1012,11 @@ def ripple(page, ctx):
         ok, tl = _esperar_disco(page, ctx, lambda x: len(x["clips"]) == 1)
         _sel_clipe(page, 0)
         page.locator("#tRipple").click()
+        aviso = H.esperar_toast(page, "ao menos um clipe")
         page.wait_for_timeout(1500)
         final = _tl_disco(ctx)
-        aviso = H.toast(page)
         ev = H.evidencia(page, ctx, "C-EDIT-43-ripple", full_page=False)
-        return H.verifica(ok and len(final.get("clips", [])) >= 1,
+        return H.verifica(ok and bool(aviso) and len(final.get("clips", [])) >= 1,
                           f"ripple removeu 1 clipe e parou em {len(final.get('clips', []))}",
                           f"1º ripple deixou {len(tl['clips'])} clipe(s); 2º ripple deixou "
                           f"{len(final.get('clips', []))} (esperado ≥1, como no #tDel) toast='{aviso}'", ev)

@@ -907,7 +907,9 @@ Studio.register("edit", (ctx) => {
   }
   function rippleDelete() {
     const u = St.selection[0]; const it = u && findItem(u); if (!it || it.kind !== "video") return deleteItems(St.selection);
-    commit("ripple delete", () => { St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); }); St.selection = [];
+    // mesma guarda do #tDel: a montagem da aula 014 não existe sem clipe
+    if ((St.timeline.clips || []).length <= 1) return toast("A montagem precisa de ao menos um clipe");
+    commit("ripple delete", () => { St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); }); St.selection = [];
   }
   function addText(text, style, type) {
     const tid = type === "caption" ? "t_cap" : "t_txt";
