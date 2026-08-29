@@ -293,7 +293,11 @@ Studio.register("base", (ctx) => {
     if (sel && !cands.some((c) => c.id === sel)) sel = null;
     if (!stepTouched) {
       const proximo = CHAIN.find(([k]) => !chain[k]);
-      step = proximo ? proximo[0] : "upscale";
+      const novo = proximo ? proximo[0] : "upscale";
+      // O card do painel 01 LÊ `step`: mudar o passo sem repintá-lo deixava stepper e card
+      // discordando ao abrir a etapa (C-BASE-33). Sem referência o painel mostra o gate da
+      // etapa 1 (`loadPrompts` falhou) — aí não se repinta por cima dele.
+      if (novo !== step) { step = novo; if (refs.length) renderPrompt(); }
     }
     render();
   }
@@ -553,7 +557,10 @@ Studio.register("base", (ctx) => {
     },
     async onProject() {
       if (!ctx.pid()) return;
-      sel = null; stepTouched = false; boardSel = null;
+      // A instância da etapa sobrevive à troca de campanha: zere o estado do closure aqui, senão
+      // o passo ativo e o texto editado da campanha anterior vazam para a nova.
+      sel = null; stepTouched = false; boardSel = null; step = "situation";
+      Object.keys(edits).forEach((k) => delete edits[k]);
       loadBrand();
       loadMoodSources();
       await loadPrompts();
