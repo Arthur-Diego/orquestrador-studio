@@ -261,6 +261,21 @@ def test_clip_fx_keeps_audio_and_preset(tmp_path):
     assert alto["clip_fx"]["c1"]["audio"]["volume"] == 2.0
 
 
+def test_clip_fx_keeps_vfx_and_radius(tmp_path):
+    """AP-08: os toggles da aba Vídeo (`vfx`) e o border radius sobrevivem ao round-trip."""
+    e = ed.normalize_editor(tmp_path, {"clip_fx": {"c_001": {
+        "vfx": {"crop": True, "chroma": False, "inventado": True}, "radius": 24}}})
+    fx = e["clip_fx"]["c_001"]
+    assert fx["vfx"] == {"crop": True, "chroma": False}   # chave fora do painel é descartada
+    assert fx["radius"] == 24
+    assert ed.normalize_editor(tmp_path, e) == e          # idempotente
+    # sem tocar a aba Vídeo, nada é inventado; o raio é clampado em 0–200
+    limpo = ed.normalize_editor(tmp_path, {"clip_fx": {"c1": {"filters": {}}}})["clip_fx"]["c1"]
+    assert "vfx" not in limpo and "radius" not in limpo
+    alto = ed.normalize_editor(tmp_path, {"clip_fx": {"c1": {"radius": 900}}})
+    assert alto["clip_fx"]["c1"]["radius"] == 200
+
+
 def test_overlay_keeps_preset_css(tmp_path):
     """AP-08: o preset de filtro também é gravado no próprio item quando o alvo é um overlay."""
     e = ed.normalize_editor(tmp_path, {"tracks": [{"type": "overlay", "items": [

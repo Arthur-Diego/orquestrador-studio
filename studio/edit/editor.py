@@ -54,6 +54,10 @@ MAX_SHAPE = 16        # glifo/forma de um elemento de overlay ("▦", "★", emo
 ADJUST_KEYS = ("exposure", "brightness", "contrast", "saturation", "temperature", "hue",
                "highlights", "shadows", "whites", "blacks", "sharpen", "fade", "vignette", "grain")
 
+# Toggles da aba Vídeo do clipe (painel direito do editor) e o raio de canto do quadro.
+VFX_KEYS = ("crop", "chroma", "stabilize", "removebg", "freeze", "reverse")
+RADIUS_RANGE = (0, 200)
+
 _ID_RE = re.compile(r"[^A-Za-z0-9_-]")
 
 
@@ -224,6 +228,15 @@ def normalize_clip_audio(raw: dict | None) -> dict:
     }
 
 
+def normalize_vfx(raw) -> dict:
+    """Toggles da aba Vídeo do clipe (crop, chroma key, estabilização…): dict de bools.
+
+    Só as chaves do painel sobrevivem, e só as que o usuário tocou (a ausência é "desligado").
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    return {k: _b(raw.get(k)) for k in VFX_KEYS if k in raw}
+
+
 def normalize_anim(raw: dict | None) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     known = ("none", "fade", "slide", "zoom", "pop", "rise", "typewriter")
@@ -362,6 +375,10 @@ def normalize_clip_fx(raw, root: Path) -> dict:
                  "filters": normalize_filters(fx.get("filters"))}
         if isinstance(fx.get("audio"), dict):        # aba Áudio do clipe (volume/fades/toggles)
             entry["audio"] = normalize_clip_audio(fx.get("audio"))
+        if isinstance(fx.get("vfx"), dict):          # aba Vídeo do clipe (crop, chroma, …)
+            entry["vfx"] = normalize_vfx(fx.get("vfx"))
+        if fx.get("radius") is not None:             # border radius do quadro (px)
+            entry["radius"] = _clampi(fx.get("radius"), *RADIUS_RANGE, 0)
         preset_css = _s(fx.get("presetCss", ""), MAX_STR)   # CSS do preset, usado no preview
         if preset_css:
             entry["presetCss"] = preset_css

@@ -75,6 +75,22 @@ def test_put_timeline_saves_and_returns_duration(client, project, root):
     assert stored["clips"][0]["speed"] == 1.6 and "duration" in stored["clips"][0]
 
 
+def test_put_timeline_keeps_music_volume_and_muted(client, project, root):
+    """AP-08: o painel de propriedades da trilha grava volume/mudo — o PUT precisa aceitá-los."""
+    seed(root)
+    tl = body(client.get(url(project, "/timeline")).json()["timeline"])
+    tl["music"] = {**tl["music"], "volume": 0.4, "muted": True}
+    devolvido = client.put(url(project, "/timeline"), json=tl).json()["timeline"]["music"]
+    assert devolvido["volume"] == 0.4 and devolvido["muted"] is True
+    stored = client.get(url(project, "/timeline")).json()["timeline"]["music"]
+    assert stored["volume"] == 0.4 and stored["muted"] is True
+    # sem tocar o painel, o schema da aula 014 continua só com file/offset
+    limpo = body(client.get(url(project, "/timeline")).json()["timeline"])
+    limpo["music"] = {"file": limpo["music"]["file"], "offset": 0.0}
+    magro = client.put(url(project, "/timeline"), json=limpo).json()["timeline"]["music"]
+    assert set(magro) == {"file", "offset"}
+
+
 @pytest.mark.parametrize("patch", [
     {"in": 3.0, "out": 3.0},
     {"in": 0.0, "out": 9.0},
