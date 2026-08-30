@@ -146,6 +146,112 @@ OUTPUT_SPEC = (
 )
 
 
+#: Vocabulário de fidelidade comum a todo preset (TEMPLATE UNIVERSAL da skill de origem): o que
+#: separa "foto" de "render". Vai para o parágrafo e para a linha `Style:` do prompt final.
+PRESET_FIDELITY = (
+    "hyper-detailed natural skin with visible pores, subtle imperfections and asymmetry, "
+    "physically accurate light behavior, imperfect real-world details, must look like an "
+    "unedited photograph, not an AI render"
+)
+
+#: Lista base de negativos anti-IA (REGRAS DE OURO da skill de origem). Cada preset recebe a
+#: própria cópia — o `negative` de um preset nunca compartilha a lista com outro.
+PRESET_NEGATIVE_BASE = ["plastic skin", "airbrushed look", "oversaturation", "HDR glow",
+                        "extra fingers", "deformed anatomy", "CGI look", "perfect symmetry"]
+
+
+def _preset(pid: str, name: str, desc_pt: str, camera: str, lens: str, fmt: str, focal: str,
+            aperture: str, light: str, grade: str, *, default: bool = False) -> dict:
+    entry = {"id": pid, "name": name, "desc_pt": desc_pt,
+             "rig": {"camera": camera, "lens": lens, "format": fmt, "focal": focal, "aperture": aperture},
+             "light": light, "grade": grade, "fidelity": PRESET_FIDELITY,
+             "negative": list(PRESET_NEGATIVE_BASE)}
+    if default:
+        entry["default"] = True
+    return entry
+
+
+#: `[extensão]` — catálogo de presets de realismo cinematográfico. NENHUMA aula do curso ensina
+#: presets: a feature inteira é extensão (ADR-004, gate 2 do CLAUDE.md) e é estritamente OPT-IN —
+#: sem `preset` explícito nada é injetado e o texto enviado ao CLI é o mesmo de sempre.
+#:
+#: Os valores são a TRANSCRIÇÃO da tabela de rig presets da skill `generate_realistic_prompt_images`
+#: (câmera+lente+formato+abertura, luz dominante, color grade). A skill é fonte de DESIGN-TIME: ela
+#: nunca é lida em runtime nem referenciada por path — este dict é a única fonte do servidor.
+REALISM_PRESETS: dict[str, dict] = {
+    "documentary-street": _preset(
+        "documentary-street", "Documentary Street Realism",
+        "Documentário autêntico: cru, granulado, câmera na mão, contexto amplo de rua.",
+        "Blackmagic Pocket 6K Pro", "Cooke S4", "Super 35", "24-35mm", "T2.8",
+        "soft overcast diffused daylight, handheld feel",
+        "raw, grainy, muted documentary grade, real film grain", default=True),
+    "arri-natural-narrative": _preset(
+        "arri-natural-narrative", "ARRI Natural Narrative",
+        "Narrativa cinematográfica orgânica: pele quente e contraste suave; default seguro com pessoa.",
+        "ARRI Alexa Mini LF", "Cooke S4", "Large Format", "40-50mm", "T2.0",
+        "one dominant soft key, gentle fill, 1:2-1:3 ratio",
+        'warm skin tones, soft contrast, gentle highlight roll-off ("Cooke look")'),
+    "red-commercial-precision": _preset(
+        "red-commercial-precision", "RED Commercial Precision",
+        "Precisão comercial: nitidez cristalina para produto, moda e tech.",
+        "RED V-Raptor", "Zeiss Supreme Prime", "Large Format", "35-50mm", "T4.0",
+        "clean controlled key, crisp speculars",
+        "precise color, high micro-contrast, clean punchy look"),
+    "sony-venice-night": _preset(
+        "sony-venice-night", "Sony Venice Night",
+        "Noturno limpo: neon e interiores escuros sem ruído.",
+        "Sony Venice 2", "Zeiss Supreme Prime", "Full Frame", "35mm", "T2.0",
+        "practical lights only (neon, lamps), low-light dual-base ISO",
+        "clean shadows, high latitude night grade"),
+    "anamorphic-film-look": _preset(
+        "anamorphic-film-look", "Anamorphic Film Look",
+        "Widescreen épico: flares horizontais e bokeh oval (indicado p/ 2.39:1).",
+        "ARRI Alexa Mini LF", "Hawk V-Lite Anamorphic", "Large Format", "40mm", "T2.2",
+        "key with horizontal blue flares allowed",
+        "filmic grade, oval bokeh, edge distortion"),
+}
+
+
+def preset_block(preset_id: str) -> str:
+    """Instrução em inglês (< 80 palavras) que amarra o preset às linhas técnicas já existentes.
+
+    Uma única linha, de propósito: o bloco manda PREENCHER `Camera:`/`Lighting:`/`Color grading:`/
+    `Style:` do padrão do bot, nunca criar seção nova — `split_sections`/`provenance` continuam
+    vendo as mesmas cinco linhas. `KeyError` para id desconhecido (os routers convertem em 422).
+    """
+    p = REALISM_PRESETS[preset_id]
+    r = p["rig"]
+    return (
+        f"REALISM PRESET (mandatory): Camera: line = {r['camera']}, {r['lens']}, {r['format']}, "
+        f"{r['focal']}, {r['aperture']}. Lighting: line = {p['light']} as dominant source. "
+        f"Color grading: line = {p['grade']}. Paragraph and Style: line must carry: {p['fidelity']}."
+    )
+
+
+def _role_text(kind: str, preset: str | None) -> str:
+    """Papel do bot + bloco do preset. Sem preset, devolve o papel intocado (invariante do gate W3:
+    o texto enviado ao CLI fica byte-idêntico ao de antes desta extensão)."""
+    role = ROLES[kind]
+    return f"{role}\n\n{preset_block(preset)}" if preset else role
+
+
+def _with_preset(result: dict, preset: str | None) -> dict:
+    """Acrescenta `"preset"` ao retorno e mescla os negativos do preset no campo `negative`.
+
+    Sem preset, `negative` sai exatamente como o CLI devolveu. Com preset, os termos do catálogo
+    entram no fim, sem duplicar o que o Claude já pediu para evitar (comparação case-insensitive).
+    """
+    if preset:
+        items = [t.strip() for t in (result.get("negative") or "").split(",") if t.strip()]
+        seen = {t.lower() for t in items}
+        for term in REALISM_PRESETS[preset]["negative"]:
+            if term.lower() not in seen:
+                items.append(term)
+                seen.add(term.lower())
+        result["negative"] = ", ".join(items)
+    return {**result, "preset": preset}
+
+
 def available() -> bool:
     return BIN is not None
 
@@ -190,14 +296,19 @@ def _brief_text(brief: dict) -> str:
     return "\n".join(lines) if lines else "- (no brief given; choose a strong cinematic vibe)"
 
 
-def from_brief(kind: str, brief: dict) -> dict:
-    """Modo 'simplificado/guiado' do bot (aula 007): só texto."""
-    role = ROLES[kind]
+def from_brief(kind: str, brief: dict, preset: str | None = None) -> dict:
+    """Modo 'simplificado/guiado' do bot (aula 007): só texto.
+
+    `preset` (`[extensão]`, opt-in) injeta o bloco de realismo logo depois do papel; com `None` o
+    prompt enviado ao CLI é byte-idêntico ao de antes da extensão.
+    """
+    role = _role_text(kind, preset)
     text, secs = _run(f"{role}\n\nBrief:\n{_brief_text(brief)}\n\n{OUTPUT_SPEC}")
-    return {**_parse(text), "source": "claude", "seconds": secs}
+    return _with_preset({**_parse(text), "source": "claude", "seconds": secs}, preset)
 
 
-def from_images(kind: str, images: list[Path], instruction: str = "", brief: dict | None = None) -> dict:
+def from_images(kind: str, images: list[Path], instruction: str = "", brief: dict | None = None,
+                preset: str | None = None) -> dict:
     """Modo com imagem (aula 009): o bot olha a(s) imagem(ns) e escreve o prompt fiel a elas."""
     images = [Path(p) for p in images][:MAX_IMAGES]
     if not images:
@@ -205,7 +316,7 @@ def from_images(kind: str, images: list[Path], instruction: str = "", brief: dic
     for p in images:
         if not p.exists():
             raise FileNotFoundError(str(p))
-    role = ROLES[kind]
+    role = _role_text(kind, preset)
     paths = "\n".join(f"- {p}" for p in images)
     prompt = (
         f"{role}\n\nFirst, read these image files with the Read tool and study their light, palette, atmosphere and "
@@ -214,7 +325,8 @@ def from_images(kind: str, images: list[Path], instruction: str = "", brief: dic
         + (f"Brief:\n{_brief_text(brief)}\n" if brief else "") + f"\n{OUTPUT_SPEC}"
     )
     text, secs = _run(prompt, images)
-    return {**_parse(text), "source": "claude", "seconds": secs, "images": [str(p) for p in images]}
+    return _with_preset({**_parse(text), "source": "claude", "seconds": secs,
+                         "images": [str(p) for p in images]}, preset)
 
 
 #: Variações de "estilização" do prompt de vibe — equivalem a mexer no Stylization/Weirdness do
@@ -229,24 +341,43 @@ STYLE_VARIANTS = [
 _STYLE_VARIANTS = STYLE_VARIANTS   # alias histórico
 
 
-def _sections(vibe: str, composition: str, no_people: bool) -> str:
-    """As cinco linhas técnicas do padrão do bot (`EXAMPLE_PROMPT`), para o template sem Claude."""
+def _sections(vibe: str, composition: str, no_people: bool, preset: str | None = None) -> str:
+    """As cinco linhas técnicas do padrão do bot (`EXAMPLE_PROMPT`), para o template sem Claude.
+
+    Com `preset` (`[extensão]`), o rig/luz/grade do catálogo substituem as strings fixas; sem
+    preset, o texto é o mesmo desde sempre (os testes do template fixam essas strings).
+    """
     style = "ultra-photorealistic, high resolution, sharp details, no illustration, no CGI look"
     if no_people:
         style += ", no people"
-    return ("\n\nCamera: RED Komodo 6K, 50mm lens, T2.8, shallow depth of field, tack-sharp focus.\n"
-            "Lighting: diffused key light, rim lights on both sides, subtle backlight for separation.\n"
+    camera = "RED Komodo 6K, 50mm lens, T2.8, shallow depth of field, tack-sharp focus"
+    lighting = "diffused key light, rim lights on both sides, subtle backlight for separation"
+    grading = f"{vibe} palette, cinematic contrast"
+    if preset:
+        p = REALISM_PRESETS[preset]
+        r = p["rig"]
+        camera = (f"{r['camera']}, {r['lens']}, {r['format']}, {r['focal']}, {r['aperture']}, "
+                  "shallow depth of field, tack-sharp focus")
+        lighting = p["light"]
+        grading = f"{p['grade']}, {vibe} palette"
+    return (f"\n\nCamera: {camera}.\n"
+            f"Lighting: {lighting}.\n"
             f"Composition: {composition}.\n"
-            f"Color grading: {vibe} palette, cinematic contrast.\n"
+            f"Color grading: {grading}.\n"
             f"Style: {style}.")
 
 
-def fallback_template(kind: str, brief: dict, variation: int = 0, no_people: bool = True) -> dict:
+def fallback_template(kind: str, brief: dict, variation: int = 0, no_people: bool = True,
+                      preset: str | None = None) -> dict:
     """Template determinístico (sem Claude) — o que a etapa 2 usava antes desta feature.
 
     `no_people` reproduz a única restrição que a aula 009 enuncia ("não tenho nenhum interesse em
     pessoas") e é escolha do usuário: desmarcado, o prompt não pede nada disso. Produto, texto e
     logo **não** são proibidos — o mood board da aula tem a lata.
+
+    `preset` (`[extensão]`) só é aplicado quando pedido explicitamente: preenche as linhas
+    `Camera:`/`Lighting:`/`Color grading:` com o rig do catálogo. Com `None`, o template é o do
+    curso, sem uma vírgula de diferença. Em `motion` não há linhas técnicas — preset não se aplica.
     """
     product = brief.get("product") or "the product"
     vibe = brief.get("vibe") or "cinematic"
@@ -264,13 +395,13 @@ def fallback_template(kind: str, brief: dict, variation: int = 0, no_people: boo
                       "Photorealistic cinematic still, shot on RED Komodo, film grain.")
         if no_people:
             prompt += " No people."
-        prompt += _sections(vibe, "wide, empty, atmosphere-first establishing shot", no_people)
+        prompt += _sections(vibe, "wide, empty, atmosphere-first establishing shot", no_people, preset)
     elif kind == "base":
         prompt = (f"Ultra-realistic commercial product photography of the {product} placed in exactly the same "
                   f"situation and composition as the reference image, with the campaign mood ({vibe}): same light, "
                   "palette and atmosphere. Shot as high-end advertising photography, sharp focus, hyper-detailed "
                   "textures, realistic reflections. No text.")
-        prompt += _sections(vibe, "clean, minimal, premium, centered hero shot", no_people)
+        prompt += _sections(vibe, "clean, minimal, premium, centered hero shot", no_people, preset)
     else:
         prompt = ("Subject performs one clear action; slow cinematic camera move; keep lighting, colors and character "
                   "identical to the input frame; realistic physics; no text.")

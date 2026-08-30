@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Catálogo de presets no prompter + resolução por ação em settings
 type: backend
 complexity: high
@@ -83,23 +83,23 @@ feature `storyboard-roteiro-llm` (sub-wave 2) consome isto como contrato congela
 
 ## Subtasks
 
-- [ ] 1.1 Transcrever a tabela de rig presets do `_techspec.md` §5 para o dict `REALISM_PRESETS`
+- [x] 1.1 Transcrever a tabela de rig presets do `_techspec.md` §5 para o dict `REALISM_PRESETS`
       em `studio/common/prompter.py`, com docstring explicando que é `[extensão]` (nenhuma aula
       ensina presets) e que a skill externa é fonte de design-time, nunca de runtime.
-- [ ] 1.2 Implementar `preset_block(preset_id)` — instrução curta em inglês derivada do preset.
-- [ ] 1.3 Adicionar o parâmetro `preset` a `from_brief` e `from_images`, injetando o bloco no
+- [x] 1.2 Implementar `preset_block(preset_id)` — instrução curta em inglês derivada do preset.
+- [x] 1.3 Adicionar o parâmetro `preset` a `from_brief` e `from_images`, injetando o bloco no
       prompt do papel só quando não for `None`, e acrescentando `"preset"` ao retorno.
-- [ ] 1.4 Implementar a mesclagem dos negativos do preset no campo `negative` da resposta.
-- [ ] 1.5 Adicionar o parâmetro `preset` a `fallback_template` (e ao helper interno `_sections`),
+- [x] 1.4 Implementar a mesclagem dos negativos do preset no campo `negative` da resposta.
+- [x] 1.5 Adicionar o parâmetro `preset` a `fallback_template` (e ao helper interno `_sections`),
       preenchendo as linhas técnicas com o rig quando houver preset.
-- [ ] 1.6 Criar `PRESET_ACTIONS`, `PROMPTER_KINDS` e a chave de persistência `prompter_presets`
+- [x] 1.6 Criar `PRESET_ACTIONS`, `PROMPTER_KINDS` e a chave de persistência `prompter_presets`
       em `studio/common/settings.py`.
-- [ ] 1.7 Implementar `preset_default_for` com a cadeia projeto → global → código, a semântica de
+- [x] 1.7 Implementar `preset_default_for` com a cadeia projeto → global → código, a semântica de
       `null` × ausente × id morto, e suporte a chave de ação arbitrária.
-- [ ] 1.8 Implementar `set_global_preset`, `set_project_preset` e `clear_project_preset`.
-- [ ] 1.9 Escrever os testes da seção `## Tests` em `tests/test_prompter.py` (acrescentando ao
+- [x] 1.8 Implementar `set_global_preset`, `set_project_preset` e `clear_project_preset`.
+- [x] 1.9 Escrever os testes da seção `## Tests` em `tests/test_prompter.py` (acrescentando ao
       arquivo, sem editar os testes já existentes) e em `tests/test_settings.py`.
-- [ ] 1.10 Rodar `.venv/bin/ruff check studio tests scripts` e a suíte completa
+- [x] 1.10 Rodar `.venv/bin/ruff check studio tests scripts` e a suíte completa
       (`.venv/bin/pytest -q`) e confirmar que nada regrediu.
 
 ## Implementation Details
@@ -168,72 +168,72 @@ Pontos de encaixe já verificados no código:
 Sem `_tests.md` neste workflow: casos concretos inline. Fake do Claude CLI pelo padrão já usado
 em `tests/test_prompter.py` (monkeypatch de `prompter.BIN` e `subprocess.run`).
 
-- [ ] **T1.1 — estrutura do catálogo.** `REALISM_PRESETS` tem exatamente as 5 chaves esperadas;
+- [x] **T1.1 — estrutura do catálogo.** `REALISM_PRESETS` tem exatamente as 5 chaves esperadas;
       cada preset tem `id`, `name`, `desc_pt`, `rig{camera,lens,format,focal,aperture}`, `light`,
       `grade`, `fidelity` e `negative` (lista não vazia); `id` do valor bate com a chave do dict;
       exatamente um preset tem `default: true` e é `documentary-street`.
-- [ ] **T1.2 — rig fiel à transcrição.** `REALISM_PRESETS["arri-natural-narrative"]["rig"]` tem
+- [x] **T1.2 — rig fiel à transcrição.** `REALISM_PRESETS["arri-natural-narrative"]["rig"]` tem
       `camera == "ARRI Alexa Mini LF"`, `lens == "Cooke S4"` e `format == "Large Format"`;
       `REALISM_PRESETS["documentary-street"]["rig"]["camera"] == "Blackmagic Pocket 6K Pro"`.
-- [ ] **T1.3 — `preset_block` conteúdo e limite.** `preset_block("red-commercial-precision")`
+- [x] **T1.3 — `preset_block` conteúdo e limite.** `preset_block("red-commercial-precision")`
       contém "RED V-Raptor" e "Zeiss Supreme Prime", tem menos de 80 palavras, e não contém
       nenhum dos rótulos de `PROMPT_SECTIONS` como início de linha nova (não cria seção).
-- [ ] **T1.4 — `preset_block` id desconhecido.** `preset_block("nao-existe")` levanta `KeyError`.
-- [ ] **T1.5 — retrocompat byte-idêntica de `from_brief`.** Com CLI fakeado que captura o prompt
+- [x] **T1.4 — `preset_block` id desconhecido.** `preset_block("nao-existe")` levanta `KeyError`.
+- [x] **T1.5 — retrocompat byte-idêntica de `from_brief`.** Com CLI fakeado que captura o prompt
       recebido, `from_brief("mood", brief)` e `from_brief("mood", brief, preset=None)` produzem
       exatamente a MESMA string de prompt, e essa string não contém nenhum nome de câmera do
       catálogo. O retorno traz `"preset": None`.
-- [ ] **T1.6 — `from_brief` com preset.** `from_brief("mood", brief,
+- [x] **T1.6 — `from_brief` com preset.** `from_brief("mood", brief,
       preset="arri-natural-narrative")` envia prompt contendo "ARRI Alexa Mini LF", "Cooke S4" e
       "Large Format"; o retorno traz `"preset": "arri-natural-narrative"`.
-- [ ] **T1.7 — `from_images` com e sem preset.** Com 1 imagem temporária real e CLI fakeado:
+- [x] **T1.7 — `from_images` com e sem preset.** Com 1 imagem temporária real e CLI fakeado:
       sem preset o prompt não contém termos do rig e o retorno traz `"preset": None`; com
       `preset="sony-venice-night"` o prompt contém "Sony Venice 2". Em ambos os casos o limite de
       4 imagens e o uso de `--allowedTools Read` permanecem (assertar nos args capturados).
-- [ ] **T1.8 — mesclagem de negativos.** Com CLI fakeado devolvendo `"negative": "text, plastic
+- [x] **T1.8 — mesclagem de negativos.** Com CLI fakeado devolvendo `"negative": "text, plastic
       skin"` e `preset="documentary-street"`, o campo `negative` do retorno contém "text",
       contém "CGI look" (vindo do preset) e **não** repete "plastic skin". Sem preset, o campo
       sai exatamente `"text, plastic skin"`.
-- [ ] **T1.9 — `fallback_template` com preset.** `fallback_template("base", brief,
+- [x] **T1.9 — `fallback_template` com preset.** `fallback_template("base", brief,
       preset="red-commercial-precision")["prompt"]` tem uma linha começando por `Camera:` que
       contém "RED V-Raptor"; a linha `Color grading:` contém termo da grade do preset.
-- [ ] **T1.10 — `fallback_template` sem preset.** `fallback_template("mood", brief)` devolve dict
+- [x] **T1.10 — `fallback_template` sem preset.** `fallback_template("mood", brief)` devolve dict
       idêntico ao de `fallback_template("mood", brief, preset=None)` e o `prompt` contém a string
       atual "RED Komodo 6K, 50mm lens, T2.8" — prova de que o template do curso não mudou.
-- [ ] **T1.11 — `provenance` intacto com preset.** Um prompt no formato padrão gerado com preset
+- [x] **T1.11 — `provenance` intacto com preset.** Um prompt no formato padrão gerado com preset
       passa por `split_sections` devolvendo as 5 seções, e `provenance` devolve 5 partes com os
       mesmos rótulos e valores de `from` de hoje.
-- [ ] **T1.12 — default de código é opt-in.** `settings.preset_default_for("mood")`,
+- [x] **T1.12 — default de código é opt-in.** `settings.preset_default_for("mood")`,
       `("base")` e `("motion")`, sem nenhum override, devolvem
       `{"kind": <ação>, "preset": None, "source": "code"}`.
-- [ ] **T1.13 — resolução genérica por ação (contrato do handoff).** Registrando
+- [x] **T1.13 — resolução genérica por ação (contrato do handoff).** Registrando
       `settings.PRESET_ACTIONS["storyboard.script"] = "documentary-street"` no teste,
       `preset_default_for("storyboard.script")` devolve
       `{"preset": "documentary-street", "source": "code"}`. Chave não registrada
       (`preset_default_for("nao.existe")`) levanta `ValueError`.
-- [ ] **T1.14 — override de projeto vence o global.** Com `set_global_preset("base",
+- [x] **T1.14 — override de projeto vence o global.** Com `set_global_preset("base",
       "arri-natural-narrative")` e `set_project_preset(pid, "base", "sony-venice-night")`,
       `preset_default_for("base", pid)` devolve `sony-venice-night` com `source: "project"`, e
       `preset_default_for("base")` (sem pid) devolve `arri-natural-narrative` com
       `source: "global"`.
-- [ ] **T1.15 — `null` persistido encerra a cadeia.** Com global setado em
+- [x] **T1.15 — `null` persistido encerra a cadeia.** Com global setado em
       `"documentary-street"` e projeto setado em `None`, `preset_default_for("base", pid)`
       devolve `{"preset": None, "source": "project"}` — e **não** cai para o global.
-- [ ] **T1.16 — `clear_project_preset` volta a cair para o global.** Após
+- [x] **T1.16 — `clear_project_preset` volta a cair para o global.** Após
       `clear_project_preset(pid, "base")` no cenário de T1.15, `preset_default_for("base", pid)`
       devolve `documentary-street` com `source: "global"`.
-- [ ] **T1.17 — override apontando para id morto é ignorado.** Escrevendo à mão
+- [x] **T1.17 — override apontando para id morto é ignorado.** Escrevendo à mão
       `{"prompter_presets": {"base": "preset-que-nao-existe"}}` no `config.json` do projeto,
       `preset_default_for("base", pid)` cai para o próximo nível (global, ou código com
       `preset: None`), sem levantar.
-- [ ] **T1.18 — validação dos setters.** `set_global_preset("nao-existe", "documentary-street")`
+- [x] **T1.18 — validação dos setters.** `set_global_preset("nao-existe", "documentary-street")`
       e `set_global_preset("base", "preset-que-nao-existe")` levantam `ValueError`;
       `set_global_preset("base", None)` é aceito e persiste `null`.
-- [ ] **T1.19 — persistência não toca `defaults`.** Com um `config.json` que já tem
+- [x] **T1.19 — persistência não toca `defaults`.** Com um `config.json` que já tem
       `{"defaults": {"base.image": {...}}}`, chamar `set_global_preset("base",
       "documentary-street")` mantém a chave `defaults` intacta e acrescenta `prompter_presets`;
       `settings.default_for("base.image")` continua devolvendo o mesmo resultado de antes.
-- [ ] **T1.20 — config antigo sem a chave nova.** Um `config.json` sem `prompter_presets` não
+- [x] **T1.20 — config antigo sem a chave nova.** Um `config.json` sem `prompter_presets` não
       quebra `preset_default_for` (devolve o default de código) nem `global_config()`.
 
 ## Success Criteria
