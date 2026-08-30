@@ -43,6 +43,56 @@ consumidora acrescenta a própria chave sem tocar em nada desta frente. O que a 
   prompter (usada pelos routers de etapa desta frente), mas **não** é mais o universo de
   validação da configuração de preset.
 
+**Amenda A3 — colisão de nomenclatura na etapa 4 (achado da implementação, relevante para a
+consumidora).** O domínio storyboard **já usa a palavra "preset" para outro conceito**: as
+"fórmulas da aula" (`studio/storyboard/service.py:180` `presets()` sobre o dict `PRESETS`,
+consumidas pelo `<select id="sbPreset">` em `studio/etapas/storyboard/view.html:102` e
+`view.js:82`). Nada disso é tocado por esta feature. Para evitar ambiguidade e não quebrar os
+testes de view existentes:
+
+- Os nomes **globais** do contrato permanecem os da seção 5, sem prefixo: `REALISM_PRESETS`,
+  `preset_block`, `GET /api/prompter/presets`, campo `preset` no body/resposta e chave
+  `prompter_presets` no `config.json`. O escopo já os desambigua.
+- Os identificadores **locais da etapa 4** (id de elemento, variável de view) usam o prefixo
+  `realism`: `#sbRealismPreset` e afins. O id `sbPreset` continua sendo o das fórmulas da aula.
+- A consumidora `storyboard-roteiro-llm`, que também põe um seletor de preset na tela da etapa 4,
+  fica avisada: usar `realism` no identificador local e nunca reaproveitar `sbPreset`.
+
+**Amenda A4 — PENDÊNCIA P4: a UI de preset da etapa 2 (mood) NÃO é implementável como
+especificada. `[HARD-GATE — não decidido pela frente]`**
+
+Achado da implementação, em divergência com o texto da v1.0 (§3 "Incluído" e §9 critério 11):
+
+- `POST /api/projects/{pid}/mood/prompts/generate` (`studio/etapas/mood/router.py:106`) **existe
+  mas está morto**: nenhuma tela o chama. A ADR-014 tirou a criação de prompt de vibe da etapa 2
+  e a levou para a biblioteca global de mood boards.
+- `tests/test_mood_view.py:52-58` (`test_view_removed_the_creation_panels`) **trava essa decisão
+  por teste**: a string `"mood/prompts/generate"` NÃO pode aparecer em
+  `studio/etapas/mood/view.js`. Pôr o seletor de preset naquela tela quebraria esse teste e
+  contrariaria a ADR-014.
+- A tela viva de prompt de vibe é a da biblioteca (`POST /api/moodboards/{mbid}/prompt/generate`
+  em `studio/moodboards/router.py:155`, UI em `studio/web/moodboards.js`). Ela está **duplamente
+  fora** do escopo desta feature: o serviço `studio/moodboards/` não consta da §3, e a UI vive em
+  `studio/web/*`, proibido pelo ADR-010 e pelos Limites da §1.
+
+Decisão da frente: **parar esta parte e registrar**, sem inventar contrato.
+
+- ENTREGUE: o campo aditivo `preset` no endpoint `mood/prompts/generate` (está na §5, é
+  retrocompatível e deixa o contrato pronto para quando a tela voltar a existir).
+- NÃO ENTREGUE: o `<select>` de preset na tela da etapa 2 — o critério 11 passa a valer para
+  **base e storyboard**, as duas telas de plugin que de fato geram prompt hoje.
+- SOBE PARA DECISÃO (P4): levar presets de realismo à biblioteca de mood boards
+  (`studio/moodboards/*` + `studio/web/moodboards.js`) é escopo novo e toca o núcleo `web/*` —
+  cabe a uma frente de preparo/shell, junto da P2. Não é decisão desta frente.
+
+**Amenda A5 — persistência do preset no histórico da etapa 4.** A §7 previa gravar `"preset"` no
+"registro do video-prompt". Verificado no código: `storyboard.video_prompt`
+(`studio/storyboard/service.py:736`) **não grava `prompts.json`** — quem persiste é a UI, pelo
+`PUT /storyboard/scenes`, dentro do mapa `photos[img].video_prompt` de `scenes.json`. Como
+ADR-018/022 impedem reestruturar `scenes.json`, a frente entrega o `"preset"` **na resposta** do
+`video-prompt` (auditável e suficiente para a UI), e não altera o schema de `scenes.json`.
+Observabilidade por histórico segue valendo para mood e base, que têm `prompts.json` de verdade.
+
 **Amenda A2 — semântica do default `null`.** Com o opt-in, `preset_default_for("mood")` sem
 override devolve `{"kind": "mood", "preset": None, "source": "code"}`. Um body de generate **sem**
 o campo `preset` resolve esse default e, sendo `None`, não injeta bloco algum: o comportamento
@@ -448,8 +498,10 @@ chamada nova ao CLI, então nenhum log novo de subprocess.
 9. `preset` desconhecido nesses endpoints → 422 antes de qualquer chamada ao CLI.
 10. `split_sections`/`provenance` sobre um prompt gerado com preset seguem devolvendo as 5 seções
     e os mesmos rótulos de proveniência (nenhum teste de provenance alterado).
-11. Seletor de preset presente e marcado `[extensão]` nos `view.html`/`view.js` de mood, base e
-    storyboard; nenhuma alteração em `studio/web/*` no diff da feature.
+11. Seletor de preset presente e marcado `[extensão]` nos `view.html`/`view.js` de **base e
+    storyboard** (a etapa 2 sai por força da amenda A4/P4: a tela de mood não gera prompt desde a
+    ADR-014, e `tests/test_mood_view.py` trava isso); nenhuma alteração em `studio/web/*` no diff
+    da feature.
 12. `make verify` verde (ruff + pytest, sem rede/navegador).
 
 ---
