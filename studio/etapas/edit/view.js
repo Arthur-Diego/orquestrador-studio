@@ -268,6 +268,9 @@ Studio.register("edit", (ctx) => {
     const files = new Set((St.timeline.sfx || []).map((s) => s.file).filter(Boolean));
     sfxPool.forEach((a, f) => { if (!files.has(f)) { a.pause(); a.remove(); sfxPool.delete(f); } });
     files.forEach((f) => sfxEl(f));
+    // a poda mora aqui (e não só no ramo `audio` do renderDirty): trocar de projeto passa por
+    // `renderRoot` → `mountAudio`, e sem isso os <video> do projeto anterior ficavam no pool
+    pruneOverlayPool();
     attachPool();
   }
   function musicEl() {
@@ -461,7 +464,11 @@ Studio.register("edit", (ctx) => {
   function layerBase(el, o) {
     const tf = o.transform || { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
     el.style.left = (tf.x * 100) + "%"; el.style.top = (tf.y * 100) + "%";
-    el.style.transform = "translate(-50%,-50%) " + tfCss({ ...tf, x: .5, y: .5 }).replace(/^translate\([^)]*\)\s*/, "");
+    // a centralização vai na propriedade individual `translate`, que a cascata aplica ANTES de
+    // `scale` e de `transform`. Com ela dentro do `transform`, o `scale:` das classes de efeito
+    // (fx-zoom/fx-motion/fx-pixelate) multiplicava o offset de -50% e a camada saía do lugar.
+    el.style.translate = "-50% -50%";
+    el.style.transform = tfCss({ ...tf, x: .5, y: .5 }).replace(/^translate\([^)]*\)\s*/, "");
     el.style.opacity = tf.opacity != null ? tf.opacity : 1;
   }
   function textLayerCreate(el, o, stage) { el.style.padding = "2px 8px"; el.style.maxWidth = "80%"; }
@@ -492,6 +499,9 @@ Studio.register("edit", (ctx) => {
     const img = el.querySelector("img"), v = el.querySelector("video");
     if (img) { const want = ctx.files(o.src); if (img.getAttribute("src") !== want) img.src = want; }
     else if (v) {
+      // teto em px contra o PALCO (o `%` do <video> resolveria contra o tamanho do arquivo)
+      el.style.maxWidth = Math.round(stage.clientWidth * 0.6) + "px";
+      el.style.maxHeight = Math.round(stage.clientHeight * 0.6) + "px";
       const want = ctx.files(o.src); if (v.getAttribute("src") !== want) { v.src = want; delete v.dataset.err; }
       if (v.parentNode !== el) el.appendChild(v);
       // src quebrado: a camada rotula e o pool nunca tenta tocar (mesmo padrão de `videoFor`)
@@ -619,8 +629,8 @@ Studio.register("edit", (ctx) => {
     const o = opts || {};
     renderTimeline(); renderPreview(); renderProps();
     if (o.panel) renderPanel();
-    // `pruneOverlayPool` chega com o MP4 na VÍDEO 2 (task 04); a chamada é tolerante até lá.
-    if (o.audio) { mountAudio(); if (typeof pruneOverlayPool === "function") pruneOverlayPool(); }
+    if (o.audio) mountAudio();          // `mountAudio` já poda o pool de overlays
+
     syncHeader();
   }
 
@@ -1158,7 +1168,13 @@ Studio.register("edit", (ctx) => {
     if (main) { main.scrollLeft = scroll; revelarPlayhead(main, px); }
     paintPlayhead();
   }
+  let phRevelado = { t: null, px: null };
+  /** Corre atrás do playhead SÓ quando ele se moveu (ou o zoom mudou). Rodar em todo
+   *  `renderTimeline` desfazia o scroll horizontal escolhido pelo usuário a cada edição — o mesmo
+   *  "pulo de layout" que esta rodada elimina (FDD §9, critério 11). */
   function revelarPlayhead(main, px) {
+    if (phRevelado.t === St.playhead && phRevelado.px === px) return;
+    phRevelado = { t: St.playhead, px };
     const x = St.playhead * px, vis = main.clientWidth;
     if (vis <= 0) return;
     if (x < main.scrollLeft + 8) main.scrollLeft = Math.max(0, x - 40);
@@ -1300,7 +1316,6 @@ Studio.register("edit", (ctx) => {
   function addText(text, style, type) {
     const tid = type === "caption" ? "t_cap" : "t_txt";
     commit("adicionar " + type, () => { const t = etrack(tid, true); const it = { id: newId("tx"), start: +St.playhead.toFixed(2), end: +(St.playhead + 2.5).toFixed(2), text, style: { size: 40, weight: 700, align: "center", color: "#FFFFFF", shadow: true, ...style }, transform: { x: .5, y: type === "caption" ? .82 : .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, anim: { in: "fade", out: "fade" } }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
-    renderPanel();
   }
   /** Vídeo na faixa VÍDEO 2: overlay com `src` de vídeo (o preview já compõe por cima do V1). */
   function addOverlayVideo(file, dur, rotulo) {
@@ -1317,6 +1332,7 @@ Studio.register("edit", (ctx) => {
       if (it.kind !== "video") { console.warn("[edit] moveToTrack", uid, dest); return toast("Só clipes da VÍDEO 1 podem ir para a VÍDEO 2"); }
       const c = it.clip, start = +num(it.start).toFixed(2), end = +(num(it.start) + num(it.dur)).toFixed(2), novo = newId("ov");
       commit("mover para VÍDEO 2", () => {
+        ensurePositions();        // sem isso, tirar um clipe do meio puxa todos os seguintes
         const t = etrack("v2", true);
         t.items.push({ id: novo, start, end, src: c.file, text: nameOf(c), transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} });
         St.timeline.clips = (St.timeline.clips || []).filter((x) => x.id !== uid);

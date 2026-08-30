@@ -518,6 +518,9 @@ def test_ui_tlheight_and_panel_widths_clamped(tmp_path):
     assert ui(leftW=300, rightW=300) == {"zoom": 1.0, "snap": True, "leftW": 300.0, "rightW": 300.0}
     # ausentes = chaves ausentes (nada de default gravado, senão o round-trip legado muda)
     assert ui() == {"zoom": 1.0, "snap": True}
+    # medida ilegível é DESCARTADA, não clampada para o mínimo (senão lixo espremia a timeline)
+    for lixo in ("abc", None, [], {}, float("nan"), float("inf")):
+        assert ui(tlHeight=lixo) == {"zoom": 1.0, "snap": True}, lixo
 
 
 def test_empty_clips_and_null_music_pass_validation(tmp_path):

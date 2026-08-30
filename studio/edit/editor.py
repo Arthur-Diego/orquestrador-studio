@@ -420,14 +420,24 @@ def normalize_ui(raw: dict | None) -> dict:
 
     `tlHeight`/`leftW`/`rightW` sobrevivem ao F5 (a timeline não volta a cortar MÚSICA e SFX),
     mas não ganham default gravado: `{"zoom":1,"snap":true}` continua byte-idêntico no round-trip.
+
+    Medida ilegível (não numérica, NaN, infinito) é DESCARTADA, não clampada: virar o mínimo da
+    faixa faria um valor lixo abrir a etapa com a timeline espremida.
     """
     raw = raw if isinstance(raw, dict) else {}
     ui = {"zoom": normalize_ui_zoom(raw.get("zoom", UI_ZOOM_DEFAULT)),
           "snap": _b(raw.get("snap", True), True)}
     for key, rng in (("tlHeight", UI_TL_HEIGHT_RANGE), ("leftW", UI_LEFT_W_RANGE),
                      ("rightW", UI_RIGHT_W_RANGE)):
-        if key in raw:
-            ui[key] = _clamp(raw.get(key), *rng)
+        if key not in raw:
+            continue
+        try:
+            medida = float(raw.get(key))
+        except (TypeError, ValueError):
+            continue
+        if medida != medida or medida in (float("inf"), float("-inf")):
+            continue
+        ui[key] = _clamp(medida, *rng)
     return ui
 
 

@@ -147,7 +147,10 @@
   .ved-layer{position:absolute;transform-origin:center;will-change:transform;cursor:move;pointer-events:auto}
   /* MP4 na faixa VÍDEO 2: a camada é o overlay, então o <video> precisa de tamanho próprio
      (o seletor do palco acima é só do vídeo da VÍDEO 1, filho direto). */
-  .ved-layer video{display:block;max-width:60%;max-height:60%;object-fit:contain}
+  /* o teto é da CAMADA (medida em px pelo `overlayLayerUpdate`, contra o palco). Aqui o `60%` do
+     vídeo resolveria contra a largura INTRÍNSECA do arquivo (1920 px), não contra o palco — o
+     overlay saía maior que o quadro e era cortado pelo `overflow:hidden` da `.ved-stage`. */
+  .ved-layer video{display:block;max-width:100%;max-height:100%;object-fit:contain}
   .ved-ovmiss{display:block;background:rgba(0,0,0,.55);color:var(--vtx3);font-size:11px;padding:5px 12px;border-radius:20px;font-family:"IBM Plex Mono",monospace;white-space:nowrap}
   /* Elementos do painel Elementos: as formas geométricas são desenhadas (não são caractere).
      Medidas em % do palco para acompanhar a proporção/resolução do projeto. */
