@@ -36,6 +36,29 @@ Studio.register("edit", (ctx) => {
   };
   const TRANSITIONS = ["Fade", "Dissolve", "Slide", "Zoom", "Wipe", "Blur", "Flash", "Glitch", "Spin", "Push", "Pull", "Directional"];
   const EFFECTS = ["Blur", "Sharpen", "Glow", "Vignette", "Grain", "Noise", "Shake", "Chromatic", "Glitch", "Pixelate", "RGB Split", "Motion Blur", "Zoom", "Lens"];
+  // Tipos de camada que cada efeito aceita. Vignette/Pixelate/Lens dependem dos pixels do quadro:
+  // em texto/legenda a linha do painel fica desabilitada com a sublegenda "só vídeo".
+  const FX_TODOS = ["video", "overlay", "text", "caption"], FX_MIDIA = ["video", "overlay"];
+  const EFFECT_APPLIES = {
+    Blur: FX_TODOS, Sharpen: FX_TODOS, Glow: FX_TODOS, Vignette: FX_MIDIA, Grain: FX_TODOS,
+    Noise: FX_TODOS, Shake: FX_TODOS, Chromatic: FX_TODOS, Glitch: FX_TODOS, Pixelate: FX_MIDIA,
+    "RGB Split": FX_TODOS, "Motion Blur": FX_TODOS, Zoom: FX_TODOS, Lens: FX_MIDIA,
+  };
+  // Efeitos que NÃO cabem em `filter:` viram classe `fx-*` (keyframes ou pseudo-elemento).
+  // Glow/Chromatic/RGB Split são classe SÓ em texto/legenda — em vídeo/overlay eles são `filter:`.
+  const FX_CLASSES = {
+    glow: { cls: "fx-glow", kinds: ["text", "caption"] },
+    vignette: { cls: "fx-vignette" }, grain: { cls: "fx-grain" }, noise: { cls: "fx-noise" },
+    shake: { cls: "fx-shake", dur: (i) => .6 - i * .4 },
+    chromatic: { cls: "fx-chromatic", kinds: ["text", "caption"] },
+    glitch: { cls: "fx-glitch", dur: (i) => 1.2 - i * .8 },
+    pixelate: { cls: "fx-pixelate" }, rgbsplit: { cls: "fx-rgbsplit", kinds: ["text", "caption"] },
+    motionblur: { cls: "fx-motion" }, zoom: { cls: "fx-zoom", dur: (i) => 2 - i }, lens: { cls: "fx-lens" },
+  };
+  const FX_CLS = Object.values(FX_CLASSES).map((f) => f.cls);
+  // ordem em que as regras de animação estão declaradas no `view.html`: com mais de uma ativa, a
+  // ÚLTIMA ganha o shorthand `animation` da cascata — e é dela que sai o `--fx-dur`.
+  const FX_ANIM = ["shake", "glitch", "zoom"];
   const FILTERS = [["cinetico", "Cinético", "contrast(1.1) saturate(1.15)"], ["frost", "Frost", "hue-rotate(-10deg) brightness(1.05) saturate(1.1)"], ["neon", "Neon", "saturate(1.6) contrast(1.1)"], ["mono", "Mono", "grayscale(1) contrast(1.1)"], ["warm", "Warm", "sepia(.25) saturate(1.2)"], ["cool", "Cool", "hue-rotate(-14deg) saturate(1.1)"], ["vivid", "Vivid", "saturate(1.5) contrast(1.08)"], ["fade", "Fade", "contrast(.9) brightness(1.08) saturate(.85)"]];
   const ELEMENTS = [["rect", "Retângulo", "▭"], ["circle", "Círculo", "●"], ["arrow", "Seta", "➜"], ["bar", "Barra inferior", "▬"], ["ice", "Sticker gelo", "❄"], ["bolt", "Ícone raio", "⚡"], ["bg", "Background", "▩"], ["lower", "Lower third", "▤"]];
   // formas do painel Elementos desenhadas em CSS no preview (as demais continuam glifo)
@@ -55,6 +78,11 @@ Studio.register("edit", (ctx) => {
   const clipLen = (c) => (num(c.out) - num(c.in)) / Math.max(num(c.speed, 1), 0.05);
   const nameOf = (c) => (c.file ? c.file.split("/").pop().replace(/\.[^.]+$/, "") : `${c.scene}_${c.shot}_${c.take}`);
   const isVideoFile = (s) => /\.(mp4|webm|mov)$/i.test(s || "");
+  // chave estável do efeito (o nome tem espaço: "RGB Split" → "rgbsplit") e a regra por tipo
+  const fxSlug = (t) => (t || "").toLowerCase().replace(/[^a-z]/g, "");
+  const FX_BY_SLUG = Object.fromEntries(Object.entries(EFFECT_APPLIES).map(([k, v]) => [fxSlug(k), v]));
+  const fxAplica = (type, kind) => !kind || (FX_BY_SLUG[fxSlug(type)] || FX_TODOS).includes(kind);
+  const fxInt = (ef) => clamp(num(ef && ef.intensity, .5), 0, 1);
 
   // ------------------------------------------------------------ STORE
   const St = {
@@ -337,7 +365,11 @@ Studio.register("edit", (ctx) => {
     let w = aw, h = w / ar; if (h > ah) { h = ah; w = h * ar; }
     stage.style.width = Math.max(80, w) + "px"; stage.style.height = Math.max(80, h) + "px";
   }
-  function cssFilterFor(fx) {
+  /** Parte `filter:` do preview: preset + os 10 ajustes + os efeitos que são filtro CSS. `kind` é o
+   *  tipo da camada (`video` por padrão): Glow/Chromatic/RGB Split só são `filter:` em vídeo e
+   *  overlay — em texto/legenda eles viram `text-shadow` por classe (ver `applyEffectClasses`). */
+  function cssFilterFor(fx, kind) {
+    kind = kind || "video";
     const f = (fx && fx.filters) || {}; const p = [];
     if (fx && fx.presetCss) p.push(fx.presetCss);
     if (f.brightness) p.push(`brightness(${1 + f.brightness / 100})`);
@@ -346,8 +378,41 @@ Studio.register("edit", (ctx) => {
     if (f.saturation) p.push(`saturate(${1 + f.saturation / 100})`);
     if (f.hue) p.push(`hue-rotate(${f.hue * 1.8}deg)`);
     if (f.temperature) p.push(`sepia(${clamp(Math.abs(f.temperature) / 100, 0, .6)}) hue-rotate(${f.temperature > 0 ? -10 : 10}deg)`);
-    (fx && fx.effects || []).forEach((ef) => { if (ef.enabled === false) return; const n = (ef.type || "").toLowerCase(); if (n === "blur") p.push(`blur(${ef.intensity * 6}px)`); if (n === "glow") p.push(`brightness(${1 + ef.intensity * .3}) saturate(${1 + ef.intensity})`); if (n === "sharpen") p.push(`contrast(${1 + ef.intensity * .4})`); if (n === "vignette") p.push(`brightness(.96)`); });
+    const midia = kind !== "text" && kind !== "caption";
+    (fx && fx.effects || []).forEach((ef) => {
+      if (ef.enabled === false || !fxAplica(ef.type, kind)) return;   // efeito fora do tipo é ignorado
+      const n = fxSlug(ef.type), i = fxInt(ef);
+      if (n === "blur") p.push(`blur(${(i * 6).toFixed(2)}px)`);
+      else if (n === "sharpen") p.push(`contrast(${(1 + i * .4).toFixed(3)})`);
+      else if (n === "motionblur") p.push(`blur(${(i * 3).toFixed(2)}px)`);
+      else if (n === "glow" && midia) p.push(`brightness(${(1 + i * .3).toFixed(3)}) saturate(${(1 + i).toFixed(3)})`);
+      else if (n === "chromatic" && midia) p.push(`drop-shadow(${(-i * 3).toFixed(2)}px 0 rgba(255,0,0,.6)) drop-shadow(${(i * 3).toFixed(2)}px 0 rgba(0,255,255,.6))`);
+      else if (n === "rgbsplit" && midia) p.push(`drop-shadow(0 ${(-i * 3).toFixed(2)}px rgba(255,0,0,.6)) drop-shadow(0 ${(i * 3).toFixed(2)}px rgba(0,255,255,.6))`);
+      else if (n === "lens") p.push(`contrast(${(1 + i * .2).toFixed(3)}) saturate(${(1 + i * .3).toFixed(3)})`);
+    });
     return p.join(" ");
+  }
+  /** Os efeitos que não são `filter:` (keyframes e pseudo-elementos) viram classe `fx-*` no nó, com
+   *  `--fx-i` (intensidade) e `--fx-dur` (duração da animação). As classes que saíram são sempre
+   *  REMOVIDAS: o nó sobrevive entre renders (reconciliação por `data-uid`). Efeito que não se
+   *  aplica ao tipo é ignorado mesmo se vier persistido, e a animação é do compositor (nunca JS por
+   *  frame). `--fx-i` segue a maior intensidade ativa — é uma custom property por nó, não por efeito. */
+  function applyEffectClasses(el, fx, kind) {
+    if (!el) return;
+    const ativos = new Map(); let imax = 0;
+    ((fx && fx.effects) || []).forEach((ef) => {
+      const n = fxSlug(ef.type), spec = FX_CLASSES[n];
+      if (ef.enabled === false || !spec || !fxAplica(ef.type, kind)) return;
+      if (spec.kinds && !spec.kinds.includes(kind)) return;           // Glow/Chromatic/RGB só em texto
+      const i = fxInt(ef); ativos.set(n, i); imax = Math.max(imax, i);
+    });
+    const cls = new Set([...ativos.keys()].map((n) => FX_CLASSES[n].cls));
+    FX_CLS.forEach((c) => el.classList.toggle(c, cls.has(c)));
+    if (!ativos.size) { el.style.removeProperty("--fx-i"); el.style.removeProperty("--fx-dur"); return; }
+    el.style.setProperty("--fx-i", imax.toFixed(3));
+    const anim = FX_ANIM.filter((n) => ativos.has(n)).pop();
+    if (anim) el.style.setProperty("--fx-dur", Math.max(FX_CLASSES[anim].dur(ativos.get(anim)), .08).toFixed(2) + "s");
+    else el.style.removeProperty("--fx-dur");
   }
   function tfCss(t) { if (!t) return ""; return `translate(${(t.x - .5) * 100}%,${(t.y - .5) * 100}%) scale(${(t.scaleX || 1) * (t.flipX ? -1 : 1)},${(t.scaleY || 1) * (t.flipY ? -1 : 1)}) rotate(${t.rotation || 0}deg)`; }
   function renderPreview() {
@@ -363,7 +428,9 @@ Studio.register("edit", (ctx) => {
       if (v && !v.dataset.err) {
         v.style.display = "block"; empty.style.display = "none";
         if (!St.playing) { try { v.currentTime = num(seg.clip.in) + (St.playhead - seg.start) * num(seg.clip.speed, 1); } catch (e) {} }
-        const fx = ed().clip_fx[seg.clip.id]; v.style.filter = fx ? cssFilterFor(fx) : ""; v.style.transform = fx ? tfCss(fx.transform) : ""; v.style.opacity = fx && fx.transform ? (fx.transform.opacity != null ? fx.transform.opacity : 1) : 1;
+        // no clipe da VÍDEO 1 as classes `fx-*` vão no próprio <video> (ele não é uma `.ved-layer`)
+        const fx = ed().clip_fx[seg.clip.id]; v.style.filter = fx ? cssFilterFor(fx, "video") : ""; v.style.transform = fx ? tfCss(fx.transform) : ""; v.style.opacity = fx && fx.transform ? (fx.transform.opacity != null ? fx.transform.opacity : 1) : 1;
+        applyEffectClasses(v, fx, "video");
         label.style.display = "block"; label.textContent = nameOf(seg.clip);
       } else { empty.style.display = "block"; black.style.display = "none"; label.style.display = "block"; label.textContent = nameOf(seg.clip) + " (mídia indisponível)"; }
     } else if (seg && seg.kind === "black") { black.style.display = "block"; empty.style.display = "none"; label.style.display = "none"; }
@@ -410,7 +477,9 @@ Studio.register("edit", (ctx) => {
     const comFundo = s.bg && s.bg !== "transparent";
     el.style.background = comFundo ? s.bg : ""; el.style.borderRadius = comFundo ? "6px" : "";
     el.style.color = comFundo ? (el.classList.contains("caption") ? "#fff" : (s.color || "#04222a")) : (s.color || "#fff");
-    el.style.textShadow = s.shadow !== false ? "0 2px 12px rgba(0,0,0,.6)" : "";
+    // a sombra base vai por custom property (e não em `style.textShadow`) para que as classes de
+    // efeito com `text-shadow` — Glow, Chromatic, RGB Split — consigam vencer a cascata
+    el.style.setProperty("--tx-shadow", s.shadow !== false ? "0 2px 12px rgba(0,0,0,.6)" : "none");
   }
   function overlayLayerCreate(el, o, stage) {
     if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
@@ -475,6 +544,9 @@ Studio.register("edit", (ctx) => {
           stage.appendChild(el);
         }
         hook.update(el, a.item, stage, t);
+        // efeitos e ajustes valem para TODA camada (texto, legenda e overlay), não só para clipe
+        el.style.filter = cssFilterFor(a.item, a.type);
+        applyEffectClasses(el, a.item, a.type);
         if (isSel(uid)) drawBBox(stage, el);
       } catch (err) { console.warn("[edit] layer", uid, err); }
     });
@@ -570,6 +642,8 @@ Studio.register("edit", (ctx) => {
     const p = proj();
     const opt = (arr, sel, fn) => arr.map((a) => { const [v, l] = fn(a); return `<option value="${v}"${v == sel ? " selected" : ""}>${l}</option>`; }).join("");
     const title = ctx.project() ? (ctx.project().name || "Montagem") : "Montagem";
+    // o header nasce depois do `toggleSide` do `onProject`: o botão já reflete a preferência
+    const app = document.querySelector(".app"), escondido = !!app && app.classList.contains("side-hidden");
     return `<div class="ved-top">
       <a class="ved-back" title="Voltar" href="#" id="edBack">‹</a>
       <div class="ved-titleblock"><span class="kick">Etapa 7 · Studio de vídeo</span><span class="ved-title" title="${esc(title)}">${esc(title)}</span></div>
@@ -583,6 +657,7 @@ Studio.register("edit", (ctx) => {
         <div class="ved-selwrap"><span class="kick">Resolução</span><select id="edRes" aria-label="Resolução do projeto">${opt(RES, p.width, (a) => [a[1], a[0]])}</select></div>
         <div class="ved-selwrap"><span class="kick">FPS</span><select id="edFps" aria-label="FPS do projeto">${opt(FPS_CHOICES, p.fps, (a) => [a, a])}</select></div>
         <button class="ved-ib" id="edGuide" title="Guia da aula 014">?</button>
+        <button class="ved-ib${escondido ? " on" : ""}" id="edSide" title="${escondido ? "Mostrar" : "Esconder"} o menu lateral do Studio" style="width:auto;padding:0 8px;font-size:11px">⇤ Menu</button>
         <button class="ved-ib" id="edFull" title="Tela cheia">⛶</button>
         <button class="ved-btn" id="edSaveBtn">Salvar</button>
         <button class="ved-btn pri" id="edExport">Exportar ↗</button>
@@ -594,6 +669,7 @@ Studio.register("edit", (ctx) => {
     document.getElementById("edSaveBtn").onclick = () => save(false);
     document.getElementById("edExport").onclick = openExport;
     document.getElementById("edGuide").onclick = openGuide;
+    document.getElementById("edSide").onclick = () => toggleSide();
     document.getElementById("edFull").onclick = toggleFullscreen;
     document.getElementById("edAuto").onchange = (e) => { St.autosave = e.target.checked; if (St.autosave && St.saveStatus === "dirty") scheduleSave(); };
     document.getElementById("edAspect").onchange = (e) => { commit("proporção", () => proj().aspect = e.target.value); stageBox(); };
@@ -610,6 +686,21 @@ Studio.register("edit", (ctx) => {
     setStatus(St.saveStatus);
   }
   function toggleFullscreen() { const r = root(); if (!document.fullscreenElement) r.requestFullscreen && r.requestFullscreen(); else document.exitFullscreen && document.exitFullscreen(); }
+  /** Esconde o menu lateral do Studio para o editor ocupar a tela inteira. A PREFERÊNCIA é do
+   *  usuário e sobrevive à troca de etapa (localStorage); a CLASSE não — `destroy()` a remove para
+   *  `.app.side-hidden` não vazar para as outras etapas. Servida fora do shell (sem `.app`) ou com
+   *  o localStorage indisponível, a função não faz nada e não quebra (FDD §6). */
+  const SIDE_KEY = "studio.edit.sideHidden";
+  function sidePref() { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch (e) { return false; } }
+  function toggleSide(force) {
+    const app = document.querySelector(".app"); if (!app) return;
+    const alvo = force === undefined ? !app.classList.contains("side-hidden") : !!force;
+    app.classList.toggle("side-hidden", alvo);
+    try { localStorage.setItem(SIDE_KEY, alvo ? "1" : "0"); } catch (e) {}
+    const b = document.getElementById("edSide");
+    if (b) { b.classList.toggle("on", alvo); b.title = alvo ? "Mostrar o menu lateral do Studio" : "Esconder o menu lateral do Studio"; }
+    fit();
+  }
   function openGuide() {
     ui.modal({ title: "Studio de vídeo · aula 014", subtitle: "O que a aula ensina", html: `<div id="edGuideBody" class="guide">Carregando…</div>` });
     const body = document.getElementById("edGuideBody");
@@ -745,9 +836,26 @@ Studio.register("edit", (ctx) => {
     el.innerHTML = phead("Transições", TRANSITIONS.length) + `<input class="ved-search" placeholder="Buscar…" oninput="const q=this.value.toLowerCase();this.parentNode.querySelectorAll('[data-tr]').forEach(b=>b.style.display=b.dataset.tr.toLowerCase().includes(q)?'':'none')"><div class="ved-pgrid">${TRANSITIONS.map((t) => `<button class="ved-pick" data-tr="${t}"><span class="sw">⧓</span>${t}<span class="sub">0.5s</span></button>`).join("")}</div><p class="ved-hint">[extensão] — aparece no preview; no master.mp4: fase seguinte. Selecione um clipe de vídeo antes.</p>`;
     el.querySelectorAll("[data-tr]").forEach((b) => b.onclick = () => applyTransition(b.dataset.tr));
   }
+  /** Os 14 efeitos valem para clipe, overlay, texto e legenda; o que o tipo selecionado não aceita
+   *  sai desabilitado com a sublegenda "só vídeo". A linha ativa abre um slider de intensidade
+   *  inline — irmão da linha, e não filho, para o clique no slider não desligar o efeito. */
   function pEffects(el) {
-    el.innerHTML = phead("Efeitos", EFFECTS.length) + `<div class="ved-list">${EFFECTS.map((e) => `<div class="ved-row" data-ef="${e}"><span class="ric">✦</span><div class="rmid"><div class="rn">${e}</div></div><button class="radd">aplicar</button></div>`).join("")}</div><p class="ved-hint">[extensão] Blur/Sharpen/Grain entram no master.mp4; os demais aparecem no preview. Selecione um clipe.</p>`;
+    const alvo = adjustTarget(), kind = fxKind();
+    const on = new Map(((alvo && alvo.effects) || []).filter((e) => e.enabled !== false).map((e) => [fxSlug(e.type), fxInt(e)]));
+    const linhas = EFFECTS.map((e) => {
+      const s = fxSlug(e), ativo = on.has(s), ok = fxAplica(e, kind);
+      const row = `<div class="ved-row${ativo && ok ? " on" : ""}${ok ? "" : " off"}" data-ef="${e}"><span class="ric">✦</span><div class="rmid"><div class="rn">${e}</div>${ok ? "" : `<div class="rs">só vídeo</div>`}</div><button class="radd"${ok ? "" : " disabled"}>${ativo && ok ? "remover" : "aplicar"}</button></div>`;
+      if (!ativo || !ok) return row;
+      const v = Math.round(on.get(s) * 100);
+      return row + `<div class="ved-slider ved-fxint"><label>Intensidade</label><input type="range" id="fxi-${s}" min="0" max="100" value="${v}"><span class="val" id="fxi-${s}v">${v}%</span></div>`;
+    }).join("");
+    el.innerHTML = phead("Efeitos", EFFECTS.length) + `<div class="ved-list">${linhas}</div><p class="ved-hint">[extensão] Blur/Sharpen/Grain entram no master.mp4 só em clipes da VÍDEO 1; nos demais tipos e efeitos é preview. Selecione um clipe, overlay, texto ou legenda.</p>`;
     el.querySelectorAll("[data-ef]").forEach((b) => b.onclick = () => toggleEffect(b.dataset.ef));
+    EFFECTS.forEach((e) => {
+      const s = fxSlug(e); if (!on.has(s) || !document.getElementById("fxi-" + s)) return;
+      bindSlider("fxi-" + s, (v) => setFxIntensity(e, v / 100), "intensidade", (v) => { const d = document.getElementById("fxi-" + s + "v"); if (d) d.textContent = v + "%"; renderPreview(); });
+      document.getElementById("fxi-" + s).onchange = () => commit("intensidade", () => {});
+    });
     markFx(el);
   }
   function pFilters(el) {
@@ -763,11 +871,18 @@ Studio.register("edit", (ctx) => {
     const items = [["Preset · abertura", "template", "▤"], ["Preset · CTA final", "template", "▤"], ["Kit legendas neon", "estilo", "CC"], ["LUT frost", "cor", "◑"]];
     el.innerHTML = phead("Biblioteca", items.length) + `<div class="ved-list">${items.map(([nm, tp, ic]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${tp}</div></div><button class="radd ic">＋</button></div>`).join("")}</div><p class="ved-hint">Presets salvos (em breve).</p>`;
   }
-  function markFx(el) { const fx = adjustTarget(); const on = new Set((fx && fx.effects || []).filter((e) => e.enabled !== false).map((e) => (e.type || "").toLowerCase())); el.querySelectorAll("[data-ef]").forEach((b) => b.classList.toggle("on", on.has(b.dataset.ef.toLowerCase()))); }
+  // a marcação do painel segue o PRIMEIRO selecionado (`adjustTarget`), mesmo em multi-seleção
+  function markFx(el) { const fx = adjustTarget(), kind = fxKind(); const on = new Set((fx && fx.effects || []).filter((e) => e.enabled !== false).map((e) => fxSlug(e.type))); el.querySelectorAll("[data-ef]").forEach((b) => b.classList.toggle("on", on.has(fxSlug(b.dataset.ef)) && fxAplica(b.dataset.ef, kind))); }
 
   // ============================================================ PROPERTIES (direita)
   const TABS = { basico: "Básico", video: "Vídeo", audio: "Áudio", speed: "Velocidade", ajustes: "Ajustes" };
-  function tabsFor(kind) { return ["music", "sfx"].includes(kind) ? ["audio", "speed"] : ["basico", "video", "audio", "speed", "ajustes"]; }
+  // texto e legenda ganham a aba Ajustes (mesmos 10 ajustes do clipe, via `propsAdjustTab`); as
+  // abas de vídeo/áudio/velocidade continuam fora porque não existem para uma camada de texto
+  function tabsFor(kind) {
+    if (["music", "sfx"].includes(kind)) return ["audio", "speed"];
+    if (["text", "caption"].includes(kind)) return ["basico", "ajustes"];
+    return ["basico", "video", "audio", "speed", "ajustes"];
+  }
   function renderProps() {
     const el = document.getElementById("edProps"); if (!el) return;
     const it = St.selection.length ? findItem(St.selection[0]) : null;
@@ -813,7 +928,7 @@ Studio.register("edit", (ctx) => {
       <div class="ved-tabs">${tabs.map((t) => `<button data-tab="${t}"${t == St.rightTab ? " class=on" : ""}>${TABS[t]}</button>`).join("")}</div><div id="tabBody"></div>`;
     el.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { St.rightTab = b.dataset.tab; renderProps(); });
     const body = document.getElementById("tabBody");
-    if (kind === "text" || kind === "caption") return propsTextBody(body, it);
+    if (kind === "text" || kind === "caption") return St.rightTab === "ajustes" ? propsAdjustTab(body, it) : propsTextBody(body, it);
     if (kind === "music" || kind === "sfx") return propsAudioItem(body, it);
     // vídeo / overlay
     const tab = St.rightTab;
@@ -913,7 +1028,8 @@ Studio.register("edit", (ctx) => {
       <div class="ved-toggle"><span>Sombra</span><button class="ved-sw${s.shadow !== false ? " on" : ""}" id="txSh"></button></div>
       <div class="ved-toggle"><span>Maiúsculas</span><button class="ved-sw${s.uppercase ? " on" : ""}" id="txUp"></button></div>
       <div class="ved-slider"><label>Opacidade</label><input type="range" id="txOp" min="0" max="100" value="${(tf.opacity != null ? tf.opacity : 1) * 100 | 0}"><span class="val" id="txOpv"></span></div>
-      <div class="ved-grid2">${nf("txStart", "Início", it.start.toFixed(1), "s")}${nf("txEnd", "Fim", num(o.end).toFixed(1), "s")}</div>`;
+      <div class="ved-grid2">${nf("txStart", "Início", it.start.toFixed(1), "s")}${nf("txEnd", "Fim", num(o.end).toFixed(1), "s")}</div>
+      ${fxSectionHTML(o)}`;
     document.getElementById("txT").oninput = (e) => { o.text = e.target.value; renderPreview(); renderTimeline(); scheduleSave(); };
     document.getElementById("txAlign").onchange = (e) => cset("alinhar", () => s.align = e.target.value);
     document.getElementById("txColor").oninput = (e) => { s.color = e.target.value; renderPreview(); scheduleSave(); };
@@ -923,6 +1039,26 @@ Studio.register("edit", (ctx) => {
     bindNum("txSize", (v) => s.size = clamp(v, 4, 400), "tamanho"); bindNum("txW", (v) => s.weight = clamp(v, 100, 900), "peso");
     bindSlider("txOp", (v) => tf.opacity = v / 100, "opacidade", (v) => document.getElementById("txOpv").textContent = v + "%");
     bindNum("txStart", (v) => o.start = Math.max(v, 0), "início"); bindNum("txEnd", (v) => o.end = Math.max(v, num(o.start) + .2), "fim");
+    bindFxSection(body, o);
+  }
+  /** Seção "Efeitos" das Propriedades de texto/legenda: o que está ativo, com intensidade e ✕.
+   *  Aplicar efeito novo continua sendo pelo painel Efeitos, à esquerda. */
+  function fxSectionHTML(o) {
+    const ativos = (o.effects || []).filter((e) => e.enabled !== false);
+    const cab = `<div class="ved-kick" style="margin:12px 0 4px">Efeitos</div>`;
+    if (!ativos.length) return cab + `<p class="ved-hint">Nenhum efeito. Aplique pelo painel Efeitos, à esquerda.</p>`;
+    return cab + ativos.map((e) => {
+      const s = fxSlug(e.type), v = Math.round(fxInt(e) * 100);
+      return `<div class="ved-slider"><label>${esc(e.type)}</label><input type="range" id="txfx-${s}" min="0" max="100" value="${v}"><span class="val" id="txfx-${s}v">${v}%</span><button class="ved-ib" data-fxdel="${esc(e.type)}" title="Remover ${esc(e.type)}" style="width:22px;height:22px;font-size:11px">✕</button></div>`;
+    }).join("") + `<p class="ved-hint">Efeito em texto/legenda é preview — no master.mp4: fase seguinte.</p>`;
+  }
+  function bindFxSection(body, o) {
+    (o.effects || []).filter((e) => e.enabled !== false).forEach((e) => {
+      const s = fxSlug(e.type); if (!document.getElementById("txfx-" + s)) return;
+      bindSlider("txfx-" + s, (v) => e.intensity = clamp(v / 100, 0, 1), "intensidade", (v) => { const d = document.getElementById("txfx-" + s + "v"); if (d) d.textContent = v + "%"; renderPreview(); });
+      document.getElementById("txfx-" + s).onchange = () => commit("intensidade", () => {});
+    });
+    body.querySelectorAll("[data-fxdel]").forEach((b) => b.onclick = () => { const t = fxSlug(b.dataset.fxdel); commit("remover efeito", () => o.effects = (o.effects || []).filter((e) => fxSlug(e.type) !== t), { panel: true }); });
   }
   function propsAudioItem(body, it) {
     if (it.kind === "music") {
@@ -1215,9 +1351,47 @@ Studio.register("edit", (ctx) => {
       actions: [{ label: "Remover", onClick: (m) => { commit("remover transição", () => ed().transitions = ed().transitions.filter((x) => x.id !== tid)); m.close(); } }, { label: "OK", primary: true, onClick: (m) => { commit("editar transição", () => { tr.type = document.getElementById("trT").value; tr.duration = num(document.getElementById("trD").value, .5); }); m.close(); } }] });
     setTimeout(() => { const d = document.getElementById("trD"); if (d) d.oninput = () => document.getElementById("trDv").textContent = d.value; }, 0);
   }
-  function toggleEffect(type) { const fx = adjustTarget(); if (!fx) return toast("Selecione um clipe"); commit("efeito " + type, () => { fx.effects = fx.effects || []; const t = type.toLowerCase(); if (fx.effects.some((e) => (e.type || "").toLowerCase() === t)) fx.effects = fx.effects.filter((e) => (e.type || "").toLowerCase() !== t); else fx.effects.push({ type, intensity: .5, enabled: true }); }, { panel: true }); }
-  function setFilter(id, css) { const fx = adjustTarget(); if (!fx) return toast("Selecione um clipe"); commit("filtro", () => { fx.filters = fx.filters || {}; fx.filters.preset = id; fx.presetCss = css; }, { panel: true }); }
-  function adjustTarget() { const u = St.selection[0]; if (!u) return null; const it = findItem(u); if (!it) return null; if (it.kind === "video") return clipFx(it.clip.id); if (it.kind === "overlay") { it.item.filters = it.item.filters || {}; it.item.effects = it.item.effects || []; return it.item; } return null; }
+  /** Liga/desliga o efeito em TODA a seleção. Com alvos de tipos diferentes, quem decide entre
+   *  aplicar e remover é o PRIMEIRO alvo, para os itens terminarem no mesmo estado. Alvo que não
+   *  aceita o efeito fica de fora; nenhum alvo aceitar vira toast, sem commit (FDD §6). */
+  function toggleEffect(type) {
+    const alvos = adjustEntries(); if (!alvos.length) return toast("Selecione um clipe");
+    const ok = alvos.filter((a) => fxAplica(type, a.kind));
+    if (!ok.length) return toast(`${type} só se aplica a vídeo (VÍDEO 1/VÍDEO 2)`);
+    const t = fxSlug(type), tinha = (ok[0].fx.effects || []).some((e) => fxSlug(e.type) === t);
+    commit("efeito " + type, () => ok.forEach(({ fx }) => {
+      fx.effects = (fx.effects || []).filter((e) => fxSlug(e.type) !== t);
+      if (!tinha) fx.effects.push({ type, intensity: .5, enabled: true });
+    }), { panel: true });
+  }
+  /** Intensidade do efeito nos alvos que o têm — chamada pelo slider inline (sem commit no arraste). */
+  function setFxIntensity(type, i) {
+    const t = fxSlug(type);
+    adjustTargets().forEach((fx) => (fx.effects || []).forEach((e) => { if (fxSlug(e.type) === t) e.intensity = clamp(i, 0, 1); }));
+  }
+  function setFilter(id, css) {
+    const alvos = adjustTargets(); if (!alvos.length) return toast("Selecione um clipe");
+    commit("filtro", () => alvos.forEach((fx) => { fx.filters = fx.filters || {}; fx.filters.preset = id; fx.presetCss = css; }), { panel: true });
+  }
+  /** [cross-feature] contrato 4: `adjustTarget()` devolve o alvo de efeitos/ajustes da primeira
+   *  seleção e `adjustTargets()` o da seleção inteira — clipe da VÍDEO 1 pelo `clip_fx`, overlay,
+   *  texto e legenda pelo próprio item, sempre com `effects[]` e `filters{}` garantidos. As
+   *  legendas geradas pela frente C herdam efeitos por este caminho. */
+  function adjustTarget() { const a = adjustEntries()[0]; return a ? a.fx : null; }
+  function adjustTargets() { return adjustEntries().map((a) => a.fx); }
+  /** Uso interno: o alvo COM o tipo, que é o que decide o que cada efeito aceita (`EFFECT_APPLIES`). */
+  function adjustEntries() {
+    const out = [];
+    St.selection.forEach((u) => {
+      const it = findItem(u); if (!it) return;
+      if (it.kind === "video") return void out.push({ fx: clipFx(it.clip.id), kind: "video", uid: u });
+      if (!["overlay", "text", "caption"].includes(it.kind)) return;
+      const o = it.item; o.effects = o.effects || []; o.filters = o.filters || {};
+      out.push({ fx: o, kind: it.kind, uid: u });
+    });
+    return out;
+  }
+  function fxKind() { const a = adjustEntries()[0]; return a ? a.kind : null; }
   function addMarker() { commit("marcador", () => ed().markers.push({ id: newId("mk"), at: +St.playhead.toFixed(2), name: "Marcador" })); }
   function addSfx(file) { commit("adicionar SFX", () => St.timeline.sfx.push({ file, at: +St.playhead.toFixed(2), gain: -6 }), { panel: true, audio: true }); }
   async function uploadSfx(files) { try { const r = await ui.upload(`${base()}/sfx/upload`, files); St.sfxLib = await api(`${base()}/sfx`); const novos = St.sfxLib.slice(-r.added); commit("importar SFX", () => novos.forEach((s) => St.timeline.sfx.push({ file: s.file, at: +St.playhead.toFixed(2), gain: -6 })), { panel: true, audio: true }); toast(`${r.added} SFX importados`); } catch (err) { toast(err.message); } }
@@ -1309,7 +1483,9 @@ Studio.register("edit", (ctx) => {
   function fit() {
     const r = root(); if (!r) return;
     const side = document.querySelector(".side"), topbar = document.querySelector(".topbar");
-    const l = side ? side.getBoundingClientRect().right : 0, top = topbar ? topbar.getBoundingClientRect().height : 0;
+    // `offsetParent === null` = menu lateral escondido (`.app.side-hidden .side{display:none}`):
+    // o editor encosta em 0 em vez de herdar a largura de um elemento que não está mais na tela
+    const l = side && side.offsetParent !== null ? side.getBoundingClientRect().right : 0, top = topbar ? topbar.getBoundingClientRect().height : 0;
     if (document.fullscreenElement === r) { r.style.top = "0"; r.style.left = "0"; } else { r.style.top = top + "px"; r.style.left = l + "px"; }
     stageBox();
   }
@@ -1340,8 +1516,10 @@ Studio.register("edit", (ctx) => {
       try { const f = await api("/api/edit/ffmpeg"); St.hasFfmpeg = f.available; } catch (e) { St.hasFfmpeg = true; }
       try { St.sfxLib = await api(`${base()}/sfx`); } catch (e) { St.sfxLib = []; }
       try { St.mediaLib = await api(`${base()}/media`); } catch (e) { St.mediaLib = []; }
+      toggleSide(sidePref());          // a preferência de menu escondido volta ao entrar na etapa
       await load();
     },
-    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); sfxPool.clear(); overlayPool.forEach((v) => { v.pause(); v.remove(); }); overlayPool.clear(); musicAudio = null; },
+    // a classe sai com a etapa (senão o menu lateral some no resto do Studio); a preferência fica
+    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); const app = document.querySelector(".app"); if (app) app.classList.remove("side-hidden"); videoPool.clear(); sfxPool.clear(); overlayPool.forEach((v) => { v.pause(); v.remove(); }); overlayPool.clear(); musicAudio = null; },
   };
 });

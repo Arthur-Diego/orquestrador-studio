@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Efeitos em qualquer camada e toggle da sidebar
 type: frontend
 complexity: high
@@ -55,17 +55,17 @@ entrega o botão que esconde o menu lateral do Studio para o editor ocupar a tel
 </requirements>
 
 ## Subtasks
-- [ ] 5.1 Ler `_techspec.md` §4 fluxos (e) e (f), §3 itens 6 e 7, §5 contrato 4, §6 e §10 risco 4.
-- [ ] 5.2 Estender `adjustTarget()` a text/caption e criar `adjustTargets()`.
-- [ ] 5.3 Ligar `toggleEffect`/`setFilter` à multi-seleção.
-- [ ] 5.4 Criar `EFFECT_APPLIES` e reescrever `pEffects` (desabilitar por tipo + slider inline).
-- [ ] 5.5 Estender `cssFilterFor` aos 14 efeitos e criar `applyEffectClasses`.
-- [ ] 5.6 Acrescentar keyframes e classes `fx-*` em `view.html`.
-- [ ] 5.7 Aplicar filtro e classes em toda camada de `renderLayers` e no `<video>` do V1.
-- [ ] 5.8 Acrescentar a seção "Efeitos" em `propsTextBody` e `ajustes` em `tabsFor` para text/caption.
-- [ ] 5.9 Atualizar o hint de rotulagem preview-only do painel Efeitos.
-- [ ] 5.10 Implementar `toggleSide`, o botão `#edSide`, o CSS `.app.side-hidden` e o ciclo de vida.
-- [ ] 5.11 Rodar `make verify`.
+- [x] 5.1 Ler `_techspec.md` §4 fluxos (e) e (f), §3 itens 6 e 7, §5 contrato 4, §6 e §10 risco 4.
+- [x] 5.2 Estender `adjustTarget()` a text/caption e criar `adjustTargets()`.
+- [x] 5.3 Ligar `toggleEffect`/`setFilter` à multi-seleção.
+- [x] 5.4 Criar `EFFECT_APPLIES` e reescrever `pEffects` (desabilitar por tipo + slider inline).
+- [x] 5.5 Estender `cssFilterFor` aos 14 efeitos e criar `applyEffectClasses`.
+- [x] 5.6 Acrescentar keyframes e classes `fx-*` em `view.html`.
+- [x] 5.7 Aplicar filtro e classes em toda camada de `renderLayers` e no `<video>` do V1.
+- [x] 5.8 Acrescentar a seção "Efeitos" em `propsTextBody` e `ajustes` em `tabsFor` para text/caption.
+- [x] 5.9 Atualizar o hint de rotulagem preview-only do painel Efeitos.
+- [x] 5.10 Implementar `toggleSide`, o botão `#edSide`, o CSS `.app.side-hidden` e o ciclo de vida.
+- [x] 5.11 Rodar `make verify`.
 
 ## Implementation Details
 Modificar `studio/etapas/edit/view.js` (constantes, Preview, Panels `pEffects`/`markFx`,
@@ -107,15 +107,15 @@ O CSS de `.app.side-hidden` é a **única** regra desta frente que sai do escopo
 
 ## Tests
 
-- [ ] `grep` em `view.js`: contém `EFFECT_APPLIES`, `adjustTargets(`, `applyEffectClasses(`,
+- [x] `grep` em `view.js`: contém `EFFECT_APPLIES`, `adjustTargets(`, `applyEffectClasses(`,
       `toggleSide(` e `studio.edit.sideHidden`.
-- [ ] `grep` em `view.html`: contém `.app.side-hidden`, `@keyframes ved-fx-shake`,
+- [x] `grep` em `view.html`: contém `.app.side-hidden`, `@keyframes ved-fx-shake`,
       `@keyframes ved-fx-glitch` e `@keyframes ved-fx-zoom`.
-- [ ] Regressão: `tests/test_edit_editor.py::test_text_and_caption_keep_effects_filters_preset`
+- [x] Regressão: `tests/test_edit_editor.py::test_text_and_caption_keep_effects_filters_preset`
       (task 01) continua verde — é ele que prova que o que o front grava sobrevive ao PUT.
-- [ ] Regressão: `test_step_editor_reuses_design_system_and_lesson_stays_in_guide` continua verde
+- [x] Regressão: `test_step_editor_reuses_design_system_and_lesson_stays_in_guide` continua verde
       (nenhuma cor solta nova; `crimson` continua ausente de `view.js` e `view.html`).
-- [ ] `make verify` verde.
+- [x] `make verify` verde.
 
 Critérios do FDD §9 cobrados no smoke Playwright do fechamento: 16 (Glow/Blur/Shake numa legenda,
 aba Ajustes, persistência após F5, efeitos "só vídeo" desabilitados para texto), 17 (esconder e
