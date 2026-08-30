@@ -603,6 +603,331 @@
           }
         }
       ]
+    },
+    {
+      "name": "captions generate (source=script) — itens prontos para a faixa t_cap [extensão]",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"source\": \"script\", \"text\": \"Você já parou pra pensar no que sustenta tudo isso hoje\", \"start\": 0.0, \"mode\": \"karaoke\", \"chunk\": 6, \"hi\": \"#C8F751\", \"position\": \"bottom\", \"style\": {\"size\": 34, \"weight\": 700, \"align\": \"center\", \"color\": \"#FFFFFF\", \"bg\": \"transparent\"}}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/captions/generate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('sem OPENAI_API_KEY o tempo é estimado', () => pm.expect(b.source).to.eql('estimate'));",
+              "pm.test('word_count = as 11 palavras do roteiro', () => pm.expect(b.word_count).to.eql(11));",
+              "pm.test('total_s = palavras / WPS (2.4)', () => pm.expect(b.total_s).to.be.closeTo(11 / 2.4, 0.001));",
+              "pm.test('itens no shape de editor.tracks[t_cap].items[]', () => {",
+              "  pm.expect(b.items).to.be.an('array').that.is.not.empty;",
+              "  const it = b.items[0];",
+              "  ['id','start','end','text','mode','hi','chunk','words','style','transform','anim']",
+              "    .forEach(k => pm.expect(it).to.have.property(k));",
+              "  pm.expect(it.id).to.match(/^cap_[0-9a-f]{6}$/);",
+              "  pm.expect(it.mode).to.eql('karaoke');",
+              "  pm.expect(it.hi).to.eql('#C8F751');",
+              "  pm.expect(it.chunk).to.eql(6);",
+              "  pm.expect(it.transform.y).to.eql(0.82);",
+              "  pm.expect(it.words[0]).to.have.all.keys('w','start_s','end_s');",
+              "});",
+              "pm.test('chunk=6 limita a janela a 6 palavras', () => {",
+              "  b.items.forEach(it => pm.expect(it.words.length).to.be.at.most(6));",
+              "});",
+              "pm.test('itens cobrem [0, total_s) sem buraco nem sobreposição', () => {",
+              "  pm.expect(b.items[0].start).to.eql(0);",
+              "  pm.expect(b.items[b.items.length - 1].end).to.eql(b.total_s);",
+              "  b.items.slice(0, -1).forEach((it, i) => pm.expect(it.end).to.eql(b.items[i + 1].start));",
+              "});",
+              "pm.test('bordas do item são as bordas das suas palavras', () => {",
+              "  b.items.forEach(it => {",
+              "    pm.expect(it.start).to.eql(it.words[0].start_s);",
+              "    pm.expect(it.end).to.eql(it.words[it.words.length - 1].end_s);",
+              "  });",
+              "});",
+              "// evidência do critério cross-feature C <- B: os itens gerados seguem para o PUT /timeline",
+              "pm.collectionVariables.set('capItems', JSON.stringify(b.items));",
+              "pm.collectionVariables.set('capBody', JSON.stringify(Object.assign(",
+              "  JSON.parse(pm.collectionVariables.get('timeline')),",
+              "  {editor: {version: 1, tracks: [{id: 't_cap', type: 'caption', name: 'Legendas', items: b.items}]}})));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "captions generate com text vazio -> 422 (detail começa pelo campo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"source\": \"script\", \"text\": \"   \"}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/captions/generate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test(\"detail é string e começa por 'text:'\", () => {",
+              "  const d = pm.response.json().detail;",
+              "  pm.expect(d).to.be.a('string');",
+              "  pm.expect(d).to.match(/^text:/);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "captions generate com file fora do projeto -> 422 (path traversal)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"source\": \"audio\", \"file\": \"../../etc/passwd\"}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/captions/generate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// sem ffmpeg a rota trava antes, no 409 (mesma regra do render e do último frame)",
+              "pm.test('422 com ffmpeg, 409 sem', () => pm.expect([422, 409]).to.include(pm.response.code));",
+              "if (pm.response.code === 422) {",
+              "  pm.test(\"detail é string e começa por 'file:'\", () => {",
+              "    const d = pm.response.json().detail;",
+              "    pm.expect(d).to.be.a('string');",
+              "    pm.expect(d).to.match(/^file:/);",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "captions generate com file inexistente -> 404",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"source\": \"audio\", \"file\": \"edit/narration/nao-existe.wav\"}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/captions/generate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('404 com ffmpeg, 409 sem', () => pm.expect([404, 409]).to.include(pm.response.code));",
+              "if (pm.response.code === 404) {",
+              "  pm.test('diz qual arquivo faltou', () => pm.expect(pm.response.json().detail).to.include('nao-existe.wav'));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "captions generate com mode inválido -> 422",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"source\": \"script\", \"text\": \"uma frase qualquer\", \"mode\": \"x\"}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/captions/generate"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// mode fora de karaoke|linha|bloco é barrado pelo modelo Pydantic, antes do serviço",
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test('o erro aponta o campo mode', () => {",
+              "  const d = pm.response.json().detail;",
+              "  pm.expect(JSON.stringify(d)).to.include('mode');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "captions narration/upload (multipart — anexe um wav no Postman)",
+      "request": {
+        "method": "POST",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "files",
+              "type": "file",
+              "src": []
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/captions/narration/upload"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Sem arquivo anexado a rota responde 422 (campo obrigatório). O caminho feliz (added,",
+              "// dedupe por sha1 do conteúdo, extensão recusada, arquivo mudo descartado) está em",
+              "// tests/test_edit_api.py::test_captions_narration_upload_dedupe_and_extension.",
+              "pm.test('rota existe e valida a entrada', () => pm.expect([200, 413, 422]).to.include(pm.response.code));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET captions/narration (biblioteca de narração)",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/captions/narration"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('lista (vazia enquanto não houver upload)', () => pm.expect(b).to.be.an('array'));",
+              "pm.test('cada entrada traz file, name e duration', () => {",
+              "  b.forEach(e => {",
+              "    pm.expect(e.file).to.match(/^edit\\/narration\\//);",
+              "    pm.expect(e).to.have.property('name');",
+              "    pm.expect(e.duration).to.be.a('number');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "PUT timeline com as legendas geradas (C <- B: generate -> PUT)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{{capBody}}"
+        },
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const tk = pm.response.json().timeline.editor.tracks.find(t => t.type === 'caption');",
+              "pm.test('a faixa de legenda voltou com os itens gravados', () => {",
+              "  pm.expect(tk, 'faixa caption').to.be.an('object');",
+              "  pm.expect(tk.items).to.have.lengthOf(JSON.parse(pm.collectionVariables.get('capItems')).length);",
+              "});",
+              "pm.test('words/mode/hi/chunk sobreviveram à gravação', () => {",
+              "  const enviado = JSON.parse(pm.collectionVariables.get('capItems'))[0];",
+              "  const gravado = tk.items[0];",
+              "  pm.expect(gravado.mode).to.eql(enviado.mode);",
+              "  pm.expect(gravado.hi).to.eql(enviado.hi);",
+              "  pm.expect(gravado.chunk).to.eql(enviado.chunk);",
+              "  pm.expect(gravado.words).to.eql(enviado.words);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET timeline depois do PUT (C <- B: round-trip de words/mode/hi/chunk)",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/projects/{{pid}}/edit/timeline"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const enviados = JSON.parse(pm.collectionVariables.get('capItems'));",
+              "const tk = pm.response.json().timeline.editor.tracks.find(t => t.type === 'caption');",
+              "pm.test('a legenda gerada está no timeline.json relido', () => {",
+              "  pm.expect(tk, 'faixa caption').to.be.an('object');",
+              "  pm.expect(tk.items).to.have.lengthOf(enviados.length);",
+              "});",
+              "pm.test('os quatro campos novos batem item a item', () => {",
+              "  tk.items.forEach((it, i) => {",
+              "    pm.expect(it.mode, `item ${i} mode`).to.eql(enviados[i].mode);",
+              "    pm.expect(it.hi, `item ${i} hi`).to.eql(enviados[i].hi);",
+              "    pm.expect(it.chunk, `item ${i} chunk`).to.eql(enviados[i].chunk);",
+              "    pm.expect(it.words, `item ${i} words`).to.eql(enviados[i].words);",
+              "    pm.expect(it.text, `item ${i} text`).to.eql(enviados[i].text);",
+              "  });",
+              "});",
+              "pm.test('o backbone da aula 014 continua intacto', () => {",
+              "  const tl = pm.response.json().timeline;",
+              "  pm.expect(tl.clips).to.be.an('array');",
+              "  pm.expect(tl.music).to.have.property('offset');",
+              "  pm.expect(tl.fade_out).to.be.a('number');",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

@@ -17,6 +17,8 @@ import re
 import secrets
 from pathlib import Path
 
+from studio.edit.captions import effective_mode
+
 EDITOR_VERSION = 1
 
 TRACK_TYPES = ("video", "overlay", "text", "caption", "audio", "music", "sfx")
@@ -244,6 +246,53 @@ def normalize_anim(raw: dict | None) -> dict:
     return {"in": ain if ain in known else "fade", "out": aout if aout in known else "fade"}
 
 
+_HI_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def _word(raw) -> dict | None:
+    """Uma palavra saneada (`w`/`start_s`/`end_s`), ou `None` se não dá para aproveitar."""
+    if not isinstance(raw, dict):
+        return None
+    text = _s(raw.get("w"), MAX_STR)
+    if not text.strip():
+        return None
+    try:
+        start, end = float(raw.get("start_s")), float(raw.get("end_s"))
+    except (TypeError, ValueError):
+        return None
+    if start != start or end != end or abs(start) == float("inf") or abs(end) == float("inf"):
+        return None                                # NaN/inf não têm lugar numa linha do tempo
+    start = max(start, 0.0)
+    return {"w": text, "start_s": round(start, 3), "end_s": round(max(end, start), 3)}
+
+
+def normalize_caption_extra(raw: dict) -> dict:
+    """Campos da legenda automática de um item de `caption`: `mode`, `hi`, `chunk`, `words`. `[extensão]`
+
+    Devolve SÓ as chaves presentes em `raw` — item de legenda antigo (sem nenhuma delas) sai
+    daqui com um dict vazio e continua byte-idêntico ao de antes desta função existir.
+
+    Nada aqui levanta: legenda é enfeite, e um autosave do editor não pode virar 422 porque uma
+    palavra veio torta do reconhecimento de fala. Modo desconhecido cai em `bloco`, cor fora do
+    hexa é omitida (o front usa a padrão), `chunk` é clampado e cada palavra imprestável (não
+    é dict, `w` em branco, tempo não numérico ou não finito) é descartada uma a uma — as boas
+    seguem na ordem original. `words: []` é uma resposta legítima e diferente de ausente.
+    """
+    out: dict = {}
+    if "mode" in raw:
+        out["mode"] = effective_mode(raw.get("mode"), "bloco")
+    if "hi" in raw:
+        hi = _s(raw.get("hi"), MAX_STR).strip()
+        if _HI_RE.match(hi):
+            out["hi"] = hi.upper()
+    if "chunk" in raw:
+        out["chunk"] = _clampi(raw.get("chunk"), 0, 20, 6)
+    if "words" in raw:
+        words = raw.get("words") if isinstance(raw.get("words"), list) else []
+        out["words"] = [w for w in (_word(x) for x in words) if w is not None]
+    return out
+
+
 def normalize_item(track_type: str, raw: dict, root: Path) -> dict | None:
     """Normaliza um item conforme o tipo da track. Devolve None se irrecuperável (é descartado)."""
     if not isinstance(raw, dict):
@@ -263,6 +312,7 @@ def normalize_item(track_type: str, raw: dict, root: Path) -> dict | None:
         item["style"] = normalize_style(raw.get("style"))
         item["transform"] = normalize_transform(raw.get("transform"))
         item["anim"] = normalize_anim(raw.get("anim"))
+        item.update(normalize_caption_extra(raw) if track_type == "caption" else {})
     elif track_type in ("overlay", "video"):
         if raw.get("src") is not None:
             item["src"] = safe_rel(root, raw.get("src"), "overlay.src")

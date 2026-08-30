@@ -348,3 +348,195 @@ def test_step_editor_reuses_design_system_and_lesson_stays_in_guide(client, proj
     g = client.get(f"/api/projects/{project}/guide/edit").json()
     assert "SFX, ambiência, respiração, gelo, impacto" in g["what"]
     assert "Vou publicar mesmo imperfeito — o primeiro sempre será o pior." in g["checklist"]
+
+
+# ---------- legendas [extensão] ----------
+# Sem `OPENAI_API_KEY` no ambiente, todo `generate` cai no `FakeTranscribe`: nenhum teste daqui
+# abre socket nem importa o SDK de verdade (ADR-008). Quando o provedor real precisa aparecer,
+# o módulo `openai` é falsificado em `sys.modules` pelo helper de `test_edit_captions`.
+
+DEZ_PALAVRAS = "uma duas tres quatro cinco seis sete oito nove dez"
+
+
+def _gen(client, pid: str, **req):
+    return client.post(url(pid, "/captions/generate"), json=req)
+
+
+def _narracao(root, tmp_path, seconds: float = 3) -> str:
+    """Um wav de verdade dentro do projeto, no caminho relativo que o contrato aceita."""
+    make_audio(root / "edit" / "narration" / "voz.wav", seconds=seconds)
+    return "edit/narration/voz.wav"
+
+
+def test_captions_generate_from_script_without_key_is_estimate(client, project, root):
+    r = _gen(client, project, source="script", text=DEZ_PALAVRAS)
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["source"] == "estimate"
+    assert data["word_count"] == 10
+    assert data["total_s"] == round(10 / 2.4, 3)
+    assert "warning" not in data, "aviso só existe quando havia áudio e o tempo saiu estimado"
+    assert data["items"] and [w["w"] for i in data["items"] for w in i["words"]] == DEZ_PALAVRAS.split()
+    # o servidor não persiste o resultado: quem grava é o PUT /timeline
+    assert not (root / "edit" / "timeline.json").exists()
+
+
+def test_captions_generate_shifts_everything_by_start(client, project, root):
+    r = _gen(client, project, source="script", text=DEZ_PALAVRAS, start=3.0)
+
+    data = r.json()
+    assert data["items"][0]["start"] == 3.0
+    assert all(w["start_s"] >= 3.0 for i in data["items"] for w in i["words"])
+    assert data["items"][-1]["end"] == round(3.0 + data["total_s"], 3)
+
+
+def test_captions_generate_from_audio_without_text_uses_the_fake_transcript(
+        client, project, root, ffmpeg_or_skip, tmp_path):
+    rel = _narracao(root, tmp_path, seconds=3)
+    dur = ffmpeg_or_skip.probe(root / rel)["duration"]
+
+    r = _gen(client, project, source="audio", file=rel)
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["source"] == "estimate"
+    assert data["word_count"] == max(1, round(dur * 2.4))
+    palavras = [w["w"] for i in data["items"] for w in i["words"]]
+    assert palavras[0] == "palavra1" and palavras[-1] == f"palavra{data['word_count']}"
+
+
+def test_captions_generate_from_audio_with_text_keeps_our_words(
+        client, project, root, ffmpeg_or_skip, tmp_path):
+    """O texto exibido é SEMPRE o nosso: a transcrição só fornece o tempo."""
+    rel = _narracao(root, tmp_path, seconds=3)
+
+    data = _gen(client, project, source="audio", file=rel, text=DEZ_PALAVRAS).json()
+
+    assert [w["w"] for i in data["items"] for w in i["words"]] == DEZ_PALAVRAS.split()
+
+
+def test_captions_generate_empty_text_is_422_pointing_at_the_field(client, project, root):
+    r = _gen(client, project, source="script", text="   ")
+
+    assert r.status_code == 422
+    assert r.json()["detail"].startswith("text:")
+
+
+def test_captions_generate_path_traversal_is_422(client, project, root):
+    r = _gen(client, project, source="audio", file="../x.wav")
+
+    assert r.status_code == 422
+    assert r.json()["detail"].startswith("file:")
+
+
+def test_captions_generate_missing_file_is_404(client, project, root):
+    r = _gen(client, project, source="audio", file="edit/narration/nao-existe.wav")
+
+    assert r.status_code == 404
+
+
+def test_captions_generate_audio_without_file_is_422(client, project, root):
+    r = _gen(client, project, source="audio")
+
+    assert r.status_code == 422
+    assert r.json()["detail"].startswith("file:")
+
+
+def test_captions_generate_rejects_values_outside_the_contract(client, project, root):
+    """`mode`, `hi` e `chunk` são barrados pelo Pydantic, antes de o serviço rodar."""
+    assert _gen(client, project, source="script", text="oi", mode="x").status_code == 422
+    assert _gen(client, project, source="script", text="oi", hi="verde").status_code == 422
+    assert _gen(client, project, source="script", text="oi", chunk=99).status_code == 422
+
+
+def test_captions_generate_from_audio_without_ffmpeg_is_409(client, project, root, monkeypatch):
+    from studio.common import ffmpeg as ff
+    monkeypatch.setattr(ff, "FFMPEG", None)
+
+    r = _gen(client, project, source="audio", file="edit/narration/voz.wav")
+
+    assert r.status_code == 409
+    assert "ffmpeg" in r.json()["detail"]
+
+
+def test_captions_generate_provider_failure_without_text_is_502(
+        client, project, root, ffmpeg_or_skip, tmp_path, monkeypatch):
+    """Política assimétrica: sem texto nosso, falha do whisper NUNCA vira estimativa silenciosa."""
+    from tests.test_edit_captions import _fake_sdk
+    rel = _narracao(root, tmp_path, seconds=1)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-teste")
+    _fake_sdk(monkeypatch, boom=RuntimeError("connection reset"))
+
+    r = _gen(client, project, source="audio", file=rel)
+
+    assert r.status_code == 502, r.text
+
+
+def test_captions_generate_provider_failure_with_text_is_200_with_warning(
+        client, project, root, ffmpeg_or_skip, tmp_path, monkeypatch):
+    """Com o texto em mãos a legenda sai assim mesmo — estimada, e com aviso na resposta."""
+    from tests.test_edit_captions import _fake_sdk
+    rel = _narracao(root, tmp_path, seconds=1)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-teste")
+    _fake_sdk(monkeypatch, boom=RuntimeError("connection reset"))
+
+    r = _gen(client, project, source="audio", file=rel, text=DEZ_PALAVRAS)
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["source"] == "estimate"
+    assert data["warning"]
+    assert [w["w"] for i in data["items"] for w in i["words"]] == DEZ_PALAVRAS.split()
+
+
+def test_captions_narration_upload_dedupes_and_lists(client, project, root, ffmpeg_or_skip, tmp_path):
+    data = make_audio(tmp_path / "narracao-take1.wav", seconds=2).read_bytes()
+
+    r = client.post(url(project, "/captions/narration/upload"),
+                    files=[("files", ("narracao-take1.wav", data, "audio/wav"))])
+
+    assert r.status_code == 200, r.text
+    body_ = r.json()
+    assert body_["added"] == 1
+    assert body_["files"][0]["file"].startswith("edit/narration/")
+    assert body_["files"][0]["duration"] > 0
+    # mesmo conteúdo com outro nome — e até com outra extensão — não duplica: o id é o sha
+    again = client.post(url(project, "/captions/narration/upload"),
+                        files=[("files", ("copia.wav", data, "audio/wav"))])
+    assert again.json()["added"] == 0
+    outra_ext = client.post(url(project, "/captions/narration/upload"),
+                            files=[("files", ("copia.mp3", data, "audio/mpeg"))])
+    assert outra_ext.json()["added"] == 0
+    listado = client.get(url(project, "/captions/narration")).json()
+    assert len(listado) == 1
+    assert listado[0]["name"] == "narracao-take1.wav" and listado[0]["duration"] > 0
+    assert listado[0]["file"] == body_["files"][0]["file"]
+
+
+def test_captions_narration_upload_rejects_other_extensions(client, project, root):
+    r = client.post(url(project, "/captions/narration/upload"),
+                    files=[("files", ("roteiro.txt", b"nao e audio", "text/plain"))])
+
+    assert r.status_code == 422
+
+
+def test_captions_narration_is_empty_without_uploads(client, project, root):
+    assert client.get(url(project, "/captions/narration")).json() == []
+
+
+def test_captions_generated_items_survive_the_timeline_roundtrip(client, project, root):
+    """Cross-feature C ← B: o que o `generate` devolve entra em `t_cap` e volta inteiro do GET."""
+    seed(root)
+    items = _gen(client, project, source="script", text=DEZ_PALAVRAS, chunk=4).json()["items"]
+    tl = client.get(url(project, "/timeline")).json()["timeline"]
+    editor = {"tracks": [{"id": "t_cap", "type": "caption", "name": "Legenda", "items": items}]}
+
+    r = client.put(url(project, "/timeline"), json={**body(tl), "editor": editor})
+
+    assert r.status_code == 200, r.text
+    saved = client.get(url(project, "/timeline")).json()["timeline"]["editor"]["tracks"][0]["items"]
+    assert len(saved) == len(items)
+    for antes, depois in zip(saved, items, strict=True):
+        assert antes["words"] == depois["words"]
+        assert (antes["mode"], antes["hi"], antes["chunk"]) == (depois["mode"], depois["hi"], depois["chunk"])

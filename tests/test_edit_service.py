@@ -550,3 +550,65 @@ def test_cut_positions_account_for_black_frames(studio_env, project, root):
     assert edit.cut_positions(tl) == [5.0, 10.0]
     tl["blacks"] = [{"at": 5.0, "dur": 0.2}]
     assert edit.cut_positions(tl) == [5.2, 10.2], "o preto empurra tudo que vem depois"
+
+
+# ---------- legenda karaokê no filtergraph (frente B, [extensão]) ----------
+def test_captions_karaoke_vira_um_overlay_por_palavra(tmp_path):
+    """Critério B → render: N palavras na legenda = N `overlay … enable=between` no grafo."""
+    from studio.edit import render
+    tl = {"clips": [{"id": "c1", "scene": "c", "shot": "s", "take": "t", "file": "videos/x.mp4",
+                     "in": 0.0, "out": 2.0, "speed": 1.0, "blend": True, "zoom": 1.0}],
+          "blacks": [], "music": {"file": None, "offset": 0.0}, "sfx": [], "fade_out": 0.0,
+          "loudnorm": True}
+    specs = [{"path": str(tmp_path / f"layer_{i:03d}.png"), "start": i * 0.5, "end": (i + 1) * 0.5}
+             for i in range(4)]
+
+    args, _ = render.build_filtergraph(tmp_path, tl, "master", overlays=specs)
+    graph = args[args.index("-filter_complex") + 1]
+
+    assert graph.count("overlay=0:0:enable='between(t,") == 4
+    assert " ".join(args).count("-i") >= 4
+    for spec in specs:
+        assert spec["path"] in args
+
+
+def test_captions_spec_concat_entra_como_lista_e_faixa(tmp_path):
+    """O fallback de faixa é UM input `-f concat`, sem gate de tempo (quem gateia é a lista)."""
+    from studio.edit import render
+    tl = {"clips": [{"id": "c1", "scene": "c", "shot": "s", "take": "t", "file": "videos/x.mp4",
+                     "in": 0.0, "out": 2.0, "speed": 1.0, "blend": True, "zoom": 1.0}],
+          "blacks": [], "music": {"file": None, "offset": 0.0}, "sfx": [], "fade_out": 0.0,
+          "loudnorm": True}
+    lista = tmp_path / "strip_000.txt"
+    lista.write_text("ffconcat version 1.0\n", encoding="utf-8")
+
+    args, _ = render.build_filtergraph(tmp_path, tl, "master", overlays=[
+        {"kind": "concat", "path": str(lista), "y": 822, "start": 0, "end": 2.0}])
+    graph = args[args.index("-filter_complex") + 1]
+
+    i = args.index(str(lista))
+    assert args[i - 5:i] == ["-f", "concat", "-safe", "0", "-i"]
+    assert "overlay=0:822:eof_action=pass:shortest=0" in graph
+    assert "enable='between(" not in graph          # o gate mora na lista, não no filtro
+    assert "scale=1920:1080[ovs0]" not in graph     # a faixa não é full-frame
+
+
+def test_captions_overlay_sem_kind_mantem_o_grafo_de_hoje(tmp_path):
+    """Retrocompat bit a bit: spec sem `kind` produz exatamente o filtro de antes da mudança."""
+    from studio.edit import render
+    tl = {"clips": [{"id": "c1", "scene": "c", "shot": "s", "take": "t", "file": "videos/x.mp4",
+                     "in": 0.0, "out": 2.0, "speed": 1.0, "blend": True, "zoom": 1.0}],
+          "blacks": [], "music": {"file": None, "offset": 0.0}, "sfx": [], "fade_out": 0.0,
+          "loudnorm": True}
+    png = tmp_path / "layer.png"
+    png.write_bytes(b"x")
+
+    args, _ = render.build_filtergraph(tmp_path, tl, "master",
+                                       overlays=[{"path": str(png), "start": 0.5, "end": 1.5}])
+    joined = " ".join(args)
+    assert "overlay=0:0:enable='between(t,0.5,1.5)'" in joined
+    assert "-f concat" not in joined and "-safe" not in args
+    assert args[args.index(str(png)) - 1] == "-i"
+
+    plain, _ = render.build_filtergraph(tmp_path, tl, "master")
+    assert "overlay=0:0" not in " ".join(plain) and "-safe" not in plain

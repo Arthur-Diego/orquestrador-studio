@@ -11,7 +11,10 @@ ffmpeg só sobrepõe quadros — uniforme e testável. Pillow já é dependênci
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+from studio.edit.captions import effective_mode
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -24,6 +27,13 @@ _FONT_DIRS = ["/usr/share/fonts/truetype/liberation", "/usr/share/fonts/truetype
               "/usr/share/fonts", "/usr/local/share/fonts"]
 _REGULAR = ["LiberationSans-Regular.ttf", "DejaVuSans.ttf", "Arial.ttf"]
 _BOLD = ["LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf", "Arial-Bold.ttf"]
+
+logger = logging.getLogger("studio.edit")
+
+#: Teto de inputs `-i` do render antes de a legenda karaokê degradar para faixa + `ffconcat`.
+#: 60 s de fala já passam de 140 PNGs; algumas centenas de inputs deixam a linha de comando do
+#: ffmpeg enorme e o encode lento, sem nenhum ganho visual.
+MAX_OVERLAY_INPUTS = 200
 
 
 def _find_font(names: list[str]) -> str | None:
@@ -131,19 +141,26 @@ def _image_png(root: Path, item: dict, W: int, H: int, path: Path) -> bool:
     return True
 
 
-def render_layer_pngs(root: Path, editor: dict, W: int, H: int, out_dir: Path) -> list[dict]:
-    """Rasteriza texto/legenda/overlay do editor em PNGs full-frame. Devolve specs para o overlay.
+def _is_karaoke(ttype: str, item: dict) -> bool:
+    """O item é uma legenda que pede destaque palavra a palavra?
 
-    Cada spec: {path, start, end}. Ordem = ordem das tracks (fundo → frente): overlay/vídeo2 antes,
-    texto/legenda por cima. Itens sem janela de tempo ou fora do canvas são ignorados.
+    Três condições, todas necessárias: ser da faixa de legenda, ter palavras cronometradas e
+    estar em `karaoke`. Faltando qualquer uma, o item segue pelo PNG único de sempre — é isso
+    que mantém `linha`, `bloco` e toda timeline anterior a esta entrega byte-idênticas.
     """
-    if not _PIL:
-        return []
-    out_dir.mkdir(parents=True, exist_ok=True)
-    specs: list[dict] = []
+    return ttype == "caption" and bool(item.get("words")) and effective_mode(item.get("mode")) == "karaoke"
+
+
+def _plan(editor: dict, states_of) -> list[tuple[str, dict, float, float, int]]:
+    """Os itens a rasterizar, na ordem de composição, com quantos estados cada um vale.
+
+    Contar antes de desenhar é o que permite escolher entre PNG full-frame e faixa `ffconcat`
+    sem rasterizar centenas de quadros para depois jogá-los fora. `estados == 0` marca o item
+    que vai pelo caminho de sempre (um PNG só).
+    """
     tracks = editor.get("tracks") or []
     order = {"overlay": 0, "video": 0, "caption": 1, "text": 2}
-    n = 0
+    plan: list[tuple[str, dict, float, float, int]] = []
     for tr in sorted(tracks, key=lambda t: order.get(t.get("type"), 1)):
         ttype = tr.get("type")
         if ttype not in ("text", "caption", "overlay", "video") or tr.get("visible") is False:
@@ -152,9 +169,53 @@ def render_layer_pngs(root: Path, editor: dict, W: int, H: int, out_dir: Path) -
             start, end = float(it.get("start", 0) or 0), float(it.get("end", 0) or 0)
             if end <= start:
                 continue
-            path = out_dir / f"layer_{n:03d}.png"
-            ok = _text_png(it, W, H, path) if ttype in ("text", "caption") else _image_png(root, it, W, H, path)
-            if ok:
-                specs.append({"path": str(path), "start": round(start, 3), "end": round(end, 3)})
+            plan.append((ttype, it, start, end, states_of(it) if _is_karaoke(ttype, it) else 0))
+    return plan
+
+
+def render_layer_pngs(root: Path, editor: dict, W: int, H: int, out_dir: Path) -> list[dict]:
+    """Rasteriza texto/legenda/overlay do editor em PNGs full-frame. Devolve specs para o overlay.
+
+    Cada spec: {path, start, end}. Ordem = ordem das tracks (fundo → frente): overlay/vídeo2 antes,
+    texto/legenda por cima. Itens sem janela de tempo ou fora do canvas são ignorados.
+
+    Legenda em `karaoke` (`[extensão]`) é a exceção: rende um PNG por PALAVRA, com a corrente na
+    cor de destaque. Quando o total de specs passa de `MAX_OVERLAY_INPUTS`, só os itens de
+    karaokê degradam para uma faixa servida por lista `ffconcat` — um único input por item, com
+    o mesmo resultado visual. Os demais overlays não mudam de caminho.
+    """
+    if not _PIL:
+        return []
+    # importado aqui porque `captions.layout` mede a linha com `_font` DESTE módulo: no topo,
+    # os dois arquivos se importariam em círculo
+    from studio.edit.captions.layout import karaoke_states, karaoke_strip_states, karaoke_word_count
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    plan = _plan(editor, karaoke_word_count)
+    total = sum(max(1, states) for _t, _i, _s, _e, states in plan)
+    strip = total > MAX_OVERLAY_INPUTS
+
+    specs: list[dict] = []
+    n = 0
+    karaoke_items = 0
+    for ttype, it, start, end, states in plan:
+        if states:
+            karaoke_items += 1
+            if strip:
+                playlist, y, dur = karaoke_strip_states(it, W, H, out_dir, n)
+                specs.append({"kind": "concat", "path": str(playlist), "y": int(y),
+                              "start": 0, "end": round(float(dur), 3)})
                 n += 1
+            else:
+                specs.extend(karaoke_states(it, W, H, out_dir, n))
+                n += states
+            continue
+        path = out_dir / f"layer_{n:03d}.png"
+        ok = _text_png(it, W, H, path) if ttype in ("text", "caption") else _image_png(root, it, W, H, path)
+        if ok:
+            specs.append({"path": str(path), "start": round(start, 3), "end": round(end, 3)})
+            n += 1
+    if karaoke_items:
+        logger.info("burnin.captions pid=%s karaoke_items=%d pngs=%d mode=%s", root.name,
+                    karaoke_items, total if strip else len(specs), "concat" if strip else "overlay")
     return specs

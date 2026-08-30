@@ -341,3 +341,132 @@ def test_put_editor_traversal_is_422(client, project, root):
     bad = {**_legacy_body(tl), "editor": {"tracks": [
         {"type": "overlay", "items": [{"src": "../../../etc/passwd"}]}]}}
     assert client.put(_url(project, "/timeline"), json=bad).status_code == 422
+
+
+# ---------- legendas automáticas: campos aditivos do item de `caption` ([extensão]) ----------
+# Dict congelado ANTES de `normalize_caption_extra` existir: a garantia de retrocompatibilidade
+# é comparar o item inteiro (chave a chave) com esta fixture, não só espiar as chaves novas.
+_FROZEN_CAPTION_ITEM = {
+    "id": "cap_a1b2c3", "start": 0.0, "end": 2.31, "text": "Você já parou",
+    "style": {"font": "Bricolage Grotesque", "size": 64, "weight": 700, "align": "center",
+              "color": "#FFFFFF", "bg": "transparent", "opacity": 1.0, "letterSpacing": 0.0,
+              "lineHeight": 1.2, "shadow": True, "border": 0, "borderColor": "#000000",
+              "uppercase": False},
+    "transform": {"x": 0.5, "y": 0.5, "scaleX": 1.0, "scaleY": 1.0, "rotation": 0.0,
+                  "opacity": 1.0, "flipX": False, "flipY": False, "anchor": "center"},
+    "anim": {"in": "fade", "out": "fade"},
+}
+
+
+def _caption_item(**extra) -> dict:
+    return {"id": "cap_a1b2c3", "start": 0.0, "end": 2.31, "text": "Você já parou", **extra}
+
+
+def _caption_editor(item: dict, ttype: str = "caption") -> dict:
+    return {"tracks": [{"id": "t_cap", "type": ttype, "name": "Legenda", "items": [item]}]}
+
+
+def _put_caption(client, project, root, item: dict, ttype: str = "caption"):
+    """PUT /timeline com um único item na faixa e GET de volta: (resposta, item persistido)."""
+    tl = client.get(_url(project, "/timeline")).json()["timeline"]
+    r = client.put(_url(project, "/timeline"),
+                   json={**_legacy_body(tl), "editor": _caption_editor(item, ttype)})
+    if r.status_code != 200:
+        return r, None
+    again = client.get(_url(project, "/timeline")).json()["timeline"]["editor"]
+    return r, again["tracks"][0]["items"][0]
+
+
+def test_captions_roundtrip_keeps_words_mode_hi_chunk(client, project, root):
+    """Os quatro campos da legenda sobrevivem ao PUT e ainda estão lá num GET novo."""
+    seed(root)
+    item = _caption_item(mode="karaoke", hi="#C8F751", chunk=6,
+                         words=[{"w": "Você", "start_s": 0.0, "end_s": 0.394},
+                                {"w": "já", "start_s": 0.394, "end_s": 0.63}])
+    r, saved = _put_caption(client, project, root, item)
+    assert r.status_code == 200
+    assert saved["mode"] == "karaoke"
+    assert saved["hi"] == "#C8F751"
+    assert saved["chunk"] == 6
+    assert saved["words"] == [{"w": "Você", "start_s": 0.0, "end_s": 0.394},
+                              {"w": "já", "start_s": 0.394, "end_s": 0.63}]
+
+
+def test_captions_invalid_words_are_dropped_never_422(client, project, root):
+    """Palavra torta não derruba o autosave: cada uma é descartada ou corrigida, e a resposta é 200."""
+    seed(root)
+    item = _caption_item(words=[
+        {"w": "", "start_s": 0.0, "end_s": 1.0},            # `w` em branco → fora
+        {"w": "x", "start_s": "abc", "end_s": 1.0},         # tempo não numérico → fora
+        "nem é dict",                                       # → fora
+        {"w": "y", "start_s": 9.0, "end_s": 1.0},           # fim antes do início → end_s = start_s
+        {"w": "ok", "start_s": 0.5, "end_s": 1.25},         # válida
+    ])
+    r, saved = _put_caption(client, project, root, item)
+    assert r.status_code == 200 and r.status_code != 422
+    assert saved["words"] == [{"w": "y", "start_s": 9.0, "end_s": 9.0},
+                              {"w": "ok", "start_s": 0.5, "end_s": 1.25}]
+
+
+def test_captions_mode_falls_back_to_bloco(client, project, root):
+    seed(root)
+    _, saved = _put_caption(client, project, root, _caption_item(mode="x"))
+    assert saved["mode"] == "bloco"
+    _, plain = _put_caption(client, project, root, _caption_item())
+    assert "mode" not in plain                       # ausente na entrada = ausente na saída
+
+
+def test_captions_hi_must_be_hex_and_is_uppercased(client, project, root):
+    seed(root)
+    _, bad = _put_caption(client, project, root, _caption_item(hi="verde"))
+    assert "hi" not in bad
+    _, good = _put_caption(client, project, root, _caption_item(hi="#c8f751"))
+    assert good["hi"] == "#C8F751"
+
+
+def test_captions_chunk_is_clamped(tmp_path):
+    def chunk(value):
+        return ed.normalize_item("caption", _caption_item(chunk=value), tmp_path)["chunk"]
+    assert chunk(99) == 20
+    assert chunk(-5) == 0
+    assert chunk("abc") == 6
+
+
+def test_captions_empty_words_list_is_kept(client, project, root):
+    """`words: []` é diferente de `words` ausente — o front distingue "sem palavras" de "legado"."""
+    seed(root)
+    _, saved = _put_caption(client, project, root, _caption_item(words=[]))
+    assert saved["words"] == []
+
+
+def test_captions_item_without_new_fields_is_byte_identical(client, project, root, tmp_path):
+    """Retrocompat: legenda sem os campos novos sai idêntica ao dict congelado antes da mudança."""
+    seed(root)
+    assert ed.normalize_item("caption", _caption_item(), tmp_path) == _FROZEN_CAPTION_ITEM
+    _, saved = _put_caption(client, project, root, _caption_item())
+    assert saved == _FROZEN_CAPTION_ITEM
+
+
+def test_captions_text_track_does_not_gain_caption_fields(client, project, root):
+    """A faixa de texto compartilha o ramo com a legenda, mas não herda os campos dela."""
+    seed(root)
+    item = _caption_item(mode="karaoke", words=[{"w": "a", "start_s": 0.0, "end_s": 0.5}])
+    _, saved = _put_caption(client, project, root, item, ttype="text")
+    assert "mode" not in saved and "words" not in saved
+    assert "hi" not in saved and "chunk" not in saved
+
+
+def test_captions_extra_of_empty_dict_is_empty():
+    assert ed.normalize_caption_extra({}) == {}
+
+
+def test_captions_extra_is_idempotent():
+    raw = {"mode": "karaoke", "hi": "#c8f751", "chunk": 99,
+           "words": [{"w": "a", "start_s": -1.0, "end_s": 0.5},
+                     {"w": "b", "start_s": 9.0, "end_s": 1.0},
+                     {"w": " ", "start_s": 0.0, "end_s": 1.0}]}
+    once = ed.normalize_caption_extra(raw)
+    assert once == ed.normalize_caption_extra(once)
+    assert once == {"mode": "karaoke", "hi": "#C8F751", "chunk": 20,
+                    "words": [{"w": "a", "start_s": 0.0, "end_s": 0.5},
+                              {"w": "b", "start_s": 9.0, "end_s": 9.0}]}
