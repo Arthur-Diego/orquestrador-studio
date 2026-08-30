@@ -93,6 +93,26 @@ ADR-018/022 impedem reestruturar `scenes.json`, a frente entrega o `"preset"` **
 `video-prompt` (auditável e suficiente para a UI), e não altera o schema de `scenes.json`.
 Observabilidade por histórico segue valendo para mood e base, que têm `prompts.json` de verdade.
 
+**Amenda A6 — notas de implementação (doc-sync do fechamento da frente).** Três detalhes em que o
+código entregue é mais preciso que o texto da v1.0, sem mudar o contrato da §5:
+
+- **Validação do preset acontece antes do serviço**, por `field_validator` do pydantic nos bodies
+  de generate e por `ValueError` em `settings`, não por `KeyError` de `preset_block` capturado no
+  router. O efeito especificado é o mesmo — 422 antes de qualquer chamada ao CLI — e mais cedo.
+  `preset_block` continua levantando `KeyError` para id desconhecido, como contrato de função.
+- **A UI sempre manda o campo `preset`** (string vazia do `<select>` convertida em `null`). O
+  estado "campo ausente" continua existindo e é o dos clientes antigos e de outros consumidores;
+  é ele que dispara a resolução de default. A distinção ausente × `null` é implementada pelo
+  sentinela `settings.PRESET_UNSET`.
+- **`GET /api/prompter/presets` responde 200 sempre que o `pid` for válido ou ausente**; com
+  `?pid=` de projeto inexistente responde **404**, pelo mesmo `project_dir(pid)` das demais rotas
+  por projeto do módulo. O "200 sempre" da §5 vale para o catálogo em si (dict em memória, sem
+  I/O), não para um pid inválido. Consumidores que só querem o catálogo devem chamar sem `pid`.
+- **`settings.resolve_preset(kind, pid, preset)`** foi introduzida como o ponto único que devolve
+  `(resolvido, explícito)`. Só o preset **explícito** alimenta `fallback_template`, o que preserva
+  o determinismo do template do curso quando o preset veio apenas de um default configurado
+  (regra da §4, agora com um nome próprio no código).
+
 **Amenda A2 — semântica do default `null`.** Com o opt-in, `preset_default_for("mood")` sem
 override devolve `{"kind": "mood", "preset": None, "source": "code"}`. Um body de generate **sem**
 o campo `preset` resolve esse default e, sendo `None`, não injeta bloco algum: o comportamento

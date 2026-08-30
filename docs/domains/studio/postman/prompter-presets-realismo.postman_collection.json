@@ -1,0 +1,613 @@
+{
+  "info": {
+    "name": "prompter-presets-realismo",
+    "description": "Coleção executável do contrato congelado da feature `prompter-presets-realismo` (domínio studio).\n\nFonte: docs/domains/studio/features/prompter-presets-realismo-fdd.md — seção 5 (contratos públicos), com as amendas vinculantes da seção 0 (gate W3): default de código `null` (opt-in) para mood/base/motion (A1/A2) e bloco `defaults` como MAPA ABERTO montado iterando `settings.PRESET_ACTIONS` (A1).\n\nImplementação conferida em studio/creditos/router.py (linhas 125-195) e studio/common/settings.py (208-294).\n\nFORA DE ESCOPO desta coleção: os 3 endpoints de geração de prompt (mood/base/storyboard generate) — exigem o Claude CLI e o padrão do repo é teste sem rede (CLAUDE.md).\n\nApp local sem autenticação (FDD §5: \"Sem auth (app local, padrão do projeto)\").",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://127.0.0.1:8766", "type": "string", "description": "Porta desta sessão de worktree (CLAUDE.md: PORT a partir de 8766)."},
+    {"key": "pid", "value": "", "type": "string", "description": "Id de projeto existente. Preenchido automaticamente pela pasta 00-setup; pode ser fixado à mão."},
+    {"key": "pidInexistente", "value": "projeto-que-nao-existe-0000", "type": "string", "description": "Pid sintaticamente válido (PID_RE) e inexistente: usado nos casos de 404."},
+    {"key": "presetId", "value": "documentary-street", "type": "string", "description": "Preenchido pelo GET do catálogo (preset com default: true)."},
+    {"key": "presetIdAlt", "value": "arri-natural-narrative", "type": "string", "description": "Segundo preset do catálogo, usado no override de projeto."},
+    {"key": "kindValido", "value": "base", "type": "string", "description": "Ação registrada em settings.PRESET_ACTIONS."},
+    {"key": "kindInvalido", "value": "nao-e-uma-acao", "type": "string", "description": "Chave fora de PRESET_ACTIONS → 422 (FDD §6)."},
+    {"key": "presetInvalido", "value": "preset-que-nao-existe", "type": "string", "description": "Id fora de REALISM_PRESETS → 422 (FDD §6)."}
+  ],
+  "item": [
+    {
+      "name": "00-setup",
+      "description": "Preparo, NÃO faz parte da seção 5. Só existe para preencher `{{pid}}` a partir de um projeto real; se você já sabe o pid, pule esta pasta e fixe a variável.",
+      "item": [
+        {
+          "name": "GET /api/projects — captura {{pid}} (setup, fora da §5)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/projects", "host": ["{{baseUrl}}"], "path": ["api", "projects"]},
+            "description": "Rota preexistente do núcleo (studio/app.py:72). Usada só como fonte do pid; nenhum contrato desta feature depende dela."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const projetos = pm.response.json();",
+                  "pm.test(\"resposta é lista\", () => pm.expect(projetos).to.be.an(\"array\"));",
+                  "if (Array.isArray(projetos) && projetos.length > 0 && projetos[0].id) {",
+                  "  pm.collectionVariables.set(\"pid\", projetos[0].id);",
+                  "  console.log(\"pid capturado: \" + projetos[0].id);",
+                  "} else {",
+                  "  console.warn(\"Nenhum projeto existe: as pastas '03-config por projeto' e os 404 por projeto vão falhar. Crie um projeto na UI ou fixe {{pid}} à mão.\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01-catalogo",
+      "description": "FDD §5, bloco `GET /api/prompter/presets` (linhas 331-357) e `GET /api/prompter/preset-config` (linha 359).",
+      "item": [
+        {
+          "name": "GET /api/prompter/presets — catálogo + defaults (FDD §5 L331-357)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/prompter/presets", "host": ["{{baseUrl}}"], "path": ["api", "prompter", "presets"]},
+            "description": "Contrato congelado: 200 sempre; `presets` com os 5 ids da tabela da §5 (L286-292) e `defaults` como mapa aberto (amenda A1, L354-357)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const IDS = [\"documentary-street\", \"arri-natural-narrative\", \"red-commercial-precision\", \"sony-venice-night\", \"anamorphic-film-look\"];",
+                  "pm.test(\"status 200 (FDD §5 L334: 200 sempre, catálogo em memória)\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "",
+                  "pm.test(\"presets: exatamente 5 itens (FDD §5 tabela L286-292 / §9 critério 1)\", function () {",
+                  "  pm.expect(j.presets).to.be.an(\"array\").with.lengthOf(5);",
+                  "});",
+                  "",
+                  "pm.test(\"ids são exatamente os 5 da §5\", function () {",
+                  "  pm.expect(j.presets.map(p => p.id).sort()).to.eql(IDS.slice().sort());",
+                  "});",
+                  "",
+                  "pm.test(\"shape do item: id, name, default, desc_pt, rig{camera,lens,format,focal,aperture}, light, grade, negative\", function () {",
+                  "  j.presets.forEach(function (p) {",
+                  "    [\"id\", \"name\", \"default\", \"desc_pt\", \"rig\", \"light\", \"grade\", \"negative\"].forEach(function (k) {",
+                  "      pm.expect(p, p.id).to.have.property(k);",
+                  "    });",
+                  "    [\"camera\", \"lens\", \"format\", \"focal\", \"aperture\"].forEach(function (k) {",
+                  "      pm.expect(p.rig, p.id + \".rig\").to.have.property(k);",
+                  "      pm.expect(p.rig[k], p.id + \".rig.\" + k).to.be.a(\"string\").and.not.empty;",
+                  "    });",
+                  "    pm.expect(p.default, p.id + \".default\").to.be.a(\"boolean\");",
+                  "    pm.expect(p.desc_pt, p.id + \".desc_pt\").to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(p.name, p.id + \".name\").to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(p.light, p.id + \".light\").to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(p.grade, p.id + \".grade\").to.be.a(\"string\").and.not.empty;",
+                  "    pm.expect(p.negative, p.id + \".negative\").to.be.an(\"array\").that.is.not.empty;",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test(\"exatamente documentary-street tem default: true (§9 critério 1)\", function () {",
+                  "  pm.expect(j.presets.filter(p => p.default === true).map(p => p.id)).to.eql([\"documentary-street\"]);",
+                  "});",
+                  "",
+                  "pm.test(\"defaults é MAPA ABERTO com {preset, source} por chave (amenda A1, §5 L354-357)\", function () {",
+                  "  pm.expect(j.defaults).to.be.an(\"object\");",
+                  "  const chaves = Object.keys(j.defaults);",
+                  "  pm.expect(chaves.length, \"pelo menos uma ação registrada em PRESET_ACTIONS\").to.be.above(0);",
+                  "  chaves.forEach(function (k) {",
+                  "    pm.expect(j.defaults[k], k).to.have.property(\"preset\");",
+                  "    pm.expect(j.defaults[k], k).to.have.property(\"source\");",
+                  "    pm.expect([\"project\", \"global\", \"code\"], k + \".source\").to.include(j.defaults[k].source);",
+                  "    if (j.defaults[k].preset !== null) { pm.expect(IDS, k + \".preset\").to.include(j.defaults[k].preset); }",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test(\"defaults cobre as ações iniciais de PRESET_ACTIONS (mood, base, motion)\", function () {",
+                  "  // Propositalmente NÃO se assere o número de chaves: mapa aberto — a consumidora",
+                  "  // storyboard-roteiro-llm registra 'storyboard.script' e ela deve aparecer sozinha.",
+                  "  [\"mood\", \"base\", \"motion\"].forEach(k => pm.expect(j.defaults).to.have.property(k));",
+                  "});",
+                  "",
+                  "pm.test(\"opt-in do gate W3: quando source = 'code', o preset de mood/base/motion é null (amendas A1/A2)\", function () {",
+                  "  [\"mood\", \"base\", \"motion\"].forEach(function (k) {",
+                  "    if (j.defaults[k] && j.defaults[k].source === \"code\") {",
+                  "      pm.expect(j.defaults[k].preset, k + \" com source=code\").to.be.null;",
+                  "    }",
+                  "  });",
+                  "});",
+                  "",
+                  "const padrao = j.presets.filter(p => p.default === true)[0];",
+                  "if (padrao) { pm.collectionVariables.set(\"presetId\", padrao.id); }",
+                  "const alt = j.presets.filter(p => p.default !== true)[0];",
+                  "if (alt) { pm.collectionVariables.set(\"presetIdAlt\", alt.id); }",
+                  "const primeiraAcao = Object.keys(j.defaults)[0];",
+                  "if (primeiraAcao && !pm.collectionVariables.get(\"kindValido\")) { pm.collectionVariables.set(\"kindValido\", primeiraAcao); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/prompter/presets?pid — defaults do projeto (FDD §5 L334)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prompter/presets?pid={{pid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "prompter", "presets"],
+              "query": [{"key": "pid", "value": "{{pid}}"}]
+            },
+            "description": "Query opcional `pid` resolve os defaults com o override do projeto (§5 L334, §9 critério 6). Exige {{pid}} de um projeto existente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"catálogo idêntico ao global: 5 presets\", () => pm.expect(j.presets).to.be.an(\"array\").with.lengthOf(5));",
+                  "pm.test(\"defaults continua mapa aberto com {preset, source}\", function () {",
+                  "  Object.keys(j.defaults).forEach(function (k) {",
+                  "    pm.expect(j.defaults[k], k).to.have.property(\"preset\");",
+                  "    pm.expect([\"project\", \"global\", \"code\"], k + \".source\").to.include(j.defaults[k].source);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/prompter/preset-config — defaults globais (FDD §5 L359)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/prompter/preset-config", "host": ["{{baseUrl}}"], "path": ["api", "prompter", "preset-config"]},
+            "description": "A §5 declara a rota (L359) mas NÃO fixa o shape da resposta. A implementação (router.py:164-166) devolve `{\"defaults\": {ação: {preset, source}}}` sem pid. Ambiguidade registrada em divergencias.md (MEDIA); o teste assere o que a implementação sustenta hoje."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"resposta traz o bloco defaults (mapa aberto)\", function () {",
+                  "  pm.expect(j).to.have.property(\"defaults\");",
+                  "  pm.expect(j.defaults).to.be.an(\"object\");",
+                  "  Object.keys(j.defaults).forEach(function (k) {",
+                  "    pm.expect(j.defaults[k], k).to.have.property(\"preset\");",
+                  "    pm.expect([\"global\", \"code\"], k + \".source (sem pid, nunca 'project')\").to.include(j.defaults[k].source);",
+                  "  });",
+                  "});",
+                  "pm.test(\"defaults cobre as ações iniciais de PRESET_ACTIONS\", function () {",
+                  "  [\"mood\", \"base\", \"motion\"].forEach(k => pm.expect(j.defaults).to.have.property(k));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02-config global",
+      "description": "FDD §5 L359-361. ATENÇÃO: estes requests ESCREVEM em STATE_DIR/config.json (chave `prompter_presets`). Não existe rota para apagar o override global — ver README.",
+      "item": [
+        {
+          "name": "PUT /api/prompter/preset-config — preset válido (FDD §5 L360)",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"kind\": \"{{kindValido}}\",\n  \"preset\": \"{{presetId}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{baseUrl}}/api/prompter/preset-config", "host": ["{{baseUrl}}"], "path": ["api", "prompter", "preset-config"]},
+            "description": "Body `{kind, preset}` (§5 L360). Devolve `preset_default_for(kind)`. Persiste sob `prompter_presets` sem tocar a chave `defaults` (§9 critério 7)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"devolve preset_default_for(kind): {kind, preset, source}\", function () {",
+                  "  pm.expect(j).to.have.property(\"kind\", pm.collectionVariables.get(\"kindValido\"));",
+                  "  pm.expect(j).to.have.property(\"preset\", pm.collectionVariables.get(\"presetId\"));",
+                  "  pm.expect(j).to.have.property(\"source\", \"global\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /api/prompter/preset-config — preset: null (\"sem preset\", FDD §5 L360/L327-329)",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"kind\": \"{{kindValido}}\",\n  \"preset\": null\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{baseUrl}}/api/prompter/preset-config", "host": ["{{baseUrl}}"], "path": ["api", "prompter", "preset-config"]},
+            "description": "`null` é escolha explícita \"sem preset\", persistida como null e distinta de chave ausente (§5 L327-329): a cadeia ENCERRA no nível gravado, por isso `source` continua `global`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"preset null aceito e persistido como escolha explícita\", function () {",
+                  "  pm.expect(j).to.have.property(\"kind\", pm.collectionVariables.get(\"kindValido\"));",
+                  "  pm.expect(j.preset).to.be.null;",
+                  "});",
+                  "pm.test(\"null gravado encerra a cadeia: source = 'global', não 'code' (§5 L327-329)\", function () {",
+                  "  pm.expect(j.source).to.eql(\"global\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03-config por projeto",
+      "description": "FDD §5 L363-365. Encadeamento: PUT (override) → GET presets?pid (reflete) → DELETE (limpa) → GET presets?pid (voltou a cair para global/código).",
+      "item": [
+        {
+          "name": "PUT /api/projects/{pid}/prompter/preset-config (FDD §5 L363)",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"kind\": \"{{kindValido}}\",\n  \"preset\": \"{{presetIdAlt}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prompter/preset-config",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{pid}}", "prompter", "preset-config"]
+            },
+            "description": "Mesma semântica da rota global, escopo de projeto (§5 L365). Override de projeto vence global e código."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"override de projeto vence: source = 'project'\", function () {",
+                  "  pm.expect(j).to.have.property(\"kind\", pm.collectionVariables.get(\"kindValido\"));",
+                  "  pm.expect(j).to.have.property(\"preset\", pm.collectionVariables.get(\"presetIdAlt\"));",
+                  "  pm.expect(j).to.have.property(\"source\", \"project\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/prompter/presets?pid — override do projeto refletido (§9 critério 6)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prompter/presets?pid={{pid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "prompter", "presets"],
+              "query": [{"key": "pid", "value": "{{pid}}"}]
+            },
+            "description": "Depende do PUT anterior (encadeamento do fluxo da §4: projeto → global → código)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const k = pm.collectionVariables.get(\"kindValido\");",
+                  "pm.test(\"defaults[\" + k + \"] reflete o override do projeto\", function () {",
+                  "  pm.expect(j.defaults[k].preset).to.eql(pm.collectionVariables.get(\"presetIdAlt\"));",
+                  "  pm.expect(j.defaults[k].source).to.eql(\"project\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /api/projects/{pid}/prompter/preset-config/{kind} (FDD §5 L364)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prompter/preset-config/{{kindValido}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{pid}}", "prompter", "preset-config", "{{kindValido}}"]
+            },
+            "description": "Remove o override do projeto; a resolução volta a cair para global → código (§5 L363-365)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"devolve a resolução pós-limpeza: source deixa de ser 'project'\", function () {",
+                  "  pm.expect(j).to.have.property(\"kind\", pm.collectionVariables.get(\"kindValido\"));",
+                  "  pm.expect([\"global\", \"code\"]).to.include(j.source);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/prompter/presets?pid — cadeia caiu para global/código",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prompter/presets?pid={{pid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "prompter", "presets"],
+              "query": [{"key": "pid", "value": "{{pid}}"}]
+            },
+            "description": "Fecha o encadeamento: depois do DELETE, o kind não tem mais override de projeto."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const k = pm.collectionVariables.get(\"kindValido\");",
+                  "pm.test(\"defaults[\" + k + \"].source não é mais 'project'\", function () {",
+                  "  pm.expect([\"global\", \"code\"]).to.include(j.defaults[k].source);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "erros",
+      "description": "Matriz de erros da FDD §6 (L381-389), apenas as linhas cuja origem é um status HTTP em rota concreta desta feature.",
+      "item": [
+        {
+          "name": "422 · PUT preset-config global com kind inválido (FDD §6 L384)",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"kind\": \"{{kindInvalido}}\",\n  \"preset\": \"{{presetId}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{baseUrl}}/api/prompter/preset-config", "host": ["{{baseUrl}}"], "path": ["api", "prompter", "preset-config"]},
+            "description": "Chave fora de settings.PRESET_ACTIONS → ValueError → 422 (§5 L324, §6 L384)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422 (FDD §6: kind inválido em PUT preset-config)\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"detail explica a ação desconhecida\", function () {",
+                  "  pm.expect(String(pm.response.json().detail)).to.match(/ação de preset desconhecida/i);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 · PUT preset-config global com preset inválido (FDD §6 L384)",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"kind\": \"{{kindValido}}\",\n  \"preset\": \"{{presetInvalido}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {"raw": "{{baseUrl}}/api/prompter/preset-config", "host": ["{{baseUrl}}"], "path": ["api", "prompter", "preset-config"]},
+            "description": "Id fora de REALISM_PRESETS → 422; a mensagem cita os universos válidos (router.py:147-151)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422 (FDD §6: preset inválido em PUT preset-config)\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"detail explica o preset desconhecido\", function () {",
+                  "  pm.expect(String(pm.response.json().detail)).to.match(/preset desconhecido/i);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 · PUT preset-config de projeto com kind inválido (FDD §6 L384)",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"kind\": \"{{kindInvalido}}\",\n  \"preset\": \"{{presetId}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prompter/preset-config",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{pid}}", "prompter", "preset-config"]
+            },
+            "description": "Projeto existente + kind inválido: a validação de kind vem depois do project_dir(), logo 422 (não 404)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"detail explica a ação desconhecida\", function () {",
+                  "  pm.expect(String(pm.response.json().detail)).to.match(/ação de preset desconhecida/i);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 · DELETE preset-config de projeto com kind inválido (FDD §6 L384)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/prompter/preset-config/{{kindInvalido}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{pid}}", "prompter", "preset-config", "{{kindInvalido}}"]
+            },
+            "description": "Mesma validação de kind na rota de limpeza (settings.clear_project_preset → _valid_preset)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"detail explica a ação desconhecida\", function () {",
+                  "  pm.expect(String(pm.response.json().detail)).to.match(/ação de preset desconhecida/i);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 · PUT preset-config em projeto inexistente (FDD §6 L385)",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"kind\": \"{{kindValido}}\",\n  \"preset\": \"{{presetId}}\"\n}", "options": {"raw": {"language": "json"}}},
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/prompter/preset-config",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{pidInexistente}}", "prompter", "preset-config"]
+            },
+            "description": "`project_dir(pid)` levanta KeyError → handler do núcleo devolve 404 (§5 L365, §6 L385)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404 (FDD §6: pid inexistente nas rotas de projeto)\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 · DELETE preset-config em projeto inexistente (FDD §6 L385)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/prompter/preset-config/{{kindValido}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "projects", "{{pidInexistente}}", "prompter", "preset-config", "{{kindValido}}"]
+            },
+            "description": "Idem: 404 antes de qualquer validação de kind."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 · GET /api/prompter/presets?pid inexistente (implementação; §5 diz \"200 sempre\")",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prompter/presets?pid={{pidInexistente}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "prompter", "presets"],
+              "query": [{"key": "pid", "value": "{{pidInexistente}}"}]
+            },
+            "description": "DIVERGÊNCIA (MEDIA, ver divergencias.md): a §5 L334 diz \"200 sempre\" para esta rota, mas router.py:158-160 chama project_dir(pid) e devolve 404 para pid inexistente — leitura conjunta com a linha de 404 da matriz §6. O teste assere o comportamento implementado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404 (implementação: project_dir no ?pid)\", () => pm.response.to.have.status(404));",
+                  "if (pm.response.code === 200) {",
+                  "  console.warn(\"Se este request voltar 200, quem está certo é a §5 L334 ('200 sempre') e a divergência MEDIA se resolve pelo outro lado.\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "99-desempenho",
+      "description": "Objetivo declarado na FDD §2 L178: `GET /api/prompter/presets` responde em < 50 ms (leitura de dict em memória). Roda por último, depois do warm-up do processo.",
+      "item": [
+        {
+          "name": "GET /api/prompter/presets — orçamento de latência (FDD §2 L178)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {"raw": "{{baseUrl}}/api/prompter/presets", "host": ["{{baseUrl}}"], "path": ["api", "prompter", "presets"]},
+            "description": "Medição após warm-up. Na primeira chamada do processo o import lazy de prompter/settings pode estourar o orçamento — por isso este request fica isolado no fim."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"responde em menos de 50 ms (FDD §2 L178)\", function () {",
+                  "  pm.expect(pm.response.responseTime).to.be.below(50);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
