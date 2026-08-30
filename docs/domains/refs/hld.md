@@ -1,7 +1,7 @@
 ### HLD: refs (etapa 1 — referências, aula 009)
 
-Versão: 1.1 (guia da etapa + fidelidade à aula 009, OS-014)
-Data: 2026-08-25
+Versão: 1.2 (import de pin/board por URL `[extensão]`, Wave 9)
+Data: 2026-08-30
 Responsável: Arthur Diego (pré-preenchido pelo raio-X; aprovado em lote no brownfield)
 
 ---
@@ -17,6 +17,18 @@ Midjourney**) entra por upload manual `[extensão]`; e a etapa expõe um **guia*
 que a aula manda fazer, o que falta e quais validações passam — calculado por leitura pura dos
 artefatos (ADR-003). Textos de tela e `README.md` deixam claro o que é regra da aula e o que é escolha
 do Studio (a regra "referência não entra no vídeo final" é do Studio, por direitos autorais).
+
+**Wave 9 (refs-import-url):** a etapa ganha uma **terceira porta de entrada** para as mesmas
+candidatas — colar a URL de um **pin** ou de um **board** do Pinterest (`[extensão]`, ADR-004: a aula
+só ensina a busca por termos). O import reusa integralmente o scraper existente (perfil persistente
+`_launch`, ritmo humano, `_download` com dedupe por SHA-1) e o **mesmo job** `_jobs[pid]` da busca,
+então há exclusão mútua entre busca e import (409) e a tela segue com o polling do
+`GET .../refs/job` de sempre.
+As candidatas saem no schema `Candidate` inalterado, com `source="url"` e `term` derivado do slug do
+board (pin avulso agrupa em `"url"`); a URL original fica em `extra.import_url`. Nada de crawler
+agressivo: teto `max_pins` (default 30, máx 100) e parada por ociosidade, como pede a ADR-005.
+Detalhe em [`features/refs-import-url-fdd.md`](features/refs-import-url-fdd.md) e no diagrama
+[`diagrams/mermaid/fluxo-import-url.md`](diagrams/mermaid/fluxo-import-url.md).
 
 Dependências com outros sistemas
 - Pinterest (site público, via navegador automatizado — sem API oficial adequada).
@@ -46,8 +58,8 @@ Padrões adotados
 ### Componentes e responsabilidades
 | Componente | Responsabilidades | Dependências |
 | ----------- | ----------------- | ------------ |
-| `pinterest.py` | login, `is_logged_in`, `search` (coleta + download), `_best_url`, `load/save_candidates` | Playwright, Pillow, `config.PINTEREST_PROFILE` |
-| `service.py` | criar/listar projetos (layout do curso), `suggest_terms(product, vibe, brand)`, `import_upload` `[extensão]`, jobs de busca e login, `select` → `brainstorming/` + `README.md`, validação de `pid` | `pinterest.py`, `config`, Pillow |
+| `pinterest.py` | login, `is_logged_in`, `search` (coleta + download), `import_url` `[extensão]` (pin/board), `classify_url` (função pura pin × board), `_collect_grid` (rolagem compartilhada), `_best_url`, `load/save_candidates` | Playwright, Pillow, `config.PINTEREST_PROFILE` |
+| `service.py` | criar/listar projetos (layout do curso), `suggest_terms(product, vibe, brand)`, `import_upload` e `start_import_url` `[extensão]`, jobs de busca e login (um job de coleta por projeto), `select` → `brainstorming/` + `README.md`, validação de `pid` | `pinterest.py`, `config`, Pillow |
 | `etapas/refs/guide.py` | guia da etapa 1 (leitura pura): entradas, saídas, validações da auditoria §1.5 e próxima ação | `common/guide.py` |
 
 ---
@@ -57,10 +69,12 @@ Padrões adotados
 - `POST /refs/search {terms,max_per_term,headless}` → `start_search` (lock por projeto) → thread → `pinterest.search` → eventos de progresso → `GET /refs/job`.
 - `POST /refs/select {ids,notes}` → copia escolhidas para `refs/brainstorming/`, remove desmarcadas, escreve `README.md` (o "por quê" de cada referência é `[extensão]`).
 - `POST /refs/import/upload` (multipart) → referências salvas à mão (Explore do MJ e afins) viram candidatas `source: "upload"` `[extensão]`.
+- `POST /refs/import/url {url,max_pins,headless}` → `classify_url` (síncrona: 422 sem criar job) → `start_import_url` (mesmo lock e mesmo `_jobs[pid]` da busca) → thread → `pinterest.import_url` → candidatas `source: "url"` `[extensão]`, observadas pelo mesmo `GET /refs/job`.
 - `GET /api/projects/{pid}/guide/refs` → guia da etapa (núcleo chama `etapas/refs/guide.py`).
 
 **Fluxo de dados**
 - Termo → página de busca → `img[src*=pinimg]` → URL `/originals/` → bytes → `refs/candidates/<sha12>.jpg` + `thumbs/<sha12>.jpg` → `candidates.json` → galeria → seleção → `refs/brainstorming/`.
+- URL colada → `classify_url` → página do pin (maior `pinimg`, fallback `og:image`) ou do board (mesma rolagem da busca) → daí para a frente, o MESMO caminho de dados acima (`source="url"`, `extra.import_url` guarda a URL original).
 
 ---
 
@@ -85,6 +99,7 @@ Fonte de verdade
 | `GET /api/projects/{pid}/refs/candidates` | API | REST/JSON | Interna | — |
 | `POST /api/projects/{pid}/refs/select` | API | REST/JSON | Interna | — |
 | `POST /api/projects/{pid}/refs/import/upload` | API | multipart | Interna | `[extensão]`; ≤ 25 MB por arquivo; só imagens |
+| `POST /api/projects/{pid}/refs/import/url` | API | REST/JSON | Interna | `[extensão]`; pin ou board; `max_pins` 1–100 (default 30); 422 URL não reconhecida, 409 job de coleta em andamento |
 | `GET /api/suggest-terms?product&vibe&brand` | API | REST/JSON | Interna | `brand` (aula 009) primeiro, produto como complemento |
 | `POST/GET /api/pinterest/login` | API | REST/JSON | Interna | espera até 5 min pelo cookie `_auth` |
 

@@ -1,0 +1,1684 @@
+{
+ "info": {
+  "_postman_id": "os-refs-import-url-collection",
+  "name": "Refs · import de pin/board por URL (etapa 1, `[extensão]`)",
+  "description": "Coleção executável do contrato HTTP novo da feature **refs-import-url** (`[extensão]`, Wave 9 · sub-wave 1).\n\nFonte normativa: `docs/domains/refs/features/refs-import-url-fdd.md` — seção **6** \"Contratos públicos\" (linhas 173-221), com a ordem dos fluxos vinda da seção 5 (linhas 103-169) e os casos negativos da matriz de erros da seção 7 (linhas 227-238) e dos critérios de aceite da seção 10 (linhas 281-301).\n\nRota nova coberta: `POST /api/projects/{pid}/refs/import/url` (200 board, 200 pin, 404, 409, 422). Rotas de apoio já existentes, incluídas para o fluxo ficar executável: `GET /api/projects/{pid}/refs/job` (polling, contrato 2 do FDD) e `GET /api/projects/{pid}/refs/candidates` (contrato 3, schema `Candidate`).\n\n**Sem autenticação**: a API do Studio é local e não tem auth — nenhuma seção do FDD declara header de autorização, então não há `accessToken` nem `Authorization`.\n\n**AVISO (ADR-005 / seção 2 do FDD, linhas 56-57)**: os requests de 200 disparam scraping REAL do Pinterest com a sessão do perfil persistente do usuário. Automatizar o Pinterest contraria os termos de uso dele — rode com conta secundária, `max_pins` baixo, e leia o README antes.\n\nDivergências entre a seção 6 do FDD e o contrato realmente implementado (`studio/etapas/refs/router.py`, `studio/refs/service.py`, `studio/refs/pinterest.py`): ver `divergencias.md` nesta pasta.\n\nGerada em 2026-08-30 sobre o commit `7162c41` (branch `feature/refs-import-url`). Não executada com newman: sem serviço de pé nesta worktree e a frente é sem rede.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "auth": {
+  "type": "noauth"
+ },
+ "variable": [
+  {
+   "key": "base_url",
+   "value": "http://127.0.0.1:8766",
+   "type": "string",
+   "description": "Base do serviço FastAPI local. `run.sh` usa 8765; worktrees paralelas começam em 8766 (docs/dd-parallel.md)."
+  },
+  {
+   "key": "pid",
+   "value": "",
+   "type": "string",
+   "description": "Id de um projeto EXISTENTE (`GET /api/projects` ou o nome da pasta em `projects/`)."
+  },
+  {
+   "key": "pid_inexistente",
+   "value": "projeto-que-nao-existe",
+   "type": "string",
+   "description": "pid sem `project.json`, para o 404 do handler de KeyError do núcleo (FDD s6, linha 187)."
+  },
+  {
+   "key": "url_board",
+   "value": "https://br.pinterest.com/usuario/campanhas-energetico/",
+   "type": "string",
+   "description": "URL de board do exemplo do FDD (linha 195). TROQUE por um board seu antes de rodar: o request dispara scraping real (ADR-005)."
+  },
+  {
+   "key": "url_board_section",
+   "value": "https://www.pinterest.com/usuario/campanhas-energetico/secao-a/",
+   "type": "string",
+   "description": "URL de SEÇÃO de board — tratada como board comum (FDD seção 4, linha 94)."
+  },
+  {
+   "key": "url_pin",
+   "value": "https://www.pinterest.com/pin/1234567890/",
+   "type": "string",
+   "description": "URL canônica de pin (FDD seção 5, linha 109). Troque pelo id de um pin real."
+  },
+  {
+   "key": "url_host_terceiro",
+   "value": "https://exemplo.com/x",
+   "type": "string",
+   "description": "Caso de 422 do critério de aceite 3 (linha 289)."
+  },
+  {
+   "key": "url_pin_it",
+   "value": "https://pin.it/abc",
+   "type": "string",
+   "description": "Shortlink rejeitado nesta versão (FDD seção 4, linhas 97-98; critério 3, linha 289)."
+  },
+  {
+   "key": "url_search_pins",
+   "value": "https://br.pinterest.com/search/pins/?q=redbull",
+   "type": "string",
+   "description": "Path com palavra reservada `search` (FDD seção 5, linha 110; critério 3, linha 289)."
+  },
+  {
+   "key": "url_vazia",
+   "value": "",
+   "type": "string",
+   "description": "String vazia: primeira linha da matriz de erros (seção 7, linha 231)."
+  },
+  {
+   "key": "max_pins",
+   "value": "30",
+   "type": "string",
+   "description": "Default do FDD para board (seção 6, linha 179)."
+  },
+  {
+   "key": "max_pins_um",
+   "value": "1",
+   "type": "string",
+   "description": "Teto mínimo da faixa: usado nos requests que só validam classificação/409, para o scraping ser o menor possível."
+  },
+  {
+   "key": "max_pins_zero",
+   "value": "0",
+   "type": "string",
+   "description": "Abaixo da faixa 1..100 (critério de aceite 8, linha 300)."
+  },
+  {
+   "key": "max_pins_alto",
+   "value": "101",
+   "type": "string",
+   "description": "Acima da faixa 1..100 (critério de aceite 8, linha 300)."
+  },
+  {
+   "key": "headless",
+   "value": "true",
+   "type": "string",
+   "description": "Campo `headless` do `ImportUrlReq` (FDD seção 6, linha 180)."
+  },
+  {
+   "key": "max_polls",
+   "value": "60",
+   "type": "string",
+   "description": "Teto de repetições de cada request de polling. O job é lento por design (ritmo humano, FDD linha 191)."
+  },
+  {
+   "key": "poll_wait_ms",
+   "value": "2000",
+   "type": "string",
+   "description": "Espera entre polls, em ms — o intervalo de 2 s da UI (FDD seção 5, linha 162)."
+  },
+  {
+   "key": "poll_count",
+   "value": "0",
+   "type": "string",
+   "description": "Contador interno do laço de polling; não preencher à mão."
+  },
+  {
+   "key": "candidatas_apos_board",
+   "value": "",
+   "type": "string",
+   "description": "Encadeada: total de candidatas após o import de board."
+  },
+  {
+   "key": "candidatas_apos_pin",
+   "value": "",
+   "type": "string",
+   "description": "Encadeada: total após o primeiro import de pin, comparado depois do reimport (dedupe)."
+  },
+  {
+   "key": "job_409_iniciado",
+   "value": "",
+   "type": "string",
+   "description": "Encadeada: registra se o job pré-condição dos 409 subiu."
+  }
+ ],
+ "item": [
+  {
+   "name": "1. import de board (fluxo principal)",
+   "description": "Fluxo principal da seção 5 do FDD (linhas 105-122): POST com URL de board, polling no `GET .../refs/job` existente e recarga das candidatas ao concluir. ATENÇÃO: rodar estes requests dispara scraping REAL do Pinterest com a sessão do perfil persistente (ADR-005) — leia o README antes.",
+   "item": [
+    {
+     "name": "POST import/url — board (200, job running)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// termo derivado do slug do board (FDD s6 contrato 3, linha 210-211): `campanhas-energetico` -> `campanhas energetico`",
+         "function termoDoBoard(u) {",
+         "  const semQuery = String(u).split('?')[0].split('#')[0];",
+         "  const partes = semQuery.split('/').filter(Boolean);   // ['https:', 'host', 'usuario', 'board', ...]",
+         "  const slug = partes.length > 3 ? partes[3] : '';",
+         "  return decodeURIComponent(slug).replace(/-/g, ' ').split(/\\s+/).filter(Boolean).join(' ');",
+         "}",
+         "const j = pm.response.json();",
+         "pm.test('200 job criado (FDD s6 contrato 1, linha 185)', () => pm.response.to.have.status(200));",
+         "pm.test('corpo = job_status(pid): {state, terms, total, meta, log, last, error} (FDD linhas 185-186)', () => {",
+         "  ['state','terms','total','meta','log','last','error'].forEach(k => pm.expect(j).to.have.property(k));",
+         "});",
+         "pm.test(\"state == 'running' logo apos o POST (FDD linha 200)\", () => pm.expect(j.state).to.eql('running'));",
+         "pm.test('total comeca em 0 (FDD linha 200)', () => pm.expect(j.total).to.eql(0));",
+         "pm.test('log comeca vazio (FDD linha 201)', () => pm.expect(j.log).to.be.an('array').that.is.empty);",
+         "pm.test('error null enquanto roda (FDD linha 201)', () => pm.expect(j.error).to.eql(null));",
+         "pm.test('terms traz UM termo derivado da URL (slug do board com espacos) (FDD linha 206 e 210-211)', () => {",
+         "  pm.expect(j.terms).to.be.an('array').with.lengthOf(1);",
+         "  pm.expect(j.terms[0]).to.eql(termoDoBoard(pm.collectionVariables.get('url_board')));",
+         "});",
+         "pm.test('meta = teto do job (FDD linha 114 (s5) e 186)', () => pm.expect(j.meta).to.eql(Number(pm.collectionVariables.get('max_pins'))));",
+         "// DIVERGENCIA BAIXA #4 do divergencias.md: o exemplo do FDD (linha 201) mostra",
+         "// last = {stage:'start', logged_in:true}, mas na resposta do POST a thread mal comecou e",
+         "// `last` e {} — o primeiro evento so aparece no GET /refs/job seguinte.",
+         "pm.test('last e um objeto (FDD linha 201; ver divergencia BAIXA #4)', () => pm.expect(j.last).to.be.an('object'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_board}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Contrato 1 do FDD (`docs/domains/refs/features/refs-import-url-fdd.md`, seção 6, linha 177). Corpo do `ImportUrlReq` conforme as linhas 179-180: `url` obrigatória, `max_pins` (1..100, default 30, teto só do board) e `headless`. O exemplo da linha 195 usa exatamente este formato.\n\n`meta` = `max_pins` para board (FDD seção 5, linha 114) e `terms` = [slug do board com hifens trocados por espaço] (FDD linhas 210-211).\n\nEste request INICIA um scraping real: preencha `url_board` com um board seu e mantenha `max_pins` baixo (ADR-005, aviso de ToS da seção 2, linhas 56-57)."
+     },
+     "response": []
+    },
+    {
+     "name": "GET job — polling do import de board",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// O sandbox do Postman/newman não tem sleep: espera ativa de `poll_wait_ms` para reproduzir o",
+         "// polling de 2 s da UI (FDD seção 5, linha 162) sem martelar o serviço. O job de import é lento",
+         "// por design (ritmo humano, FDD linha 191).",
+         "const espera = Number(pm.collectionVariables.get('poll_wait_ms') || 2000);",
+         "const ate = Date.now() + espera;",
+         "while (Date.now() < ate) { /* aguarda */ }"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('200 sempre que o projeto existe (FDD s6 contrato 2, linha 205)', () => pm.response.to.have.status(200));",
+         "pm.test(\"state valido (FDD s5, linhas 112-121 e s7, linhas 234-238)\", () => pm.expect(['idle','running','done','error']).to.include(j.state));",
+         "let n = Number(pm.collectionVariables.get('poll_count') || 0);",
+         "const max = Number(pm.collectionVariables.get('max_polls') || 60);",
+         "if (j.state === 'running' && n < max) {",
+         "  pm.collectionVariables.set('poll_count', String(n + 1));",
+         "  postman.setNextRequest(pm.info.requestName);",
+         "} else {",
+         "  pm.collectionVariables.set('poll_count', '0');",
+         "  pm.test('o job saiu de running dentro de max_polls (senao aumente max_polls)', () => pm.expect(j.state).to.not.eql('running'));",
+         "  if (j.state === 'done') {",
+         "    pm.test('done: error continua null (FDD s6, linha 186)', () => pm.expect(j.error).to.eql(null));",
+         "    pm.test(\"ultima linha do log e 'concluido · N candidatas' (FDD s7 linha 235 e s8 linha 256)\", () => {",
+         "      pm.expect(j.log).to.be.an('array').that.is.not.empty;",
+         "      const ultima = j.log[j.log.length - 1];",
+         "      pm.expect(ultima.text).to.match(/^conclu.do · \\d+ candidatas$/);",
+         "      pm.expect(ultima.ok).to.eql(true);",
+         "      pm.expect(ultima.time).to.match(/^\\d{2}:\\d{2}$/);",
+         "    });",
+         "    pm.test('total <= meta: o teto do job foi respeitado (FDD linha 191)', () => pm.expect(j.total).to.be.at.most(j.meta));",
+         "  }",
+         "  if (j.state === 'error') {",
+         "    // FDD s7: pin inacessivel (linha 234) traz a mensagem crua; falha inesperada",
+         "    // (linha 238) vem como `TypeName: msg`. Playwright/Chromium ausente cai no segundo caso.",
+         "    pm.test('state=error traz `error` preenchido (FDD s7, linhas 234 e 238)', () => pm.expect(j.error).to.be.a('string').that.is.not.empty);",
+         "  }",
+         "}",
+         "pm.collectionVariables.set('board_job_state', String(j.state));",
+         "pm.collectionVariables.set('board_job_total', String(j.total));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/job",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "job"
+       ]
+      },
+      "description": "Contrato 2 do FDD (seção 6, linhas 204-207): o `GET .../refs/job` existente passa a refletir também o job de import, sem campo novo. Repete a si mesmo enquanto `state == 'running'`, até `max_polls`, como o polling de 2 s da UI (seção 5, linha 162).\n\nBoard vazio termina em `done` com `total` 0 e a linha de log \"concluído · 0 candidatas\" — resultado válido, NÃO erro (FDD seção 5, linhas 135-138 e seção 7, linha 235)."
+     },
+     "response": []
+    },
+    {
+     "name": "GET candidates — candidatas depois do import de board",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const cs = pm.response.json();",
+         "pm.test('200 e lista (FDD s6 contrato 3, linha 209)', () => {",
+         "  pm.response.to.have.status(200);",
+         "  pm.expect(cs).to.be.an('array');",
+         "});",
+         "pm.test('schema Candidate inalterado em TODA candidata (FDD linhas 209-216 e 219-221)', () => {",
+         "  cs.forEach(c => ['id','source','term','url','pin_url','alt','file','thumb','width','height','selected','extra'].forEach(k => pm.expect(c).to.have.property(k)));",
+         "});",
+         "const doUrl = cs.filter(c => c.source === 'url');",
+         "pm.test('source de toda candidata e um dos valores conhecidos: a fonte nova `url` convive com `pinterest` e `upload` (FDD linhas 210 e 219-221)', () => {",
+         "  cs.forEach(c => pm.expect(['pinterest','upload','url']).to.include(c.source));",
+         "});",
+         "pm.test('cada candidata source=url guarda a URL original em extra.import_url (FDD linha 216)', () => {",
+         "  doUrl.forEach(c => pm.expect(c.extra).to.have.property('import_url'));",
+         "});",
+         "pm.test('pin_url e null ou um /pin/ canonico do Pinterest (FDD linhas 213-214)', () => {",
+         "  doUrl.forEach(c => {",
+         "    if (c.pin_url !== null) pm.expect(c.pin_url).to.match(/^https:\\/\\/www\\.pinterest\\.com\\/pin\\//);",
+         "  });",
+         "});",
+         "const esperado = (function () {",
+         "  const u = String(pm.collectionVariables.get('url_board')).split('?')[0].split('#')[0];",
+         "  const p = u.split('/').filter(Boolean);",
+         "  return decodeURIComponent(p.length > 3 ? p[3] : '').replace(/-/g, ' ').split(/\\s+/).filter(Boolean).join(' ');",
+         "})();",
+         "pm.test('term das candidatas de board = slug com espacos (FDD linhas 210-211)', () => {",
+         "  cs.filter(c => c.source === 'url' && c.extra.import_url && c.extra.import_url.indexOf('/pin/') === -1)",
+         "    .forEach(c => pm.expect(c.term).to.eql(esperado));",
+         "});",
+         "pm.collectionVariables.set('candidatas_apos_board', String(cs.length));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/candidates",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "candidates"
+       ]
+      },
+      "description": "Rota de apoio existente, sem mudança de contrato (FDD seção 3, linhas 70-72 e critério 6, linhas 294-295). Confere que as candidatas trazidas por URL entram no MESMO schema `Candidate` (seção 6, contrato 3, linhas 209-216), para a galeria, os filtros e o `select` funcionarem sem edição."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — board com seção (200, seção tratada como board)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// termo derivado do slug do board (FDD s6 contrato 3, linha 210-211): `campanhas-energetico` -> `campanhas energetico`",
+         "function termoDoBoard(u) {",
+         "  const semQuery = String(u).split('?')[0].split('#')[0];",
+         "  const partes = semQuery.split('/').filter(Boolean);   // ['https:', 'host', 'usuario', 'board', ...]",
+         "  const slug = partes.length > 3 ? partes[3] : '';",
+         "  return decodeURIComponent(slug).replace(/-/g, ' ').split(/\\s+/).filter(Boolean).join(' ');",
+         "}",
+         "const j = pm.response.json();",
+         "pm.test('200 job criado (FDD s6 contrato 1, linha 185)', () => pm.response.to.have.status(200));",
+         "pm.test('corpo = job_status(pid): {state, terms, total, meta, log, last, error} (FDD linhas 185-186)', () => {",
+         "  ['state','terms','total','meta','log','last','error'].forEach(k => pm.expect(j).to.have.property(k));",
+         "});",
+         "pm.test(\"state == 'running' logo apos o POST (FDD linha 200)\", () => pm.expect(j.state).to.eql('running'));",
+         "pm.test('total comeca em 0 (FDD linha 200)', () => pm.expect(j.total).to.eql(0));",
+         "pm.test('log comeca vazio (FDD linha 201)', () => pm.expect(j.log).to.be.an('array').that.is.empty);",
+         "pm.test('error null enquanto roda (FDD linha 201)', () => pm.expect(j.error).to.eql(null));",
+         "pm.test('terms traz UM termo derivado da URL (slug do board, ignorando a secao) (FDD linha 206 e 210-211)', () => {",
+         "  pm.expect(j.terms).to.be.an('array').with.lengthOf(1);",
+         "  pm.expect(j.terms[0]).to.eql(termoDoBoard(pm.collectionVariables.get('url_board_section')));",
+         "});",
+         "pm.test('meta = teto do job (FDD linha 114 (s5) e 186)', () => pm.expect(j.meta).to.eql(1));",
+         "// DIVERGENCIA BAIXA #4 do divergencias.md: o exemplo do FDD (linha 201) mostra",
+         "// last = {stage:'start', logged_in:true}, mas na resposta do POST a thread mal comecou e",
+         "// `last` e {} — o primeiro evento so aparece no GET /refs/job seguinte.",
+         "pm.test('last e um objeto (FDD linha 201; ver divergencia BAIXA #4)', () => pm.expect(j.last).to.be.an('object'));",
+         "// DIVERGENCIA BAIXA #3: a secao 4 (linha 94) manda tratar `/user/board/section/`",
+         "// como board comum, mas o fluxo da secao 5 (linhas 109-110) so descreve o path de",
+         "// DOIS segmentos. A implementacao aceita 2..3 segmentos; este request prova isso."
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_board_section}}\",\n  \"max_pins\": {{max_pins_um}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "URL de **seção** de board (`/<usuario>/<board>/<secao>/`). A seção 4 do FDD (linha 94) decide tratá-la como board comum; a seção 5 (linhas 109-110) só descreve o path de dois segmentos — ver divergência BAIXA #3 em `divergencias.md`.\n\nUsa `max_pins_um` (=1) de propósito: valida a classificação sem puxar um board inteiro."
+     },
+     "response": []
+    },
+    {
+     "name": "GET job — polling do import de seção",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// O sandbox do Postman/newman não tem sleep: espera ativa de `poll_wait_ms` para reproduzir o",
+         "// polling de 2 s da UI (FDD seção 5, linha 162) sem martelar o serviço. O job de import é lento",
+         "// por design (ritmo humano, FDD linha 191).",
+         "const espera = Number(pm.collectionVariables.get('poll_wait_ms') || 2000);",
+         "const ate = Date.now() + espera;",
+         "while (Date.now() < ate) { /* aguarda */ }"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('200 sempre que o projeto existe (FDD s6 contrato 2, linha 205)', () => pm.response.to.have.status(200));",
+         "pm.test(\"state valido (FDD s5, linhas 112-121 e s7, linhas 234-238)\", () => pm.expect(['idle','running','done','error']).to.include(j.state));",
+         "let n = Number(pm.collectionVariables.get('poll_count') || 0);",
+         "const max = Number(pm.collectionVariables.get('max_polls') || 60);",
+         "if (j.state === 'running' && n < max) {",
+         "  pm.collectionVariables.set('poll_count', String(n + 1));",
+         "  postman.setNextRequest(pm.info.requestName);",
+         "} else {",
+         "  pm.collectionVariables.set('poll_count', '0');",
+         "  pm.test('o job saiu de running dentro de max_polls (senao aumente max_polls)', () => pm.expect(j.state).to.not.eql('running'));",
+         "  if (j.state === 'done') {",
+         "    pm.test('done: error continua null (FDD s6, linha 186)', () => pm.expect(j.error).to.eql(null));",
+         "    pm.test(\"ultima linha do log e 'concluido · N candidatas' (FDD s7 linha 235 e s8 linha 256)\", () => {",
+         "      pm.expect(j.log).to.be.an('array').that.is.not.empty;",
+         "      const ultima = j.log[j.log.length - 1];",
+         "      pm.expect(ultima.text).to.match(/^conclu.do · \\d+ candidatas$/);",
+         "      pm.expect(ultima.ok).to.eql(true);",
+         "      pm.expect(ultima.time).to.match(/^\\d{2}:\\d{2}$/);",
+         "    });",
+         "    pm.test('total <= meta: o teto do job foi respeitado (FDD linha 191)', () => pm.expect(j.total).to.be.at.most(j.meta));",
+         "  }",
+         "  if (j.state === 'error') {",
+         "    // FDD s7: pin inacessivel (linha 234) traz a mensagem crua; falha inesperada",
+         "    // (linha 238) vem como `TypeName: msg`. Playwright/Chromium ausente cai no segundo caso.",
+         "    pm.test('state=error traz `error` preenchido (FDD s7, linhas 234 e 238)', () => pm.expect(j.error).to.be.a('string').that.is.not.empty);",
+         "  }",
+         "}",
+         "pm.collectionVariables.set('secao_job_state', String(j.state));",
+         "pm.collectionVariables.set('secao_job_total', String(j.total));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/job",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "job"
+       ]
+      },
+      "description": "Drena o job da seção antes da próxima pasta: há UM job de coleta por projeto (FDD seção 3, linha 73 e seção 7, linha 245), então deixar um job rodando faria a pasta seguinte receber 409."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "2. import de pin (fluxo alternativo)",
+   "description": "Fluxo alternativo da seção 5 (linhas 124-128): pin avulso, sem rolagem, `meta == 1`. Cobre também o critério de aceite 2 (linhas 286-287): reimportar o mesmo conteúdo adiciona 0 candidatas (dedupe por SHA-1).",
+   "item": [
+    {
+     "name": "POST import/url — pin (200, meta == 1)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('200 job criado (FDD s6 contrato 1, linha 185)', () => pm.response.to.have.status(200));",
+         "pm.test('corpo = job_status(pid): {state, terms, total, meta, log, last, error} (FDD linhas 185-186)', () => {",
+         "  ['state','terms','total','meta','log','last','error'].forEach(k => pm.expect(j).to.have.property(k));",
+         "});",
+         "pm.test(\"state == 'running' logo apos o POST (FDD linha 200)\", () => pm.expect(j.state).to.eql('running'));",
+         "pm.test('total comeca em 0 (FDD linha 200)', () => pm.expect(j.total).to.eql(0));",
+         "pm.test('log comeca vazio (FDD linha 201)', () => pm.expect(j.log).to.be.an('array').that.is.empty);",
+         "pm.test('error null enquanto roda (FDD linha 201)', () => pm.expect(j.error).to.eql(null));",
+         "pm.test('terms traz UM termo derivado da URL (pin avulso: o literal \"url\") (FDD linha 206 e 210-211)', () => {",
+         "  pm.expect(j.terms).to.be.an('array').with.lengthOf(1);",
+         "  pm.expect(j.terms[0]).to.eql('url');",
+         "});",
+         "pm.test('meta = teto do job (FDD linha 127 (s5) e 211)', () => pm.expect(j.meta).to.eql(1));",
+         "// DIVERGENCIA BAIXA #4 do divergencias.md: o exemplo do FDD (linha 201) mostra",
+         "// last = {stage:'start', logged_in:true}, mas na resposta do POST a thread mal comecou e",
+         "// `last` e {} — o primeiro evento so aparece no GET /refs/job seguinte.",
+         "pm.test('last e um objeto (FDD linha 201; ver divergencia BAIXA #4)', () => pm.expect(j.last).to.be.an('object'));",
+         "pm.test('meta == 1 no pin, mesmo com max_pins=30 no corpo (FDD linhas 179-180 e 128)', () => pm.expect(pm.response.json().meta).to.eql(1));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_pin}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Contrato 1 com URL de pin. `max_pins` é enviado e deve ser IGNORADO: pin é sempre 1 imagem (FDD seção 6, linha 179 — \"teto para board, ignorado para pin\" — e seção 5, linha 128 — `meta=1`). `term` do pin avulso é o literal `\"url\"` (linha 211)."
+     },
+     "response": []
+    },
+    {
+     "name": "GET job — polling do import de pin",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// O sandbox do Postman/newman não tem sleep: espera ativa de `poll_wait_ms` para reproduzir o",
+         "// polling de 2 s da UI (FDD seção 5, linha 162) sem martelar o serviço. O job de import é lento",
+         "// por design (ritmo humano, FDD linha 191).",
+         "const espera = Number(pm.collectionVariables.get('poll_wait_ms') || 2000);",
+         "const ate = Date.now() + espera;",
+         "while (Date.now() < ate) { /* aguarda */ }"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('200 sempre que o projeto existe (FDD s6 contrato 2, linha 205)', () => pm.response.to.have.status(200));",
+         "pm.test(\"state valido (FDD s5, linhas 112-121 e s7, linhas 234-238)\", () => pm.expect(['idle','running','done','error']).to.include(j.state));",
+         "let n = Number(pm.collectionVariables.get('poll_count') || 0);",
+         "const max = Number(pm.collectionVariables.get('max_polls') || 60);",
+         "if (j.state === 'running' && n < max) {",
+         "  pm.collectionVariables.set('poll_count', String(n + 1));",
+         "  postman.setNextRequest(pm.info.requestName);",
+         "} else {",
+         "  pm.collectionVariables.set('poll_count', '0');",
+         "  pm.test('o job saiu de running dentro de max_polls (senao aumente max_polls)', () => pm.expect(j.state).to.not.eql('running'));",
+         "  if (j.state === 'done') {",
+         "    pm.test('done: error continua null (FDD s6, linha 186)', () => pm.expect(j.error).to.eql(null));",
+         "    pm.test(\"ultima linha do log e 'concluido · N candidatas' (FDD s7 linha 235 e s8 linha 256)\", () => {",
+         "      pm.expect(j.log).to.be.an('array').that.is.not.empty;",
+         "      const ultima = j.log[j.log.length - 1];",
+         "      pm.expect(ultima.text).to.match(/^conclu.do · \\d+ candidatas$/);",
+         "      pm.expect(ultima.ok).to.eql(true);",
+         "      pm.expect(ultima.time).to.match(/^\\d{2}:\\d{2}$/);",
+         "    });",
+         "    pm.test('total <= meta: o teto do job foi respeitado (FDD linha 191)', () => pm.expect(j.total).to.be.at.most(j.meta));",
+         "  }",
+         "  if (j.state === 'error') {",
+         "    // FDD s7: pin inacessivel (linha 234) traz a mensagem crua; falha inesperada",
+         "    // (linha 238) vem como `TypeName: msg`. Playwright/Chromium ausente cai no segundo caso.",
+         "    pm.test('state=error traz `error` preenchido (FDD s7, linhas 234 e 238)', () => pm.expect(j.error).to.be.a('string').that.is.not.empty);",
+         "  }",
+         "  if (j.state === 'error') {",
+         "    pm.test('pin inacessivel usa a mensagem crua do FDD (s7, linha 234)', () => {",
+         "      if (j.error.indexOf('inacess') !== -1) pm.expect(j.error).to.eql('pin inacessível (privado, removido ou exige login)');",
+         "    });",
+         "  }",
+         "}",
+         "pm.collectionVariables.set('pin_job_state', String(j.state));",
+         "pm.collectionVariables.set('pin_job_total', String(j.total));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/job",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "job"
+       ]
+      },
+      "description": "Pin privado, removido ou atrás do login termina em `state=\"error\"` com a mensagem \"pin inacessível (privado, removido ou exige login)\" (FDD seção 5, linhas 132-134 e seção 7, linha 234). Esse caso NÃO é 4xx: o POST já respondeu 200."
+     },
+     "response": []
+    },
+    {
+     "name": "GET candidates — total depois do primeiro import de pin",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const cs = pm.response.json();",
+         "pm.test('200 e lista (FDD s6 contrato 3, linha 209)', () => {",
+         "  pm.response.to.have.status(200);",
+         "  pm.expect(cs).to.be.an('array');",
+         "});",
+         "pm.test('schema Candidate inalterado em TODA candidata (FDD linhas 209-216 e 219-221)', () => {",
+         "  cs.forEach(c => ['id','source','term','url','pin_url','alt','file','thumb','width','height','selected','extra'].forEach(k => pm.expect(c).to.have.property(k)));",
+         "});",
+         "const doUrl = cs.filter(c => c.source === 'url');",
+         "pm.test('source de toda candidata e um dos valores conhecidos: a fonte nova `url` convive com `pinterest` e `upload` (FDD linhas 210 e 219-221)', () => {",
+         "  cs.forEach(c => pm.expect(['pinterest','upload','url']).to.include(c.source));",
+         "});",
+         "pm.test('cada candidata source=url guarda a URL original em extra.import_url (FDD linha 216)', () => {",
+         "  doUrl.forEach(c => pm.expect(c.extra).to.have.property('import_url'));",
+         "});",
+         "pm.test('pin_url e null ou um /pin/ canonico do Pinterest (FDD linhas 213-214)', () => {",
+         "  doUrl.forEach(c => {",
+         "    if (c.pin_url !== null) pm.expect(c.pin_url).to.match(/^https:\\/\\/www\\.pinterest\\.com\\/pin\\//);",
+         "  });",
+         "});",
+         "pm.test(\"pin avulso agrupa em term == 'url' (FDD linha 211)\", () => {",
+         "  cs.filter(c => c.source === 'url' && c.extra.import_url && c.extra.import_url.indexOf('/pin/') !== -1)",
+         "    .forEach(c => pm.expect(c.term).to.eql('url'));",
+         "});",
+         "pm.collectionVariables.set('candidatas_apos_pin', String(cs.length));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/candidates",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "candidates"
+       ]
+      },
+      "description": "Grava o total de candidatas em `candidatas_apos_pin` para o request de dedupe comparar depois do reimport (critério de aceite 2, linhas 286-287)."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — reimport do MESMO pin (200)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('200 job criado (FDD s6 contrato 1, linha 185)', () => pm.response.to.have.status(200));",
+         "pm.test('corpo = job_status(pid): {state, terms, total, meta, log, last, error} (FDD linhas 185-186)', () => {",
+         "  ['state','terms','total','meta','log','last','error'].forEach(k => pm.expect(j).to.have.property(k));",
+         "});",
+         "pm.test(\"state == 'running' logo apos o POST (FDD linha 200)\", () => pm.expect(j.state).to.eql('running'));",
+         "pm.test('total comeca em 0 (FDD linha 200)', () => pm.expect(j.total).to.eql(0));",
+         "pm.test('log comeca vazio (FDD linha 201)', () => pm.expect(j.log).to.be.an('array').that.is.empty);",
+         "pm.test('error null enquanto roda (FDD linha 201)', () => pm.expect(j.error).to.eql(null));",
+         "pm.test('terms traz UM termo derivado da URL (pin avulso: o literal \"url\") (FDD linha 206 e 210-211)', () => {",
+         "  pm.expect(j.terms).to.be.an('array').with.lengthOf(1);",
+         "  pm.expect(j.terms[0]).to.eql('url');",
+         "});",
+         "pm.test('meta = teto do job (FDD linha 127 (s5) e 211)', () => pm.expect(j.meta).to.eql(1));",
+         "// DIVERGENCIA BAIXA #4 do divergencias.md: o exemplo do FDD (linha 201) mostra",
+         "// last = {stage:'start', logged_in:true}, mas na resposta do POST a thread mal comecou e",
+         "// `last` e {} — o primeiro evento so aparece no GET /refs/job seguinte.",
+         "pm.test('last e um objeto (FDD linha 201; ver divergencia BAIXA #4)', () => pm.expect(j.last).to.be.an('object'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_pin}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Segundo import do mesmo pin, com o job anterior já concluído: responde 200 (não 409) e deve adicionar 0 candidatas. Invariante da seção 7 (linha 245): dedupe por SHA-1 garante que reimport não duplica."
+     },
+     "response": []
+    },
+    {
+     "name": "GET job — polling do reimport de pin",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// O sandbox do Postman/newman não tem sleep: espera ativa de `poll_wait_ms` para reproduzir o",
+         "// polling de 2 s da UI (FDD seção 5, linha 162) sem martelar o serviço. O job de import é lento",
+         "// por design (ritmo humano, FDD linha 191).",
+         "const espera = Number(pm.collectionVariables.get('poll_wait_ms') || 2000);",
+         "const ate = Date.now() + espera;",
+         "while (Date.now() < ate) { /* aguarda */ }"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('200 sempre que o projeto existe (FDD s6 contrato 2, linha 205)', () => pm.response.to.have.status(200));",
+         "pm.test(\"state valido (FDD s5, linhas 112-121 e s7, linhas 234-238)\", () => pm.expect(['idle','running','done','error']).to.include(j.state));",
+         "let n = Number(pm.collectionVariables.get('poll_count') || 0);",
+         "const max = Number(pm.collectionVariables.get('max_polls') || 60);",
+         "if (j.state === 'running' && n < max) {",
+         "  pm.collectionVariables.set('poll_count', String(n + 1));",
+         "  postman.setNextRequest(pm.info.requestName);",
+         "} else {",
+         "  pm.collectionVariables.set('poll_count', '0');",
+         "  pm.test('o job saiu de running dentro de max_polls (senao aumente max_polls)', () => pm.expect(j.state).to.not.eql('running'));",
+         "  if (j.state === 'done') {",
+         "    pm.test('done: error continua null (FDD s6, linha 186)', () => pm.expect(j.error).to.eql(null));",
+         "    pm.test(\"ultima linha do log e 'concluido · N candidatas' (FDD s7 linha 235 e s8 linha 256)\", () => {",
+         "      pm.expect(j.log).to.be.an('array').that.is.not.empty;",
+         "      const ultima = j.log[j.log.length - 1];",
+         "      pm.expect(ultima.text).to.match(/^conclu.do · \\d+ candidatas$/);",
+         "      pm.expect(ultima.ok).to.eql(true);",
+         "      pm.expect(ultima.time).to.match(/^\\d{2}:\\d{2}$/);",
+         "    });",
+         "    pm.test('total <= meta: o teto do job foi respeitado (FDD linha 191)', () => pm.expect(j.total).to.be.at.most(j.meta));",
+         "  }",
+         "  if (j.state === 'error') {",
+         "    // FDD s7: pin inacessivel (linha 234) traz a mensagem crua; falha inesperada",
+         "    // (linha 238) vem como `TypeName: msg`. Playwright/Chromium ausente cai no segundo caso.",
+         "    pm.test('state=error traz `error` preenchido (FDD s7, linhas 234 e 238)', () => pm.expect(j.error).to.be.a('string').that.is.not.empty);",
+         "  }",
+         "}",
+         "pm.collectionVariables.set('reimport_job_state', String(j.state));",
+         "pm.collectionVariables.set('reimport_job_total', String(j.total));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/job",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "job"
+       ]
+      },
+      "description": "Espera o reimport terminar para o request seguinte comparar os totais."
+     },
+     "response": []
+    },
+    {
+     "name": "GET candidates — reimport adicionou 0 (dedupe SHA-1)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const cs = pm.response.json();",
+         "pm.test('200 e lista (FDD s6 contrato 3, linha 209)', () => {",
+         "  pm.response.to.have.status(200);",
+         "  pm.expect(cs).to.be.an('array');",
+         "});",
+         "pm.test('schema Candidate inalterado em TODA candidata (FDD linhas 209-216 e 219-221)', () => {",
+         "  cs.forEach(c => ['id','source','term','url','pin_url','alt','file','thumb','width','height','selected','extra'].forEach(k => pm.expect(c).to.have.property(k)));",
+         "});",
+         "const doUrl = cs.filter(c => c.source === 'url');",
+         "pm.test('source de toda candidata e um dos valores conhecidos: a fonte nova `url` convive com `pinterest` e `upload` (FDD linhas 210 e 219-221)', () => {",
+         "  cs.forEach(c => pm.expect(['pinterest','upload','url']).to.include(c.source));",
+         "});",
+         "pm.test('cada candidata source=url guarda a URL original em extra.import_url (FDD linha 216)', () => {",
+         "  doUrl.forEach(c => pm.expect(c.extra).to.have.property('import_url'));",
+         "});",
+         "pm.test('pin_url e null ou um /pin/ canonico do Pinterest (FDD linhas 213-214)', () => {",
+         "  doUrl.forEach(c => {",
+         "    if (c.pin_url !== null) pm.expect(c.pin_url).to.match(/^https:\\/\\/www\\.pinterest\\.com\\/pin\\//);",
+         "  });",
+         "});",
+         "const antes = Number(pm.collectionVariables.get('candidatas_apos_pin') || 0);",
+         "pm.test('reimport do mesmo pin adiciona 0 candidatas (FDD s10 criterio 2, linhas 286-287; invariante s7, linha 245)', () => {",
+         "  pm.expect(cs.length).to.eql(antes);",
+         "});",
+         "pm.test('candidates.json so cresce: nunca menos que antes (invariante s7, linha 245)', () => pm.expect(cs.length).to.be.at.least(antes));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/candidates",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "candidates"
+       ]
+      },
+      "description": "Critério de aceite 2 (linhas 286-287): \"reimport do mesmo conteúdo (mesmo SHA-1) adiciona 0\". Comparação observável por HTTP entre os dois `GET .../refs/candidates`.\n\nSó é conclusivo se o import anterior tiver terminado em `done` com o pin acessível; se o job terminou em `error`, os dois totais também são iguais por outro motivo."
+     },
+     "response": []
+    }
+   ]
+  },
+  {
+   "name": "3. erros",
+   "description": "Casos negativos da semântica de status da seção 6 (linhas 187-190) e da matriz de erros da seção 7 (linhas 231-238). Os três 422 de URL cobrem o critério de aceite 3 (linhas 288-290); os dois de `max_pins`, o critério 8 (linha 300).",
+   "item": [
+    {
+     "name": "POST import/url — 404 projeto inexistente",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('404 projeto inexistente (FDD s6, linha 187; s7, linha 232)', () => pm.response.to.have.status(404));",
+         "pm.test('detail do handler de KeyError do nucleo', () => {",
+         "  pm.expect(pm.response.json().detail).to.have.string('projeto não encontrado');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid_inexistente}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid_inexistente}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_board}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "FDD seção 6, linha 187 (\"404 projeto inexistente, via `service.project_dir`\") e seção 7, linha 232. O `project_dir` levanta `KeyError` e o handler do núcleo (`studio/app.py:46-49`) traduz em 404 — a rota do plugin não trata 404 explicitamente.\n\nO `pid` é checado ANTES da URL: com `pid` inexistente E URL inválida a resposta é 404, não 422 (precedência não declarada no FDD — divergência BAIXA #5)."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 422 host de terceiro",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('422 URL invalida (FDD s6, linha 189)', () => pm.response.to.have.status(422));",
+         "pm.test('detail e a mensagem unica de URL nao reconhecida, com os DOIS formatos aceitos (FDD s6 linhas 189-190 e s7 linha 231)', () => {",
+         "  const d = pm.response.json().detail;",
+         "  pm.expect(d).to.be.a('string');",
+         "  pm.expect(d).to.have.string('URL não reconhecida');",
+         "  pm.expect(d).to.have.string('/pin/<id>/');",
+         "  pm.expect(d).to.have.string('<usuario>/<board>/');",
+         "  pm.expect(d).to.have.string('pin.it');",
+         "});",
+         "pm.test('nenhum job foi criado: o 422 e sincrono, antes do job (FDD s5, linha 131)', () => {",
+         "  pm.expect(pm.response.json()).to.not.have.property('state');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_host_terceiro}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Critério de aceite 3 (linha 289): `https://exemplo.com/x` responde 422 sem criar job. Host fora de `pinterest.com`/subdomínio regional (FDD seção 5, linha 108)."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 422 shortlink pin.it",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('422 URL invalida (FDD s6, linha 189)', () => pm.response.to.have.status(422));",
+         "pm.test('detail e a mensagem unica de URL nao reconhecida, com os DOIS formatos aceitos (FDD s6 linhas 189-190 e s7 linha 231)', () => {",
+         "  const d = pm.response.json().detail;",
+         "  pm.expect(d).to.be.a('string');",
+         "  pm.expect(d).to.have.string('URL não reconhecida');",
+         "  pm.expect(d).to.have.string('/pin/<id>/');",
+         "  pm.expect(d).to.have.string('<usuario>/<board>/');",
+         "  pm.expect(d).to.have.string('pin.it');",
+         "});",
+         "pm.test('nenhum job foi criado: o 422 e sincrono, antes do job (FDD s5, linha 131)', () => {",
+         "  pm.expect(pm.response.json()).to.not.have.property('state');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_pin_it}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Critério de aceite 3 (linha 289) e exclusão da seção 4 (linhas 97-98): shortlink `pin.it` é rejeitado nesta versão, com erro claro, em vez de resolvido por navegação extra. O `detail` diz ao usuário para copiar a URL completa."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 422 path /search/pins/ (palavra reservada)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('422 URL invalida (FDD s6, linha 189)', () => pm.response.to.have.status(422));",
+         "pm.test('detail e a mensagem unica de URL nao reconhecida, com os DOIS formatos aceitos (FDD s6 linhas 189-190 e s7 linha 231)', () => {",
+         "  const d = pm.response.json().detail;",
+         "  pm.expect(d).to.be.a('string');",
+         "  pm.expect(d).to.have.string('URL não reconhecida');",
+         "  pm.expect(d).to.have.string('/pin/<id>/');",
+         "  pm.expect(d).to.have.string('<usuario>/<board>/');",
+         "  pm.expect(d).to.have.string('pin.it');",
+         "});",
+         "pm.test('nenhum job foi criado: o 422 e sincrono, antes do job (FDD s5, linha 131)', () => {",
+         "  pm.expect(pm.response.json()).to.not.have.property('state');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_search_pins}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Critério de aceite 3 (linha 289): path `/search/pins/` tem dois segmentos, mas `search` está nas palavras reservadas da seção 5 (linha 110: `pin`, `search`, `login`, `ideas`, `settings`, `today`, `videos`), então não é board."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 422 URL vazia",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('422 URL invalida (FDD s6, linha 189)', () => pm.response.to.have.status(422));",
+         "pm.test('detail e a mensagem unica de URL nao reconhecida, com os DOIS formatos aceitos (FDD s6 linhas 189-190 e s7 linha 231)', () => {",
+         "  const d = pm.response.json().detail;",
+         "  pm.expect(d).to.be.a('string');",
+         "  pm.expect(d).to.have.string('URL não reconhecida');",
+         "  pm.expect(d).to.have.string('/pin/<id>/');",
+         "  pm.expect(d).to.have.string('<usuario>/<board>/');",
+         "  pm.expect(d).to.have.string('pin.it');",
+         "});",
+         "pm.test('nenhum job foi criado: o 422 e sincrono, antes do job (FDD s5, linha 131)', () => {",
+         "  pm.expect(pm.response.json()).to.not.have.property('state');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_vazia}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Primeira linha da matriz de erros (seção 7, linha 231): \"URL vazia\" também cai na validação síncrona do service, com o mesmo `detail` em pt-BR. `url` é obrigatória no modelo (linha 179), mas string vazia passa pelo Pydantic e é barrada pelo classificador."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 422 max_pins = 0 (abaixo da faixa)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('422 max_pins fora de 1..100 (FDD s6, linha 180; s10 criterio 8, linha 300)', () => pm.response.to.have.status(422));",
+         "// DIVERGENCIA MEDIA #1: a secao 6 (linhas 189-190) so declara UM 422, o de URL, com",
+         "// `detail` string em pt-BR. O 422 de `max_pins` vem do Pydantic e traz `detail` como",
+         "// LISTA de erros de validacao — outro formato de corpo, no mesmo status.",
+         "pm.test('detail e a LISTA de erros do Pydantic, nao a string do FDD (divergencia MEDIA #1)', () => {",
+         "  const d = pm.response.json().detail;",
+         "  pm.expect(d).to.be.an('array');",
+         "  pm.expect(d[0].loc).to.eql(['body', 'max_pins']);",
+         "  pm.expect(d[0].type).to.eql('greater_than_equal');",
+         "});",
+         "pm.test('nenhum job criado', () => pm.expect(pm.response.json()).to.not.have.property('state'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_board}}\",\n  \"max_pins\": {{max_pins_zero}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Critério de aceite 8 (linha 300): `max_pins` fora de 1..100 é rejeitado pela validação Pydantic (`ge=1, le=100`). A faixa está declarada na linha 180 do FDD.\n\nO corpo do erro NÃO é o `detail` string que a linha 189 descreve para o 422 — ver divergência MEDIA #1 em `divergencias.md`."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 422 max_pins = 101 (acima da faixa)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('422 max_pins acima de 100 (FDD s6, linha 180; s10 criterio 8, linha 300)', () => pm.response.to.have.status(422));",
+         "pm.test('detail aponta o teto 100 (divergencia MEDIA #1: corpo em formato de lista)', () => {",
+         "  const d = pm.response.json().detail;",
+         "  pm.expect(d).to.be.an('array');",
+         "  pm.expect(d[0].loc).to.eql(['body', 'max_pins']);",
+         "  pm.expect(d[0].type).to.eql('less_than_equal');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_board}}\",\n  \"max_pins\": {{max_pins_alto}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Outro lado da faixa 1..100 (FDD linha 180). O teto 100 vem do registro de decisões (linhas 181-182 e 356-357): espelha o `max_per_term` do search e o volume baixo que a ADR-005 pede."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 422 corpo sem `url`",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('422 quando `url` falta (FDD s6, linha 179: url e obrigatoria)', () => pm.response.to.have.status(422));",
+         "pm.test('detail aponta o campo ausente (formato Pydantic, divergencia MEDIA #1)', () => {",
+         "  const d = pm.response.json().detail;",
+         "  pm.expect(d).to.be.an('array');",
+         "  pm.expect(d[0].loc).to.eql(['body', 'url']);",
+         "  pm.expect(d[0].type).to.eql('missing');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"max_pins\": {{max_pins}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "`url: str` sem default é obrigatória (FDD seção 6, linha 179). O FDD não declara esse 422 na semântica de status (linhas 184-190) — mesma divergência MEDIA #1 do `max_pins`."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — dispara job curto para os dois 409",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('200: job de coleta iniciado (FDD s6, linha 185)', () => pm.response.to.have.status(200));",
+         "pm.test(\"state == 'running' (pre-condicao dos dois 409 seguintes)\", () => pm.expect(pm.response.json().state).to.eql('running'));",
+         "pm.collectionVariables.set('job_409_iniciado', String(pm.response.code === 200));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_board}}\",\n  \"max_pins\": {{max_pins_um}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "Pré-condição dos dois 409: é preciso um job de coleta EM ANDAMENTO no projeto (FDD seção 5, linhas 112-113). Usa `max_pins_um` (=1) para o scraping ser o menor possível.\n\nSe Playwright/Chromium não estiver disponível, o job morre em milissegundos e os dois requests seguintes recebem 200 em vez de 409 — os testes tratam esse caso explicitamente em vez de fingir."
+     },
+     "response": []
+    },
+    {
+     "name": "POST import/url — 409 import concorrente",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const code = pm.response.code;",
+         "pm.test('409 quando ja ha job de coleta (FDD s6, linha 188; s7, linha 233)', () => {",
+         "  pm.expect([409, 200]).to.include(code);",
+         "});",
+         "if (code === 409) {",
+         "  pm.test('detail e a mensagem-padrao unica de job em andamento (FDD s7, linha 233)', () => {",
+         "    pm.expect(pm.response.json().detail).to.eql('Já existe uma busca em andamento para este projeto.');",
+         "  });",
+         "} else {",
+         "  pm.test('200 aqui significa que o job anterior JA terminou (Playwright ausente ou board vazio) — nao e defeito da rota', () => {",
+         "    pm.expect(pm.response.json().state).to.eql('running');",
+         "  });",
+         "}"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/import/url",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "import",
+        "url"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"url\": \"{{url_pin}}\",\n  \"max_pins\": {{max_pins}},\n  \"headless\": {{headless}}\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "FDD seção 6, linha 188 (\"409 já existe um job de coleta (busca OU import) em andamento\") e seção 7, linha 233. Exclusão mútua garantida pelo `_lock` + `_jobs[pid]` (seção 3, linha 73). Critério de aceite 4 (linha 291).\n\nAsserção condicional: ver a seção \"Asserções condicionais\" do README."
+     },
+     "response": []
+    },
+    {
+     "name": "POST search — 409 exclusão mútua busca × import",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const code = pm.response.code;",
+         "pm.test('409 tambem para a BUSCA enquanto o import roda (FDD s6, linha 188; s10 criterio 4, linha 291)', () => pm.expect([409, 200]).to.include(code));",
+         "if (code === 409) {",
+         "  pm.test('mesma mensagem-padrao, mesma chave `_jobs[pid]` (FDD s7, linha 233)', () => {",
+         "    pm.expect(pm.response.json().detail).to.eql('Já existe uma busca em andamento para este projeto.');",
+         "  });",
+         "} else {",
+         "  pm.test('200 aqui significa job anterior ja encerrado — e um SCRAPE DE BUSCA comecou; o request seguinte o drena', () => pm.expect(pm.response.json().state).to.eql('running'));",
+         "}"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/search",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "search"
+       ]
+      },
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"terms\": [\"red bull ads\"],\n  \"max_per_term\": 1,\n  \"headless\": true\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "description": "A exclusão mútua vale nos DOIS sentidos: o critério de aceite 4 (linha 291) diz \"segundo POST (import ou search) com job em andamento responde 409\". Prova que o import usa o mesmo `_jobs[pid]` do search (seção 1, linhas 23-25) — é por isso que o `GET .../refs/job` existente serve ao import sem rota nova de polling."
+     },
+     "response": []
+    },
+    {
+     "name": "GET job — drena o job dos 409",
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// O sandbox do Postman/newman não tem sleep: espera ativa de `poll_wait_ms` para reproduzir o",
+         "// polling de 2 s da UI (FDD seção 5, linha 162) sem martelar o serviço. O job de import é lento",
+         "// por design (ritmo humano, FDD linha 191).",
+         "const espera = Number(pm.collectionVariables.get('poll_wait_ms') || 2000);",
+         "const ate = Date.now() + espera;",
+         "while (Date.now() < ate) { /* aguarda */ }"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.test('200 sempre que o projeto existe (FDD s6 contrato 2, linha 205)', () => pm.response.to.have.status(200));",
+         "pm.test(\"state valido (FDD s5, linhas 112-121 e s7, linhas 234-238)\", () => pm.expect(['idle','running','done','error']).to.include(j.state));",
+         "let n = Number(pm.collectionVariables.get('poll_count') || 0);",
+         "const max = Number(pm.collectionVariables.get('max_polls') || 60);",
+         "if (j.state === 'running' && n < max) {",
+         "  pm.collectionVariables.set('poll_count', String(n + 1));",
+         "  postman.setNextRequest(pm.info.requestName);",
+         "} else {",
+         "  pm.collectionVariables.set('poll_count', '0');",
+         "  pm.test('o job saiu de running dentro de max_polls (senao aumente max_polls)', () => pm.expect(j.state).to.not.eql('running'));",
+         "  if (j.state === 'done') {",
+         "    pm.test('done: error continua null (FDD s6, linha 186)', () => pm.expect(j.error).to.eql(null));",
+         "    pm.test(\"ultima linha do log e 'concluido · N candidatas' (FDD s7 linha 235 e s8 linha 256)\", () => {",
+         "      pm.expect(j.log).to.be.an('array').that.is.not.empty;",
+         "      const ultima = j.log[j.log.length - 1];",
+         "      pm.expect(ultima.text).to.match(/^conclu.do · \\d+ candidatas$/);",
+         "      pm.expect(ultima.ok).to.eql(true);",
+         "      pm.expect(ultima.time).to.match(/^\\d{2}:\\d{2}$/);",
+         "    });",
+         "    pm.test('total <= meta: o teto do job foi respeitado (FDD linha 191)', () => pm.expect(j.total).to.be.at.most(j.meta));",
+         "  }",
+         "  if (j.state === 'error') {",
+         "    // FDD s7: pin inacessivel (linha 234) traz a mensagem crua; falha inesperada",
+         "    // (linha 238) vem como `TypeName: msg`. Playwright/Chromium ausente cai no segundo caso.",
+         "    pm.test('state=error traz `error` preenchido (FDD s7, linhas 234 e 238)', () => pm.expect(j.error).to.be.a('string').that.is.not.empty);",
+         "  }",
+         "}",
+         "pm.collectionVariables.set('erros_job_state', String(j.state));",
+         "pm.collectionVariables.set('erros_job_total', String(j.total));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid}}/refs/job",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "refs",
+        "job"
+       ]
+      },
+      "description": "Fecha a pasta deixando o projeto sem job em andamento, para reexecutar a coleção do início sem receber 409 na pasta 1."
+     },
+     "response": []
+    },
+    {
+     "name": "GET job — 404 projeto inexistente (rota de apoio)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('404 no polling de projeto inexistente (contrato 2 inalterado, FDD linhas 204-207)', () => pm.response.to.have.status(404));",
+         "pm.test('detail do handler de KeyError do nucleo', () => pm.expect(pm.response.json().detail).to.have.string('projeto não encontrado'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid_inexistente}}/refs/job",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid_inexistente}}",
+        "refs",
+        "job"
+       ]
+      },
+      "description": "Contrato 2 (linhas 204-207) segue idêntico: `refs_job` chama `service.project_dir(pid)` antes de devolver o status, então `pid` inexistente é 404 pelo handler do núcleo."
+     },
+     "response": []
+    },
+    {
+     "name": "GET candidates — 404 projeto inexistente (rota de apoio)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('404 nas candidatas de projeto inexistente (contrato inalterado, FDD s10 criterio 6, linhas 294-295)', () => pm.response.to.have.status(404));",
+         "pm.test('detail do handler de KeyError do nucleo', () => pm.expect(pm.response.json().detail).to.have.string('projeto não encontrado'));"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/api/projects/{{pid_inexistente}}/refs/candidates",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid_inexistente}}",
+        "refs",
+        "candidates"
+       ]
+      },
+      "description": "Critério de aceite 6 (linhas 294-295): `GET .../refs/candidates` continua com o shape atual, inclusive no 404 de projeto inexistente."
+     },
+     "response": []
+    }
+   ]
+  }
+ ]
+}

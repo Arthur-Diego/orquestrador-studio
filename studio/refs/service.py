@@ -199,17 +199,12 @@ def last_job(pid: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def start_search(pid: str, terms: list[str], max_per_term: int = 30, headless: bool = True) -> dict:
-    root = project_dir(pid)
-    with _lock:
-        if pid in _jobs and _jobs[pid]["state"] == "running":
-            raise RuntimeError("Já existe uma busca em andamento para este projeto.")
-        # `meta` é o teto do scrape (nº de termos × máx. por termo): a barra do protótipo mostra
-        # "baixadas/meta" ("94/120"), tanto durante o job quanto ao reabrir a tela.
-        job = {"state": "running", "started": time.time(), "terms": terms, "events": [], "total": 0,
-               "meta": len(terms) * max(1, max_per_term), "log": [], "error": None}
-        _jobs[pid] = job
+#: Mensagem única do 409: há UM job de coleta por projeto (`_jobs[pid]`), busca ou import por URL.
+BUSY_MSG = "Já existe uma busca em andamento para este projeto."
 
+
+def _progress_fn(job: dict):
+    """Callback de progresso de um job de coleta: acumula eventos, total e linhas de log."""
     def progress(ev: dict):
         ev["t"] = time.time()
         job["events"].append(ev)
@@ -218,6 +213,21 @@ def start_search(pid: str, terms: list[str], max_per_term: int = 30, headless: b
         line = _log_line(ev)
         if line:
             job["log"].append(line)
+    return progress
+
+
+def start_search(pid: str, terms: list[str], max_per_term: int = 30, headless: bool = True) -> dict:
+    root = project_dir(pid)
+    with _lock:
+        if pid in _jobs and _jobs[pid]["state"] == "running":
+            raise RuntimeError(BUSY_MSG)
+        # `meta` é o teto do scrape (nº de termos × máx. por termo): a barra do protótipo mostra
+        # "baixadas/meta" ("94/120"), tanto durante o job quanto ao reabrir a tela.
+        job = {"state": "running", "started": time.time(), "terms": terms, "events": [], "total": 0,
+               "meta": len(terms) * max(1, max_per_term), "log": [], "error": None}
+        _jobs[pid] = job
+
+    progress = _progress_fn(job)
 
     def run():
         try:
@@ -226,6 +236,50 @@ def start_search(pid: str, terms: list[str], max_per_term: int = 30, headless: b
             # `last_job.json` no disco (a tela recarrega o status assim que o job termina).
             _write_last_job(pid, job)
             job["state"] = "done"
+        except Exception as e:  # noqa: BLE001
+            job["state"] = "error"
+            job["error"] = f"{type(e).__name__}: {e}"
+
+    threading.Thread(target=run, daemon=True).start()
+    return job_status(pid)
+
+
+# ---------- importação por URL (`[extensão]`, Wave 9) ----------
+def start_import_url(pid: str, url: str, max_pins: int = 30, headless: bool = True) -> dict:
+    """`[extensão]` Dispara o job que importa um pin ou um board do Pinterest apontado por URL.
+
+    A aula 009 só ensina a busca por termos; trazer um link que o usuário já tem é extensão do
+    Studio (ADR-004) e produz o MESMO artefato — candidatas em `refs/candidates/`, no schema
+    `Candidate` de sempre, com `source="url"`.
+
+    A URL é classificada ANTES de criar o job: URL não reconhecida levanta `ValueError` (422 na
+    rota) sem deixar job nenhum para trás. O job vive no mesmo `_jobs[pid]` do search, então há
+    exclusão mútua entre busca e import (409) e a tela pode pollar o `GET .../refs/job` existente.
+    Automatizar o Pinterest contraria os termos de uso dele — ritmo humano e teto por job (ADR-005).
+    """
+    root = project_dir(pid)
+    target = pinterest.classify_url(url)
+    with _lock:
+        if pid in _jobs and _jobs[pid]["state"] == "running":
+            raise RuntimeError(BUSY_MSG)
+        # `meta` é o teto do job para a barra "baixadas/meta": o board respeita `max_pins`; um pin
+        # avulso é sempre exatamente 1 imagem.
+        job = {"state": "running", "started": time.time(), "terms": [target.term], "events": [],
+               "total": 0, "meta": 1 if target.kind == "pin" else max(1, max_pins),
+               "log": [], "error": None}
+        _jobs[pid] = job
+
+    progress = _progress_fn(job)
+
+    def run():
+        try:
+            pinterest.import_url(url, root / "refs" / "candidates", max_pins, headless, progress)
+            _write_last_job(pid, job)
+            job["state"] = "done"
+        except pinterest.PinUnavailable as e:
+            # erro de negócio: a mensagem já é o texto que o usuário precisa ler
+            job["state"] = "error"
+            job["error"] = str(e)
         except Exception as e:  # noqa: BLE001
             job["state"] = "error"
             job["error"] = f"{type(e).__name__}: {e}"
