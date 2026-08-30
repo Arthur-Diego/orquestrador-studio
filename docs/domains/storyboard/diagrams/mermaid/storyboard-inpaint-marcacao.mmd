@@ -1,0 +1,55 @@
+%% Fluxo do modo "área marcada" (kind=edit_area) — feature inpaint-marcacao [extensão]
+%% Fonte: docs/domains/storyboard/features/inpaint-marcacao-fdd.md, seção 4
+%% Wave 9, sub-wave 1 · card https://trello.com/c/T53Hnvlv
+sequenceDiagram
+    autonumber
+    actor U as Usuário (etapa 4)
+    participant V as view.js (storyboard)
+    participant A as annotate.js (canvas)
+    participant R as router.py (etapa 4)
+    participant S as service.py (storyboard)
+    participant I as ingest.py
+    participant J as JobRegistry (thread)
+    participant H as hf (CLI Higgsfield)
+    participant C as settings (livro-caixa)
+
+    U->>V: clica "Marcar área [extensão]" (base ou candidato)
+    V->>V: injeta <script src="/static/annotate.js"> (1ª vez)
+    V->>A: Studio.annotate.open({sourceUrl, onSave})
+    U->>A: rabisca a região (vermelho #ff2d2d, 4-24 px, desfazer/limpar)
+    U->>A: "Salvar marcação"
+    A-->>V: onSave(blob PNG achatado, mesma resolução)
+    V->>R: POST /api/projects/{pid}/storyboard/annotate (multipart: file, source_id?)
+    R->>S: import_annotation(pid, data, source_id)
+    S->>I: ingest_bytes(root, "storyboard", data, "annotation", ..., meta={role, parent})
+    I-->>S: {id, file, thumb, deduped}
+    S-->>R: {id, file, thumb, parent, role:"annotation", deduped}
+    R-->>V: 200
+
+    Note over V,U: painel "Área marcada": original + anotada,<br/>instrução única, contagem 4 ou 1, modelo,<br/>aviso fixo best-effort (sem máscara, ADR-002)
+
+    U->>V: "Gerar via CLI"
+    V->>R: POST .../storyboard/cost {kind:"edit_area", annotation_id, source_id, text, count}
+    R->>S: cost(...) → valida annotation_id, role e parent×original
+    S->>H: hf.cost(model, params)
+    H-->>S: {per_image}
+    S-->>V: {per_image, total}
+    V->>U: Studio.ui.confirmCost
+    alt cancelado
+        U-->>V: cancela
+        Note over V,C: nada é gerado nem registrado
+    else confirmado
+        U-->>V: confirma
+        V->>R: POST .../storyboard/generate (mesmo body)
+        R->>S: start_generate(...)
+        S->>J: job em thread (409 se já houver job no projeto)
+        loop count vezes (1 ou 4)
+            J->>H: hf.generate(model, {prompt: instrução fixa,<br/>image_references: [ORIGINAL, anotada]})
+            H-->>J: urls
+            J->>I: ingest_bytes(... meta={kind:"edit_area", model, job_id, annotation})
+            J->>C: record_generation(action="storyboard.inpaint", count=1, ...)
+        end
+        V->>R: GET .../storyboard/job (polling)
+        R-->>V: {state, done, total, added, log}
+        V->>U: galeria de ideias com os resultados (anotação nunca aparece)
+    end

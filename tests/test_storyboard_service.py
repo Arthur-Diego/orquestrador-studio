@@ -91,7 +91,8 @@ def test_semicolon_joins_one_instruction_but_period_separates(sb, project, base)
 def test_presets_are_in_english_with_ptbr_labels(sb):
     p = sb.presets()
     assert p["counts"] == {"uncertain": 4, "tweak": 1}
-    assert {k["kind"] for k in p["kinds"]} == {"draw_to_edit", "edit", "multishot"}
+    # `[extensão]` inpaint-marcacao: o kind `edit_area` entra ADITIVO ao lado dos três da aula.
+    assert {k["kind"] for k in p["kinds"]} == {"draw_to_edit", "edit", "multishot", "edit_area"}
     assert any(x["text"] == "a close-up on the character" for x in p["presets"])
 
 
@@ -691,3 +692,180 @@ def test_scenes_videos_are_additive_and_retrocompatible(sb, project, root):
     out = sb.save_scenes(project, [{"text": "c", "video_desc": "a can falls",
                                     "videos": ["storyboard/cena01/video/take_1.mp4"]}])["scenes"][0]
     assert out["video_desc"] == "a can falls" and out["videos"] == ["storyboard/cena01/video/take_1.mp4"]
+
+
+# ---------- `[extensão]` inpaint-marcacao: marcação (rabisco) + kind `edit_area` ----------
+def _annotate(sb, project, color=(9, 9, 9), source_id=None):
+    return sb.import_annotation(project, image_bytes(color=color), "marcacao.png", source_id)
+
+
+def test_annotation_is_saved_with_role_and_parent(sb, project, base, root):
+    """Contrato 1: `parent` é o candidato de origem ou o literal "base"; role sempre `annotation`."""
+    sb.import_upload(project, [("a.png", image_bytes(color=(1, 2, 3)))])
+    idea = sb.list_ideas(project)["ideas"][0]
+    on_idea = _annotate(sb, project, (10, 10, 10), idea["id"])
+    assert on_idea["role"] == "annotation" and on_idea["parent"] == idea["id"]
+    assert on_idea["deduped"] is False
+    assert on_idea["file"] == f"storyboard/candidates/{on_idea['id']}.png"
+    assert on_idea["thumb"] == f"storyboard/candidates/thumbs/{on_idea['id']}.jpg"
+    assert (root / on_idea["file"]).exists() and (root / on_idea["thumb"]).exists()
+    on_base = _annotate(sb, project, (20, 20, 20))
+    assert on_base["parent"] == "base" and on_base["role"] == "annotation"
+
+
+def test_annotation_upload_is_idempotent_by_sha1(sb, project, base, root):
+    """Reenviar os MESMOS bytes devolve o candidato já existente, sem criar segundo arquivo."""
+    first = _annotate(sb, project, (33, 44, 55))
+    files = sorted(p.name for p in (root / "storyboard" / "candidates").glob("*.png"))
+    again = _annotate(sb, project, (33, 44, 55))
+    assert again["deduped"] is True and again["id"] == first["id"]
+    assert again["parent"] == first["parent"] and again["role"] == "annotation"
+    assert sorted(p.name for p in (root / "storyboard" / "candidates").glob("*.png")) == files
+
+
+def test_annotation_refuses_bytes_that_are_not_an_image(sb, project, base):
+    with pytest.raises(sb.Invalid) as e:
+        sb.import_annotation(project, b"nao sou uma imagem", "marcacao.png")
+    assert str(e.value) == "arquivo de marcação inválido (envie o PNG exportado pelo canvas)"
+
+
+def test_annotation_requires_base_or_an_existing_source(sb, project, root):
+    """Sem `source_id` a marcação é sobre a base (409 sem ela); `source_id` inexistente é 422."""
+    with pytest.raises(sb.Precondition):
+        _annotate(sb, project)
+    make_image(root / "base" / "base_final.png")
+    with pytest.raises(sb.Invalid) as e:
+        _annotate(sb, project, (7, 7, 7), "nao-existe")
+    assert str(e.value) == "ideia inexistente: nao-existe"
+
+
+def test_annotation_never_shows_up_in_the_gallery(sb, project, base):
+    """Invariante do FDD §2: a marcação é insumo da geração, nunca ideia."""
+    sb.import_upload(project, [("a.png", image_bytes(color=(4, 5, 6)))])
+    idea_ids = [i["id"] for i in sb.list_ideas(project)["ideas"]]
+    ann = _annotate(sb, project, (60, 60, 60))
+    ideas = sb.list_ideas(project)["ideas"]
+    assert [i["id"] for i in ideas] == idea_ids, "o candidato comum continua aparecendo"
+    assert ann["id"] not in [i["id"] for i in ideas]
+    assert sb.status(project)["ideas"] == len(idea_ids)
+
+
+def test_annotation_cannot_be_selected_as_an_idea(sb, project, base):
+    sb.import_upload(project, [("a.png", image_bytes(color=(4, 5, 6)))])
+    idea = sb.list_ideas(project)["ideas"][0]
+    ann = _annotate(sb, project, (70, 70, 70))
+    with pytest.raises(sb.Invalid) as e:
+        sb.select_ideas(project, [ann["id"]])
+    assert str(e.value) == "marcação não pode ser selecionada como ideia"
+    assert sb.select_ideas(project, [idea["id"]])["selected"] == 1, "seleção comum segue funcionando"
+
+
+def test_edit_area_instruction_is_the_fixed_english_prompt(sb, project, base):
+    """A instrução é montada pelo SERVIDOR (FDD §5) e não usa o sufixo genérico dos kinds antigos."""
+    r = sb.build_instruction(project, "edit_area", "make the rope thinner", 4)
+    assert r["instruction"] == (
+        "Image 1 is the original photo. Image 2 is the same photo with a red hand-drawn marking "
+        "highlighting one region. Apply the following change ONLY inside the marked region: "
+        "make the rope thinner. Keep everything outside the marked region exactly identical to "
+        "image 1, and do not render the marking itself in the result. Keep everything else "
+        "identical, realistic.")
+    assert r["kind"] == "edit_area" and r["count"] == 4
+    # a pontuação final do usuário some, como nos kinds da aula (`core = body.rstrip(" .;")`)
+    assert sb.build_instruction(project, "edit_area", "make the rope thinner.", 1)["instruction"] == r["instruction"]
+    assert sb.SUFFIX not in r["instruction"].replace(
+        "Keep everything else identical, realistic.", "", 1) , "o texto fixo não é o sufixo dos kinds antigos"
+    # as validações da aula 010 valem igual, com as mesmas mensagens
+    for text, count in [("", 4), ("x" * 301, 4), ("Make it smaller", 2)]:
+        with pytest.raises(sb.Invalid):
+            sb.build_instruction(project, "edit_area", text, count)
+    with pytest.raises(sb.Invalid) as e:
+        sb.build_instruction(project, "edit_area", "Make it smaller. Remove the rope", 4)
+    assert "uma instrução por vez" in str(e.value).lower()
+
+
+def test_edit_area_sends_original_first_and_the_annotation_second(sb, project, base, monkeypatch, root):
+    """Invariante do FDD §6: `image_references` tem 2 itens com a ORIGINAL no índice 0."""
+    seen = []
+    _fake_cli(monkeypatch, sb, urls=("http://x/a.png",))
+    real = sb.hf.generate
+    monkeypatch.setattr(sb.hf, "generate", lambda m, p, timeout_s=600: (seen.append(p), real(m, p, timeout_s))[-1])
+    ann = _annotate(sb, project, (80, 80, 80))
+    sb.start_generate(project, "nano_banana_2", "edit_area", "make the rope thinner", 1,
+                      annotation_id=ann["id"])
+    assert _wait_job(sb, project)["state"] == "done"
+    refs = seen[-1]["image_references"]
+    assert len(refs) == 2
+    assert refs[0].replace("\\", "/").endswith("base/base_final.png")
+    assert refs[1].replace("\\", "/").endswith(f"storyboard/candidates/{ann['id']}.png")
+    assert seen[-1]["prompt"] == sb.build_instruction(project, "edit_area", "make the rope thinner", 1)["instruction"]
+
+
+def test_edit_area_job_tags_candidates_and_records_the_spend(sb, project, base, monkeypatch, root):
+    """FDD §9.5: `meta.kind`/`meta.annotation` nos importados + 1 linha por geração no livro-caixa."""
+    from studio.common import settings
+    _fake_cli(monkeypatch, sb, urls=("http://x/a.png",))
+    ann = _annotate(sb, project, (90, 90, 90))
+    sb.start_generate(project, "nano_banana_2", "edit_area", "make the rope thinner", 1,
+                      annotation_id=ann["id"])
+    assert _wait_job(sb, project)["state"] == "done"
+    cands = json.loads((root / "storyboard" / "candidates.json").read_text())
+    imported = [c for c in cands if c.get("source") == "cli"]
+    assert imported and all(c["kind"] == "edit_area" and c["annotation"] == ann["id"] for c in imported)
+    rows = [r for r in settings.history(project) if r["action"] == "storyboard.inpaint"]
+    assert len(rows) == 1 and rows[0]["step"] == "storyboard" and rows[0]["model"] == "nano_banana_2"
+
+
+def test_legacy_kinds_keep_one_reference_and_record_nothing(sb, project, base, monkeypatch):
+    """Regressão da pendência P1: os kinds da aula não passam a registrar gasto nem ganham referência."""
+    from studio.common import settings
+    seen = []
+    _fake_cli(monkeypatch, sb, urls=("http://x/a.png",))
+    real = sb.hf.generate
+    monkeypatch.setattr(sb.hf, "generate", lambda m, p, timeout_s=600: (seen.append(p), real(m, p, timeout_s))[-1])
+    sb.start_generate(project, "nano_banana_2", "edit", "Make it smaller", 1)
+    assert _wait_job(sb, project)["state"] == "done"
+    assert len(seen[-1]["image_references"]) == 1
+    assert settings.history(project) == []
+
+
+def test_inpaint_action_resolves_the_default_model(sb, project, studio_env):
+    from studio.common import settings
+    d = settings.default_for("storyboard.inpaint", project)
+    assert d == {"action": "storyboard.inpaint", "model": "nano_banana_2", "variant": "2k", "source": "code"}
+    settings.set_global_default("storyboard.inpaint", "gpt_image_2")
+    assert settings.default_for("storyboard.inpaint", project)["source"] == "global"
+    settings.set_project_default(project, "storyboard.inpaint", "nano_banana_2", "2k")
+    assert settings.default_for("storyboard.inpaint", project)["source"] == "project"
+    assert "storyboard.inpaint" in {a["key"] for a in settings.all_defaults(project)}
+
+
+def test_annotation_refuses_bytes_that_are_a_plain_candidate(sb, project, base):
+    """Divergência D1 do fechamento: o SHA-1 idêntico ao de uma IDEIA comum não é dedupe de marcação.
+
+    Devolver 200 nesse caso daria `role`/`parent` vazios (fora do domínio do Contrato 1) e o id
+    resultante seria recusado depois pelo `edit_area`. A recusa acontece cedo, com a causa real.
+    """
+    data = image_bytes(color=(9, 9, 9))
+    sb.import_upload(project, [("a.png", data)])
+    with pytest.raises(sb.Invalid) as e:
+        sb.import_annotation(project, data, "a.png")
+    assert str(e.value) == "essa imagem já existe como ideia, sem marcação: rabisque a região antes de salvar"
+    # e a ideia comum continua intacta na galeria (a recusa não mexeu em candidates.json)
+    assert len(sb.list_ideas(project)["ideas"]) == 1
+
+
+def test_annotation_can_never_become_a_scene_image(sb, project, base):
+    """Matriz §6, metade "como imagem de cena": a marcação nunca chega a `storyboard/ideas/`.
+
+    `select_ideas` já a recusa, então ela não é copiada para `ideas/` — e `_check_image` barra
+    qualquer caminho fora dali. O teste prova a barreira de ponta a ponta (a mensagem que sai é a
+    de `_check_image`, não a da linha de seleção da matriz: divergência registrada no fechamento).
+    """
+    ann = _annotate(sb, project, (80, 80, 80))
+    scenes = sb.load_scenes(project)["scenes"]
+    scenes[0]["images"] = [f"storyboard/candidates/{ann['id']}.png"]
+    scenes[0]["primary"] = scenes[0]["images"][0]
+    with pytest.raises(sb.Invalid) as e:
+        sb.save_scenes(project, scenes)
+    assert "storyboard/ideas" in str(e.value)
+    assert not (sb.project_dir(project) / "storyboard" / "ideas" / f"{ann['id']}.png").exists()

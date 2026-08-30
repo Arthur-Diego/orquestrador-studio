@@ -2,7 +2,7 @@
   "info": {
     "name": "storyboard (OS-004) - Etapa 4 - Storyboard - aula 010",
     "_postman_id": "os004-storyboard-collection",
-    "description": "Colecao gerada a partir da SECAO 5 (Contratos publicos) do FDD `docs/domains/storyboard/features/storyboard-fdd.md` e cruzada com a implementacao real em `studio/etapas/storyboard/router.py` + `studio/storyboard/service.py` (a implementacao e a verdade sobre rota, metodo e status; divergencias em `divergencias.md`).\n\nStudio local: monolito FastAPI, sem banco e SEM AUTENTICACAO (ADR-001) - nao ha header de Authorization em nenhuma rota.\n\nPre-requisitos: (1) rodar a pasta '00 preparo' primeiro, que cria o projeto e preenche `pid`; (2) `base/base_final.png` e artefato da etapa 3 (base), NAO implementada nesta wave - instructions, cost e generate respondem 409 ate ela existir; (3) import/history, cost e generate dependem do CLI pago da Higgsfield logado.",
+    "description": "Colecao gerada a partir da SECAO 5 (Contratos publicos) do FDD `docs/domains/storyboard/features/storyboard-fdd.md` e cruzada com a implementacao real em `studio/etapas/storyboard/router.py` + `studio/storyboard/service.py` (a implementacao e a verdade sobre rota, metodo e status; divergencias em `divergencias.md`).\n\nStudio local: monolito FastAPI, sem banco e SEM AUTENTICACAO (ADR-001) - nao ha header de Authorization em nenhuma rota.\n\nPre-requisitos: (1) rodar a pasta '00 preparo' primeiro, que cria o projeto e preenche `pid`; (2) `base/base_final.png` e artefato da etapa 3 (base), NAO implementada nesta wave - instructions, cost e generate respondem 409 ate ela existir; (3) import/history, cost e generate dependem do CLI pago da Higgsfield logado.\n\nExtensao aditiva (wave 9): as pastas `06 marcacao / area marcada (inpaint-marcacao) [extensao]` e os ultimos casos de `erros` vem da SECAO 5 do FDD `docs/domains/storyboard/features/inpaint-marcacao-fdd.md` (rota nova `POST .../storyboard/annotate` e o `kind: \"edit_area\"` + `annotation_id` em `cost`/`generate`), cruzada com `studio/etapas/storyboard/router.py` (`storyboard_annotate`) e `studio/storyboard/service.py` (`import_annotation`, `_cli_request`, `cost`, `start_generate`). Nada do que ja existia foi renomeado ou reescrito.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -85,6 +85,54 @@
       "key": "textoLongo",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "pidMarcacao",
+      "value": "",
+      "type": "string",
+      "description": "projeto isolado da feature inpaint-marcacao (tem base da etapa 3)"
+    },
+    {
+      "key": "projectNameMarcacao",
+      "value": "",
+      "type": "string",
+      "description": "nome unico por execucao do projeto da marcacao (pre-request)"
+    },
+    {
+      "key": "baseCandId",
+      "value": "",
+      "type": "string",
+      "description": "candidata da etapa 3 escolhida como base_final.png"
+    },
+    {
+      "key": "ideaIdM",
+      "value": "",
+      "type": "string",
+      "description": "ideia MARCADA no projeto da marcacao (parent da anotacao)"
+    },
+    {
+      "key": "ideaIdM2",
+      "value": "",
+      "type": "string",
+      "description": "outra ideia do projeto da marcacao (caso 422 de parent divergente)"
+    },
+    {
+      "key": "annotationId",
+      "value": "",
+      "type": "string",
+      "description": "id da marcacao salva em POST .../storyboard/annotate"
+    },
+    {
+      "key": "ideiasAntesDaMarcacao",
+      "value": "",
+      "type": "string",
+      "description": "quantas ideias a galeria listava antes do annotate"
+    },
+    {
+      "key": "allowPaidGenerate",
+      "value": "false",
+      "type": "string",
+      "description": "true libera POST generate edit_area, que GASTA creditos reais"
     }
   ],
   "item": [
@@ -253,7 +301,8 @@
                   "pm.test('200 presets (FDD c2)', function () { pm.response.to.have.status(200); });",
                   "const b = pm.response.json();",
                   "pm.test('kinds, presets, suffix e counts', function () {",
-                  "  pm.expect(b.kinds.map(k => k.kind)).to.have.members(['draw_to_edit','edit','multishot']);",
+                  "  // wave 9 `[extensao]` inpaint-marcacao: `edit_area` e um kind NOVO (aditivo, FDD secao 8); os tres da aula seguem intactos.",
+                  "  pm.expect(b.kinds.map(k => k.kind)).to.have.members(['draw_to_edit','edit','multishot','edit_area']);",
                   "  pm.expect(b.counts).to.eql({uncertain: 4, tweak: 1});",
                   "  pm.expect(b.suffix).to.be.a('string').and.not.empty;",
                   "});",
@@ -1123,6 +1172,567 @@
       ]
     },
     {
+      "name": "06 marcacao / area marcada (inpaint-marcacao) [extensao]",
+      "description": "Contratos NOVOS do FDD `docs/domains/storyboard/features/inpaint-marcacao-fdd.md` (feature `inpaint-marcacao`, `[extensao]`): contrato 1 (`POST .../storyboard/annotate`, linhas 137-155) e a extensao aditiva dos contratos 2 e 3 (`cost`/`generate` com `kind: \"edit_area\"` + `annotation_id`, linhas 157-180).\n\nEsta pasta trabalha em um PROJETO PROPRIO (`pidMarcacao`), separado do `pid` das pastas 00-05. Motivo: o modo `edit_area` exige `base/base_final.png` (etapa 3) e as pastas antigas dependem justamente da AUSENCIA da base para observar os 409 delas. O preparo aqui sobe a base pela etapa 3 (`/base/import/upload` + `/base/select`) para que os 422 do FDD secao 6 sejam realmente observaveis (sem base, `build_instruction` responde 409 antes de qualquer validacao - divergencia 5 de `divergencias.md`).\n\nVerdade sobre rota, status e mensagem: `studio/etapas/storyboard/router.py` (`storyboard_annotate`, `GenerateReq.annotation_id`) e `studio/storyboard/service.py` (`import_annotation`, `_cli_request`, `cost`, `start_generate`).",
+      "item": [
+        {
+          "name": "Preparo - projeto isolado da marcacao",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
+            "description": "Nucleo do Studio (nao e rota do FDD). Cria o projeto proprio desta pasta e guarda `pidMarcacao`. Nome com timestamp porque o id sai de AAAA-MM + slug(name) (mesmo nome no mesmo mes = 409).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{projectNameMarcacao}}\",\n  \"product\": \"lata gigante de refrigerante\",\n  \"vibe\": \"cinematic realistic\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('projectNameMarcacao', 'Marcacao Postman ' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 projeto da marcacao criado', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('pidMarcacao', b.id);",
+                  "pm.test('devolve id usavel como pidMarcacao', function () { pm.expect(b.id).to.be.a('string').and.not.empty; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparo - etapa 3: subir a candidata da base",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/base/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "base",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "Rota da ETAPA 3 (dominio `base`), usada so como preparo: sem `base/base_final.png` o `kind: \"edit_area\"` responde 409 `Imagem base ausente` antes de qualquer 422 (`service.build_instruction` -> `_require_base`). Reusa `fixtures/idea-a.png`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [
+                    "fixtures/idea-a.png"
+                  ],
+                  "description": "imagem valida (fixture desta pasta)"
+                },
+                {
+                  "key": "kind",
+                  "value": "situation",
+                  "type": "text",
+                  "description": "kind da etapa 3 (situation|label|upscale)"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 candidata da base importada', function () { pm.response.to.have.status(200); });",
+                  "pm.test('resposta tem added', function () { pm.expect(pm.response.json()).to.have.property('added'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparo - etapa 3: id da candidata da base",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/base/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "base",
+                "candidates"
+              ]
+            },
+            "description": "Preparo (etapa 3): guarda `baseCandId` para o select que grava `base/base_final.png`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 candidatas da base', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('lista de candidatas nao vazia', function () { pm.expect(b.candidates).to.be.an('array').that.is.not.empty; });",
+                  "if (b.candidates && b.candidates.length) { pm.collectionVariables.set('baseCandId', b.candidates[0].id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparo - etapa 3: escolher a base (grava base_final.png)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/base/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "base",
+                "select"
+              ]
+            },
+            "description": "Preparo (etapa 3): grava `base/base_final.png`, pre-requisito do FDD secao 4 linha 116 (`Sem base/base_final.png: 409`) e condicao para observar os 422 da secao 6.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{baseCandId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 base escolhida', function () { pm.response.to.have.status(200); });",
+                  "pm.test('final = base/base_final.png', function () { pm.expect(pm.response.json().final).to.eql('base/base_final.png'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparo - ideias do projeto da marcacao (2 PNG)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "Preparo: duas ideias no projeto isolado. A primeira e a imagem que sera MARCADA (`source_id` do contrato 1); a segunda serve ao caso 422 de `parent` divergente (FDD secao 6, linha 227).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [
+                    "fixtures/idea-a.png",
+                    "fixtures/idea-b.png"
+                  ],
+                  "description": "duas imagens validas (fixtures desta pasta)"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 ideias importadas', function () { pm.response.to.have.status(200); });",
+                  "pm.test('as 2 imagens entraram', function () { pm.expect(pm.response.json().added).to.eql(2); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET candidates - captura das duas ideias",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "candidates"
+              ]
+            },
+            "description": "Preparo: guarda `ideaIdM` (imagem a marcar) e `ideaIdM2` (outra imagem, usada no 422 de `parent` divergente). Serve tambem de linha de base para o criterio 2 do FDD (secao 9, linha 287): depois do `annotate`, esta mesma lista NAO pode crescer."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 lista de ideias', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('duas ideias visiveis', function () { pm.expect(b.ideas).to.be.an('array').with.lengthOf(2); });",
+                  "if (b.ideas.length > 1) {",
+                  "  pm.collectionVariables.set('ideaIdM', b.ideas[0].id);",
+                  "  pm.collectionVariables.set('ideaIdM2', b.ideas[1].id);",
+                  "  pm.collectionVariables.set('ideiasAntesDaMarcacao', String(b.ideas.length));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST annotate - salvar a marcacao sobre a ideia (contrato 1)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/annotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "annotate"
+              ]
+            },
+            "description": "FDD secao 5, contrato 1 (linhas 137-155): `multipart/form-data` com `file` (PNG anotado, obrigatorio, ate 25 MB) e `source_id` (opcional; ausente = imagem base). 200 devolve `{id, file, thumb, parent, role, deduped}` com `role: \"annotation\"` e `parent` = id da imagem marcada. Guarda `annotationId` para o `edit_area` (FDD secao 4, linhas 96-99).\n\nA fixture `marcacao-a.png` e `idea-a.png` com um rabisco vermelho por cima - e o que o canvas (`studio/web/annotate.js`) exporta. Ela precisa ser um arquivo NOVO: o id do candidato e o SHA-1 do conteudo, entao reenviar os bytes de uma ideia ja importada cairia no dedupe e devolveria o candidato comum (ver divergencia D1 em `divergencias.md` e o request de erro que documenta esse caso).\n\nNo Postman o anexo se perde na importacao do .json: reanexe `fixtures/marcacao-a.png`. No newman funciona com `--working-dir`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "fixtures/marcacao-a.png"
+                  ],
+                  "description": "PNG achatado (imagem original + tracos vermelhos), como o canvas exporta"
+                },
+                {
+                  "key": "source_id",
+                  "value": "{{ideaIdM}}",
+                  "type": "text",
+                  "description": "id do candidato original; ausente = marcacao sobre a base da etapa 3"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 marcacao salva (FDD c1, linha 143)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('formato do contrato 1 (id, file, thumb, parent, role, deduped)', function () {",
+                  "  pm.expect(b).to.include.keys('id','file','thumb','parent','role','deduped');",
+                  "});",
+                  "pm.test('role = annotation (invariante da secao 2)', function () { pm.expect(b.role).to.eql('annotation'); });",
+                  "pm.test('parent = id da imagem marcada', function () { pm.expect(b.parent).to.eql(pm.collectionVariables.get('ideaIdM')); });",
+                  "pm.test('primeiro envio no projeto novo: deduped false', function () { pm.expect(b.deduped).to.eql(false); });",
+                  "pm.test('file servivel por /files/{pid}/<file>', function () { pm.expect(b.file).to.match(/^storyboard\\/candidates\\//); });",
+                  "pm.collectionVariables.set('annotationId', b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST annotate - reenvio identico (dedupe por SHA-1, deduped true)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/annotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "annotate"
+              ]
+            },
+            "description": "FDD secao 4 linha 119 e secao 5 linha 153: reenviar o MESMO conteudo e idempotente - 200 com o candidato ja existente, `deduped: true` e o mesmo `id`, sem duplicar arquivo (criterio 1 da secao 9, linha 285). Mesmo corpo do request anterior.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "fixtures/marcacao-a.png"
+                  ],
+                  "description": "mesmo PNG do request anterior (mesmo SHA-1)"
+                },
+                {
+                  "key": "source_id",
+                  "value": "{{ideaIdM}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 no reenvio (idempotente)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('deduped true', function () { pm.expect(b.deduped).to.eql(true); });",
+                  "pm.test('mesmo id do primeiro envio', function () { pm.expect(b.id).to.eql(pm.collectionVariables.get('annotationId')); });",
+                  "pm.test('role e parent preservados', function () {",
+                  "  pm.expect(b.role).to.eql('annotation');",
+                  "  pm.expect(b.parent).to.eql(pm.collectionVariables.get('ideaIdM'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET candidates - a marcacao NAO aparece na galeria",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "candidates"
+              ]
+            },
+            "description": "Criterio 2 do FDD (secao 9, linha 287) e invariante da secao 2 (linha 50): candidatos `role: \"annotation\"` sao insumo da geracao, nunca ideia - `service.list_ideas` filtra por `_visible`. A lista continua com as MESMAS 2 ideias de antes do `annotate`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 lista de ideias', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "const ids = b.ideas.map(function (i) { return i.id; });",
+                  "pm.test('a anotacao nao esta na galeria', function () {",
+                  "  pm.expect(ids).to.not.include(pm.collectionVariables.get('annotationId'));",
+                  "});",
+                  "pm.test('quantidade de ideias inalterada pelo annotate', function () {",
+                  "  pm.expect(String(b.ideas.length)).to.eql(pm.collectionVariables.get('ideiasAntesDaMarcacao'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST cost - kind edit_area (200 com CLI logado; 409 sem CLI/base)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "cost"
+              ]
+            },
+            "description": "FDD secao 5, contrato 2 (linhas 157-169): mesmo `GenerateReq` de sempre + o campo aditivo `annotation_id`. Resposta inalterada `{per_image, total}`. Estimativa e GRATIS (ADR-016), mas depende do CLI da Higgsfield: `service.cost` chama `_cli_ready()` ANTES de validar o pedido, entao sem CLI instalado/logado a resposta e 409 - resultado ESPERADO nessa maquina, nao defeito (mesma nota das pastas 01 e 05). Sem `base/base_final.png` tambem e 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit_area\",\n  \"text\": \"make the rope thinner\",\n  \"count\": 4,\n  \"source_id\": \"{{ideaIdM}}\",\n  \"annotation_id\": \"{{annotationId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 com CLI logado e base presente; 409 sem CLI ou sem base (FDD c2, linha 167)', function () {",
+                  "  pm.expect([200, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.test('formato {per_image, total} inalterado', function () { pm.expect(b).to.include.keys('per_image','total'); });",
+                  "  console.log('custo estimado edit_area: per_image=' + b.per_image + ' total=' + b.total);",
+                  "} else {",
+                  "  pm.test('409 e pre-condicao (CLI ou base), nao validacao', function () {",
+                  "    pm.expect(String(pm.response.json().detail)).to.match(/CLI|ausente/);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST generate - kind edit_area (PAGO: pulado por padrao)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 5, contrato 3 (linhas 171-180): mesmo corpo do contrato 2; resposta do `JobRegistry` (`{state, total, ...}`), polling em `GET .../storyboard/job`.\n\nGASTA CREDITOS de verdade quando o CLI esta logado (`count` geracoes). Por isso este request e PULADO enquanto a variavel `allowPaidGenerate` nao for `true` (`pm.execution.skipRequest()` no pre-request). Para executar de proposito: `newman run ... --env-var allowPaidGenerate=true`.\n\nInvariante que o HTTP nao ve (FDD linhas 178-180, so verificavel no fake de `hf.generate`): `image_references == [original, anotada]`, nessa ordem, e o prompt e a instrucao fixa em ingles montada pelo servidor.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit_area\",\n  \"text\": \"make the rope thinner\",\n  \"count\": 4,\n  \"source_id\": \"{{ideaIdM}}\",\n  \"annotation_id\": \"{{annotationId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda de credito: so roda com allowPaidGenerate=true (a geracao e paga, FDD secao 4 linha 108).",
+                  "if (String(pm.variables.get('allowPaidGenerate')).toLowerCase() !== 'true') {",
+                  "  console.log('generate edit_area PULADO (allowPaidGenerate != true): gastaria creditos reais');",
+                  "  if (typeof pm.execution !== 'undefined' && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 job iniciado; 409 sem CLI/base ou job em andamento', function () {",
+                  "  pm.expect([200, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('resposta do JobRegistry tem state', function () { pm.expect(pm.response.json()).to.have.property('state'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "erros",
       "description": "FDD secao 6 (matriz de erros, linhas 330-347) e os status de erro declarados na secao 5. Cada request confere o status; os casos que dependem da base da etapa 3 aceitam o 409 que a wave produz hoje.",
       "item": [
@@ -1838,6 +2448,558 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('422 sem cena com texto (FDD c11)', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - annotate em pid inexistente",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/annotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "annotate"
+              ]
+            },
+            "description": "FDD secao 5 linha 143 e secao 6 linha 219: projeto inexistente = 404 (padrao `project_dir`, checado no router antes de ler o arquivo).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "fixtures/marcacao-a.png"
+                  ]
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });",
+                  "pm.test('mensagem cita o projeto', function () { pm.expect(String(pm.response.json().detail)).to.contain('projeto'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - annotate com arquivo nao-imagem",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/annotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "annotate"
+              ]
+            },
+            "description": "FDD secao 6 linha 223: anotacao nao decodificavel como imagem = 422 `arquivo de marcacao invalido (envie o PNG exportado pelo canvas)`. Reusa `fixtures/nao-imagem.txt`. A validacao do Pillow vem ANTES de `source_id`/base em `service.import_annotation`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "fixtures/nao-imagem.txt"
+                  ],
+                  "description": "texto puro: o Pillow recusa"
+                },
+                {
+                  "key": "source_id",
+                  "value": "{{ideaIdM}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 arquivo de marcacao invalido', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem manda usar o PNG do canvas', function () { pm.expect(String(pm.response.json().detail)).to.contain('exportado pelo canvas'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - annotate com source_id inexistente",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/annotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "annotate"
+              ]
+            },
+            "description": "FDD secao 5 linha 144 e secao 6 linha 224: `source_id` inexistente = 422 `ideia inexistente: {id}` (mensagem reusada do fluxo atual).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "fixtures/marcacao-a.png"
+                  ]
+                },
+                {
+                  "key": "source_id",
+                  "value": "c0ffee123456",
+                  "type": "text",
+                  "description": "id que nao existe no projeto"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 source_id inexistente', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita ideia inexistente', function () { pm.expect(String(pm.response.json().detail)).to.contain('inexistente'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - annotate sem source_id e sem base (etapa 3 pendente)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/annotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "annotate"
+              ]
+            },
+            "description": "FDD secao 5 linha 145 e secao 6 linha 220: sem `source_id` a marcacao e sobre a imagem BASE; se `base/base_final.png` nao existe, 409 `Imagem base ausente: conclua a etapa 3 (base)`. Usa o `pid` das pastas 00-05 de proposito: aquele projeto nao tem base (o projeto desta feature, `pidMarcacao`, tem).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "fixtures/marcacao-a.png"
+                  ],
+                  "description": "PNG valido: o erro e de pre-requisito, nao de arquivo"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 base ausente', function () { pm.response.to.have.status(409); });",
+                  "pm.test('mensagem manda concluir a etapa 3', function () { pm.expect(String(pm.response.json().detail)).to.contain('base'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - annotate com bytes de um candidato comum (sem marcacao)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/annotate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "annotate"
+              ]
+            },
+            "description": "Caso NAO previsto no FDD, encontrado em runtime (divergencia D1 de `divergencias.md`): o id do candidato e o SHA-1 do conteudo e o dedupe de `import_annotation` olha TODOS os candidatos, nao so as anotacoes. Reenviar os bytes de uma ideia comum (`fixtures/idea-b.png`, ja importada nesta pasta) devolve 200 `deduped: true` com `role: \"\"` e `parent: \"\"` - o contrato 1 promete `role: \"annotation\"`, e usar esse id em `edit_area` depois da 422 `marcacao inexistente`. O teste aceita os dois comportamentos para nao congelar o defeito.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [
+                    "fixtures/idea-b.png"
+                  ],
+                  "description": "bytes de um candidato COMUM ja existente no projeto"
+                },
+                {
+                  "key": "source_id",
+                  "value": "{{ideaIdM}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Contrato 1, nota de fechamento do FDD: o dedupe de `deduped: true` vale so ENTRE MARCACOES.",
+                  "// Enviar como marcacao os bytes de uma ideia comum (nenhum rabisco) e recusado com a causa real,",
+                  "// em vez de devolver 200 com `role`/`parent` vazios, fora do dominio do contrato.",
+                  "pm.test('422 - imagem sem marcacao', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem da nota de fechamento', function () {",
+                  "  pm.expect(pm.response.json().detail).to.eql('essa imagem j\\u00e1 existe como ideia, sem marca\\u00e7\\u00e3o: rabisque a regi\\u00e3o antes de salvar');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - cost edit_area sem annotation_id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "cost"
+              ]
+            },
+            "description": "FDD secao 6 linha 225: `kind: \"edit_area\"` sem `annotation_id` = 422 `o modo area marcada exige a marcacao salva (annotation_id)`. So observavel com CLI pronto e base presente: `cost` chama `_cli_ready()` e `build_instruction` antes (409 tem precedencia).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit_area\",\n  \"text\": \"make the rope thinner\",\n  \"count\": 4,\n  \"source_id\": \"{{ideaIdM}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 sem annotation_id; 409 se faltar CLI ou base (precedencia)', function () {",
+                  "  pm.expect([422, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 422) {",
+                  "  pm.test('mensagem cita annotation_id', function () { pm.expect(String(pm.response.json().detail)).to.contain('annotation_id'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - cost edit_area com annotation_id inexistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "cost"
+              ]
+            },
+            "description": "FDD secao 6 linha 226: `annotation_id` inexistente = 422 `marcacao inexistente: {id}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit_area\",\n  \"text\": \"make the rope thinner\",\n  \"count\": 4,\n  \"source_id\": \"{{ideaIdM}}\",\n  \"annotation_id\": \"c0ffee123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 marcacao inexistente; 409 se faltar CLI ou base', function () {",
+                  "  pm.expect([422, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 422) {",
+                  "  pm.test('mensagem cita inexistente', function () { pm.expect(String(pm.response.json().detail)).to.contain('inexistente'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - cost edit_area com id de candidato comum (role != annotation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "cost"
+              ]
+            },
+            "description": "FDD secao 6 linha 226 (segunda metade): id que existe mas nao tem `role: \"annotation\"` cai na MESMA mensagem `marcacao inexistente: {id}` - `_cli_request` filtra por `_is_annotation`. Aqui `annotation_id` recebe o id de uma ideia comum.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit_area\",\n  \"text\": \"make the rope thinner\",\n  \"count\": 4,\n  \"source_id\": \"{{ideaIdM}}\",\n  \"annotation_id\": \"{{ideaIdM2}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 candidato comum nao serve de marcacao; 409 se faltar CLI ou base', function () {",
+                  "  pm.expect([422, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 422) {",
+                  "  pm.test('mensagem cita inexistente', function () { pm.expect(String(pm.response.json().detail)).to.contain('inexistente'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - cost edit_area com marcacao de outra imagem (parent divergente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "cost"
+              ]
+            },
+            "description": "FDD secao 4 linhas 121-124 e secao 6 linha 227: a marcacao pertence a `ideaIdM` (`parent`), mas o pedido resolve a original como `ideaIdM2` - 422 `a marcacao {id} pertence a outra imagem; marque a imagem escolhida`. Impede gerar em cima da foto errada.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit_area\",\n  \"text\": \"make the rope thinner\",\n  \"count\": 4,\n  \"source_id\": \"{{ideaIdM2}}\",\n  \"annotation_id\": \"{{annotationId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 parent divergente; 409 se faltar CLI ou base', function () {",
+                  "  pm.expect([422, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 422) {",
+                  "  pm.test('mensagem cita outra imagem', function () { pm.expect(String(pm.response.json().detail)).to.contain('pertence a outra imagem'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - cost edit_area sem CLI/base tem precedencia sobre o 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "cost"
+              ]
+            },
+            "description": "FDD secao 4 linha 117 e secao 6 linha 221 (CLI ausente/deslogado = 409 nas rotas pagas). O corpo aqui e invalido de proposito (`annotation_id` inexistente), mas a resposta e 409: `service.cost` faz `_cli_ready()` e `build_instruction`/`_require_base` ANTES de validar a marcacao. Roda contra o `pid` sem base para o 409 ser deterministico mesmo com o CLI logado (divergencia D2 de `divergencias.md`).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"{{model}}\",\n  \"kind\": \"edit_area\",\n  \"text\": \"make the rope thinner\",\n  \"count\": 4,\n  \"annotation_id\": \"c0ffee123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 pre-condicao antes de qualquer 422', function () { pm.response.to.have.status(409); });",
+                  "pm.test('mensagem e de CLI ou de base ausente', function () {",
+                  "  pm.expect(String(pm.response.json().detail)).to.match(/CLI|ausente/);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - selecionar a marcacao como ideia",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidMarcacao}}/storyboard/candidates/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidMarcacao}}",
+                "storyboard",
+                "candidates",
+                "select"
+              ]
+            },
+            "description": "FDD secao 6 linha 231 e criterio 2 da secao 9 (linha 288): anotacao em `candidates/select` = 422 `marcacao nao pode ser selecionada como ideia` (`service.select_ideas`). Nao depende de CLI nem de base.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"{{annotationId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 marcacao nao vira ideia', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita selecionada como ideia', function () {",
+                  "  pm.expect(String(pm.response.json().detail)).to.contain('selecionada como ideia');",
+                  "});"
                 ]
               }
             }

@@ -64,6 +64,9 @@ class GenerateReq(BaseModel):
     text: str
     count: int = 4
     source_id: str | None = None
+    #: `[extensão]` inpaint-marcacao: id da marcação salva em `POST .../storyboard/annotate`.
+    #: Obrigatório só no kind `edit_area`; ignorado pelos kinds da aula (campo aditivo).
+    annotation_id: str | None = None
 
 
 # `[extensão]` wave 7 (ADR-021) — VÍDEO por cena (contrato congelado em wave-7.md). Namespace
@@ -164,6 +167,15 @@ def storyboard_history(pid: str, req: HistoryReq | None = None):
         raise HTTPException(502, str(e)) from e
 
 
+# `[extensão]` inpaint-marcacao: o PNG anotado pelo canvas (imagem original + rabisco) vira
+# candidato `role:"annotation"` — insumo do kind `edit_area`, invisível na galeria de ideias.
+@router.post("/api/projects/{pid}/storyboard/annotate")
+async def storyboard_annotate(pid: str, file: UploadFile = File(...), source_id: str = Form("")):  # noqa: B008
+    refs.project_dir(pid)
+    (name, data), = await _payload([file])
+    return _guard(sb.import_annotation, pid, data, name, source_id or None)
+
+
 @router.get("/api/projects/{pid}/storyboard/candidates")
 def storyboard_candidates(pid: str):
     return sb.list_ideas(pid)
@@ -193,12 +205,13 @@ def storyboard_render(pid: str):
 # ---------- alternativa paga pelo CLI (ideação) ----------
 @router.post("/api/projects/{pid}/storyboard/cost")
 def storyboard_cost(pid: str, req: GenerateReq):
-    return _guard(sb.cost, pid, req.model, req.kind, req.text, req.count, req.source_id)
+    return _guard(sb.cost, pid, req.model, req.kind, req.text, req.count, req.source_id, req.annotation_id)
 
 
 @router.post("/api/projects/{pid}/storyboard/generate")
 def storyboard_generate(pid: str, req: GenerateReq):
-    return _guard(sb.start_generate, pid, req.model, req.kind, req.text, req.count, req.source_id)
+    return _guard(sb.start_generate, pid, req.model, req.kind, req.text, req.count, req.source_id,
+                  req.annotation_id)
 
 
 @router.get("/api/projects/{pid}/storyboard/job")

@@ -76,6 +76,18 @@
   .modal:has(.sb-lightbox){width:min(1100px,100%)}
   .sb-lightbox{display:grid;place-items:center}
   .sb-lightbox-media{max-width:100%;max-height:78vh;display:block;border-radius:8px}
+
+  /* `[extensão]` inpaint-marcacao (ADR-004): painel "Área marcada" + largura do modal do canvas
+     (`annotate.js`, escopo `.ann-`). Mesmo padrão `.modal:has(...)` do `.sb-anim`/`.sb-reorder`:
+     alarga o modal sem tocar o `.modal` do ui.css. */
+  .modal:has(.ann-wrap){width:min(980px,100%)}
+  .sb-area-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .sb-area-pair figure{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+  .sb-area-pair img{width:100%;border-radius:8px;border:1px solid var(--line-2);display:block}
+  .sb-area-pair figcaption{font-size:var(--fs-sm);color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sb-area-warn{margin:0;padding-left:10px;border-left:2px solid var(--line-2);
+    font-size:var(--fs-sm);color:var(--ink-3)}
+  @media (max-width:620px){.sb-area-pair{grid-template-columns:1fr}}
 </style>
 
 <header class="stephead">
@@ -110,6 +122,37 @@
         <div class="row"><span class="eyebrow">Cole isto na Higgsfield</span><button id="sbCopy" type="button" class="link copy">Copiar</button><span id="sbCopied" class="ok"></span></div>
         <p id="sbInstruction" class="txt">a instrução montada aparece aqui — os botões não gastam crédito</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- `[extensão]` inpaint-marcacao (ADR-004): a aula 010 cita "inpaint para ajustes localizados", mas
+     o gesto mora na UI da Higgsfield. Aqui o usuário marca a região dentro do Studio e o CLI recebe
+     [original, anotada] como referências — aproximação best-effort por prompt, nunca inpaint real. -->
+<section class="panel" id="sbArea">
+  <div class="panel-head">
+    <h3>Área marcada <span class="chip mode">[extensão]</span></h3>
+    <span id="sbAreaCli" class="chip" hidden></span>
+  </div>
+  <p class="sb-area-warn" id="sbAreaWarn">Best-effort por prompt: a marcação vai como referência, não é inpaint com máscara; o resultado pode variar fora da área marcada (CLI sem máscara, ADR-002)</p>
+  <div class="row wrap">
+    <select id="sbAreaSource" aria-label="Imagem a marcar"></select>
+    <button id="sbAreaMark" type="button" class="ghost">Marcar área [extensão]</button>
+    <span id="sbAreaHint" class="fine" hidden></span>
+  </div>
+  <div id="sbAreaBox" class="col hidden">
+    <div class="sb-area-pair">
+      <figure><img id="sbAreaOrig" alt="imagem original"><figcaption id="sbAreaOrigCap">original</figcaption></figure>
+      <figure><img id="sbAreaAnn" alt="imagem com a área marcada"><figcaption id="sbAreaAnnCap">marcada</figcaption></figure>
+    </div>
+    <textarea id="sbAreaText" rows="2" placeholder="uma instrução por vez, em inglês (ex.: make the rope thinner)"></textarea>
+    <div class="row wrap">
+      <select id="sbAreaCount" aria-label="Quantas gerações">
+        <option value="4">gere 4 (incerto)</option>
+        <option value="1">gere 1 (tweak)</option>
+      </select>
+      <select id="sbAreaModel" aria-label="Modelo do CLI"></select>
+      <button id="sbAreaGen" type="button" class="primary">Gerar via CLI (gasta créditos)</button>
     </div>
   </div>
 </section>
