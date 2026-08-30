@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Router (`Literal` + `target`), seleção/cadeia/`base.md` e chip do guia
 type: backend
 complexity: medium
@@ -59,15 +59,15 @@ Esta é a task onde mora a única alteração autorizada em teste existente (as 
 
 ## Subtasks
 
-- [ ] 3.1 `Literal` do `Kind` e campo `target` em `GenReq`; repasse de `req.target` em
+- [x] 3.1 `Literal` do `Kind` e campo `target` em `GenReq`; repasse de `req.target` em
       `base_cost` e `base_generate`.
-- [ ] 3.2 Confirmar (por teste) que `chain`/`select`/`most_advanced` já contemplam o clean.
-- [ ] 3.3 Acrescentar `"clean"` às três comparações exatas de `chain` em `tests/test_base_service.py`.
-- [ ] 3.4 Conferir a linha da limpeza no `base.md` (tabela da cadeia + seção de prompts).
-- [ ] 3.5 Trocar a contagem do chip do guia para `base.COURSE_KINDS`.
-- [ ] 3.6 Escrever os testes de `## Tests` (prefixo `test_clean_`) em `tests/test_base_api.py`,
+- [x] 3.2 Confirmar (por teste) que `chain`/`select`/`most_advanced` já contemplam o clean.
+- [x] 3.3 Acrescentar `"clean"` às três comparações exatas de `chain` em `tests/test_base_service.py`.
+- [x] 3.4 Conferir a linha da limpeza no `base.md` (tabela da cadeia + seção de prompts).
+- [x] 3.5 Trocar a contagem do chip do guia para `base.COURSE_KINDS`.
+- [x] 3.6 Escrever os testes de `## Tests` (prefixo `test_clean_`) em `tests/test_base_api.py`,
       `tests/test_base_service.py` e `tests/test_base_guide.py`.
-- [ ] 3.7 Rodar `make verify`.
+- [x] 3.7 Rodar `make verify`.
 
 ## Implementation Details
 
@@ -122,44 +122,44 @@ Novos, com prefixo `test_clean_`.
 
 Em `tests/test_base_api.py`:
 
-- [ ] `test_clean_cost_accepts_the_new_kind`: com a ponte falsificada (disponível + logada) e uma
+- [x] `test_clean_cost_accepts_the_new_kind`: com a ponte falsificada (disponível + logada) e uma
       situação selecionada, `POST /base/cost` com `{"kind": "clean", "target": "Red Bull"}`
       responde 200 com `per_item`, `count == 3` e `total`.
-- [ ] `test_clean_generate_accepts_the_new_kind_and_target`: `POST /base/generate` com
+- [x] `test_clean_generate_accepts_the_new_kind_and_target`: `POST /base/generate` com
       `{"kind": "clean", "target": "Red Bull"}` responde 200 com `job_id`, e o prompt que chegou à
       ponte falsificada contém `'"Red Bull"'`.
-- [ ] `test_clean_unknown_kind_is_rejected_by_the_literal`: `POST /base/cost` e
+- [x] `test_clean_unknown_kind_is_rejected_by_the_literal`: `POST /base/cost` e
       `POST /base/generate` com `{"kind": "nope"}` respondem **422** (validação do Pydantic).
-- [ ] `test_clean_cost_without_selected_situation_is_422`: sem situação selecionada,
+- [x] `test_clean_cost_without_selected_situation_is_422`: sem situação selecionada,
       `POST /base/cost {"kind":"clean"}` responde 422 com o detalhe
       `"Escolha primeiro a melhor imagem de situação (aula 009)."`.
-- [ ] `test_clean_imports_accept_the_new_kind`: `POST /base/import/downloads` e
+- [x] `test_clean_imports_accept_the_new_kind`: `POST /base/import/downloads` e
       `POST /base/import/upload` (multipart, campo `kind="clean"`) aceitam o valor e as candidatas
       resultantes saem com `kind == "clean"` em `GET /base/candidates`;
       `POST /base/import/downloads` com `kind:"nope"` responde 422.
-- [ ] `test_clean_select_response_carries_the_clean_key`: após selecionar uma candidata `clean`,
+- [x] `test_clean_select_response_carries_the_clean_key`: após selecionar uma candidata `clean`,
       `POST /base/select` responde com `"clean"` presente em `chain` e `kind == "clean"`, e
       `chain["clean"]` igual ao id selecionado.
 
 Em `tests/test_base_service.py`:
 
-- [ ] `test_clean_select_drops_label_and_upscale`: com situação, clean, rótulo e upscale importados
+- [x] `test_clean_select_drops_label_and_upscale`: com situação, clean, rótulo e upscale importados
       e todos selecionados na ordem, selecionar a clean derruba as seleções de `label` e `upscale`
       (`chain["label"] is None and chain["upscale"] is None`), mantém `chain["situation"]` e grava
       `base/base_final.png` byte a byte igual ao arquivo da clean.
-- [ ] `test_clean_md_records_the_cleaning_step`: com a clean selecionada e um prompt conhecido, o
+- [x] `test_clean_md_records_the_cleaning_step`: com a clean selecionada e um prompt conhecido, o
       `base/base.md` contém o rótulo de `KIND_LABEL["clean"]` na tabela da cadeia **e** o prompt
       integral na seção "Prompts e instruções usados".
-- [ ] `test_clean_most_advanced_ranks_between_situation_and_label`: com situação e clean
+- [x] `test_clean_most_advanced_ranks_between_situation_and_label`: com situação e clean
       selecionadas, `most_advanced` devolve a clean; acrescentando um rótulo selecionado, devolve o
       rótulo.
 
 Em `tests/test_base_guide.py`:
 
-- [ ] `test_clean_guide_chip_still_counts_three_course_steps`: com situação **e** clean escolhidas
+- [x] `test_clean_guide_chip_still_counts_three_course_steps`: com situação **e** clean escolhidas
       (sem rótulo nem upscale), o `summary` do guia continua `"cadeia 1/3"` — a limpeza é
       `[extensão]` e não conta como passo da aula.
-- [ ] `test_clean_guide_does_not_block_the_step`: escolher a clean não muda `status` nem
+- [x] `test_clean_guide_does_not_block_the_step`: escolher a clean não muda `status` nem
       `next_action` em relação ao mesmo cenário sem clean (o clean é opcional).
 
 ## Success Criteria

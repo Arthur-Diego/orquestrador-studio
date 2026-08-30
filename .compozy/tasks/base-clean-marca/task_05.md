@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Artefatos de fechamento (Postman, Mermaid, HLD) e verificação final
 type: docs
 complexity: medium
@@ -63,12 +63,12 @@ aparecer, registre-a na seção 9 do FDD como pendência — não conserte códi
 
 ## Subtasks
 
-- [ ] 5.1 Ler a coleção Postman existente e acrescentar as requisições do `clean` no mesmo estilo.
-- [ ] 5.2 Validar o JSON da coleção e atualizar `divergencias.md`.
-- [ ] 5.3 Atualizar o diagrama Mermaid da cadeia (e, se couber, acrescentar o de sequência do clean).
-- [ ] 5.4 Bump e parágrafo da fatia no `hld.md`.
-- [ ] 5.5 Rodar `make verify` e coletar o output real.
-- [ ] 5.6 Rodar as três verificações de invariante (diff-stat, ADR-020, ADR-002) e registrá-las.
+- [x] 5.1 Ler a coleção Postman existente e acrescentar as requisições do `clean` no mesmo estilo.
+- [x] 5.2 Validar o JSON da coleção e atualizar `divergencias.md`.
+- [x] 5.3 Atualizar o diagrama Mermaid da cadeia (e, se couber, acrescentar o de sequência do clean).
+- [x] 5.4 Bump e parágrafo da fatia no `hld.md`.
+- [x] 5.5 Rodar `make verify` e coletar o output real.
+- [x] 5.6 Rodar as três verificações de invariante (diff-stat, ADR-020, ADR-002) e registrá-las.
 
 ## Implementation Details
 
@@ -112,13 +112,18 @@ Os diagramas Mermaid são renderizados nativamente no repositório de docs; use 
 
 ## Tests
 
-- [ ] `python -m json.tool docs/domains/base/postman/base-etapa3-imagem-base.postman_collection.json`
+- [x] `python -m json.tool docs/domains/base/postman/base-etapa3-imagem-base.postman_collection.json`
       termina sem erro.
-- [ ] `make verify` VERDE, com o output colado no commit (ruff "All checks passed!" + a contagem de
+- [x] `make verify` VERDE, com o output colado no commit (ruff "All checks passed!" + a contagem de
       testes, que deve ser **maior** que os 976 do baseline).
-- [ ] `git diff --stat develop...HEAD` conferido contra a lista PROIBIDO do `_tasks.md`.
-- [ ] `grep -rn "validated_brand.json" studio/base studio/etapas/base` sem resultado.
-- [ ] `grep -rn "api.higgsfield.ai" studio/base studio/etapas/base` sem resultado.
+- [x] `git diff --stat develop...HEAD` conferido contra a lista PROIBIDO do `_tasks.md`.
+- [~] `grep -rn "validated_brand.json" studio/base studio/etapas/base` — **1 resultado**:
+      `router.py:53`, um COMENTÁRIO que afirma que o backend da etapa 3 não abre o arquivo. Nenhum
+      código `.py` da etapa acessa o arquivo nem a rota `refs/validated-brand`; o único consumidor é
+      `view.js:294` (client-side). O invariante da ADR-020 está preservado — o que falha é o
+      predicado literal da busca. Não corrigido: esta task proíbe alterar código de produção.
+      Registrado no FDD §9 (pendências do fechamento).
+- [x] `grep -rn "api.higgsfield.ai" studio/base studio/etapas/base` sem resultado.
 
 ## Success Criteria
 

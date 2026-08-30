@@ -32,11 +32,50 @@ FastAPI.
 | 422 novo de `mood/selected/` vazio e fim do 422 de `palette.json` (linhas 689-690) | 3 requests novos (`prompts`, `cost(situation)`, e o 200 com paleta vazia) + 2 fixtures de projeto |
 | Contrato 10 novo: guia da etapa (linhas 651-663) | pasta `0 - Guia da etapa` com o smoke de `GET /api/projects/{pid}/guide/base` e o caso `blocked` + 404 |
 
+## Delta **wave 9** — limpeza de marca (`kind="clean"`) `[extensão]`
+
+Atualizada em **2026-08-30**, worktree `wt-base-clean-marca`, branch `feature/base-clean-marca`,
+commit `bf0d5cc`, Task-Id `ADH-OS-20260830-44`. Origem:
+`docs/domains/base/features/base-clean-marca-fdd.md`, seções 5 (contratos 1 a 5) e 6 (matriz de
+erros). **Aditivo**: nenhuma request da wave 2 foi renomeada, removida ou teve seus testes alterados.
+
+| Delta do FDD | Efeito na coleção |
+| --- | --- |
+| `kind: "clean"` aceito em `cost`, `generate`, `import/*`, `candidates` e `select` (sem rota nova) | pasta nova `4 - Limpeza de marca (kind=clean) [extensao wave 9]` com 7 requests |
+| Contagem default `DEFAULT_COUNT["clean"] = 3` (§5) | `POST cost — kind=clean sem count → 3`, no molde do request de `kind=label` |
+| Campo `target` no `GenReq` (§5, contratos 1 e 2) | variável `cleanTarget` (configurável à mão) mandada em `cost` e `generate`, sempre com `prompt` vazio — é a única forma de o `target` entrar no texto |
+| Chave `clean` no `chain` do `select` (§5, contrato 4) | `POST select — clean vira o final...`: afirma a chave nova, os três kinds do curso, `label`/`upscale` derrubados e `kind: "clean"` |
+| `clean_prompt`/`clean_count` em `GET .../base/prompts` | `GET prompts — clean_prompt e clean_count`: texto em inglês, determinístico e genérico sem `target` |
+| 422 de clean sem situação selecionada (§6) | `422 — clean sem situacao escolhida (cost)`, contra `pidVazio` para não depender da ordem da pasta 2 |
+
+Duas variáveis novas, ambas **só no escopo de coleção**: `cleanTarget` (marca a remover; na tela vem
+de `GET .../refs/validated-brand`, ADR-020) e `cleanId` (encadeamento, preenchido por
+`GET candidates — localiza a clean`). O environment **não** mudou — variável de encadeamento no
+environment foi exatamente o defeito da wave 2.
+
+Execução (2026-08-30, instância própria na porta 8767): coleção inteira **46 requests, 104
+asserções, 0 falhas**; só a pasta 4, **6 requests, 14 asserções, 0 falhas**. Detalhes, corpos reais e
+as quatro divergências da wave 9 em `divergencias.md`.
+
+Para rodar só esta pasta:
+
+```bash
+newman run docs/domains/base/postman/base-etapa3-imagem-base.postman_collection.json \
+  -e docs/domains/base/postman/base-etapa3-imagem-base.postman_environment.json \
+  --env-var baseUrl=http://127.0.0.1:<porta> --working-dir docs/domains/base/postman \
+  --folder "4 - Limpeza de marca (kind=clean) [extensao wave 9]"
+```
+
+> O `select` da clean e o `GET candidates` que o alimenta precisam de uma candidata `kind="clean"`.
+> A pasta não a cria (o import de Downloads depende da pasta real da máquina): semeie uma com
+> `curl -X POST .../base/import/upload -F kind=clean -F files=@fixtures/situacao.png`, ou os dois
+> requests se pulam sozinhos, como o `select` da pasta 2 já fazia.
+
 ## Arquivos
 
 | Arquivo | Conteúdo |
 | --- | --- |
-| `base-etapa3-imagem-base.postman_collection.json` | **47 requests em 5 pastas**, 115 blocos de teste (Collection Format v2.1.0) |
+| `base-etapa3-imagem-base.postman_collection.json` | **54 requests em 6 pastas**, 143 blocos de teste (Collection Format v2.1.0) |
 | `base-etapa3-imagem-base.postman_environment.json` | só o que se configura: `baseUrl`, os 4 `pid`s, `model` e as 3 guardas |
 | `fixtures/situacao.png` | PNG 16×16 usado pelos uploads |
 | `fixtures/upscale-fora-de-2x.png` | PNG 24×24 (1,5× o anterior): provoca o aviso de upscale da B6 |

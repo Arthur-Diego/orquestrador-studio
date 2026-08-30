@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Tela da etapa 3 — passo "limpar marca", `target` e atalho do rótulo
 type: frontend
 complexity: medium
@@ -71,15 +71,15 @@ aproximação por prompt e não inpaint com máscara.
 
 ## Subtasks
 
-- [ ] 4.1 `KINDS`, `CHAIN` e o estado `chain` do `view.js` com o passo `clean`.
-- [ ] 4.2 Card de prompt do passo de limpeza em `renderPrompt`/`importPrompt`, com chave própria
+- [x] 4.1 `KINDS`, `CHAIN` e o estado `chain` do `view.js` com o passo `clean`.
+- [x] 4.2 Card de prompt do passo de limpeza em `renderPrompt`/`importPrompt`, com chave própria
       em `edits`.
-- [ ] 4.3 Bloco HTML do passo (target, aviso de best-effort, atalho para o rótulo) + CSS `.bs-`.
-- [ ] 4.4 Carga da marca validada por `GET .../refs/validated-brand`, tolerante a falha.
-- [ ] 4.5 `genBody` mandando `target`; `originFor` ciente da clean.
-- [ ] 4.6 Texto do passo opcional no `WHAT`/`CHECKLIST` do `guide.py`.
-- [ ] 4.7 Escrever os testes de `## Tests` em `tests/test_base_api.py`.
-- [ ] 4.8 Rodar `make verify`.
+- [x] 4.3 Bloco HTML do passo (target, aviso de best-effort, atalho para o rótulo) + CSS `.bs-`.
+- [x] 4.4 Carga da marca validada por `GET .../refs/validated-brand`, tolerante a falha.
+- [x] 4.5 `genBody` mandando `target`; `originFor` ciente da clean.
+- [x] 4.6 Texto do passo opcional no `WHAT`/`CHECKLIST` do `guide.py`.
+- [x] 4.7 Escrever os testes de `## Tests` em `tests/test_base_api.py`.
+- [x] 4.8 Rodar `make verify`.
 
 ## Implementation Details
 
@@ -137,27 +137,27 @@ A opção 1 é a esperada; ela mantém a regra "o texto do prompt vem do backend
 Novos, com prefixo `test_clean_`, em `tests/test_base_api.py` (asserções sobre o texto de
 `view.html`/`view.js`, no padrão do bloco da linha 88).
 
-- [ ] `test_clean_step_appears_in_the_stepper_between_situation_and_label`: o `view.js` contém
+- [x] `test_clean_step_appears_in_the_stepper_between_situation_and_label`: o `view.js` contém
       `clean: "limpeza de marca"` no mapa `KINDS` e a entrada `["clean", "limpar marca"]` em
       `CHAIN`, e a posição de `"clean"` no texto do `CHAIN` está **entre** `"situation"` e `"label"`.
-- [ ] `test_clean_panel_has_target_field_and_extension_badge`: o `view.html` contém
+- [x] `test_clean_panel_has_target_field_and_extension_badge`: o `view.html` contém
       `id="cleanTarget"` e, no mesmo bloco, um `<span class="ext">[extensão]</span>`.
-- [ ] `test_clean_panel_warns_it_is_not_a_real_inpaint`: o `view.html` contém o texto exato
+- [x] `test_clean_panel_warns_it_is_not_a_real_inpaint`: o `view.html` contém o texto exato
       `A limpeza é uma aproximação por prompt (o Nano Banana não faz inpaint com máscara): gere 3 e escolha a melhor.`
-- [ ] `test_clean_shortcut_only_navigates_to_the_label_step`: o `view.html` contém
+- [x] `test_clean_shortcut_only_navigates_to_the_label_step`: o `view.html` contém
       `id="btnCleanToLabel"` com o texto `Trocar pela minha marca`, e o `view.js` liga esse botão a
       `setStep("label")` — e **não** a `gerarViaCli` nem a `api(url("generate"...`.
-- [ ] `test_clean_target_is_prefilled_from_the_validated_brand_route`: o `view.js` contém
+- [x] `test_clean_target_is_prefilled_from_the_validated_brand_route`: o `view.js` contém
       `refs/validated-brand` e o trata dentro de `try`/`catch`; `grep` no `view.js` **não** encontra
       `validated_brand.json` (a leitura é por rota, ADR-020).
-- [ ] `test_clean_prompt_card_has_its_own_label`: o `view.js` contém
+- [x] `test_clean_prompt_card_has_its_own_label`: o `view.js` contém
       `"Prompt · limpar marca · editável"`.
-- [ ] `test_clean_gen_body_sends_target`: o `view.js` monta o corpo do cost/generate com `target`
+- [x] `test_clean_gen_body_sends_target`: o `view.js` monta o corpo do cost/generate com `target`
       quando o kind é `clean`.
-- [ ] `test_clean_guide_text_mentions_the_optional_step`: `GET /api/projects/{pid}/guide` (ou o
+- [x] `test_clean_guide_text_mentions_the_optional_step`: `GET /api/projects/{pid}/guide` (ou o
       guia da etapa `base`) traz, no `what` ou no `checklist`, uma menção à limpeza de marca com
       `[extensão]`; e as asserções existentes de `tests/test_base_guide.py` continuam passando.
-- [ ] `test_clean_prompts_endpoint_exposes_the_clean_template` (só se a opção 1 do
+- [x] `test_clean_prompts_endpoint_exposes_the_clean_template` (só se a opção 1 do
       "Implementation Details" for adotada): `GET /base/prompts` devolve `clean_prompt` contendo
       `"Remove all brand names"` e `clean_count == 3`, sem alterar nenhuma chave existente do
       payload.

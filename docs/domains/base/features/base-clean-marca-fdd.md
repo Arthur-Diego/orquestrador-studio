@@ -357,6 +357,28 @@ Matriz de erros
 11. UI: passo marcado `[extensão]`, aviso de best-effort (sem máscara real) e atalho "trocar
     pela minha marca" apontando para o passo de rótulo.
 
+#### Pendências registradas no fechamento da frente (task_05, 2026-08-30)
+
+Os 11 critérios acima foram fechados nas tasks 01 a 04 (`make verify` verde com 1020 testes; baseline
+976). O que ficou registrado e **não** foi executado por esta frente:
+
+1. **`docs/domains/studio/waves/wave-1.md:36` — enum documentado de `kind` em `candidates.json`.**
+   A linha ainda descreve `kind: "situation"|"label"|"upscale"`; com a wave 9 o valor `clean` passou a
+   existir. O arquivo é artefato **compartilhado da wave** e só muda na integração (W5) — por isso a
+   frente não o tocou. A compatibilidade em si já está justificada na seção 8 (`clean` é valor novo
+   num campo que já existe, não divergência de schema). **Ação para a W5: atualizar essa linha.**
+2. **Divergências FDD §5 × implementação.** Quatro, todas registradas com evidência de execução em
+   `docs/domains/base/postman/divergencias.md` (delta wave 9, itens 11 a 14): a ausência de `job_id`
+   na resposta de `generate` (o schema real do `JobRegistry` vence o literal do contrato 2), os
+   colchetes × parênteses do `target` no prompt, `clean_prompt`/`clean_count` em `GET .../base/prompts`
+   não declarados na seção 5, e o `raw` aninhado no corpo de `cost`. Nenhuma exigiu conserto de código.
+3. **Predicado de checagem da ADR-020.** O `grep -rn "validated_brand.json" studio/base
+   studio/etapas/base` retorna **uma** linha: `router.py:53`, um **comentário** que afirma justamente
+   que o backend da etapa 3 não abre o arquivo. Nenhum código `.py` da etapa acessa
+   `validated_brand.json` nem a rota `refs/validated-brand` — o único consumidor é `view.js:294`
+   (client-side), exatamente como a seção 1 prescreve. A ADR-020 está preservada; o que falha é o
+   predicado literal da busca, não o invariante.
+
 ---
 
 ### 10. Riscos e mitigação

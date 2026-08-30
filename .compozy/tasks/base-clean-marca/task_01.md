@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Constantes do kind `clean`, prompt de limpeza e ação de custo `base.clean`
 type: backend
 complexity: medium
@@ -74,17 +74,17 @@ consome é a task 3.
 
 ## Subtasks
 
-- [ ] 1.1 Atualizar `KINDS`, `RANK`, `KIND_LABEL`, `DEFAULT_COUNT` e `DEFAULT_MODELS` em
+- [x] 1.1 Atualizar `KINDS`, `RANK`, `KIND_LABEL`, `DEFAULT_COUNT` e `DEFAULT_MODELS` em
       `studio/base/service.py`, com comentário `[extensão]` (wave 9) citando o FDD §4 na
       justificativa do lugar do `clean` no `RANK`.
-- [ ] 1.2 Criar `COURSE_KINDS` com a docstring/comentário explicando o porquê.
-- [ ] 1.3 Atualizar a mensagem de `_check_kind`.
-- [ ] 1.4 Implementar `clean_prompt(target)` com docstring em pt-BR explicando que é instrução
+- [x] 1.2 Criar `COURSE_KINDS` com a docstring/comentário explicando o porquê.
+- [x] 1.3 Atualizar a mensagem de `_check_kind`.
+- [x] 1.4 Implementar `clean_prompt(target)` com docstring em pt-BR explicando que é instrução
       fixa (como `label_prompt`), sem Claude, e que é best-effort — o CLI não tem máscara (ADR-002).
-- [ ] 1.5 Acrescentar `base.clean` a `ACTIONS` e `DEFAULTS` em `studio/common/settings.py`.
-- [ ] 1.6 Escrever os testes de `## Tests` com prefixo `test_clean_` em
+- [x] 1.5 Acrescentar `base.clean` a `ACTIONS` e `DEFAULTS` em `studio/common/settings.py`.
+- [x] 1.6 Escrever os testes de `## Tests` com prefixo `test_clean_` em
       `tests/test_base_service.py` e `tests/test_settings.py`.
-- [ ] 1.7 Rodar `make verify` e conferir 976 + os testes novos, todos verdes.
+- [x] 1.7 Rodar `make verify` e conferir 976 + os testes novos, todos verdes.
 
 ## Implementation Details
 
@@ -138,39 +138,39 @@ Novos, com prefixo `test_clean_`, nos arquivos existentes.
 
 Em `tests/test_base_service.py`:
 
-- [ ] `test_clean_kind_sits_between_situation_and_label`: `svc.KINDS == ("situation", "clean",
+- [x] `test_clean_kind_sits_between_situation_and_label`: `svc.KINDS == ("situation", "clean",
       "label", "upscale")`; `svc.RANK["situation"] < svc.RANK["clean"] < svc.RANK["label"] <
       svc.RANK["upscale"]`; `svc.KIND_LABEL["clean"]` não é vazio; `svc.DEFAULT_COUNT["clean"] == 3`;
       `svc.DEFAULT_MODELS["clean"] == "nano_banana_2"`.
-- [ ] `test_clean_course_kinds_excludes_the_extension_step`:
+- [x] `test_clean_course_kinds_excludes_the_extension_step`:
       `svc.COURSE_KINDS == ("situation", "label", "upscale")` e `"clean" not in svc.COURSE_KINDS`;
       todo elemento de `COURSE_KINDS` está em `KINDS`.
-- [ ] `test_clean_check_kind_message_lists_the_four_kinds`: `svc._check_kind("clean") == "clean"`;
+- [x] `test_clean_check_kind_message_lists_the_four_kinds`: `svc._check_kind("clean") == "clean"`;
       `pytest.raises(ValueError)` em `svc._check_kind("nope")` com mensagem contendo `"situation"`,
       `"clean"`, `"label"` e `"upscale"`.
-- [ ] `test_clean_prompt_is_generic_without_target`: `svc.clean_prompt("")` contém
+- [x] `test_clean_prompt_is_generic_without_target`: `svc.clean_prompt("")` contém
       `"Remove all brand names"` e `"identical"`, **não** contém `"("` nem `'"'`, e é igual a
       `svc.clean_prompt("   ")` e a `svc.clean_prompt()`; não contém `"\n"`.
-- [ ] `test_clean_prompt_names_the_target_when_given`: `svc.clean_prompt("Red Bull")` contém
+- [x] `test_clean_prompt_names_the_target_when_given`: `svc.clean_prompt("Red Bull")` contém
       `'"Red Bull"'` e continua contendo `"Remove all brand names"` e `"identical"`; o texto sem
       target é um prefixo-comum plausível (asserir que ambos começam com
       `"Remove all brand names, logos, labels and printed text from the product"`).
-- [ ] `test_clean_prompt_is_deterministic`: duas chamadas com o mesmo `target` devolvem strings
+- [x] `test_clean_prompt_is_deterministic`: duas chamadas com o mesmo `target` devolvem strings
       idênticas.
 
 Em `tests/test_settings.py`:
 
-- [ ] `test_clean_action_is_registered_for_the_base_step`: `"base.clean"` está em
+- [x] `test_clean_action_is_registered_for_the_base_step`: `"base.clean"` está em
       `settings.ACTION_KEYS`; a entrada de `ACTIONS` com essa chave tem
       `screen == "Etapa 3 — Imagem base"`, `kind == "image"` e `"[extensão]"` no `label`.
-- [ ] `test_clean_action_default_is_nano_banana_2k`: `settings.DEFAULTS["base.clean"] ==
+- [x] `test_clean_action_default_is_nano_banana_2k`: `settings.DEFAULTS["base.clean"] ==
       {"model": "nano_banana_2", "variant": "2k"}` e `settings.default_for("base.clean")` devolve
       `model == "nano_banana_2"` com `source == "code"`.
-- [ ] `test_clean_action_resolves_project_over_global_over_code`: no molde do teste da linha 19 —
+- [x] `test_clean_action_resolves_project_over_global_over_code`: no molde do teste da linha 19 —
       `set_global_default("base.clean", <outro modelo válido do catálogo>)` faz `default_for` virar
       `source == "global"`; `set_project_default(pid, "base.clean", …)` faz virar
       `source == "project"`; `clear_project_default(pid, "base.clean")` volta para `global`.
-- [ ] `test_clean_action_appears_in_all_defaults`: existe exatamente uma linha com
+- [x] `test_clean_action_appears_in_all_defaults`: existe exatamente uma linha com
       `key == "base.clean"` em `settings.all_defaults()`, com `credits` não-nulo (o custo medido do
       `nano_banana_2` em `2k`) e o `label` marcado `[extensão]`.
 

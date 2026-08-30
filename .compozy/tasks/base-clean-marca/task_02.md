@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Plano de geração do clean, fonte do rótulo/upscale e caminho pago
 type: backend
 complexity: high
@@ -74,14 +74,14 @@ disso e não podem ser tocados.
 
 ## Subtasks
 
-- [ ] 2.1 Acrescentar `target` a `_plan`, `estimate_cost` e `start_generate` (último parâmetro).
-- [ ] 2.2 Implementar o branch `clean` do `_plan`, reusando a mensagem de erro do rótulo.
-- [ ] 2.3 Fazer o branch `label` preferir a clean selecionada, com fallback para a situação.
-- [ ] 2.4 Estender `upscale_warnings` e `upscale_ratio` para tratar a clean como origem válida.
-- [ ] 2.5 Criar o mapa kind → ação de custo e usá-lo em `_default_model` e em `start_generate`.
-- [ ] 2.6 Repassar `target` de `estimate_cost`/`start_generate` para o `_plan`.
-- [ ] 2.7 Escrever os testes de `## Tests` com prefixo `test_clean_` em `tests/test_base_service.py`.
-- [ ] 2.8 Rodar `make verify`.
+- [x] 2.1 Acrescentar `target` a `_plan`, `estimate_cost` e `start_generate` (último parâmetro).
+- [x] 2.2 Implementar o branch `clean` do `_plan`, reusando a mensagem de erro do rótulo.
+- [x] 2.3 Fazer o branch `label` preferir a clean selecionada, com fallback para a situação.
+- [x] 2.4 Estender `upscale_warnings` e `upscale_ratio` para tratar a clean como origem válida.
+- [x] 2.5 Criar o mapa kind → ação de custo e usá-lo em `_default_model` e em `start_generate`.
+- [x] 2.6 Repassar `target` de `estimate_cost`/`start_generate` para o `_plan`.
+- [x] 2.7 Escrever os testes de `## Tests` com prefixo `test_clean_` em `tests/test_base_service.py`.
+- [x] 2.8 Rodar `make verify`.
 
 ## Implementation Details
 
@@ -144,48 +144,48 @@ O `clean` é este bloco sem o segundo `raise` e com `clean_prompt(target)` no lu
 Novos, com prefixo `test_clean_`, em `tests/test_base_service.py`. Use `prepare(studio_env,
 project)`, `_up(...)` e o monkeypatch de `studio.higgsfield` já usado nos testes de geração da etapa.
 
-- [ ] `test_clean_plan_uses_the_selected_situation_as_source`: com situação importada e
+- [x] `test_clean_plan_uses_the_selected_situation_as_source`: com situação importada e
       selecionada, `svc._plan(root, "clean", None, 3)` devolve 3 itens; todos com o MESMO
       `image_references` de um elemento apontando para o arquivo da situação selecionada; todos com
       o mesmo prompt, que contém `"Remove all brand names"`; o `ref_id` do item é o da situação.
-- [ ] `test_clean_plan_requires_a_selected_situation`: sem situação selecionada,
+- [x] `test_clean_plan_requires_a_selected_situation`: sem situação selecionada,
       `svc._plan(root, "clean", None, 3)` levanta `ValueError` com a mensagem
       `"Escolha primeiro a melhor imagem de situação (aula 009)."` — a **mesma** do rótulo.
-- [ ] `test_clean_plan_target_reaches_the_prompt`: `svc._plan(root, "clean", None, 1, target="Red
+- [x] `test_clean_plan_target_reaches_the_prompt`: `svc._plan(root, "clean", None, 1, target="Red
       Bull")` devolve prompt contendo `'"Red Bull"'`.
-- [ ] `test_clean_plan_edited_prompt_wins_over_the_template`: `svc._plan(root, "clean", None, 1,
+- [x] `test_clean_plan_edited_prompt_wins_over_the_template`: `svc._plan(root, "clean", None, 1,
       prompt="apenas isto", target="Red Bull")` devolve exatamente `"apenas isto"` no item e no
       texto de retorno (o `target` é ignorado quando há prompt editado).
-- [ ] `test_clean_label_plan_prefers_the_selected_clean`: com situação **e** clean selecionadas,
+- [x] `test_clean_label_plan_prefers_the_selected_clean`: com situação **e** clean selecionadas,
       `svc._plan(root, "label", None, 1)` usa o arquivo da CLEAN em `image_references`.
-- [ ] `test_clean_label_plan_falls_back_to_situation_without_clean`: com clean importada mas **não**
+- [x] `test_clean_label_plan_falls_back_to_situation_without_clean`: com clean importada mas **não**
       selecionada, `_plan("label", …)` continua usando o arquivo da situação (regressão do
       comportamento atual, FDD §9 critério 4).
-- [ ] `test_clean_upscale_plan_uses_the_clean_when_it_is_the_most_advanced`: com situação e clean
+- [x] `test_clean_upscale_plan_uses_the_clean_when_it_is_the_most_advanced`: com situação e clean
       selecionadas e nenhum rótulo, `_plan("upscale", …)` usa o arquivo da clean.
-- [ ] `test_clean_upscale_ratio_reads_the_clean_as_origin`: no molde de
+- [x] `test_clean_upscale_ratio_reads_the_clean_as_origin`: no molde de
       `test_upscale_ratio_reads_the_selected_chain` — com clean selecionada de largura conhecida e
       um upscale selecionado do dobro, `svc.upscale_ratio(root, cands)` devolve `(2.0, w_clean,
       w_up)`; sem clean selecionada o resultado volta a ser o de hoje (origem = situação).
-- [ ] `test_clean_upscale_warning_compares_against_the_clean`: importar um `upscale` com largura
+- [x] `test_clean_upscale_warning_compares_against_the_clean`: importar um `upscale` com largura
       fora da faixa 1.8–2.2 em relação à clean selecionada produz aviso em `warnings`; dentro da
       faixa, não produz.
-- [ ] `test_clean_default_model_comes_from_the_clean_action`: `svc._default_model(pid, "clean")`
+- [x] `test_clean_default_model_comes_from_the_clean_action`: `svc._default_model(pid, "clean")`
       devolve `"nano_banana_2"`; após `settings.set_project_default(pid, "base.clean", <outro
       modelo do catálogo>)`, `_default_model(pid, "clean")` devolve o novo modelo — e
       `_default_model(pid, "situation")` **não** muda (prova de que a ação é dedicada).
-- [ ] `test_clean_cost_uses_the_step_default_count`: com o CLI falsificado, `svc.estimate_cost(pid,
+- [x] `test_clean_cost_uses_the_step_default_count`: com o CLI falsificado, `svc.estimate_cost(pid,
       "clean")` (sem `count`) devolve `count == 3` e `total == per_item * 3`; a ponte `hf.generate`
       **não** é chamada. Confira que os `params` mandados a `hf.cost` contêm `prompt` e **não**
       contêm `aspect_ratio`/`resolution`/`count`.
-- [ ] `test_clean_generate_produces_clean_candidates_and_ledger_line`: com `hf.generate`/`hf.download`
+- [x] `test_clean_generate_produces_clean_candidates_and_ledger_line`: com `hf.generate`/`hf.download`
       falsificados, `svc.start_generate(pid, "clean", count=2)` chama a ponte **duas** vezes, cada
       chamada com `image_references` = [arquivo da situação] e `prompt` contendo
       `"Remove all brand names"`; ao fim, `svc.load(pid)` tem candidatas com `kind == "clean"`; e
       `settings.history(pid)` tem 2 linhas com `action == "base.clean"` e `step == "base"`.
-- [ ] `test_clean_generate_target_is_sent_to_the_bridge`: `start_generate(pid, "clean", count=1,
+- [x] `test_clean_generate_target_is_sent_to_the_bridge`: `start_generate(pid, "clean", count=1,
       target="Red Bull")` manda um prompt contendo `'"Red Bull"'` para `hf.generate`.
-- [ ] `test_clean_generate_requires_a_selected_situation`: sem situação selecionada,
+- [x] `test_clean_generate_requires_a_selected_situation`: sem situação selecionada,
       `start_generate(pid, "clean")` levanta `ValueError` com a mensagem do rótulo.
 
 ## Success Criteria
