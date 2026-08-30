@@ -591,3 +591,51 @@ def test_view_has_side_toggle_and_stable_timeline_css(client):
     assert "studio.edit.sideHidden" in js, "preferência do menu lateral lembrada"
     # item 5: mover entre VÍDEO 1 e VÍDEO 2 é explícito (mover, não copiar)
     assert "moveToTrack(" in js, "movimento V1 ↔ V2"
+
+
+# ---------- wave 8 · frente C: contrato de UI das legendas com karaokê [extensão] ----------
+def test_captions_ui_calls_the_frozen_contract_and_paints_karaoke(client):
+    """A UI de legendas existe e fala com as rotas da frente B. O front não tem teste unitário
+    (ADR-008): o que dá para fixar aqui é a presença das strings que provam a forma da entrega —
+    as rotas chamadas, o karaokê montado por spans e a régua compartilhada com o servidor."""
+    js = client.get("/steps/edit/view.js").text
+    html = client.get("/steps/edit/view.html").text
+    # o modal fala com o contrato congelado da wave 8 (frente B), não com uma rota inventada
+    assert "captions/generate" in js and "captions/narration" in js
+    # o pré-preenchimento do roteiro vem do storyboard, rotulado como descrição (não é fala)
+    assert "storyboard/scenes" in js
+    assert "descrição das cenas, não é fala" in js
+    # karaokê: spans por palavra dentro da camada reconciliada, pintados sem re-render
+    assert "paintKaraoke" in js
+    assert "data-cap-karaoke" in js and "data-cap-widx" in js
+    assert ".ved-cap-k" in html, "CSS da linha de karaokê"
+    # a régua de fala é a MESMA do servidor (studio/edit/captions/__init__.py)
+    assert "WPS = 2.4" in js
+
+
+def test_captions_ui_mirrors_the_server_side_constants(client):
+    """As constantes vivem em dois lugares (Python e JS) por necessidade — o palco re-fatia as
+    janelas sem ida ao servidor. Este teste é o que impede as duas cópias de divergirem em
+    silêncio: ele lê os valores do módulo do servidor e exige cada um no `view.js`."""
+    from studio.edit.captions import CAPTION_MODES, CHUNK_OPTS, HI_COLORS, WPS
+
+    js = client.get("/steps/edit/view.js").text
+    modos = ", ".join('"%s"' % m for m in CAPTION_MODES)
+    cores = ", ".join('"%s"' % c for c in HI_COLORS)
+    chunks = ", ".join(str(c) for c in CHUNK_OPTS)
+    assert f"const WPS = {WPS};" in js
+    assert f"const CAPTION_MODES = [{modos}];" in js
+    assert f"const HI_COLORS = [{cores}];" in js
+    assert f"const CHUNK_OPTS = [{chunks}];" in js
+
+
+def test_captions_ui_keeps_the_editor_invariants(client):
+    """Legenda não pode reintroduzir o render destrutivo nem inventar cor fora do tema: o karaokê
+    entra pelo hook de camada da frente A e a pintura por frame só troca `style.color`."""
+    js = client.get("/steps/edit/view.js").text
+    html = client.get("/steps/edit/view.html").text
+    # o ramo de legenda é um hook de `LAYER_HOOKS` (reconciliação por `data-uid` intacta)
+    assert "caption: { create: textLayerCreate, update: capLayerUpdate }" in js
+    # nenhuma ação de legenda cai em renderRoot(): quem atualiza a tela é o commit incremental
+    assert "renderDirty(" in js and "renderAll(" not in js
+    assert "crimson" not in js and "crimson" not in html, "sem cores soltas fora do tema"

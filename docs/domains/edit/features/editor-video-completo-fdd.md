@@ -239,8 +239,6 @@ Ajustes pedidos pelo dono, todos `[extensão]`, sobre o editor já entregue:
    Normalização, Melhorar voz, Redução de ruído, Separar áudio — guardados em `clip_fx.audio`
    (`[extensão]`, entram no mix numa fase seguinte; a aula 014 mantém o áudio do modelo desligado).
 5. Campo **Início** editável na aba Básico; correções menores de paridade.
-</content>
-</invoke>
 
 ---
 
@@ -269,6 +267,42 @@ legenda só não sincroniza com a fala.
 
 A **UI** do modal "Gerar legendas" (spans de karaokê no palco, propriedades da legenda) é a frente C
 da mesma wave e não faz parte desta entrega; até ela chegar, o servidor já responde o contrato.
+
+---
+
+## Nota `[extensão]` — a legenda automática ganhou UI (2026-08-29, ADH-OS-20260829-40)
+
+Nota **aditiva**: nada acima foi reescrito. Ela **fecha** a pendência da §11 deste FDD
+(*"geração de legenda automática … a UI oferece legenda manual e deixa o 'gerar automático' como
+pendência"*), especificada em [`legendas-frontend-fdd.md`](./legendas-frontend-fdd.md) (Wave 8,
+frente C). Só `view.js` e `view.html` mudaram: nenhuma rota nova, nenhum arquivo Python.
+
+O que entrou:
+
+1. **Modal "Gerar legendas"** no botão `#capGen` do painel Legendas (que antes só avisava que a
+   geração dependia de transcrição). Fonte **roteiro** (textarea, com pré-preenchimento opcional
+   pelas descrições das cenas do storyboard, rotulado *"descrição das cenas, não é fala"*) ou
+   **áudio/vídeo** (takes da timeline, trilha, uploads e a biblioteca de narração, com upload
+   próprio). Preset (Karaokê / Linha limpa / Bloco editorial), palavras por linha, cor de destaque,
+   posição, início, duração e "substituir legendas existentes". Uma chamada
+   `POST …/captions/generate` e **um** `commit(..., {panel:true})`; nunca `renderRoot()`.
+2. **Karaokê no preview.** O hook `LAYER_HOOKS.caption` monta, dentro da camada reconciliada por
+   `data-uid`, um wrapper `[data-cap-karaoke]` com um `[data-cap-widx][data-a][data-b]` por palavra
+   da janela do item. Os spans só são reconstruídos quando a assinatura (`data-sig`) muda;
+   `paintKaraoke(t)` troca apenas `style.color` por frame. Modo `bloco` e legenda manual (sem
+   `words`) renderizam como texto, exatamente como antes.
+3. **Bloco Legenda nas Propriedades**: modo, cor de destaque, palavras por linha (re-fatiamento
+   **local**, sem ida ao servidor, preservando os tempos) e "re-sincronizar com áudio".
+4. **Mover é deslocar, trim é recortar**: arrastar, editar o início ou duplicar um item de legenda
+   desloca `words[].start_s/end_s` pelo mesmo delta; o trim não toca nas palavras (elas são tempos
+   absolutos do áudio) e a janela nova filtra pela **regra do centro**.
+5. `WPS = 2.4`, `CAPTION_MODES`, `HI_COLORS`, `CHUNK_OPTS` e a regra do centro são **espelho** de
+   `studio/edit/captions/__init__.py` — divergir quebra a sincronia entre o preview e o `master.mp4`.
+
+Contrato de UI fixado por `tests/test_edit_api.py::test_captions_ui_*` (front sem teste unitário,
+ADR-008), incluindo um teste que lê as constantes do módulo do servidor e exige cada valor no
+`view.js`. Segue pendente para fase seguinte: edição de palavra a palavra (tempos individuais) no
+painel e a quebra por **largura** de linha no browser (só o servidor mede, com a fonte do Pillow).
 
 ---
 

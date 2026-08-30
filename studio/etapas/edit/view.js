@@ -69,6 +69,25 @@ Studio.register("edit", (ctx) => {
   // ordem fixa das 6 tracks (topo→base) e a track do editor (não-backbone) por tipo
   const ET = [{ id: "t_txt", type: "text", name: "TEXTO", h: 52 }, { id: "t_cap", type: "caption", name: "LEGENDAS", h: 30 }, { id: "v2", type: "overlay", name: "VÍDEO 2", h: 52, col: "video" }];
 
+  // ---------- legendas com karaokê [extensão] ----------
+  // ESPELHO de `studio/edit/captions/__init__.py` (contrato congelado da wave 8). Os valores
+  // existem nos dois lados porque o palco re-fatia e pinta as janelas sem ida ao servidor:
+  // divergir aqui faz o preview e o `master.mp4` mostrarem coisas diferentes. Qualquer mudança
+  // é feita nos dois arquivos, no mesmo PR.
+  const WPS = 2.4;                                    // palavras por segundo faladas
+  const CAPTION_MODES = ["karaoke", "linha", "bloco"];
+  const HI_COLORS = ["#C8F751", "#57E2F0", "#F2B544", "#A78BFA"];
+  const CHUNK_OPTS = [0, 6, 4, 2];                    // 0 = uma janela por linha de LARGURA (só o servidor mede)
+  const CHUNK_LABEL = { 0: "tudo (uma janela por linha)", 6: "6 palavras", 4: "4 palavras", 2: "2 palavras" };
+  const MODE_LABEL = { karaoke: "Karaokê", linha: "Linha", bloco: "Bloco" };
+  const CAP_PRESETS = [
+    { id: "karaoke", label: "Karaokê", size: 40, position: "bottom", hi: "#C8F751", uppercase: true, weight: 800, bg: "transparent" },
+    { id: "linha", label: "Linha limpa", size: 30, position: "bottom", hi: "#A78BFA", uppercase: false, weight: 600, bg: "transparent" },
+    { id: "bloco", label: "Bloco editorial", size: 26, position: "middle", hi: "#57E2F0", uppercase: false, weight: 600, bg: "rgba(0,0,0,.55)" },
+  ];
+  const NARRATION_ACCEPT = ".wav,.mp3,.m4a,.ogg,.mp4,.mov,.webm";
+  const CAP_SCENES_HINT = "descrição das cenas, não é fala";
+
   // ------------------------------------------------------------ utilidades
   const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
   const num = (v, d = 0) => { const n = parseFloat(v); return isNaN(n) ? d : n; };
@@ -83,6 +102,61 @@ Studio.register("edit", (ctx) => {
   const FX_BY_SLUG = Object.fromEntries(Object.entries(EFFECT_APPLIES).map(([k, v]) => [fxSlug(k), v]));
   const fxAplica = (type, kind) => !kind || (FX_BY_SLUG[fxSlug(type)] || FX_TODOS).includes(kind);
   const fxInt = (ef) => clamp(num(ef && ef.intensity, .5), 0, 1);
+
+  // ---------- helpers de legenda (puros) ----------
+  /** Modo utilizável do item. Valor fora do domínio (front antigo, campo torto) cai em `bloco` —
+   *  a MESMA regra do `effective_mode` do servidor: legenda é enfeite e não derruba a tela. */
+  const capMode = (o) => (CAPTION_MODES.includes((o || {}).mode) ? o.mode : "bloco");
+  const capHi = (o) => (/^#[0-9A-Fa-f]{6}$/.test((o || {}).hi || "") ? o.hi : HI_COLORS[0]);
+  const capBase = (o) => ((o || {}).style || {}).color || "#fff";
+  const capText = (o) => (((o || {}).style || {}).uppercase ? (o.text || "").toUpperCase() : (o.text || ""));
+  /** A palavra pertence à janela `[a, b)` pelo CENTRO — espelho de `word_in_window`. Testar o
+   *  início faria uma palavra a cavalo entre duas janelas aparecer nas duas (ou em nenhuma). */
+  function wordsInWindow(words, a, b) {
+    return (words || []).filter((w) => { const c = (num(w.start_s) + num(w.end_s)) / 2; return c >= a && c < b; });
+  }
+  /** Fatia de `chunk` palavras que contém o índice `wi` (`{ws, off}`); `chunk` 0 = tudo. Espelha o
+   *  `chunkOf` do ContentFlow e é o que o re-fatiar local usa para não ir ao servidor. */
+  function chunkOf(words, chunk, wi) {
+    if (!chunk || words.length <= chunk) return { ws: words, off: 0 };
+    const s = Math.floor(wi / chunk) * chunk;
+    return { ws: words.slice(s, s + chunk), off: s };
+  }
+  /** Desloca as palavras do item pelo mesmo delta do item. `words` são tempos ABSOLUTOS da
+   *  timeline: mover o item sem mover as palavras faria o karaokê acender fora de hora. */
+  function shiftWords(o, delta) {
+    if (!o || !Array.isArray(o.words) || !delta) return;
+    o.words.forEach((w) => { w.start_s = +(num(w.start_s) + delta).toFixed(3); w.end_s = +(num(w.end_s) + delta).toFixed(3); });
+  }
+  const capWarned = new Set();          // um `console.warn` por item, não um por frame
+  /** Palavras VÁLIDAS do item que caem na janela dele. Palavra sem texto ou com tempo não
+   *  numérico é descartada (e avisada uma vez): uma legenda torta não pode quebrar o palco. */
+  function capWords(o) {
+    const raw = (o || {}).words;
+    if (!Array.isArray(raw) || !raw.length) return [];
+    const ok = raw.filter((w) => w && String(w.w || "").trim() && isFinite(num(w.start_s, NaN)) && isFinite(num(w.end_s, NaN)));
+    if (ok.length !== raw.length && !capWarned.has(o.id)) {
+      capWarned.add(o.id);
+      console.warn("[captions] palavras descartadas por tempo inválido", o.id, raw.length - ok.length);
+    }
+    return wordsInWindow(ok, num(o.start), num(o.end));
+  }
+  /** `POST` cru para as rotas de legenda. O `api()` do shell lança `Error(detail)` sem o status,
+   *  e o modal precisa distinguir 422 (destaca o campo) de 404, 409 e 502. */
+  async function capPost(path, body) {
+    const r = await fetch(base() + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    let data = null;
+    try { data = await r.json(); } catch (e) { /* corpo vazio ou não-JSON */ }
+    return { status: r.status, body: data || {} };
+  }
+  /** `detail` legível. O 422 do serviço é a string do contrato (`"text: obrigatório em script"`);
+   *  o 422 do Pydantic (valor fora do enum) é uma LISTA — dela extraímos campo e mensagem. */
+  function capDetail(body, fallback) {
+    const d = (body || {}).detail;
+    if (typeof d === "string" && d) return d;
+    if (Array.isArray(d) && d.length) { const e = d[0] || {}; return `${(e.loc || []).slice(-1)[0] || "campo"}: ${e.msg || "valor inválido"}`; }
+    return fallback || "falha na geração de legendas";
+  }
 
   // ------------------------------------------------------------ STORE
   const St = {
@@ -439,6 +513,9 @@ Studio.register("edit", (ctx) => {
     } else if (seg && seg.kind === "black") { black.style.display = "block"; empty.style.display = "none"; label.style.display = "none"; }
     else { empty.style.display = "block"; label.style.display = St.timeline && (St.timeline.clips || []).length ? "none" : "block"; if (label.style.display === "block") label.textContent = "sem clipes"; }
     renderLayers(stage);
+    // karaokê no fim, com as camadas já reconciliadas. `loopTick()` e `seekTo()` chegam aqui por
+    // dentro do próprio `renderPreview()` — a pintura é uma só, e nunca re-renderiza nada.
+    paintKaraoke(St.playhead);
     const tc = document.getElementById("pcTime"); if (tc) tc.textContent = `${fmtTC(St.playhead)} / ${fmtTC(duration())}`;
   }
   /** Camadas do palco (TEXTO, LEGENDAS, VÍDEO 2): um hook por tipo. `create(el, item, stage)` roda
@@ -448,7 +525,7 @@ Studio.register("edit", (ctx) => {
    *  `LAYER_HOOKS.caption.{create,update}` para montar spans por palavra sem tocar na reconciliação. */
   const LAYER_HOOKS = {
     text: { create: textLayerCreate, update: textLayerUpdate },
-    caption: { create: textLayerCreate, update: textLayerUpdate },
+    caption: { create: textLayerCreate, update: capLayerUpdate },
     overlay: { create: overlayLayerCreate, update: overlayLayerUpdate },
   };
   /** Assinatura do conteúdo do nó: muda ⇒ o nó é recriado (o `<img>` de uma imagem não vira o
@@ -473,10 +550,16 @@ Studio.register("edit", (ctx) => {
   }
   function textLayerCreate(el, o, stage) { el.style.padding = "2px 8px"; el.style.maxWidth = "80%"; }
   function textLayerUpdate(el, o, stage) {
+    textLayerStyle(el, o, stage);
+    const txt = capText(o);
+    if (el.textContent !== txt) el.textContent = txt;
+  }
+  /** Posição, tipografia, fundo e sombra da camada de texto/legenda — tudo MENOS o conteúdo. A
+   *  legenda com karaokê (spans por palavra) reusa exatamente esta regra e monta o conteúdo por
+   *  conta própria; sem a separação, escrever o `textContent` aqui apagaria os spans a cada frame. */
+  function textLayerStyle(el, o, stage) {
     layerBase(el, o);
     const s = o.style || {};
-    const txt = s.uppercase ? (o.text || "").toUpperCase() : (o.text || "");
-    if (el.textContent !== txt) el.textContent = txt;
     el.style.fontFamily = `"${s.font || "Bricolage Grotesque"}",sans-serif`;
     el.style.fontSize = ((s.size || 40) / 1080 * stage.clientHeight) + "px"; el.style.fontWeight = s.weight || 700;
     el.style.textAlign = s.align || "center"; el.style.lineHeight = s.lineHeight || 1.2;
@@ -487,6 +570,62 @@ Studio.register("edit", (ctx) => {
     // a sombra base vai por custom property (e não em `style.textShadow`) para que as classes de
     // efeito com `text-shadow` — Glow, Chromatic, RGB Split — consigam vencer a cascata
     el.style.setProperty("--tx-shadow", s.shadow !== false ? "0 2px 12px rgba(0,0,0,.6)" : "none");
+  }
+  /** Camada de LEGENDA. Item com `words` e modo `karaoke`/`linha` vira uma linha de spans (um por
+   *  palavra da janela); `bloco` — e legenda manual, sem `words` — segue o caminho de texto de
+   *  sempre. Os spans são montados só quando a ASSINATURA muda (`data-sig`): durante o play quem
+   *  trabalha é o `paintKaraoke`, que troca apenas `style.color`. Nenhum `innerHTML` por frame. */
+  function capLayerUpdate(el, o, stage, t) {
+    textLayerStyle(el, o, stage);
+    const ws = capWords(o), mode = capMode(o);
+    if (!ws.length || mode === "bloco") {
+      // sair do karaokê é DESMONTAR os spans: `textContent` de uma linha de spans já devolve o
+      // texto da legenda, então comparar as duas strings jamais acusaria a diferença — a camada
+      // ficaria com os spans para sempre depois de trocar o modo para `bloco`.
+      if (el.querySelector("[data-cap-karaoke]")) el.textContent = "";
+      const txt = capText(o);
+      if (el.textContent !== txt) el.textContent = txt;
+      return;
+    }
+    // `linha` mostra a janela inteira sem destacar palavra: o "aceso" é a própria cor base.
+    const base = capBase(o), hi = mode === "linha" ? base : capHi(o), upper = !!(o.style || {}).uppercase;
+    const sig = [mode, hi, base, o.chunk, o.start, o.end, ws.length, upper ? 1 : 0].join("|");
+    let k = el.querySelector("[data-cap-karaoke]");
+    if (!k || k.dataset.sig !== sig) {
+      el.textContent = "";
+      k = document.createElement("span");
+      k.className = "ved-cap-k";
+      k.setAttribute("data-cap-karaoke", "");
+      k.dataset.sig = sig;
+      ws.forEach((w, i) => {
+        if (i) k.appendChild(document.createTextNode(" "));
+        const s = document.createElement("span");
+        s.setAttribute("data-cap-widx", String(i));
+        s.setAttribute("data-a", String(num(w.start_s)));
+        s.setAttribute("data-b", String(num(w.end_s)));
+        s.textContent = upper ? String(w.w).toUpperCase() : String(w.w);
+        s.style.color = base;
+        k.appendChild(s);
+      });
+      el.appendChild(k);
+    }
+    k.dataset.hi = hi; k.dataset.base = base;
+    paintKaraokeIn(k, t);              // primeira pintura logo após reconciliar
+  }
+  /** Pinta a palavra corrente em TODA legenda karaokê do palco. Custo O(palavras visíveis) e só
+   *  `style.color`: nunca cria, remove nem reordena nó — é isto que deixa o play fluido. */
+  function paintKaraoke(t) {
+    const stage = document.getElementById("edStage"); if (!stage) return;
+    stage.querySelectorAll("[data-cap-karaoke]").forEach((k) => paintKaraokeIn(k, t));
+  }
+  function paintKaraokeIn(k, t) {
+    const hi = k.dataset.hi || "#fff", base = k.dataset.base || "#fff";
+    // o `data-on` evita reescrever a cor a cada frame (o browser normaliza `style.color` para
+    // `rgb(...)`, então comparar com o hexa daria sempre diferente e sujaria o recálculo de estilo)
+    k.querySelectorAll("[data-cap-widx]").forEach((s) => {
+      const on = t >= num(s.getAttribute("data-a")) && t < num(s.getAttribute("data-b")) ? "1" : "";
+      if (s.dataset.on !== on) { s.dataset.on = on; s.style.color = on ? hi : base; }
+    });
   }
   function overlayLayerCreate(el, o, stage) {
     if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
@@ -824,11 +963,192 @@ Studio.register("edit", (ctx) => {
   }
   function pCaptions(el) {
     const t = etrack("t_cap", false), items = t ? t.items : [];
-    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas da narração</button><button class="ved-btn" id="capAdd" style="width:100%;margin-bottom:10px">＋ legenda manual</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd ic" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
-    document.getElementById("capGen").onclick = () => toast("Geração automática precisa de transcrição (pendente no projeto). Use + legenda manual.");
+    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas</button><button class="ved-btn" id="capAdd" style="width:100%;margin-bottom:10px">＋ legenda manual</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd ic" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
+    document.getElementById("capGen").onclick = () => openCapModal({});
     document.getElementById("capAdd").onclick = () => addText("Legenda", { size: 34, weight: 600, align: "center" }, "caption");
     el.querySelector(".ved-phead").insertAdjacentHTML("beforeend", "");
     el.querySelectorAll(".ved-row[data-uid]").forEach((r) => r.onclick = (e) => { if (e.target.dataset.del) return deleteItems([e.target.dataset.del]); selectOnly(r.dataset.uid, {}); });
+  }
+
+  // ---------- modal "Gerar legendas" [extensão] ----------
+  /** Abre o modal de geração. `pre` (opcional) já vem preenchido — é o que o botão
+   *  "re-sincronizar com áudio" das Propriedades usa para reabrir o modal no áudio da última vez.
+   *  Uma chamada `POST /captions/generate` e UM `commit`: nada de `renderRoot()`. */
+  function openCapModal(pre) {
+    pre = pre || {};
+    const preset0 = CAP_PRESETS.find((p) => p.id === pre.mode) || CAP_PRESETS[0];
+    const audio = pre.source === "audio";
+    const inicio = pre.start != null ? num(pre.start) : St.playhead;
+    const hi0 = /^#[0-9A-Fa-f]{6}$/.test(pre.hi || "") ? pre.hi : preset0.hi;
+    const chunk0 = pre.chunk != null ? num(pre.chunk, 6) : 6;
+    const pos0 = ["top", "middle", "bottom"].includes(pre.position) ? pre.position : preset0.position;
+    const rad = (v, lb) => `<label class="ved-check"><input type="radio" name="capSrc" value="${v}"${(v === "audio") === audio ? " checked" : ""}>${lb}</label>`;
+    const m = ui.modal({
+      title: "Gerar legendas",
+      subtitle: "Roteiro ou áudio/vídeo · karaokê, linha ou bloco [extensão]",
+      html: `<div class="ved-inrow"><label>Fonte</label><span class="ved-radios">${rad("script", "Roteiro")}${rad("audio", "Áudio/vídeo")}</span></div>
+        <div id="capPaneScript"${audio ? " hidden" : ""}>
+          <textarea class="ved-txtarea" id="capScript" rows="4" placeholder="Cole aqui o roteiro falado…" aria-label="Roteiro falado"></textarea>
+          <p class="ved-cap-src">${CAP_SCENES_HINT}</p>
+          <button class="ved-btn" id="capScenes" style="width:100%;margin-bottom:8px">usar descrições das cenas</button>
+        </div>
+        <div id="capPaneAudio"${audio ? "" : " hidden"}>
+          <div class="ved-inrow"><label for="capFile">Arquivo</label><select id="capFile"><option value="">carregando…</option></select></div>
+          <button class="ved-btn" id="capUp" style="width:100%;margin-bottom:8px">⇪ enviar narração</button>
+          <input type="file" id="capUpIn" accept="${NARRATION_ACCEPT}" multiple hidden>
+          <textarea class="ved-txtarea" id="capAlign" rows="2" placeholder="roteiro para alinhar (opcional)" aria-label="Roteiro para alinhar (opcional)"></textarea>
+        </div>
+        <div class="ved-inrow"><label for="capPreset">Preset</label><select id="capPreset">${CAP_PRESETS.map((p) => `<option value="${p.id}"${p.id === preset0.id ? " selected" : ""}>${esc(p.label)}</option>`).join("")}</select></div>
+        <div class="ved-inrow"><label for="capChunk">Palavras por linha</label><select id="capChunk">${CHUNK_OPTS.map((c) => `<option value="${c}"${c === chunk0 ? " selected" : ""}>${esc(CHUNK_LABEL[c])}</option>`).join("")}</select></div>
+        <div class="ved-kick" style="margin:10px 0 2px">Cor de destaque</div>
+        <div class="ved-swatches" id="capSw">${HI_COLORS.map((c) => `<button type="button" class="ved-swatch${c === hi0 ? " on" : ""}" data-hi="${c}" style="background:${c}" title="${c}" aria-label="Cor ${c}"></button>`).join("")}</div>
+        <div class="ved-inrow"><label for="capHi">Cor</label><input type="color" id="capHi" value="${hi0}"></div>
+        <div class="ved-inrow"><label for="capPos">Posição</label><select id="capPos">${["top", "middle", "bottom"].map((p) => `<option value="${p}"${p === pos0 ? " selected" : ""}>${p}</option>`).join("")}</select></div>
+        <div class="ved-grid2">${nf("capStart", "Início", inicio.toFixed(2), "")}${nf("capDur", "Duração", "", "")}</div>
+        <label class="ved-check" style="margin-top:8px"><input type="checkbox" id="capReplace">Substituir legendas existentes</label>
+        <p class="ved-hint" style="margin-top:8px">Duração em branco usa o padrão do servidor (a do arquivo, ou palavras ÷ ${WPS} no roteiro). Sem chave OpenAI os tempos são estimados. No mp4 a quebra por largura é calculada no render.</p>`,
+      actions: [{ label: "Cancelar" }, { label: "Gerar", kind: "primary", close: false, onClick: (ref) => capGerar(ref) }],
+    });
+    rotular(m.el);
+    const preencher = () => {
+      const p = CAP_PRESETS.find((x) => x.id === document.getElementById("capPreset").value) || CAP_PRESETS[0];
+      document.getElementById("capHi").value = p.hi;
+      document.getElementById("capPos").value = p.position;
+      capMarcaSwatch(p.hi);
+    };
+    document.getElementById("capPreset").onchange = preencher;
+    document.getElementById("capHi").oninput = (e) => capMarcaSwatch(e.target.value);
+    document.getElementById("capSw").onclick = (e) => {
+      const b = e.target.closest("[data-hi]"); if (!b) return;
+      document.getElementById("capHi").value = b.dataset.hi; capMarcaSwatch(b.dataset.hi);
+    };
+    document.getElementById("capScenes").onclick = capCenas;
+    document.getElementById("capUp").onclick = () => document.getElementById("capUpIn").click();
+    document.getElementById("capUpIn").onchange = (e) => { if (e.target.files.length) capUpload([...e.target.files]); e.target.value = ""; };
+    m.el.querySelectorAll('input[name="capSrc"]').forEach((r) => r.onchange = () => {
+      const ehAudio = m.el.querySelector('input[name="capSrc"]:checked').value === "audio";
+      document.getElementById("capPaneScript").hidden = ehAudio;
+      document.getElementById("capPaneAudio").hidden = !ehAudio;
+      if (ehAudio) capFontes(pre.file || (St.capLast || {}).file);
+    });
+    if (audio) capFontes(pre.file || (St.capLast || {}).file);
+    return m;
+  }
+  function capMarcaSwatch(cor) {
+    const box = document.getElementById("capSw"); if (!box) return;
+    box.querySelectorAll("[data-hi]").forEach((b) => b.classList.toggle("on", b.dataset.hi.toLowerCase() === String(cor).toLowerCase()));
+  }
+  const capErrCampo = (id, on) => { const el = document.getElementById(id); if (el) el.classList.toggle("ved-field-err", !!on); };
+  function capLimpaErros() { ["capScript", "capAlign", "capFile", "capHi", "capPreset"].forEach((id) => capErrCampo(id, false)); }
+  /** Pré-preenche o roteiro com as descrições das cenas do storyboard, na ordem de `n`. Elas NÃO
+   *  são fala (o Studio não tem roteiro falado): o rótulo fixo abaixo da textarea diz isso. */
+  async function capCenas() {
+    const ta = document.getElementById("capScript"); if (!ta) return;
+    if (ta.value.trim() && !confirm("Substituir o texto colado pelas descrições das cenas?")) return;
+    try {
+      const r = await api(`/api/projects/${ctx.pid()}/storyboard/scenes`);
+      const txt = (r.scenes || []).slice().sort((a, b) => num(a.n) - num(b.n)).map((s) => String(s.text || "").trim()).filter(Boolean).join("\n");
+      if (!txt) return toast("sem cenas do storyboard");
+      ta.value = txt; capErrCampo("capScript", false);
+    } catch (err) { toast("sem cenas do storyboard"); }
+  }
+  /** Popula o select de áudio: takes da timeline, trilha, uploads de vídeo e narrações. As duas
+   *  listas remotas vão em paralelo e uma falha só remove o grupo dela (`console.warn`). */
+  async function capFontes(selecionar) {
+    const sel = document.getElementById("capFile"); if (!sel) return;
+    const grupos = [];
+    const takes = [...new Set((St.timeline.clips || []).map((c) => c.file).filter(Boolean))];
+    if (takes.length) grupos.push(["Takes da timeline", takes.map((f) => [f, nameOf({ file: f })])]);
+    const mf = (St.timeline.music || {}).file;
+    if (mf) grupos.push(["Trilha", [[mf, mf.split("/").pop()]]]);
+    const [media, narr] = await Promise.allSettled([api(`${base()}/media`), api(`${base()}/captions/narration`)]);
+    if (media.status === "fulfilled") {
+      const vids = (media.value || []).filter((x) => x.kind === "video");
+      if (vids.length) grupos.push(["Uploads", vids.map((x) => [x.file, x.name])]);
+    } else console.warn("[captions] lista de mídia indisponível", media.reason);
+    if (narr.status === "fulfilled") {
+      const ns = narr.value || [];
+      if (ns.length) grupos.push(["Narrações", ns.map((n) => [n.file, `${n.name} · ${num(n.duration).toFixed(1)}s`])]);
+    } else console.warn("[captions] lista de narração indisponível", narr.reason);
+    const alvo = selecionar || sel.value;
+    sel.innerHTML = grupos.length
+      ? grupos.map(([nome, opts]) => `<optgroup label="${esc(nome)}">${opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</optgroup>`).join("")
+      : `<option value="">nenhum áudio no projeto — envie uma narração</option>`;
+    if (alvo) sel.value = alvo;
+    if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+  }
+  async function capUpload(files) {
+    try {
+      const r = await ui.upload(`${base()}/captions/narration/upload`, files);
+      toast(`${r.added} narração(ões) enviada(s)`);
+      const novo = (r.files || []).slice(-1)[0];
+      await capFontes(novo ? novo.file : null);
+    } catch (err) { toast(err.message); }
+  }
+  /** Valida, chama o servidor e insere os itens na faixa LEGENDAS. Erro nunca insere nada: o modal
+   *  fica aberto para o usuário corrigir o campo destacado e tentar de novo. */
+  async function capGerar(m) {
+    if (!St.timeline) return;
+    const btn = m.actions[m.actions.length - 1];
+    const src = m.el.querySelector('input[name="capSrc"]:checked').value;
+    const preset = CAP_PRESETS.find((p) => p.id === document.getElementById("capPreset").value) || CAP_PRESETS[0];
+    const texto = (document.getElementById("capScript").value || "").trim();
+    const alinhar = (document.getElementById("capAlign").value || "").trim();
+    const file = document.getElementById("capFile").value;
+    capLimpaErros();
+    if (src === "script" && !texto) { capErrCampo("capScript", true); return toast("Cole o roteiro"); }
+    if (src === "audio" && !file) { capErrCampo("capFile", true); return toast("Escolha um arquivo de áudio ou vídeo"); }
+    const start = Math.max(num(document.getElementById("capStart").value), 0);
+    const dur = num(document.getElementById("capDur").value);
+    const body = {
+      source: src, start: +start.toFixed(3), mode: preset.id,
+      chunk: num(document.getElementById("capChunk").value, 6),
+      hi: (document.getElementById("capHi").value || preset.hi).toUpperCase(),
+      position: document.getElementById("capPos").value,
+      style: { size: preset.size, weight: preset.weight, align: "center", color: "#FFFFFF", bg: preset.bg },
+    };
+    if (src === "script") body.text = texto;
+    else { body.file = file; if (alinhar) body.text = alinhar; }
+    if (dur > 0) body.duration = dur;
+    const rotulo = btn.textContent;
+    btn.disabled = true; btn.textContent = "Gerando…";
+    let r;
+    try { r = await capPost("/captions/generate", body); }
+    catch (err) { return toast("Falha ao gerar legendas: " + (err.message || err)); }
+    finally { btn.disabled = false; btn.textContent = rotulo; }
+    if (r.status !== 200) return capFalhou(r, file);
+    const items = Array.isArray(r.body.items) ? r.body.items : [];
+    if (!items.length) return toast("nenhuma legenda gerada para este trecho");
+    const substituir = document.getElementById("capReplace").checked;
+    commit("gerar legendas", () => {
+      const t = etrack("t_cap", true);
+      if (substituir) t.items = [];
+      // `uppercase` é campo do editor (não viaja no `style` do contrato): aplicá-lo aqui deixa o
+      // preset completo, e o `PUT /timeline` normal o persiste junto com o resto do item.
+      items.forEach((it) => { it.style = { ...(it.style || {}), uppercase: preset.uppercase }; t.items.push(it); });
+      St.selection = [items[0].id];
+    }, { panel: true });
+    if (src === "audio") St.capLast = { file, start: body.start };
+    m.close();
+    // o `toast` do shell é uma linha só (a chamada seguinte substitui a anterior): tudo o que o
+    // usuário precisa saber deste desfecho vai na MESMA mensagem.
+    const avisos = [`${num(r.body.word_count)} palavras · ${items.length} legenda(s)`];
+    if (r.body.source === "estimate") avisos.push("tempos estimados, sem chave OpenAI");
+    if (r.body.warning) avisos.push(String(r.body.warning));
+    toast(avisos.join(" · "));
+  }
+  /** Desfecho de erro: toast com o `detail` do servidor e destaque do campo que ele aponta. */
+  function capFalhou(r, file) {
+    const d = capDetail(r.body);
+    if (r.status === 404) { toast(`arquivo não encontrado: ${file}`); capErrCampo("capFile", true); return void capFontes(null); }
+    if (r.status === 409) return toast("ffmpeg indisponível para extrair o áudio");
+    if (r.status === 422) {
+      const campo = { text: "capScript", file: "capFile", hi: "capHi", mode: "capPreset" }[String(d).split(":")[0].trim()];
+      if (campo) capErrCampo(campo, true);
+      return toast(d);
+    }
+    if (r.status === 502) return toast(d);
+    toast("Falha ao gerar legendas: " + d);
   }
   function pAudio(el) {
     const rows = [];
@@ -1039,7 +1359,9 @@ Studio.register("edit", (ctx) => {
       <div class="ved-toggle"><span>Maiúsculas</span><button class="ved-sw${s.uppercase ? " on" : ""}" id="txUp"></button></div>
       <div class="ved-slider"><label>Opacidade</label><input type="range" id="txOp" min="0" max="100" value="${(tf.opacity != null ? tf.opacity : 1) * 100 | 0}"><span class="val" id="txOpv"></span></div>
       <div class="ved-grid2">${nf("txStart", "Início", it.start.toFixed(1), "s")}${nf("txEnd", "Fim", num(o.end).toFixed(1), "s")}</div>
+      ${it.kind === "caption" ? capPropsHTML(o) : ""}
       ${fxSectionHTML(o)}`;
+    if (it.kind === "caption") bindCapProps(body, it);
     document.getElementById("txT").oninput = (e) => { o.text = e.target.value; renderPreview(); renderTimeline(); scheduleSave(); };
     document.getElementById("txAlign").onchange = (e) => cset("alinhar", () => s.align = e.target.value);
     document.getElementById("txColor").oninput = (e) => { s.color = e.target.value; renderPreview(); scheduleSave(); };
@@ -1050,6 +1372,80 @@ Studio.register("edit", (ctx) => {
     bindSlider("txOp", (v) => tf.opacity = v / 100, "opacidade", (v) => document.getElementById("txOpv").textContent = v + "%");
     bindNum("txStart", (v) => o.start = Math.max(v, 0), "início"); bindNum("txEnd", (v) => o.end = Math.max(v, num(o.start) + .2), "fim");
     bindFxSection(body, o);
+  }
+  /** Bloco de LEGENDA nas Propriedades: modo, cor de destaque, palavras por linha e o botão de
+   *  re-sincronizar. Sem `words` (legenda manual) o modo fica travado em `bloco`, porque não há
+   *  palavra para acender — e o re-fatiar não tem o que fatiar. */
+  function capPropsHTML(o) {
+    const ws = capWords(o), tem = ws.length > 0, modo = capMode(o), hi = capHi(o);
+    return `<div class="ved-kick" style="margin:12px 0 4px">Legenda</div>
+      <div class="ved-inrow"><label for="capMode">Modo</label><select id="capMode"${tem ? "" : " disabled"}>${CAPTION_MODES.map((mo) => `<option value="${mo}"${mo === modo ? " selected" : ""}>${esc(MODE_LABEL[mo])}</option>`).join("")}</select></div>
+      ${tem ? "" : `<p class="ved-hint">sem palavras sincronizadas: use ✨ Gerar legendas</p>`}
+      ${tem ? `<div class="ved-kick" style="margin:8px 0 2px">Cor de destaque</div>
+      <div class="ved-swatches" id="capSwP">${HI_COLORS.map((c) => `<button type="button" class="ved-swatch${c.toLowerCase() === hi.toLowerCase() ? " on" : ""}" data-hi="${c}" style="background:${c}" title="${c}" aria-label="Cor ${c}"></button>`).join("")}</div>
+      <div class="ved-inrow"><label for="capHiP">Cor</label><input type="color" id="capHiP" value="${hi}"></div>
+      <div class="ved-inrow"><label for="capChunkP">Palavras por linha</label><select id="capChunkP">${CHUNK_OPTS.map((c) => `<option value="${c}"${c === num(o.chunk, 6) ? " selected" : ""}>${esc(CHUNK_LABEL[c])}</option>`).join("")}</select></div>
+      <button class="ved-linkbtn" id="capResync">↻ re-sincronizar com áudio</button>
+      <p class="ved-hint">${ws.length} palavra(s) sincronizada(s). Re-fatiar é local (sem chamada ao servidor) e preserva os tempos.</p>` : ""}`;
+  }
+  function bindCapProps(body, it) {
+    const o = it.item;
+    const modo = document.getElementById("capMode");
+    if (modo) modo.onchange = (e) => cset("modo legenda", () => o.mode = e.target.value);
+    const cor = document.getElementById("capHiP");
+    if (cor) cor.oninput = (e) => { o.hi = String(e.target.value).toUpperCase(); marcaSwP(o.hi); renderPreview(); scheduleSave(); };
+    const sw = document.getElementById("capSwP");
+    if (sw) sw.onclick = (e) => { const b = e.target.closest("[data-hi]"); if (!b) return; cset("cor de destaque", () => o.hi = b.dataset.hi); marcaSwP(b.dataset.hi); if (cor) cor.value = b.dataset.hi; };
+    const ch = document.getElementById("capChunkP");
+    if (ch) ch.onchange = (e) => resliceCaptionGroup(it, num(e.target.value, 6));
+    const rs = document.getElementById("capResync");
+    if (rs) rs.onclick = () => openCapModal({ source: "audio", file: (St.capLast || {}).file, start: num(o.start), mode: capMode(o), chunk: num(o.chunk, 6), hi: capHi(o), position: capPos(o) });
+  }
+  function marcaSwP(cor) {
+    const box = document.getElementById("capSwP"); if (!box) return;
+    box.querySelectorAll("[data-hi]").forEach((b) => b.classList.toggle("on", b.dataset.hi.toLowerCase() === String(cor).toLowerCase()));
+  }
+  /** Posição do item deduzida do `transform.y` (o servidor a converte na ida; a volta é só para
+   *  reabrir o modal no mesmo lugar). */
+  function capPos(o) {
+    const y = num((o.transform || {}).y, .82);
+    return y <= .3 ? "top" : y >= .7 ? "bottom" : "middle";
+  }
+  /** Re-fatia LOCALMENTE o grupo de legendas contíguas que contém `it`, em janelas de `chunk`
+   *  palavras. Nenhuma chamada ao servidor: as palavras já estão no item e a régua da janela é a
+   *  mesma dos dois lados. `chunk 0` une o grupo numa janela só — a divisão por LARGURA de linha
+   *  existe apenas na geração pelo servidor, que é quem tem a fonte do Pillow para medir. */
+  function resliceCaptionGroup(it, chunk) {
+    const tr = it.track && it.track.etrack; if (!tr) return;
+    const grupo = capGroup(tr, it.item);
+    const words = grupo.flatMap((x) => capWords(x)).sort((a, b) => num(a.start_s) - num(b.start_s));
+    if (!words.length) return toast("nenhuma palavra sincronizada para re-fatiar");
+    const modelo = it.item, i0 = tr.items.indexOf(grupo[0]);
+    const novos = [];
+    for (let i = 0; i < words.length; i += (chunk || words.length)) {
+      const ws = chunkOf(words, chunk, i).ws.map((w) => ({ ...w }));
+      if (!ws.length) break;
+      novos.push({
+        ...clone(modelo), id: newId("cap"), text: ws.map((w) => w.w).join(" "),
+        start: num(ws[0].start_s), end: num(ws[ws.length - 1].end_s), chunk, words: ws,
+      });
+    }
+    commit("re-fatiar legendas", () => {
+      tr.items = tr.items.filter((x) => !grupo.includes(x));
+      tr.items.splice(Math.max(i0, 0), 0, ...novos);
+      St.selection = novos.length ? [novos[0].id] : [];
+    }, { panel: true });
+  }
+  /** Itens de legenda CONTÍGUOS (fim de um = início do seguinte) com palavras, em torno de `alvo`.
+   *  É o que o usuário enxerga como "a legenda daquela fala" — re-fatiar uma janela sozinha
+   *  deixaria as vizinhas com o tamanho antigo. */
+  function capGroup(tr, alvo) {
+    const comWords = (tr.items || []).filter((x) => capWords(x).length).sort((a, b) => num(a.start) - num(b.start));
+    const i = comWords.indexOf(alvo); if (i < 0) return [alvo];
+    let a = i, b = i;
+    while (a > 0 && Math.abs(num(comWords[a - 1].end) - num(comWords[a].start)) <= 1e-3) a--;
+    while (b < comWords.length - 1 && Math.abs(num(comWords[b].end) - num(comWords[b + 1].start)) <= 1e-3) b++;
+    return comWords.slice(a, b + 1);
   }
   /** Seção "Efeitos" das Propriedades de texto/legenda: o que está ativo, com intensidade e ✕.
    *  Aplicar efeito novo continua sendo pelo painel Efeitos, à esquerda. */
@@ -1096,7 +1492,9 @@ Studio.register("edit", (ctx) => {
   function bindSlider(id, apply, label, live) { const inp = document.getElementById(id); if (!inp) return; inp.oninput = () => { apply(num(inp.value)); if (live) live(num(inp.value)); else renderPreview(); const o = document.getElementById(id + "v"); if (o && !live) o.textContent = inp.value; }; inp.onchange = () => { snapshot(label); setStatus("dirty"); scheduleSave(); }; }
   function cset(label, fn) { snapshot(label); fn(); setStatus("dirty"); scheduleSave(); renderPreview(); renderTimeline(); }
   function setItemDur(it, v) { if (it.kind === "video") { it.clip.out = num(it.clip.in) + Math.max(v, .05) * num(it.clip.speed, 1); } else { it.item.end = num(it.item.start) + Math.max(v, .2); } }
-  function setItemStart(it, v) { v = Math.max(v, 0); if (it.kind === "video") { ensurePositions(); it.clip.start = v; } else { const d = it.dur; it.item.start = v; it.item.end = v + d; } }
+  // mover pelo campo "Início" também desloca as `words` da legenda (mesma regra do arraste); o
+  // TRIM (`startTrim`, "Início"/"Fim" do texto) não mexe nelas: elas são tempos do ÁUDIO.
+  function setItemStart(it, v) { v = Math.max(v, 0); if (it.kind === "video") { ensurePositions(); it.clip.start = v; } else { const d = it.dur, de = num(it.item.start); it.item.start = v; it.item.end = v + d; shiftWords(it.item, v - de); } }
 
   // ============================================================ TIMELINE
   function timelineHTML() {
@@ -1238,7 +1636,8 @@ Studio.register("edit", (ctx) => {
       const ns = num(el.dataset.ns, x0);
       if (it.kind === "video") commit("mover vídeo", () => { it.clip.start = ns; });
       else if (it.kind === "sfx") commit("mover SFX", () => St.timeline.sfx[it.i].at = ns);
-      else { const d = it.dur; commit("mover", () => { it.item.start = ns; it.item.end = ns + d; }); }
+      // mover é DESLOCAR: a legenda leva as palavras junto, senão o karaokê acenderia fora de hora
+      else { const d = it.dur, de = num(it.item.start); commit("mover", () => { it.item.start = ns; it.item.end = ns + d; shiftWords(it.item, ns - de); }); }
     };
     document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
   }
@@ -1277,7 +1676,7 @@ Studio.register("edit", (ctx) => {
   }
   function duplicateSelection() {
     if (!St.selection.length) return;
-    commit("duplicar", () => St.selection.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { const i = St.timeline.clips.findIndex((x) => x.id === u); const d = clone(it.clip); d.id = newId("c"); St.timeline.clips.splice(i + 1, 0, d); } else if (it.kind === "sfx") St.timeline.sfx.push({ ...clone(it.sfx), at: num(it.sfx.at) + .2 }); else if (it.item && it.track) { const d = clone(it.item); d.id = newId("it"); d.start = num(d.start) + .3; d.end = num(d.end) + .3; it.track.items.push(d); } }));
+    commit("duplicar", () => St.selection.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { const i = St.timeline.clips.findIndex((x) => x.id === u); const d = clone(it.clip); d.id = newId("c"); St.timeline.clips.splice(i + 1, 0, d); } else if (it.kind === "sfx") St.timeline.sfx.push({ ...clone(it.sfx), at: num(it.sfx.at) + .2 }); else if (it.item && it.track) { const d = clone(it.item); d.id = newId("it"); d.start = num(d.start) + .3; d.end = num(d.end) + .3; shiftWords(d, .3); it.track.items.push(d); } }));
   }
   /** Exclui qualquer seleção — inclusive a música e o ÚLTIMO clipe. A montagem pode ficar vazia:
    *  quem exige clipe é a exportação (`startRender`), não a edição. Os itens são resolvidos ANTES
