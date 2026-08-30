@@ -228,6 +228,17 @@ def preset_block(preset_id: str) -> str:
     )
 
 
+def valid_preset(preset: str | None) -> str | None:
+    """Valida um id de preset vindo do cliente. `None` = "sem preset" (sempre aceito).
+
+    Fonte única de verdade é `REALISM_PRESETS`: nenhum router ou serviço mantém uma segunda lista
+    de ids à mão. O `ValueError` vira 422 nos bodies de geração — antes de qualquer chamada ao CLI.
+    """
+    if preset is not None and preset not in REALISM_PRESETS:
+        raise ValueError(f"preset desconhecido: {preset} — válidos: {', '.join(REALISM_PRESETS)}")
+    return preset
+
+
 def _role_text(kind: str, preset: str | None) -> str:
     """Papel do bot + bloco do preset. Sem preset, devolve o papel intocado (invariante do gate W3:
     o texto enviado ao CLI fica byte-idêntico ao de antes desta extensão)."""

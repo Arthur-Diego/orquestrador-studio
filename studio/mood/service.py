@@ -127,22 +127,32 @@ def _ui_hint(model: str) -> str:
 
 def generate_prompt(pid: str, mode: str = "images", instruction: str = "", image_ids: list[str] | None = None,
                     purpose: str = "", tone: str = "", reference: str = "", model: str = "nano_banana_2",
-                    variation: int = 0, no_people: bool = True, explore_prompt: str = "") -> dict:
+                    variation: int = 0, no_people: bool = True, explore_prompt: str = "",
+                    preset: settings.PresetArg = settings.PRESET_UNSET) -> dict:
     """mode: 'template' (sem Claude), 'brief' (Claude, só texto) ou 'images' (Claude olha as imagens de vibe).
 
     `no_people` (padrão marcado) é a única restrição da aula 009 e vai explícita para o bot;
     `explore_prompt` é o prompt copiado do Explore, preservado como base do prompt de vibe.
+
+    `preset` (`[extensão]`, opt-in) é o preset de realismo: ausente resolve o default da ação
+    `mood`, que de fábrica é `None` — sem preset, o texto enviado ao CLI e o registro gravado são
+    os de antes desta extensão.
     """
     root = project_dir(pid)
+    preset, explicit = settings.resolve_preset("mood", pid, preset)
+    # Sem preset a chamada ao prompter fica exatamente como era (invariante opt-in do gate W3).
+    kw = {"preset": preset} if preset else {}
     brief = _brief(root, {"purpose": purpose, "tone": tone, "reference": reference, "instruction": instruction,
                           "explore_prompt": explore_prompt, "no_people": no_people})
     if mode == "template":
-        res = prompter.fallback_template("mood", brief, variation, no_people)
+        # FDD §4: só o preset ESCOLHIDO mexe no template; o resolvido por default o deixa intacto.
+        res = prompter.fallback_template("mood", brief, variation, no_people,
+                                         **({"preset": explicit} if explicit else {}))
         images = []
     elif mode == "brief":
         if not prompter.available():
             raise RuntimeError("Claude CLI indisponível — use o modo template ou instale o Claude Code")
-        res = prompter.from_brief("mood", brief)
+        res = prompter.from_brief("mood", brief, **kw)
         images = []
     elif mode == "images":
         ids = list(image_ids or [])[:MAX_VIBE_IMAGES]
@@ -155,14 +165,17 @@ def generate_prompt(pid: str, mode: str = "images", instruction: str = "", image
         if missing:
             raise ValueError(f"imagem de vibe inexistente: {', '.join(missing)}")
         paths = [root / VIBE_STEP / "candidates" / by_id[i]["file"] for i in ids]
-        res = prompter.from_images("mood", paths, instruction, brief)
+        res = prompter.from_images("mood", paths, instruction, brief, **kw)
         images = ids
     else:
         raise ValueError("mode deve ser template, brief ou images")
     res = prompter.enforce_mood_rules(res, no_people)
     entry = {"mode": mode, "instruction": instruction, "images": images, "model": model, "aspect_ratio": "16:9",
              "no_people": no_people, "explore_prompt": explore_prompt,
-             "ui_hint": _ui_hint(model), "created": datetime.now().isoformat(timespec="seconds"), **res}
+             "ui_hint": _ui_hint(model), "created": datetime.now().isoformat(timespec="seconds"), **res,
+             # `[extensão]`: o preset resolvido da requisição, também no histórico (FDD §7). Vem
+             # depois de `**res` porque o template não devolve a chave.
+             "preset": preset}
     hist = prompt_history(pid)
     hist.insert(0, entry)
     (root / "mood" / "prompts.json").write_text(json.dumps(hist[:50], ensure_ascii=False, indent=1))

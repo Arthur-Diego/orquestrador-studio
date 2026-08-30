@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Campo `preset` aditivo nos 3 endpoints de geração de prompt
 type: backend
 complexity: medium
@@ -69,18 +69,18 @@ saibam qual preset foi de fato aplicado.
 
 ## Subtasks
 
-- [ ] 3.1 Acrescentar o campo `preset` (nullable, distinguindo ausente de `null`) aos modelos
+- [x] 3.1 Acrescentar o campo `preset` (nullable, distinguindo ausente de `null`) aos modelos
       `PromptGenReq` de mood e base e ao `VideoPromptReq` do storyboard.
-- [ ] 3.2 Implementar a validação de id desconhecido → 422 nos três routers, antes da chamada ao
+- [x] 3.2 Implementar a validação de id desconhecido → 422 nos três routers, antes da chamada ao
       serviço, com mensagem citando os ids válidos.
-- [ ] 3.3 Propagar `preset` por `studio/mood/service.py:generate_prompt`, incluindo a resolução
+- [x] 3.3 Propagar `preset` por `studio/mood/service.py:generate_prompt`, incluindo a resolução
       do default por `settings.preset_default_for("mood", pid)` quando o campo vier ausente.
-- [ ] 3.4 Idem em `studio/base/service.py:generate_prompt`, cobrindo os três caminhos de chamada
+- [x] 3.4 Idem em `studio/base/service.py:generate_prompt`, cobrindo os três caminhos de chamada
       ao prompter e o caminho `template`.
-- [ ] 3.5 Idem em `studio/storyboard/service.py:video_prompt` (ação `motion`).
-- [ ] 3.6 Gravar `preset` nos registros de `mood/prompts.json` e `base/prompts.json`.
-- [ ] 3.7 Escrever os testes da seção `## Tests`.
-- [ ] 3.8 Rodar ruff + suíte completa e confirmar zero regressão nas três etapas.
+- [x] 3.5 Idem em `studio/storyboard/service.py:video_prompt` (ação `motion`).
+- [x] 3.6 Gravar `preset` nos registros de `mood/prompts.json` e `base/prompts.json`.
+- [x] 3.7 Escrever os testes da seção `## Tests`.
+- [x] 3.8 Rodar ruff + suíte completa e confirmar zero regressão nas três etapas.
 
 ## Implementation Details
 
@@ -145,52 +145,52 @@ Detalhes já verificados no código (usar como mapa, conferir antes de editar):
 Sem `_tests.md` neste workflow: casos concretos inline. Claude fakeado pelo padrão de
 `tests/test_base_api.py` (monkeypatch de `prompter.BIN` + `prompter.subprocess.run`).
 
-- [ ] **T3.1 — body antigo continua 200 (base).** `POST .../base/prompts/generate` com
+- [x] **T3.1 — body antigo continua 200 (base).** `POST .../base/prompts/generate` com
       `{"mode": "images"}` (sem `preset`) → 200, resposta com as mesmas chaves de hoje mais
       `"preset": None`, e o prompt capturado no fake **não** contém nenhum nome de câmera do
       catálogo.
-- [ ] **T3.2 — preset explícito chega ao CLI (base).** Mesmo endpoint com
+- [x] **T3.2 — preset explícito chega ao CLI (base).** Mesmo endpoint com
       `{"mode": "images", "preset": "arri-natural-narrative"}` → 200 com
       `"preset": "arri-natural-narrative"`, e o prompt capturado contém "ARRI Alexa Mini LF".
-- [ ] **T3.3 — `null` explícito desliga (base).** Com um override global gravado
+- [x] **T3.3 — `null` explícito desliga (base).** Com um override global gravado
       (`set_global_preset("base", "documentary-street")`), um body `{"mode": "images",
       "preset": None}` → 200 com `"preset": None` e prompt sem termos de rig; enquanto o mesmo
       body **sem** o campo → 200 com `"preset": "documentary-street"` e prompt com "Blackmagic
       Pocket 6K Pro". Este é o caso que prova a distinção ausente × `null`.
-- [ ] **T3.4 — 422 antes do CLI (base).** Body `{"mode": "images", "preset": "nao-existe"}` →
+- [x] **T3.4 — 422 antes do CLI (base).** Body `{"mode": "images", "preset": "nao-existe"}` →
       422; a mensagem cita ao menos um id válido; e o fake de `subprocess.run` registra
       **zero** chamadas.
-- [ ] **T3.5 — histórico da base grava o preset.** Após um generate com
+- [x] **T3.5 — histórico da base grava o preset.** Após um generate com
       `preset="red-commercial-precision"`, `GET` do histórico (ou leitura direta de
       `projects/<pid>/base/prompts.json`) traz o campo `preset` com esse id no registro mais
       recente, e os campos `provenance`/`mood_refs`/`palette` continuam presentes.
-- [ ] **T3.6 — matriz de erro da base intacta.** Repetir as asserções já existentes: 409 com
+- [x] **T3.6 — matriz de erro da base intacta.** Repetir as asserções já existentes: 409 com
       `prompter.BIN = None`, 200 com `mode="template"`, 422 com `mode="magico"`, 502 quando
       `subprocess.run` levanta — todas continuam valendo com o campo `preset` presente no body.
-- [ ] **T3.7 — `template` só usa preset explícito.** `{"mode": "template", "preset":
+- [x] **T3.7 — `template` só usa preset explícito.** `{"mode": "template", "preset":
       "red-commercial-precision"}` → o prompt devolvido tem `Camera:` com "RED V-Raptor";
       `{"mode": "template"}` com override global configurado → template byte-idêntico ao atual
       (contém "RED Komodo 6K, 50mm lens, T2.8").
-- [ ] **T3.8 — mood: body antigo e preset explícito.** `POST .../mood/prompts/generate` com
+- [x] **T3.8 — mood: body antigo e preset explícito.** `POST .../mood/prompts/generate` com
       `{"mode": "brief"}` → 200 com `"preset": None`; com `{"mode": "brief", "preset":
       "sony-venice-night"}` → 200 com esse preset e prompt contendo "Sony Venice 2".
-- [ ] **T3.9 — mood: 422 e histórico.** `preset` desconhecido → 422 sem chamar o CLI; após um
+- [x] **T3.9 — mood: 422 e histórico.** `preset` desconhecido → 422 sem chamar o CLI; após um
       generate com preset, o registro no topo de `projects/<pid>/mood/prompts.json` tem o campo
       `preset`.
-- [ ] **T3.10 — storyboard: preset no `video_prompt`.** No nível de serviço (estilo
+- [x] **T3.10 — storyboard: preset no `video_prompt`.** No nível de serviço (estilo
       `tests/test_storyboard_service.py`, com `monkeypatch.setattr(sb.prompter, ...)`):
       `sb.video_prompt(pid, "cena01", "an astronaut walking", {"mode": "single"})` sem preset
       devolve `preset: None` e chama o prompter com `preset=None`; com
       `preset="anamorphic-film-look"` devolve esse id e repassa ao prompter.
-- [ ] **T3.11 — storyboard: 422 por HTTP.** `POST .../storyboard/video-prompt` com
+- [x] **T3.11 — storyboard: 422 por HTTP.** `POST .../storyboard/video-prompt` com
       `{"scene_id": "cena01", "description": "x", "preset": "nao-existe"}` → 422.
-- [ ] **T3.12 — storyboard: fallback do Claude preserva coerência.** Quando o prompter levanta
+- [x] **T3.12 — storyboard: fallback do Claude preserva coerência.** Quando o prompter levanta
       (caminho do `except Exception` de `video_prompt`), a resposta ainda traz a chave `preset`
       com o id pedido, sem 500.
-- [ ] **T3.13 — `scenes.json` intocado.** Após um `video-prompt` com preset, o arquivo
+- [x] **T3.13 — `scenes.json` intocado.** Após um `video-prompt` com preset, o arquivo
       `projects/<pid>/storyboard/scenes.json` tem exatamente as mesmas chaves de antes
       (nenhum campo novo) — prova da amenda A5.
-- [ ] **T3.14 — a tela da etapa 2 continua sem geração.** `tests/test_mood_view.py` segue verde
+- [x] **T3.14 — a tela da etapa 2 continua sem geração.** `tests/test_mood_view.py` segue verde
       sem edição: `"mood/prompts/generate"` continua ausente de `studio/etapas/mood/view.js`.
 
 ## Success Criteria
@@ -200,3 +200,21 @@ Sem `_tests.md` neste workflow: casos concretos inline. Claude fakeado pelo padr
 - Nenhum teste pré-existente das três etapas alterado (verificável no diff: só adições).
 - Nenhuma edição em `studio/app.py`, `studio/steps.py`, `studio/web/*` ou `studio/moodboards/*`.
 - `.venv/bin/ruff check studio tests scripts` limpo e `.venv/bin/pytest -q` verde.
+
+## Notas de execução (2026-08-30)
+
+- **Correção de premissa do T3.7/R6.** `base` em `mode="template"` não passava por
+  `prompter.fallback_template`: usa `_template_result`/`situation_prompt`, que não tem linha
+  `Camera:` e nunca conteve `"RED Komodo 6K, 50mm lens, T2.8"` (essa string é do
+  `prompter._sections`, ou seja do template de MOOD). Implementada a R6 ao pé da letra — com
+  preset explícito a base passa a usar `prompter.fallback_template("base", …)`, de onde sai
+  `Camera: RED V-Raptor`; sem preset explícito `_template_result` fica intocado. A metade
+  "byte-idêntico" do T3.7 é provada por comparação antes/depois de gravar o override; a string
+  literal é verificada no template de mood, onde ela de fato vive.
+- **Semântica do `"preset"` na resposta**: é o preset RESOLVIDO da requisição, uniforme nos três
+  endpoints — única leitura que satisfaz o T3.12 (fallback do storyboard devolve o id pedido).
+- **O prompter só recebe `preset=` quando há preset.** Testes pré-existentes (`test_api.py`,
+  `test_mood_service.py`, `test_storyboard_service.py`) fakeiam `from_brief`/`from_images` com
+  assinaturas sem o kwarg; passar sempre quebraria 5 deles, o que a R1 proíbe.
+- **T3.14** não é teste novo: `tests/test_mood_view.py` seguiu verde sem edição e
+  `"mood/prompts/generate"` continua ausente de `studio/etapas/mood/view.js` (0 ocorrências).

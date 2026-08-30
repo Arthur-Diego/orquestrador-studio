@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ... import higgsfield as hf
-from ...common import prompter
+from ...common import prompter, settings
 from ...mood import service as mood
 from ...refs import service as refs
 
@@ -76,6 +76,19 @@ class PromptGenReq(BaseModel):
     no_people: bool = True
     #: "Copiar o prompt dessa pessoa" (Explore do Midjourney): base do prompt de vibe.
     explore_prompt: str = ""
+    #: `[extensão]` preset de realismo (FDD §5). Três estados: campo AUSENTE = o serviço resolve o
+    #: default da ação; `null` = sem preset; `"<id>"` = usar esse. Id fora do catálogo → 422 aqui,
+    #: pelo validador, ou seja antes de o endpoint rodar e chamar o Claude CLI.
+    preset: str | None = None
+
+    @field_validator("preset")
+    @classmethod
+    def _known_preset(cls, v: str | None) -> str | None:
+        return prompter.valid_preset(v)
+
+    def preset_arg(self) -> settings.PresetArg:
+        """Ausente ≠ `null`: sem o campo no body, quem resolve o default é o serviço."""
+        return self.preset if "preset" in self.model_fields_set else settings.PRESET_UNSET
 
 
 @router.get("/api/projects/{pid}/mood/vibe")
@@ -107,7 +120,8 @@ def mood_vibe_downloads(pid: str, req: DownloadsReq):
 def mood_prompt_generate(pid: str, req: PromptGenReq):
     try:
         return mood.generate_prompt(pid, req.mode, req.instruction, req.image_ids, req.purpose, req.tone,
-                                    req.reference, req.model, req.variation, req.no_people, req.explore_prompt)
+                                    req.reference, req.model, req.variation, req.no_people, req.explore_prompt,
+                                    preset=req.preset_arg())
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except RuntimeError as e:

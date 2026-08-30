@@ -98,6 +98,26 @@ PRESET_CONFIG_KEY = "prompter_presets"
 PRESET_ACTIONS: dict[str, str | None] = {"mood": None, "base": None, "motion": None}
 
 
+class PresetUnset:
+    """Sentinela de "campo `preset` AUSENTE no body" — estado distinto de `None`.
+
+    Os bodies de geração têm três estados (FDD §5): ausente = resolver o default da ação;
+    `null` = sem preset, mesmo havendo override configurado; `"<id>"` = usar esse. Colapsar
+    ausente e `null` em `None` apagaria a rota de fuga do usuário, por isso a distinção é um
+    valor de verdade que atravessa router → serviço.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - só ajuda em traceback/teste
+        return "PRESET_UNSET"
+
+
+PRESET_UNSET = PresetUnset()
+#: Tipo do argumento `preset` que atravessa os routers de etapa e os serviços.
+PresetArg = str | None | PresetUnset
+
+
 # ---------- leitura/escrita de config ----------
 def _read(path: Path) -> dict:
     try:
@@ -238,6 +258,21 @@ def preset_default_for(kind: str, pid: str | None = None) -> dict:
             return {"kind": kind, "preset": preset, "source": source}
     code = PRESET_ACTIONS[kind]
     return {"kind": kind, "preset": code if code in prompter.REALISM_PRESETS else None, "source": "code"}
+
+
+def resolve_preset(kind: str, pid: str | None = None,
+                   preset: PresetArg = PRESET_UNSET) -> tuple[str | None, str | None]:
+    """Preset efetivo de UMA geração `[extensão]`: devolve `(resolvido, explícito)`.
+
+    `resolvido` é o que vai para o prompter e para a resposta: com o campo ausente sai de
+    `preset_default_for(kind, pid)` (projeto → global → código), senão é o próprio valor pedido.
+    `explícito` é só o que o cliente escolheu de propósito (`None` quando o valor veio apenas da
+    resolução de default) — apenas ele pode mexer no template determinístico (FDD §4), para que o
+    fallback sem Claude continue byte-idêntico ao do curso quando ninguém pediu preset.
+    """
+    if isinstance(preset, PresetUnset):
+        return preset_default_for(kind, pid)["preset"], None
+    return preset, preset
 
 
 def set_global_preset(kind: str, preset: str | None) -> dict:

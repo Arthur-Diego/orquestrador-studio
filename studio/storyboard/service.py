@@ -854,14 +854,19 @@ def _video_frame_paths(root: Path, mode: str, frames: dict) -> list[Path]:
     return out
 
 
-def video_prompt(pid: str, scene_id: str, description: str, frames: dict | None = None) -> dict:
+def video_prompt(pid: str, scene_id: str, description: str, frames: dict | None = None,
+                 preset: settings.PresetArg = settings.PRESET_UNSET) -> dict:
     """Gera o PROMPT de vídeo cinematográfico da cena (Claude via papel `motion` + template agnóstico).
 
     Com imagem(ns) da cena, o bot olha os frames (`from_images`); sem imagem, usa só o brief
     (`from_brief`). Sem Claude no PATH (ou falha do bot), cai no template determinístico preenchido.
-    Devolve `{prompt, source, seconds}` — `seconds` é a duração sugerida do clipe (10 s para
-    transições, 5 s para cenas), o default que a tela pré-seleciona no custo/geração."""
+    Devolve `{prompt, source, seconds, preset}` — `seconds` é a duração sugerida do clipe (10 s
+    para transições, 5 s para cenas), o default que a tela pré-seleciona no custo/geração, e
+    `preset` (`[extensão]`, opt-in) é o preset de realismo RESOLVIDO para esta requisição: ausente
+    resolve o default da ação `motion` (`None` de fábrica), `None` desliga, id usa esse. Nada disso
+    entra no `scenes.json`: o schema da cena é o do ADR-018/022 (amenda A5 do FDD)."""
     root = project_dir(pid)
+    preset, _explicit = settings.resolve_preset("motion", pid, preset)
     _valid_scene_id(scene_id)
     frames = frames or {}
     mode = _valid_mode(frames.get("mode") or "single")
@@ -873,16 +878,20 @@ def video_prompt(pid: str, scene_id: str, description: str, frames: dict | None 
     instruction = _video_instruction(desc, mode)
     seconds = VIDEO_DURATIONS[1] if mode == "start_end" else VIDEO_DURATIONS[0]
     images = _video_frame_paths(root, mode, frames)
+    # Sem preset a chamada ao prompter fica exatamente como era (invariante opt-in do gate W3).
+    kw = {"preset": preset} if preset else {}
     if prompter.available():
         try:
-            res = (prompter.from_images("motion", images, instruction=instruction) if images
-                   else prompter.from_brief("motion", {"instruction": instruction}))
+            res = (prompter.from_images("motion", images, instruction=instruction, **kw) if images
+                   else prompter.from_brief("motion", {"instruction": instruction}, **kw))
             log.info("video_prompt %s", {"pid": pid, "scene": scene_id, "mode": mode, "source": "claude"})
-            return {"prompt": res["prompt"], "source": "claude", "seconds": seconds}
+            return {"prompt": res["prompt"], "source": "claude", "seconds": seconds, "preset": preset}
         except Exception as e:  # noqa: BLE001  — bot indisponível/erro cai no template determinístico
             log.warning("video_prompt claude falhou, usando template: %s", e)
     log.info("video_prompt %s", {"pid": pid, "scene": scene_id, "mode": mode, "source": "template"})
-    return {"prompt": instruction, "source": "template", "seconds": seconds}
+    # O template do motion não tem linhas técnicas onde encaixar o rig, mas a resposta continua
+    # dizendo qual preset a requisição resolveu — a UI não fica sem saber no caminho de fallback.
+    return {"prompt": instruction, "source": "template", "seconds": seconds, "preset": preset}
 
 
 # ---------- geração de vídeo via CLI (Kling) ----------
