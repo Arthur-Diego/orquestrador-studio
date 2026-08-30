@@ -169,6 +169,11 @@
      `layerBase`. As regras que citam `.ved-stage>video` valem para o clipe da VÍDEO 1, que recebe
      as classes no próprio <video> (nele os pseudo-elementos não pintam — limitação do elemento). */
   .ved-layer.text,.ved-layer.caption{text-shadow:var(--tx-shadow,none)}
+  /* legendas com karaokê [extensão]: a linha inteira é UM inline-block e cada palavra um span que
+     só muda de `color` (paintKaraoke). `pointer-events:none` deixa o arraste da camada com o
+     `.ved-layer`, e não com a palavra clicada. */
+  .ved-cap-k{display:inline-block;white-space:normal;pointer-events:none}
+  .ved-cap-k span[data-cap-widx]{transition:color .06s linear}
   .ved-layer.fx-glow{text-shadow:0 0 calc(4px + var(--fx-i,.5) * 20px) currentColor}
   .ved-layer.fx-chromatic{text-shadow:calc(var(--fx-i,.5) * -3px) 0 red,calc(var(--fx-i,.5) * 3px) 0 cyan}
   .ved-layer.fx-rgbsplit{text-shadow:0 calc(var(--fx-i,.5) * -3px) red,0 calc(var(--fx-i,.5) * 3px) cyan}
@@ -235,6 +240,14 @@
   .ved-inrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:7px 0}
   .ved-inrow label{font-size:10.5px;color:var(--vtx4)}
   .ved-inrow select,.ved-inrow input[type=text],.ved-inrow input[type=color]{background:var(--vinput);border:1px solid var(--vbd2);border-radius:6px;color:var(--vtx2);padding:4px 6px;font:inherit;font-size:11px}
+  /* controles do modal "Gerar legendas" e do bloco Legenda das Propriedades [extensão] */
+  .ved-radios{display:flex;gap:10px}
+  .ved-cap-src{font-size:11px;color:var(--vtx4);margin:-4px 0 8px}
+  .ved-swatches{display:flex;gap:6px;margin:4px 0}
+  .ved-swatch{width:22px;height:22px;border-radius:6px;border:2px solid transparent;cursor:pointer}
+  .ved-swatch.on{border-color:var(--vtx)}
+  /* campo que o servidor apontou no 422 — usa o accent do tema, nunca uma cor solta */
+  .ved-field-err{outline:1px solid var(--vac);outline-offset:1px}
   .ved-speedgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}
   .ved-speedgrid button{border:1px solid var(--vbd2);background:var(--vcard);color:var(--vtx3);border-radius:6px;padding:6px 0;font-size:11px}
   .ved-speedgrid button.on{border-color:var(--vac);background:var(--vacd);color:var(--vac)}
