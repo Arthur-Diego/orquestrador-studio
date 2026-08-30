@@ -33,11 +33,22 @@ Todos os status abaixo foram **verificados em execução**, com `TestClient` sob
 | 4 | BAIXA | Exemplo de resposta da seção 6 (linhas 199-201): `"last": {"stage": "start", "logged_in": true}`. | Na resposta do POST o `last` é **`{}`**: `start_import_url` devolve `job_status(pid)` no mesmo instante em que sobe a thread, e `job["events"]` ainda está vazio. O evento `start` com `logged_in` só aparece no `GET .../refs/job` seguinte (e nem sempre no primeiro poll). O exemplo do FDD não é reproduzível como resposta do POST. | FDD 199-201 · `service.py:287-288, 298` · verificado: `{"state":"running", ..., "last":{}, "error":null}` |
 | 5 | BAIXA | Seção 5, linha 107: "**Router valida `pid`**; service valida/classifica a URL (síncrono, ANTES de criar o job)". A seção 6 não declara precedência entre 404 e 422. | Quem valida o `pid` é o **service**: `start_import_url` chama `project_dir(pid)` na primeira linha e o `router` não faz nenhuma checagem de projeto. Consequência observável: `pid` inexistente **com** URL inválida responde **404**, não 422 — a ordem é projeto → URL → lock. Comportamento razoável, mas não declarado. | FDD 107, 184-190 · `router.py:106-119` · `service.py:260-261` · `app.py:46-49` · verificado |
 | 6 | BAIXA | Seção 8, linha 256: a linha de log por download é `[HH:MM] <term> · N imagens` (separador `·`). | `_log_line` emite `f"{term} — {count} imagens"` — travessão, não `·`. O `·` só aparece na linha final, `concluído · N candidatas`, essa sim idêntica ao FDD (linhas 235 e 256). Divergência puramente textual; a coleção assere só a linha de conclusão. | FDD 235, 256 · `service.py:172-174` |
-| 7 | BAIXA | Seção 7, linha 234: pin inacessível encerra o **job** com `state="error"` e a mensagem crua; a linha 233 reserva o `409` (`RuntimeError`) para job em andamento. | `PinUnavailable` herda de **`RuntimeError`** (`pinterest.py:67`) e a rota traduz `except RuntimeError → 409` (`router.py:118-119`). Hoje é inofensivo — `PinUnavailable` só é levantada dentro da thread, e `start_import_url` a captura antes do `except Exception` genérico. Mas basta alguém antecipar a checagem do pin para o trecho síncrono e o "pin inacessível" viraria **409 "Já existe uma busca em andamento"**. Risco latente, não divergência observável hoje. | FDD 233-234 · `pinterest.py:67` · `service.py:279-282` · `router.py:118-119` |
 | 8 | BAIXA | Seção 6, contrato 3, linhas 213-214: "`pin_url` = URL do pin (pin importado ou o `/pin/` de cada card do board)". | `_download` **canoniza** para `https://www.pinterest.com<path>`. Importando de um subdomínio regional (`https://br.pinterest.com/pin/123/`, formato que o próprio FDD aceita na linha 108), o `pin_url` gravado é `https://www.pinterest.com/pin/123/` — não é literalmente "a URL do pin" que o usuário colou. A URL original fica preservada em `extra.import_url`, como a linha 216 exige, então nada se perde. | FDD 108, 213-216 · `pinterest.py:254-255, 360-363` |
 
 Nenhuma divergência **ALTA**: todas as rotas e todos os status da seção 6 existem na implementação
 e respondem o que o FDD declara.
+
+## Corrigida durante esta auditoria
+
+Uma divergência levantada na primeira passagem foi tratada pela frente de implementação antes do
+fecho deste relatório. Fica registrada porque o contrato da seção 7 a previa e o código não a
+sustentava:
+
+| # | Severidade original | O que o FDD diz | O que o código fazia | Correção |
+| --- | --- | --- | --- | --- |
+| 7 | BAIXA (risco latente) | Seção 7, linha 234: pin inacessível encerra o **job** com `state="error"` e a mensagem crua; a linha 233 reserva o `409` (`RuntimeError`) para job em andamento. | `PinUnavailable` herdava de **`RuntimeError`**, e a rota traduz `except RuntimeError → 409`. Era inofensivo hoje (a exceção só nasce dentro da thread, e `start_import_url` a captura antes do `except Exception` genérico), mas bastaria antecipar a checagem do pin para o trecho síncrono e "pin inacessível" viraria **409 "Já existe uma busca em andamento"**. | `PinUnavailable` passou a herdar de `Exception`, com o porquê no docstring. `service.py` continua capturando-a explicitamente antes do `except Exception`, então o job segue terminando em `state="error"` com a mensagem crua da linha 234. |
+
+Fontes: FDD 233-234 · `pinterest.py:67-76` · `service.py:279-282` · `router.py:118-119`.
 
 ## Sem divergência (verificado item a item)
 

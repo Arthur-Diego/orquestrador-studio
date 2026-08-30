@@ -14,7 +14,7 @@ commit base **`7162c41`**.
 | --- | --- |
 | `refs-import-url.postman_collection.json` | Collection Format v2.1.0 — 25 requests em 3 pastas, 125 blocos de asserção. |
 | `refs-import-url.postman_environment.json` | Ambiente local (`base_url`, `pid`, as URLs de teste, os limites de `max_pins`). |
-| `divergencias.md` | Onde a seção 6 do FDD e o contrato realmente implementado discordam (2 MEDIA, 6 BAIXA, 0 ALTA). |
+| `divergencias.md` | Onde a seção 6 do FDD e o contrato realmente implementado discordam (2 MEDIA, 5 BAIXA, 0 ALTA — mais 1 BAIXA já corrigida pela frente durante a auditoria). |
 
 ## ⚠️ Antes de rodar: isto dispara scraping REAL do Pinterest
 
