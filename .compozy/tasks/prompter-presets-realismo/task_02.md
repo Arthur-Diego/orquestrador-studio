@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Rotas de catálogo e de configuração de preset
 type: backend
 complexity: medium
@@ -59,17 +59,17 @@ por ação (global e por projeto), fechando o padrão ADR-016 no lado da API. As
 
 ## Subtasks
 
-- [ ] 2.1 Declarar o modelo pydantic do body de configuração de preset (`kind` + `preset`
+- [x] 2.1 Declarar o modelo pydantic do body de configuração de preset (`kind` + `preset`
       opcional/nullable), separado do `DefaultReq` de modelos.
-- [ ] 2.2 Implementar `GET /api/prompter/presets`, serializando o catálogo no shape da seção 5 e
+- [x] 2.2 Implementar `GET /api/prompter/presets`, serializando o catálogo no shape da seção 5 e
       montando `defaults` por iteração de `PRESET_ACTIONS`.
-- [ ] 2.3 Tratar a query `pid` (opcional) com validação de projeto existente.
-- [ ] 2.4 Implementar `GET` e `PUT /api/prompter/preset-config` (global).
-- [ ] 2.5 Implementar `PUT` e `DELETE` das rotas por projeto.
-- [ ] 2.6 Converter `ValueError` de settings em 422 com mensagem que cite os ids válidos.
-- [ ] 2.7 Escrever os testes da seção `## Tests`, acrescentando a `tests/test_creditos_api.py`
+- [x] 2.3 Tratar a query `pid` (opcional) com validação de projeto existente.
+- [x] 2.4 Implementar `GET` e `PUT /api/prompter/preset-config` (global).
+- [x] 2.5 Implementar `PUT` e `DELETE` das rotas por projeto.
+- [x] 2.6 Converter `ValueError` de settings em 422 com mensagem que cite os ids válidos.
+- [x] 2.7 Escrever os testes da seção `## Tests`, acrescentando a `tests/test_creditos_api.py`
       (ou a um `tests/test_prompter_api.py` novo, seguindo as fixtures do `conftest.py`).
-- [ ] 2.8 Rodar ruff + suíte completa e confirmar que as rotas antigas de créditos não regridem.
+- [x] 2.8 Rodar ruff + suíte completa e confirmar que as rotas antigas de créditos não regridem.
 
 ## Implementation Details
 
@@ -123,50 +123,50 @@ Pontos de encaixe já verificados no código:
 Sem `_tests.md` neste workflow: casos concretos inline, com o client FastAPI e as fixtures de
 isolamento já usadas em `tests/test_creditos_api.py`.
 
-- [ ] **T2.1 — shape do catálogo.** `GET /api/prompter/presets` → 200; `len(body["presets"]) == 5`;
+- [x] **T2.1 — shape do catálogo.** `GET /api/prompter/presets` → 200; `len(body["presets"]) == 5`;
       o conjunto de `id` é exatamente os 5 ids do `_techspec.md`; cada item tem as chaves `id`,
       `name`, `default`, `desc_pt`, `rig`, `light`, `grade`, `negative`; `rig` tem `camera`,
       `lens`, `format`, `focal`, `aperture`; exatamente um item tem `default is True` e seu `id`
       é `documentary-street`.
-- [ ] **T2.2 — defaults opt-in por ação.** No mesmo body, `body["defaults"]` tem as chaves
+- [x] **T2.2 — defaults opt-in por ação.** No mesmo body, `body["defaults"]` tem as chaves
       `mood`, `base` e `motion`, cada uma valendo `{"preset": None, "source": "code"}`.
-- [ ] **T2.3 — defaults iteram o registro (contrato do handoff).** Registrando no teste
+- [x] **T2.3 — defaults iteram o registro (contrato do handoff).** Registrando no teste
       `settings.PRESET_ACTIONS["storyboard.script"] = "documentary-street"`, uma nova chamada a
       `GET /api/prompter/presets` traz `body["defaults"]["storyboard.script"] ==
       {"preset": "documentary-street", "source": "code"}` — sem nenhuma alteração de código de
       rota. (Restaurar o registro ao fim do teste.)
-- [ ] **T2.4 — `?pid=` reflete o override do projeto.** Com um projeto criado pela fixture e
+- [x] **T2.4 — `?pid=` reflete o override do projeto.** Com um projeto criado pela fixture e
       `PUT /api/projects/{pid}/prompter/preset-config` `{"kind": "base", "preset":
       "sony-venice-night"}`, `GET /api/prompter/presets?pid=<pid>` traz
       `defaults["base"] == {"preset": "sony-venice-night", "source": "project"}`, enquanto
       `GET /api/prompter/presets` (sem pid) segue com `{"preset": None, "source": "code"}`.
-- [ ] **T2.5 — `?pid=` inexistente.** `GET /api/prompter/presets?pid=nao-existe` → 404.
-- [ ] **T2.6 — PUT global persiste.** `PUT /api/prompter/preset-config` com
+- [x] **T2.5 — `?pid=` inexistente.** `GET /api/prompter/presets?pid=nao-existe` → 404.
+- [x] **T2.6 — PUT global persiste.** `PUT /api/prompter/preset-config` com
       `{"kind": "mood", "preset": "arri-natural-narrative"}` → 200 com
       `{"kind": "mood", "preset": "arri-natural-narrative", "source": "global"}`; e o
       `config.json` global no `STATE_DIR` da fixture passa a ter
       `prompter_presets.mood == "arri-natural-narrative"`.
-- [ ] **T2.7 — PUT global não toca `defaults`.** Depois de gravar um default de modelo por
+- [x] **T2.7 — PUT global não toca `defaults`.** Depois de gravar um default de modelo por
       `PUT /api/creditos/config`, um `PUT /api/prompter/preset-config` mantém
       `GET /api/creditos/config` devolvendo o mesmo default de modelo de antes.
-- [ ] **T2.8 — `preset: null` é escolha válida.** `PUT /api/prompter/preset-config` com
+- [x] **T2.8 — `preset: null` é escolha válida.** `PUT /api/prompter/preset-config` com
       `{"kind": "base", "preset": None}` → 200 com `preset` `None` e `source` `"global"`
       (não `"code"`).
-- [ ] **T2.9 — 422 por kind inválido.** `PUT /api/prompter/preset-config` com
+- [x] **T2.9 — 422 por kind inválido.** `PUT /api/prompter/preset-config` com
       `{"kind": "nao-existe", "preset": "documentary-street"}` → 422.
-- [ ] **T2.10 — 422 por preset inválido.** `PUT /api/prompter/preset-config` com
+- [x] **T2.10 — 422 por preset inválido.** `PUT /api/prompter/preset-config` com
       `{"kind": "base", "preset": "preset-que-nao-existe"}` → 422, e a mensagem cita ao menos um
       id válido do catálogo.
-- [ ] **T2.11 — DELETE por projeto limpa o override.** Após `PUT` de projeto com
+- [x] **T2.11 — DELETE por projeto limpa o override.** Após `PUT` de projeto com
       `sony-venice-night` e `DELETE /api/projects/{pid}/prompter/preset-config/base` → 200 com o
       default resolvido sem o override do projeto (`source` diferente de `"project"`).
-- [ ] **T2.12 — 404 nas rotas por projeto.** `PUT /api/projects/nao-existe/prompter/preset-config`
+- [x] **T2.12 — 404 nas rotas por projeto.** `PUT /api/projects/nao-existe/prompter/preset-config`
       e `DELETE /api/projects/nao-existe/prompter/preset-config/base` → 404.
-- [ ] **T2.13 — `GET /api/prompter/preset-config`.** Devolve o bloco de defaults globais com uma
+- [x] **T2.13 — `GET /api/prompter/preset-config`.** Devolve o bloco de defaults globais com uma
       entrada por chave de `PRESET_ACTIONS`.
-- [ ] **T2.14 — catálogo imutável pela API.** Mutar o dict devolvido pelo endpoint (no teste, via
+- [x] **T2.14 — catálogo imutável pela API.** Mutar o dict devolvido pelo endpoint (no teste, via
       o objeto JSON parseado) não altera `prompter.REALISM_PRESETS` — a rota devolve cópia.
-- [ ] **T2.15 — rotas antigas intactas.** `GET /api/creditos/config`, `GET /api/creditos/models` e
+- [x] **T2.15 — rotas antigas intactas.** `GET /api/creditos/config`, `GET /api/creditos/models` e
       `GET /api/creditos` continuam 200 com o mesmo shape (regressão do módulo).
 
 ## Success Criteria

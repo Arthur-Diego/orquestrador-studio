@@ -22,6 +22,14 @@ class DefaultReq(BaseModel):
     variant: str | None = None
 
 
+class PresetReq(BaseModel):
+    """Body das rotas de preset de realismo `[extensão]`. Separado de `DefaultReq` de propósito:
+    aqui a ação chama-se `kind` (chave de `settings.PRESET_ACTIONS`) e `preset` é OBRIGATÓRIO mas
+    anulável — `null` é a escolha explícita "sem preset", distinta de não mandar o campo."""
+    kind: str
+    preset: str | None
+
+
 class SpendReq(BaseModel):
     action: str
     model: str
@@ -112,3 +120,75 @@ def delete_project_config(pid: str, action: str):
     if action not in settings.ACTION_KEYS:
         raise HTTPException(422, f"ação desconhecida: {action}")
     return service.clear_default(action, pid)
+
+
+# ---------- presets de realismo do prompter `[extensão]` (mesmo padrão ADR-016) ----------
+def _preset_catalog() -> list[dict]:
+    """Catálogo no shape da seção 5 do FDD. Cópias em toda profundidade: nenhum cliente (nem outro
+    módulo do processo) consegue mutar `prompter.REALISM_PRESETS` a partir desta resposta."""
+    from ..common import prompter
+    return [{"id": p["id"], "name": p["name"], "default": bool(p.get("default", False)),
+             "desc_pt": p["desc_pt"], "rig": dict(p["rig"]), "light": p["light"],
+             "grade": p["grade"], "negative": list(p["negative"])}
+            for p in prompter.REALISM_PRESETS.values()]
+
+
+def _preset_defaults(pid: str | None = None) -> dict:
+    """`{ação: {preset, source}}` para TODA chave de `settings.PRESET_ACTIONS` (amenda A1 do gate
+    W3) — nunca os três kinds fixos. A ação registrada por outra feature (`storyboard.script`)
+    aparece aqui sozinha, sem mudança de contrato nem nova versão da rota."""
+    resolved = {}
+    for kind in settings.PRESET_ACTIONS:
+        d = settings.preset_default_for(kind, pid)
+        resolved[kind] = {"preset": d["preset"], "source": d["source"]}
+    return resolved
+
+
+def _preset_422(e: ValueError) -> HTTPException:
+    """`ValueError` de settings (kind ou preset inválido) → 422 citando os dois universos válidos."""
+    from ..common import prompter
+    return HTTPException(422, f"{e} (ações: {', '.join(settings.PRESET_ACTIONS)}; "
+                              f"presets: {', '.join(prompter.REALISM_PRESETS)})")
+
+
+@router.get("/api/prompter/presets")
+def prompter_presets(pid: str | None = None):
+    """Catálogo + defaults resolvidos. Sempre 200 (dict em memória, sem CLI); `?pid=` resolve os
+    defaults com o override do projeto e devolve 404 para projeto inexistente."""
+    if pid is not None:
+        from ..refs.service import project_dir
+        project_dir(pid)   # 404 se o projeto não existe
+    return {"presets": _preset_catalog(), "defaults": _preset_defaults(pid)}
+
+
+@router.get("/api/prompter/preset-config")
+def get_preset_config():
+    return {"defaults": _preset_defaults(None)}
+
+
+@router.put("/api/prompter/preset-config")
+def put_preset_config(req: PresetReq):
+    try:
+        return settings.set_global_preset(req.kind, req.preset)
+    except ValueError as e:
+        raise _preset_422(e) from e
+
+
+@router.put("/api/projects/{pid}/prompter/preset-config")
+def put_project_preset_config(pid: str, req: PresetReq):
+    from ..refs.service import project_dir
+    project_dir(pid)
+    try:
+        return settings.set_project_preset(pid, req.kind, req.preset)
+    except ValueError as e:
+        raise _preset_422(e) from e
+
+
+@router.delete("/api/projects/{pid}/prompter/preset-config/{kind}")
+def delete_project_preset_config(pid: str, kind: str):
+    from ..refs.service import project_dir
+    project_dir(pid)
+    try:
+        return settings.clear_project_preset(pid, kind)
+    except ValueError as e:
+        raise _preset_422(e) from e
