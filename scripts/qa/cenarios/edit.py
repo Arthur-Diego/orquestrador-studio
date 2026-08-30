@@ -451,17 +451,27 @@ def texto_preset(page, ctx):
         _restaurar(page, ctx, orig)
 
 
-@caso("C-EDIT-18", "#capGen avisa que a geração automática depende de transcrição")
+@caso("C-EDIT-18", "#capGen abre o modal 'Gerar legendas' (roteiro | áudio, preset, cor) [extensão]")
 def legenda_gerar(page, ctx):
     _painel(page, "captions")
     page.locator("#capGen").click()
-    t = H.esperar_toast(page, "transcrição")
+    m = H.modal(page)
+    m.wait_for()
+    page.wait_for_timeout(400)
+    titulo = (m.locator(".modal-head h3").text_content() or "").strip()
+    tem_roteiro = m.locator("#capScript").count() == 1
+    tem_preset = m.locator("#capPreset option").count() >= 3
+    tem_cor = m.locator("#capHi").count() == 1
     ev = H.evidencia(page, ctx, "C-EDIT-18-capgen", full_page=False)
-    return H.verifica(bool(t), f"toast='{t}'",
-                      f"toast esperado sobre transcrição pendente; observado='{H.toast(page)}'", ev)
+    H.fechar_modal(page)
+    sumiu = not H.modal(page).count() or not H.modal(page).is_visible()
+    return H.verifica("legenda" in titulo.lower() and tem_roteiro and tem_preset and tem_cor and sumiu,
+                      f"modal='{titulo}' roteiro={tem_roteiro} preset={tem_preset} cor={tem_cor}",
+                      f"modal 'Gerar legendas' esperado com #capScript/#capPreset/#capHi; observado titulo='{titulo}' "
+                      f"roteiro={tem_roteiro} preset={tem_preset} cor={tem_cor} fechou={sumiu}", ev)
 
 
-@caso("C-EDIT-19", "painel Legendas oferece adicionar legenda manual (o toast do #capGen manda usar)")
+@caso("C-EDIT-19", "painel Legendas oferece adicionar legenda manual (#capAdd)")
 def legenda_add_manual(page, ctx):
     orig = _tl_api(page, ctx)
     try:
@@ -472,8 +482,8 @@ def legenda_add_manual(page, ctx):
         if not add.count():
             ev = H.evidencia(page, ctx, "C-EDIT-19-legenda-add", full_page=False)
             return H.verifica(False, "",
-                              "painel Legendas só tem '✨ Gerar legendas da narração' (que avisa 'Use + "
-                              f"legenda manual') e os ✕ dos itens — não há como criar legenda manual. "
+                              "painel Legendas só tem '✨ Gerar legendas' e os ✕ dos itens — não há como criar "
+                              f"legenda manual. "
                               f"botões={botoes}", ev)
         add.first.click()
         ok, tl = _esperar_disco(page, ctx, lambda x: len(_track(x, "t_cap").get("items") or []) == 1)
@@ -982,7 +992,7 @@ def duplicar(page, ctx):
         _restaurar(page, ctx, orig)
 
 
-@caso("C-EDIT-42", "#tDel/Delete excluem o clipe e barram a exclusão do último")
+@caso("C-EDIT-42", "#tDel/Delete excluem o clipe — inclusive o último (montagem vazia é editável) [wave 8]")
 def excluir(page, ctx):
     orig = _tl_api(page, ctx)
     try:
@@ -991,19 +1001,18 @@ def excluir(page, ctx):
         ok, tl = _esperar_disco(page, ctx, lambda x: len(x["clips"]) == 1)
         _sel_clipe(page, 0)
         page.keyboard.press("Delete")
-        aviso = H.esperar_toast(page, "ao menos um clipe")
-        page.wait_for_timeout(1200)
-        final = _tl_disco(ctx)
+        ok2, final = _esperar_disco(page, ctx, lambda x: len(x["clips"]) == 0)
+        lanes = page.locator(".ved-lane[data-tid='v1'] .ved-clip[data-uid]").count()
         ev = H.evidencia(page, ctx, "C-EDIT-42-excluir", full_page=False)
-        return H.verifica(ok and bool(aviso) and len(final["clips"]) == 1,
-                          f"1 clipe restante; aviso='{aviso}'",
+        return H.verifica(ok and ok2 and len(final["clips"]) == 0 and lanes == 0,
+                          "último clipe excluído; timeline vazia continua aberta",
                           f"após #tDel={len(tl['clips'])} clipes; após Delete no último="
-                          f"{len(final.get('clips', []))} aviso='{aviso}'", ev)
+                          f"{len(final.get('clips', []))} (esperado 0, wave 8) clipes na faixa={lanes}", ev)
     finally:
         _restaurar(page, ctx, orig)
 
 
-@caso("C-EDIT-43", "#tRipple remove o clipe sem deixar a montagem sem nenhum clipe")
+@caso("C-EDIT-43", "#tRipple remove o clipe e pode esvaziar a montagem (quem exige clipe é a exportação) [wave 8]")
 def ripple(page, ctx):
     orig = _tl_api(page, ctx)
     try:
@@ -1012,14 +1021,12 @@ def ripple(page, ctx):
         ok, tl = _esperar_disco(page, ctx, lambda x: len(x["clips"]) == 1)
         _sel_clipe(page, 0)
         page.locator("#tRipple").click()
-        aviso = H.esperar_toast(page, "ao menos um clipe")
-        page.wait_for_timeout(1500)
-        final = _tl_disco(ctx)
+        ok2, final = _esperar_disco(page, ctx, lambda x: len(x["clips"]) == 0)
         ev = H.evidencia(page, ctx, "C-EDIT-43-ripple", full_page=False)
-        return H.verifica(ok and bool(aviso) and len(final.get("clips", [])) >= 1,
-                          f"ripple removeu 1 clipe e parou em {len(final.get('clips', []))}",
+        return H.verifica(ok and ok2 and len(final.get("clips", [])) == 0,
+                          "ripple até zerar a montagem",
                           f"1º ripple deixou {len(tl['clips'])} clipe(s); 2º ripple deixou "
-                          f"{len(final.get('clips', []))} (esperado ≥1, como no #tDel) toast='{aviso}'", ev)
+                          f"{len(final.get('clips', []))} (esperado 0, wave 8)", ev)
     finally:
         _restaurar(page, ctx, orig)
 

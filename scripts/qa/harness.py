@@ -506,7 +506,12 @@ AUDIT_JS = """
   for (const el of document.querySelectorAll('#main *, .topbar *, .sidebar *')) {
     if (!vis(el)) continue;
     const r = el.getBoundingClientRect();
-    if (r.right > W + 2 && r.left < W && out.fora_do_viewport.length < 15) out.fora_do_viewport.push(desc(el) + ` (right=${Math.round(r.right)} > ${W})`);
+    // conteúdo de um ancestral rolável na horizontal (timeline, tabela larga) é alcançável rolando: não é vazamento
+    let rolavel = false;
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(a).overflowX)) { rolavel = true; break; }
+    }
+    if (!rolavel && r.right > W + 2 && r.left < W && out.fora_do_viewport.length < 15) out.fora_do_viewport.push(desc(el) + ` (right=${Math.round(r.right)} > ${W})`);
     const s = getComputedStyle(el);
     if ((s.overflow === 'hidden' || s.textOverflow === 'ellipsis') && el.scrollWidth > el.clientWidth + 2 &&
         el.children.length === 0 && (el.textContent || '').trim().length > 0 && out.texto_cortado.length < 15)
