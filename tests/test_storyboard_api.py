@@ -1,5 +1,6 @@
 """Contrato HTTP da etapa 4 — Storyboard (FastAPI TestClient), sem rede, sem CLI, sem navegador."""
 import json
+import threading
 
 import pytest
 
@@ -48,7 +49,8 @@ def test_instruction_rules_of_the_lesson(client, pid, base):
     assert client.post(url, json={"kind": "edit", "text": "Make it smaller", "count": 2}).status_code == 422
     assert client.post(url, json={"kind": "sketch", "text": "Make it smaller", "count": 4}).status_code == 422
     presets = client.get(url).json()
-    assert presets["suffix"] == "Keep everything else identical, realistic." and len(presets["kinds"]) == 3
+    # 3 kinds da aula 010 + `edit_area` `[extensão]` (inpaint-marcacao), aditivo.
+    assert presets["suffix"] == "Keep everything else identical, realistic." and len(presets["kinds"]) == 4
 
 
 def test_upload_import_counts_skipped_and_dedupes(client, pid):
@@ -453,3 +455,128 @@ def test_status_exposes_video_models_for_the_animate_modal(client, pid):
     st = client.get(f"/api/projects/{pid}/storyboard").json()
     assert "kling2_6" in st["video_models"] and "kling3_0_turbo" in st["video_models"]
     assert st["video_model_defaults"] == {"single": "kling2_6", "start_end": "kling3_0"}   # ADR-023
+
+
+# ---------- `[extensão]` inpaint-marcacao: rota da marcação e kind `edit_area` ----------
+def _post_annotation(client, pid, color=(9, 9, 9), source_id=None):
+    data = {"source_id": source_id} if source_id else None
+    return client.post(f"/api/projects/{pid}/storyboard/annotate",
+                       files={"file": ("marcacao.png", image_bytes(color=color), "image/png")},
+                       data=data)
+
+
+def _fake_cli(monkeypatch, seen):
+    """Fakes de `hf.*` (ADR-008): sem rede, sem CLI. `seen` acumula os params de cada chamada."""
+    import studio.higgsfield as hf
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    monkeypatch.setattr(hf, "cost", lambda model, params: (seen.append(params), {"credits": 1.0})[-1])
+    monkeypatch.setattr(hf, "generate",
+                        lambda model, params, timeout_s=600: (seen.append(params),
+                                                              {"raw": {}, "urls": ["http://x/a.png"], "id": "job1"})[-1])
+
+    def fake_download(url, dest):
+        from pathlib import Path
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(image_bytes(color=(123, 45, 67)))
+        return dest
+    monkeypatch.setattr(hf, "download", fake_download)
+
+
+def test_annotate_route_returns_the_contract_and_serves_the_file(client, pid, base):
+    """Contrato 1 do FDD: `{id, file, thumb, parent, role, deduped}` e arquivo servível por /files."""
+    r = _post_annotation(client, pid)
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) == {"id", "file", "thumb", "parent", "role", "deduped"}
+    assert body["parent"] == "base" and body["role"] == "annotation" and body["deduped"] is False
+    assert body["file"] == f"storyboard/candidates/{body['id']}.png"
+    assert client.get(f"/files/{pid}/{body['file']}").status_code == 200
+    assert _post_annotation(client, pid).json()["deduped"] is True, "idempotente por SHA-1"
+
+
+def test_annotate_route_error_matrix(client, pid, root):
+    """404 projeto, 409 base ausente, 422 `source_id` inexistente, 413 acima de MAX_UPLOAD_BYTES."""
+    assert _post_annotation(client, "nao-existe").status_code == 404
+    assert _post_annotation(client, pid).status_code == 409, "sem base/base_final.png"
+    make_image(root / "base" / "base_final.png")
+    r = _post_annotation(client, pid, source_id="nao-existe")
+    assert r.status_code == 422 and r.json()["detail"] == "ideia inexistente: nao-existe"
+    from studio.etapas.storyboard.router import MAX_UPLOAD_BYTES
+    grande = client.post(f"/api/projects/{pid}/storyboard/annotate",
+                         files={"file": ("g.png", b"x" * (MAX_UPLOAD_BYTES + 1), "image/png")})
+    assert grande.status_code == 413 and "25 MB" in grande.json()["detail"]
+    ruim = client.post(f"/api/projects/{pid}/storyboard/annotate",
+                       files={"file": ("r.png", b"nao sou imagem", "image/png")})
+    assert ruim.status_code == 422
+    assert ruim.json()["detail"] == "arquivo de marcação inválido (envie o PNG exportado pelo canvas)"
+
+
+def test_edit_area_cost_requires_the_annotation_id(client, pid, base, monkeypatch):
+    _fake_cli(monkeypatch, [])
+    body = {"model": "nano_banana_2", "kind": "edit_area", "text": "make the rope thinner", "count": 1}
+    r = client.post(f"/api/projects/{pid}/storyboard/cost", json=body)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "o modo área marcada exige a marcação salva (annotation_id)"
+
+
+def test_edit_area_cost_refuses_an_unknown_or_common_candidate(client, pid, base, monkeypatch):
+    """`annotation_id` inexistente OU apontando para candidato comum (`role != "annotation"`)."""
+    _fake_cli(monkeypatch, [])
+    client.post(f"/api/projects/{pid}/storyboard/import/upload",
+                files=[("files", ("a.png", image_bytes(color=(2, 2, 2)), "image/png"))])
+    comum = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"][0]["id"]
+    body = {"model": "nano_banana_2", "kind": "edit_area", "text": "make the rope thinner", "count": 1}
+    for aid in ("nao-existe", comum):
+        r = client.post(f"/api/projects/{pid}/storyboard/cost", json={**body, "annotation_id": aid})
+        assert r.status_code == 422 and r.json()["detail"] == f"marcação inexistente: {aid}"
+
+
+def test_edit_area_cost_refuses_an_annotation_of_another_image(client, pid, base, monkeypatch):
+    _fake_cli(monkeypatch, [])
+    client.post(f"/api/projects/{pid}/storyboard/import/upload",
+                files=[("files", ("a.png", image_bytes(color=(2, 2, 2)), "image/png"))])
+    idea = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"][0]["id"]
+    ann = _post_annotation(client, pid).json()          # parent == "base"
+    body = {"model": "nano_banana_2", "kind": "edit_area", "text": "make the rope thinner", "count": 1,
+            "annotation_id": ann["id"], "source_id": idea}
+    r = client.post(f"/api/projects/{pid}/storyboard/cost", json=body)
+    assert r.status_code == 422
+    assert r.json()["detail"] == f"a marcação {ann['id']} pertence a outra imagem; marque a imagem escolhida"
+
+
+def test_edit_area_cost_and_generate_keep_the_current_response_shape(client, pid, base, monkeypatch):
+    """Contratos 2 e 3: `{per_image,total}` e o payload do JobRegistry; a anotação some da galeria."""
+    seen = []
+    _fake_cli(monkeypatch, seen)
+    ann = _post_annotation(client, pid).json()
+    body = {"model": "nano_banana_2", "kind": "edit_area", "text": "make the rope thinner", "count": 1,
+            "annotation_id": ann["id"]}
+    cost = client.post(f"/api/projects/{pid}/storyboard/cost", json=body)
+    assert cost.status_code == 200 and cost.json() == {"per_image": 1.0, "total": 1.0}
+    assert len(seen[-1]["image_references"]) == 2
+    assert seen[-1]["image_references"][0].replace("\\", "/").endswith("base/base_final.png")
+    gen = client.post(f"/api/projects/{pid}/storyboard/generate", json=body)
+    assert gen.status_code == 200 and gen.json()["total"] == 1
+    for _ in range(100):
+        job = client.get(f"/api/projects/{pid}/storyboard/job").json()
+        if job["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    assert job["state"] == "done" and job["added"] == 1
+    ideas = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"]
+    assert len(ideas) == 1 and ann["id"] not in [i["id"] for i in ideas]
+
+
+def test_legacy_kinds_are_unchanged_without_annotation_id(client, pid, base, monkeypatch):
+    """Contrato 2 (compatibilidade): pedido antigo, sem o campo novo, com o mesmo status/mensagem."""
+    seen = []
+    _fake_cli(monkeypatch, seen)
+    body = {"model": "nano_banana_2", "kind": "edit", "text": "Make it smaller", "count": 1}
+    assert client.post(f"/api/projects/{pid}/storyboard/cost", json=body).json() == {"per_image": 1.0, "total": 1.0}
+    assert len(seen[-1]["image_references"]) == 1
+    r = client.post(f"/api/projects/{pid}/storyboard/cost", json={**body, "kind": "draw_to_edit"})
+    assert r.status_code == 422 and "Draw to Edit" in r.json()["detail"]
+    r = client.post(f"/api/projects/{pid}/storyboard/cost", json={**body, "source_id": "nao-existe"})
+    assert r.status_code == 422 and r.json()["detail"] == "ideia inexistente: nao-existe"

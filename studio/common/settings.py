@@ -42,6 +42,10 @@ ACTIONS: list[dict] = [
      "label": "Gerar a foto da cena (prompt realista)"},
     {"key": "storyboard.multishot", "screen": "Etapa 4 — Storyboard", "kind": "image",
      "label": "Multishot (fotos-semente e frames da cena)"},
+    # `[extensão]` inpaint-marcacao (ADR-004): edição da área marcada pelo usuário — a marcação vai
+    # como referência extra ao CLI (sem máscara, ADR-002), então o custo é o de uma imagem comum.
+    {"key": "storyboard.inpaint", "screen": "Etapa 4 — Storyboard", "kind": "image",
+     "label": "Editar área marcada (inpaint aproximado) [extensão]"},
     # `[extensão]` wave 7 (ADR-021): vídeo por cena no storyboard. Cena → Kling 2.6; transição
     # (start/end) → Kling 3.0 (ADR-023 substitui a 3.0 Turbo, que não declara `end_image` no CLI).
     # O modelo é resolvido no servidor por `default_for` conforme o modo.
@@ -65,6 +69,8 @@ DEFAULTS: dict[str, dict] = {
     "mood.multishot": {"model": "nano_banana_2", "variant": "2k"},
     "storyboard.scene": {"model": "nano_banana_2", "variant": "2k"},
     "storyboard.multishot": {"model": "nano_banana_2", "variant": "2k"},
+    # `[extensão]` inpaint-marcacao: mesmo modelo/variação das outras imagens da etapa 4.
+    "storyboard.inpaint": {"model": "nano_banana_2", "variant": "2k"},
     # `[extensão]` wave 7 (ADR-021): cena → Kling 2.6. A transição (start/end) passou a Kling 3.0
     # pela ADR-023: só a `kling3_0` declara `end_image` no catálogo do CLI (a 3.0 Turbo não).
     # `animate.video` reverte o desvio (era `kling3_0`): a cena da animação também passa a 2.6.

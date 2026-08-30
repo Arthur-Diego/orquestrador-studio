@@ -15,12 +15,16 @@ da Higgsfield (ADR-002).
 """
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import logging
 import re
 import shutil
 from datetime import datetime
 from pathlib import Path
+
+from PIL import Image
 
 from .. import higgsfield as hf
 from ..common import ingest, pricing, prompter, settings
@@ -46,6 +50,17 @@ MAX_TEXT = 300          # instrução de geração
 MAX_SCENE_TEXT = 500    # texto de uma cena
 COUNTS = {"uncertain": 4, "tweak": 1}
 SUFFIX = "Keep everything else identical, realistic."
+
+#: `[extensão]` inpaint-marcacao: instrução FIXA do kind `edit_area`, montada pelo servidor (FDD §5).
+#: Não usa `SUFFIX` como os kinds antigos — é um texto próprio, que ancora a imagem 1 (original) e a
+#: imagem 2 (anotada) e proíbe renderizar a marcação no resultado. `{core}` é a instrução única do
+#: usuário, sem a pontuação final (mesmo tratamento de `build_instruction`).
+EDIT_AREA_INSTRUCTION = (
+    "Image 1 is the original photo. Image 2 is the same photo with a red hand-drawn marking "
+    "highlighting one region. Apply the following change ONLY inside the marked region: {core}. "
+    "Keep everything outside the marked region exactly identical to image 1, and do not render "
+    "the marking itself in the result. Keep everything else identical, realistic."
+)
 
 # A aula 010 termina em "selecionar, fazer upscale, corrigir elementos"; no Studio o upscale mora
 # na seção de ângulos desta mesma etapa (aula 011, ADR-015) — feito depois de escolher os frames.
@@ -80,6 +95,12 @@ KINDS = [
      "ui_hint": "Use a última imagem como referência e cole uma única instrução."},
     {"kind": "multishot", "label": "Multi Shot", "cli": True,
      "ui_hint": "Selecione a imagem e peça outro ponto de vista."},
+    # `[extensão]` inpaint-marcacao (ADR-004): a aula 010 cita "inpaint para ajustes localizados",
+    # mas o gesto (marcar a região) mora na UI da Higgsfield. O CLI não aceita máscara (ADR-002),
+    # então o Studio manda a imagem ANOTADA como referência extra e pede, por prompt, para mudar
+    # só ali — aproximação best-effort, nunca inpaint real.
+    {"kind": "edit_area", "label": "Área marcada (inpaint aproximado) [extensão]", "cli": True,
+     "ui_hint": "Marque a região na imagem e descreva a mudança; a marcação vai como referência extra."},
 ]
 KIND_IDS = {k["kind"] for k in KINDS}
 CLI_KINDS = {k["kind"] for k in KINDS if k["cli"]}
@@ -135,6 +156,16 @@ def _candidates(root: Path) -> list[dict]:
     return cands if isinstance(cands, list) else []
 
 
+def _is_annotation(c: dict) -> bool:
+    """`[extensão]` inpaint-marcacao: candidato que é MARCAÇÃO, não ideia (invariante do FDD §6)."""
+    return c.get("role") == "annotation"
+
+
+def _visible(cands: list[dict]) -> list[dict]:
+    """Candidatos que a galeria de ideias mostra — anotações ficam de fora (nunca viram ideia/cena)."""
+    return [c for c in cands if not _is_annotation(c)]
+
+
 def base_rel(root: Path) -> str | None:
     """Caminho relativo da imagem base da etapa 3, ou None se a etapa 3 não terminou."""
     return BASE_IMAGE if (root / BASE_IMAGE).exists() else None
@@ -150,7 +181,7 @@ def _require_base(root: Path) -> str:
 # ---------- status ----------
 def status(pid: str) -> dict:
     root = project_dir(pid)
-    cands = _candidates(root)
+    cands = _visible(_candidates(root))
     scenes = _read_scenes(root)
     rel = base_rel(root)
     return {
@@ -245,6 +276,9 @@ def build_instruction(pid: str, kind: str, text: str, count: int = 4) -> dict:
         instruction = f"Follow the sketch: {core}. {SUFFIX}"
     elif kind == "edit":
         instruction = f"{core}. {SUFFIX}"
+    elif kind == "edit_area":
+        # `[extensão]` inpaint-marcacao: texto fixo do FDD §5, sem o sufixo genérico dos kinds antigos.
+        instruction = EDIT_AREA_INSTRUCTION.format(core=core)
     else:
         instruction = f"Another point of view of this exact scene: {core}. Same subject, same lighting, realistic."
     hint = next(k["ui_hint"] for k in KINDS if k["kind"] == kind)
@@ -279,6 +313,54 @@ def import_history(pid: str, size: int = 50, prompt_filter: str | None = None) -
     return r
 
 
+# ---------- `[extensão]` inpaint-marcacao: marcação (rabisco) salva como candidato ----------
+def _annotation_row(c: dict, deduped: bool) -> dict:
+    """Projeção pública da marcação (Contrato 1 do FDD). `file` é servível por `/files/{pid}/<file>`."""
+    return {"id": c["id"], "file": f"{STEP}/candidates/{c['file']}",
+            "thumb": f"{STEP}/candidates/{c['thumb']}" if c.get("thumb") else None,
+            "parent": c.get("parent", ""), "role": c.get("role", ""), "deduped": deduped}
+
+
+def import_annotation(pid: str, data: bytes, name: str = "annotation.png",
+                      source_id: str | None = None) -> dict:
+    """Persiste o PNG anotado (imagem original + rabisco) como candidato `role:"annotation"`.
+
+    `parent` amarra a marcação à imagem que ela marca — o id do candidato de origem ou o literal
+    `"base"` (imagem da etapa 3). Idempotente: o mesmo conteúdo devolve o candidato já existente
+    com `deduped: true` (dedupe por SHA-1 do `ingest_bytes`, que aqui é antecipado porque
+    `ingest_bytes` devolve `None` tanto no dedupe quanto no conteúdo inválido).
+    """
+    root = project_dir(pid)
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im.verify()
+    except Exception as e:  # noqa: BLE001
+        raise Invalid("arquivo de marcação inválido (envie o PNG exportado pelo canvas)") from e
+
+    cands = _candidates(root)
+    if source_id:
+        if not any(c["id"] == source_id for c in cands):
+            raise Invalid(f"ideia inexistente: {source_id}")
+        parent = source_id
+    else:
+        _require_base(root)   # sem origem explícita, a marcação é sobre a base da etapa 3 (409 sem ela)
+        parent = "base"
+
+    cid = hashlib.sha1(data).hexdigest()[:12]
+    existing = next((c for c in cands if c["id"] == cid), None)
+    if existing:
+        log.info("annotation_saved %s", {"pid": pid, "id": cid, "parent": existing.get("parent", ""),
+                                         "deduped": True})
+        return _annotation_row(existing, True)
+
+    c = ingest.ingest_bytes(root, STEP, data, "annotation", name, "",
+                            {"role": "annotation", "parent": parent})
+    if not c:   # defensivo: dedupe já foi tratado acima, então só sobra conteúdo que o Pillow recusa
+        raise Invalid("arquivo de marcação inválido (envie o PNG exportado pelo canvas)")
+    log.info("annotation_saved %s", {"pid": pid, "id": c["id"], "parent": parent, "deduped": False})
+    return _annotation_row(c, False)
+
+
 # ---------- galeria e seleção ----------
 def _idea_row(c: dict) -> dict:
     """Projeção pública de um candidato. `file` aponta para ideas/ quando selecionado (decisão 7
@@ -290,7 +372,9 @@ def _idea_row(c: dict) -> dict:
 
 
 def list_ideas(pid: str) -> dict:
-    return {"ideas": [_idea_row(c) for c in _candidates(project_dir(pid))]}
+    """Galeria pública de ideias. `[extensão]` inpaint-marcacao: anotações (`role:"annotation"`)
+    nunca aparecem aqui — são insumo da geração, não candidata a cena (FDD §2, invariante)."""
+    return {"ideas": [_idea_row(c) for c in _visible(_candidates(project_dir(pid)))]}
 
 
 def _write_ideas_json(root: Path, cands: list[dict]) -> None:
@@ -309,10 +393,13 @@ def select_ideas(pid: str, ids: list[str]) -> dict:
     if unknown:
         raise Invalid(f"ideia inexistente: {', '.join(unknown)}")
     chosen = set(ids)
+    # `[extensão]` inpaint-marcacao: marcação é insumo da geração, nunca ideia (FDD §6).
+    if any(_is_annotation(c) for c in cands if c["id"] in chosen):
+        raise Invalid("marcação não pode ser selecionada como ideia")
     idir = root / IDEAS_DIR
     idir.mkdir(parents=True, exist_ok=True)
     dropped: set[str] = set()
-    for c in cands:
+    for c in _visible(cands):
         c["selected"] = c["id"] in chosen
         dst = idir / c["file"]
         if c["selected"]:
@@ -334,7 +421,7 @@ def select_ideas(pid: str, ids: list[str]) -> dict:
         if s["primary"] not in kept:
             s["primary"] = kept[0] if kept else None
     ingest.save_candidates(root, STEP, cands)
-    _write_ideas_json(root, cands)
+    _write_ideas_json(root, _visible(cands))
     _write_scenes(root, scenes)
     _write_md(root, scenes)
     log.info("select %s", {"pid": pid, "selected": len(chosen), "detached": len(detached)})
@@ -549,43 +636,71 @@ def _cli_ready() -> None:
         raise Precondition("CLI da Higgsfield sem login (higgsfield auth login)")
 
 
-def _cli_request(pid: str, kind: str, text: str, count: int, source_id: str | None) -> tuple[dict, str]:
-    """Valida o pedido pago e resolve a imagem de referência (candidato escolhido ou a base)."""
+def _cli_request(pid: str, kind: str, text: str, count: int, source_id: str | None,
+                 annotation_id: str | None = None) -> tuple[dict, list[str]]:
+    """Valida o pedido pago e resolve as referências de imagem do CLI.
+
+    Devolve SEMPRE uma lista com a imagem ORIGINAL (candidato escolhido ou a base) no índice 0 —
+    um item só nos kinds da aula. `[extensão]` inpaint-marcacao: no `edit_area` a marcação entra
+    como segunda referência, e só depois de provar que ela pertence a essa mesma original.
+    """
     if kind not in CLI_KINDS:
         raise Invalid("Draw to Edit depende do desenho na interface da Higgsfield: use o modo UI (aula 010).")
     built = build_instruction(pid, kind, text, count)
     root = project_dir(pid)
+    cands = _candidates(root)
     if source_id:
-        c = next((c for c in _candidates(root) if c["id"] == source_id), None)
+        c = next((c for c in cands if c["id"] == source_id), None)
         if not c:
             raise Invalid(f"ideia inexistente: {source_id}")
         src = root / STEP / "candidates" / c["file"]
     else:
         src = root / BASE_IMAGE
-    return built, str(src)
+    refs = [str(src)]
+    if kind == "edit_area":
+        aid = (annotation_id or "").strip()
+        if not aid:
+            raise Invalid("o modo área marcada exige a marcação salva (annotation_id)")
+        ann = next((c for c in cands if c["id"] == aid and _is_annotation(c)), None)
+        if not ann:
+            raise Invalid(f"marcação inexistente: {aid}")
+        # A marcação de OUTRA foto geraria em cima da imagem errada: recusa em vez de avisar (FDD §4).
+        if ann.get("parent") != (source_id or "base"):
+            raise Invalid(f"a marcação {aid} pertence a outra imagem; marque a imagem escolhida")
+        refs.append(str(root / STEP / "candidates" / ann["file"]))
+    return built, refs
 
 
-def cost(pid: str, model: str, kind: str, text: str, count: int = 4, source_id: str | None = None) -> dict:
+def cost(pid: str, model: str, kind: str, text: str, count: int = 4, source_id: str | None = None,
+         annotation_id: str | None = None) -> dict:
     _cli_ready()
-    built, src = _cli_request(pid, kind, text, count, source_id)
-    c = hf.cost(model, {"prompt": built["instruction"], "image_references": [src]})
+    built, refs = _cli_request(pid, kind, text, count, source_id, annotation_id)
+    c = hf.cost(model, {"prompt": built["instruction"], "image_references": refs})
     credits = c.get("credits")
     per = credits if isinstance(credits, (int, float)) else None
     return {"per_image": per, "total": per * count if per is not None else None}
 
 
-def start_generate(pid: str, model: str, kind: str, text: str, count: int = 4, source_id: str | None = None) -> dict:
+def start_generate(pid: str, model: str, kind: str, text: str, count: int = 4, source_id: str | None = None,
+                   annotation_id: str | None = None) -> dict:
     """Gera pelo CLI (gasta créditos) e importa cada resultado como candidato `source: "cli"`."""
     _cli_ready()
-    built, src = _cli_request(pid, kind, text, count, source_id)
+    built, refs = _cli_request(pid, kind, text, count, source_id, annotation_id)
     root = project_dir(pid)
     instruction = built["instruction"]
     started = datetime.now()
+    # `[extensão]` inpaint-marcacao: o resultado guarda de qual marcação ele saiu (rastro do modo novo).
+    meta_extra = {"annotation": annotation_id} if kind == "edit_area" else {}
 
     def run(job: dict):
         tmp = root / STEP / ".tmp"
         for i in range(count):
-            res = hf.generate(model, {"prompt": instruction, "image_references": [src]}, timeout_s=600)
+            res = hf.generate(model, {"prompt": instruction, "image_references": refs}, timeout_s=600)
+            if kind == "edit_area":
+                # `[extensão]` livro-caixa (ADR-016), APÓS a chamada que gastou crédito. Só o modo
+                # novo registra: retroagir aos kinds da aula é a pendência P1, fora desta feature.
+                settings.record_generation(action="storyboard.inpaint", model=model, count=1,
+                                           pid=pid, step="storyboard", job_id=res.get("id"))
             for url in res["urls"]:
                 name = url.split("?")[0].rsplit("/", 1)[-1] or f"cli_{i}.png"
                 try:
@@ -596,7 +711,8 @@ def start_generate(pid: str, model: str, kind: str, text: str, count: int = 4, s
                     job["log"].append(f"download falhou: {e}")
                     continue
                 if ingest.ingest_bytes(root, STEP, data, "cli", name, instruction,
-                                       {"job_id": res.get("id"), "model": model, "kind": kind}):
+                                       {"job_id": res.get("id"), "model": model, "kind": kind,
+                                        **meta_extra}):
                     job["added"] += 1
             (root / "jobs").mkdir(parents=True, exist_ok=True)
             (root / "jobs" / f"storyboard_{res.get('id') or i}.json").write_text(
