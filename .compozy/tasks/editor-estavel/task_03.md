@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Render incremental e timeline estável
 type: frontend
 complexity: critical
@@ -53,16 +53,16 @@ com altura própria que sobrevive ao F5.
 </requirements>
 
 ## Subtasks
-- [ ] 3.1 Ler `_techspec.md` §4 fluxos (a) e (b), §5 contratos 2 e 3, §6 (fallback por item) e §10 risco 1.
-- [ ] 3.2 Introduzir `renderDirty(opts)` e `syncHeader()`; remover `renderAll()` e ligar
+- [x] 3.1 Ler `_techspec.md` §4 fluxos (a) e (b), §5 contratos 2 e 3, §6 (fallback por item) e §10 risco 1.
+- [x] 3.2 Introduzir `renderDirty(opts)` e `syncHeader()`; remover `renderAll()` e ligar
       `commit`/`undo`/`redo` ao novo caminho.
-- [ ] 3.3 Passar `opts` em cada chamada de `commit` conforme a matriz ação × render do FDD §4.
-- [ ] 3.4 Reescrever `renderLayers(stage)` como reconciliação por `data-uid` com `LAYER_HOOKS`,
+- [x] 3.3 Passar `opts` em cada chamada de `commit` conforme a matriz ação × render do FDD §4.
+- [x] 3.4 Reescrever `renderLayers(stage)` como reconciliação por `data-uid` com `LAYER_HOOKS`,
       incluindo z-index fixado no `create` pela ordem das faixas e `try/catch` por item.
-- [ ] 3.5 Ajustar o CSS da timeline (altura/min/max e `overflow-y`) em `view.html`.
-- [ ] 3.6 Persistir e reaplicar `ui.tlHeight`, `ui.leftW` e `ui.rightW` (resizer + `load`).
-- [ ] 3.7 Preservar `scrollLeft` em `renderTimeline` e garantir o playhead visível sem rolagem gratuita.
-- [ ] 3.8 Rodar `make verify` e verificar manualmente que nenhuma chamada a `renderAll(` sobrou.
+- [x] 3.5 Ajustar o CSS da timeline (altura/min/max e `overflow-y`) em `view.html`.
+- [x] 3.6 Persistir e reaplicar `ui.tlHeight`, `ui.leftW` e `ui.rightW` (resizer + `load`).
+- [x] 3.7 Preservar `scrollLeft` em `renderTimeline` e garantir o playhead visível sem rolagem gratuita.
+- [x] 3.8 Rodar `make verify` e verificar manualmente que nenhuma chamada a `renderAll(` sobrou.
 
 ## Implementation Details
 Modificar `studio/etapas/edit/view.js` nos módulos Store (`commit`, `snapshot`, `undo`, `redo`,
@@ -105,12 +105,12 @@ pelo menor risco e registre a escolha no commit.
 Front sem teste unitário (ADR-008). O que é verificável no pytest é fixado por string na task 06;
 esta task entrega as condições e valida por inspeção + `make verify`:
 
-- [ ] `grep -n "renderAll(" studio/etapas/edit/view.js` não devolve nada.
-- [ ] `grep -n "renderRoot()" studio/etapas/edit/view.js` devolve chamadas apenas dentro de `load`,
+- [x] `grep -n "renderAll(" studio/etapas/edit/view.js` não devolve nada.
+- [x] `grep -n "renderRoot()" studio/etapas/edit/view.js` devolve chamadas apenas dentro de `load`,
       `resetTimeline` e `onProject` (mais a própria definição).
-- [ ] `view.js` contém `renderDirty(`, `syncHeader(` e `LAYER_HOOKS`.
-- [ ] `view.html` contém `.ved-tl-main{` com `overflow-y:auto` e `.ved-timeline{` com `height:345px`.
-- [ ] `make verify` verde (nenhum teste de contrato de string existente quebrou).
+- [x] `view.js` contém `renderDirty(`, `syncHeader(` e `LAYER_HOOKS`.
+- [x] `view.html` contém `.ved-tl-main{` com `overflow-y:auto` e `.ved-timeline{` com `height:345px`.
+- [x] `make verify` verde (nenhum teste de contrato de string existente quebrou).
 
 Critérios do FDD §9 que esta task fecha e que serão cobrados no smoke Playwright do fechamento:
 11 (layout idêntico antes/depois de uma ação), 12 (MÚSICA e SFX visíveis; altura sobrevive ao F5),

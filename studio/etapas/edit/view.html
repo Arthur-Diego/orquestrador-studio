@@ -147,7 +147,7 @@
   .ved-layer.shape-lower{width:46%;height:13%;border-radius:6px;background:linear-gradient(90deg,var(--vac),rgba(0,0,0,.05))}
   .ved-layer.shape-bg{width:100%;height:100%;border-radius:0;background:rgba(0,0,0,.55)}
   .ved-black{position:absolute;inset:0;background:#000}
-  .ved-bbox{position:absolute;border:1.5px solid var(--vac);pointer-events:none}
+  .ved-bbox{position:absolute;border:1.5px solid var(--vac);pointer-events:none;z-index:6}
   .ved-bbox .h{position:absolute;width:9px;height:9px;background:#fff;border:1.5px solid var(--vac);border-radius:2px;pointer-events:auto}
   .ved-bbox .h.rot{border-radius:50%;top:-22px;left:calc(50% - 5px)}
   .ved-bbox .h.nw{top:-5px;left:-5px;cursor:nwse-resize}.ved-bbox .h.ne{top:-5px;right:-5px;cursor:nesw-resize}
@@ -202,7 +202,7 @@
   /* ---------- TIMELINE ---------- */
   .ved-resize{width:5px;cursor:col-resize;flex:none}.ved-resize:hover{background:var(--vac)}
   .ved-resize-v{height:5px;cursor:row-resize}.ved-resize-v:hover{background:var(--vac)}
-  .ved-timeline{height:262px;min-height:150px;max-height:520px;flex:none;display:flex;flex-direction:column;background:var(--vpanel);border-top:1px solid var(--vbd)}
+  .ved-timeline{height:345px;min-height:260px;max-height:700px;flex:none;display:flex;flex-direction:column;background:var(--vpanel);border-top:1px solid var(--vbd)}
   .ved-tlbar{height:46px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;border-bottom:1px solid var(--vbd)}
   .ved-tlbar .tbtn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--vbd2);background:transparent;color:var(--vtx3);border-radius:7px;padding:6px 10px;font-size:11px}
   .ved-tlbar .tbtn:hover{border-color:var(--vbdh);color:var(--vtx)}
@@ -220,7 +220,7 @@
   .ved-thead .tn{flex:1;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--vtx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ved-thead button{border:0;background:transparent;color:var(--vtx4);font-size:11px;padding:1px}
   .ved-thead button.act{color:var(--vac)}
-  .ved-tl-main{position:relative;overflow-x:auto;overflow-y:hidden;background:var(--vtracks)}
+  .ved-tl-main{position:relative;overflow-x:auto;overflow-y:auto;background:var(--vtracks)}
   .ved-ruler{position:sticky;top:0;height:26px;background:var(--vpanel);border-bottom:1px solid var(--vbd);z-index:4}
   .ved-ruler .tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--vbd);font-size:9px;color:var(--vtx5);padding-left:3px;padding-top:2px}
   .ved-ruler .mk{position:absolute;top:0;color:var(--vac);font-size:11px;cursor:pointer}

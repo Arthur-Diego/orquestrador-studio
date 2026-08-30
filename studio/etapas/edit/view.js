@@ -76,13 +76,18 @@ Studio.register("edit", (ctx) => {
   const fps = () => (St.timeline ? proj().fps || 30 : 30);
   const pps = () => Math.round(PPS_BASE * St.zoom);
 
-  function commit(label, mutator) {
+  /** Toda ação de edição passa por aqui. `opts` (opcional) diz o que mais precisa ser re-renderizado
+   *  além de timeline/preview/props/header: `{panel:true}` para o painel esquerdo, `{audio:true}`
+   *  para os elementos de áudio/overlay do palco. NUNCA cai em `renderRoot()` — era ele que jogava
+   *  fora altura da timeline, larguras dos painéis, scroll e thumbnails a cada clique. */
+  function commit(label, mutator, opts) {
     St.history.push(clone(St.timeline)); if (St.history.length > 40) St.history.shift();
-    St.future = []; St.hLabel = label; mutator(); setStatus("dirty"); scheduleSave(); renderAll();
+    St.future = []; St.hLabel = label; mutator(); setStatus("dirty"); scheduleSave(); renderDirty(opts);
   }
   function snapshot(label) { St.history.push(clone(St.timeline)); if (St.history.length > 40) St.history.shift(); St.future = []; St.hLabel = label; }
-  function undo() { if (!St.history.length) return; St.future.push(clone(St.timeline)); St.timeline = St.history.pop(); St.selection = []; setStatus("dirty"); scheduleSave(); renderAll(); }
-  function redo() { if (!St.future.length) return; St.history.push(clone(St.timeline)); St.timeline = St.future.pop(); St.selection = []; setStatus("dirty"); scheduleSave(); renderAll(); }
+  // undo/redo trocam a timeline inteira: painel e áudio podem ter mudado junto.
+  function undo() { if (!St.history.length) return; St.future.push(clone(St.timeline)); St.timeline = St.history.pop(); St.selection = []; setStatus("dirty"); scheduleSave(); renderDirty({ panel: true, audio: true }); }
+  function redo() { if (!St.future.length) return; St.history.push(clone(St.timeline)); St.timeline = St.future.pop(); St.selection = []; setStatus("dirty"); scheduleSave(); renderDirty({ panel: true, audio: true }); }
 
   // ------------------------------------------------------------ MODEL (backbone → 6 tracks)
   function segments() {
@@ -313,36 +318,107 @@ Studio.register("edit", (ctx) => {
     renderLayers(stage);
     const tc = document.getElementById("pcTime"); if (tc) tc.textContent = `${fmtTC(St.playhead)} / ${fmtTC(duration())}`;
   }
+  /** Camadas do palco (TEXTO, LEGENDAS, VÍDEO 2): um hook por tipo. `create(el, item, stage)` roda
+   *  UMA vez na vida do nó (a reconciliação por `data-uid` preserva a identidade do `<div>` de um
+   *  item que continua no palco); `update(el, item, stage, t)` roda a cada render e mexe só em
+   *  estilo/conteúdo. [cross-feature] contrato 3: a frente de legendas sobrescreve
+   *  `LAYER_HOOKS.caption.{create,update}` para montar spans por palavra sem tocar na reconciliação. */
+  const LAYER_HOOKS = {
+    text: { create: textLayerCreate, update: textLayerUpdate },
+    caption: { create: textLayerCreate, update: textLayerUpdate },
+    overlay: { create: overlayLayerCreate, update: overlayLayerUpdate },
+  };
+  /** Assinatura do conteúdo do nó: muda ⇒ o nó é recriado (o `<img>` de uma imagem não vira o
+   *  `<video>` de um MP4 por atualização de estilo). Para texto/legenda é constante. */
+  function layerSig(o, type) {
+    if (type !== "overlay") return type;
+    if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) return "overlay:img";
+    if (o.src) return "overlay:video";
+    if (SHAPES_CSS.includes(o.shape)) return "overlay:shape-" + o.shape;
+    return "overlay:glifo";
+  }
+  /** Posição/escala/opacidade da camada — comum a todos os tipos, aplicado no `update`. */
+  function layerBase(el, o) {
+    const tf = o.transform || { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+    el.style.left = (tf.x * 100) + "%"; el.style.top = (tf.y * 100) + "%";
+    el.style.transform = "translate(-50%,-50%) " + tfCss({ ...tf, x: .5, y: .5 }).replace(/^translate\([^)]*\)\s*/, "");
+    el.style.opacity = tf.opacity != null ? tf.opacity : 1;
+  }
+  function textLayerCreate(el, o, stage) { el.style.padding = "2px 8px"; el.style.maxWidth = "80%"; }
+  function textLayerUpdate(el, o, stage) {
+    layerBase(el, o);
+    const s = o.style || {};
+    const txt = s.uppercase ? (o.text || "").toUpperCase() : (o.text || "");
+    if (el.textContent !== txt) el.textContent = txt;
+    el.style.fontFamily = `"${s.font || "Bricolage Grotesque"}",sans-serif`;
+    el.style.fontSize = ((s.size || 40) / 1080 * stage.clientHeight) + "px"; el.style.fontWeight = s.weight || 700;
+    el.style.textAlign = s.align || "center"; el.style.lineHeight = s.lineHeight || 1.2;
+    // o nó sobrevive entre renders: o que é condicional precisa ser DESFEITO quando desliga
+    const comFundo = s.bg && s.bg !== "transparent";
+    el.style.background = comFundo ? s.bg : ""; el.style.borderRadius = comFundo ? "6px" : "";
+    el.style.color = comFundo ? (el.classList.contains("caption") ? "#fff" : (s.color || "#04222a")) : (s.color || "#fff");
+    el.style.textShadow = s.shadow !== false ? "0 2px 12px rgba(0,0,0,.6)" : "";
+  }
+  function overlayLayerCreate(el, o, stage) {
+    if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
+    else if (o.src) { const v = document.createElement("video"); v.src = ctx.files(o.src); v.muted = true; v.style.maxWidth = "60vw"; el.appendChild(v); }
+    else if (SHAPES_CSS.includes(o.shape)) el.classList.add("shape", "shape-" + o.shape);
+    else { el.style.color = "#fff"; }
+  }
+  function overlayLayerUpdate(el, o, stage, t) {
+    layerBase(el, o);
+    const img = el.querySelector("img"), v = el.querySelector("video");
+    if (img) { const want = ctx.files(o.src); if (img.getAttribute("src") !== want) img.src = want; }
+    else if (v) {
+      const want = ctx.files(o.src); if (v.getAttribute("src") !== want) v.src = want;
+      // o nó agora sobrevive entre renders: só reposicionar quando o quadro já saiu do lugar
+      const em = t - num(o.start);
+      if (v.readyState >= 1 && Math.abs(v.currentTime - em) > 0.3) { try { v.currentTime = em; } catch (e) {} }
+    } else if (!el.classList.contains("shape")) {
+      const g = GLIFO[o.shape] || o.shape || "▦";
+      if (el.textContent !== g) el.textContent = g;
+      el.style.fontSize = (stage.clientHeight * 0.12) + "px";
+    }
+  }
+  /** Reconciliação do palco por `data-uid`: cria o que entrou, atualiza o que ficou (mesmo nó DOM)
+   *  e remove o que saiu da janela do playhead. Falha de um hook não derruba a tela nem volta ao
+   *  `renderRoot()` — o item problemático é pulado com um aviso. */
   function renderLayers(stage) {
-    stage.querySelectorAll(".ved-layer,.ved-bbox,.ved-guide").forEach((n) => n.remove());
     const t = St.playhead;
-    tracks().forEach((tr) => {
-      if (!["text", "caption", "overlay"].includes(tr.type) || !tr.visible) return;
+    const alvo = new Map();
+    // z-index pela ordem das faixas (ET: TEXTO > LEGENDAS > VÍDEO 2), fixado no `create` para não
+    // depender da ordem de inserção no DOM — com reconciliação os nós não nascem mais em ordem.
+    const camadas = tracks().filter((tr) => ["text", "caption", "overlay"].includes(tr.type));
+    camadas.forEach((tr, i) => {
+      if (!tr.visible) return;
       tr.items.forEach((it) => {
-        const o = it.item; if (t < num(o.start) - 1e-3 || t > num(o.end) + 1e-3) return;
-        const el = document.createElement("div"); el.className = "ved-layer " + tr.type; el.dataset.uid = o.id;
-        const tf = o.transform || { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
-        el.style.left = (tf.x * 100) + "%"; el.style.top = (tf.y * 100) + "%"; el.style.transform = "translate(-50%,-50%) " + tfCss({ ...tf, x: .5, y: .5 }).replace(/^translate\([^)]*\)\s*/, ""); el.style.opacity = tf.opacity != null ? tf.opacity : 1;
-        if (tr.type === "overlay") {
-          if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
-          else if (o.src) { const v = document.createElement("video"); v.src = ctx.files(o.src); v.muted = true; v.style.maxWidth = "60vw"; try { v.currentTime = t - num(o.start); } catch (e) {} el.appendChild(v); }
-          else if (SHAPES_CSS.includes(o.shape)) el.classList.add("shape", "shape-" + o.shape);
-          else { el.textContent = GLIFO[o.shape] || o.shape || "▦"; el.style.color = "#fff"; el.style.fontSize = (stage.clientHeight * 0.12) + "px"; }
-        } else {
-          const s = o.style || {};
-          el.textContent = s.uppercase ? (o.text || "").toUpperCase() : (o.text || "");
-          el.style.fontFamily = `"${s.font || "Bricolage Grotesque"}",sans-serif`;
-          el.style.fontSize = ((s.size || 40) / 1080 * stage.clientHeight) + "px"; el.style.fontWeight = s.weight || 700;
-          el.style.color = s.color || "#fff"; el.style.textAlign = s.align || "center"; el.style.lineHeight = s.lineHeight || 1.2;
-          el.style.padding = "2px 8px"; el.style.maxWidth = "80%";
-          if (s.bg && s.bg !== "transparent") { el.style.background = s.bg; el.style.borderRadius = "6px"; el.style.color = tr.type === "caption" ? "#fff" : (s.color || "#04222a"); }
-          if (s.shadow !== false) el.style.textShadow = "0 2px 12px rgba(0,0,0,.6)";
-        }
-        stage.appendChild(el);
-        if (isSel(o.id)) drawBBox(stage, el);
+        const o = it.item; if (!o || t < num(o.start) - 1e-3 || t > num(o.end) + 1e-3) return;
+        alvo.set(String(o.id), { item: o, type: tr.type, z: camadas.length - i });
       });
     });
+    stage.querySelectorAll(".ved-bbox,.ved-guide").forEach((n) => n.remove());
+    const vivos = new Map();
+    stage.querySelectorAll(".ved-layer[data-uid]").forEach((el) => {
+      const uid = el.dataset.uid, a = alvo.get(uid);
+      if (a && !vivos.has(uid) && el.dataset.sig === layerSig(a.item, a.type)) vivos.set(uid, el);
+      else dropLayer(el);
+    });
+    alvo.forEach((a, uid) => {
+      const hook = LAYER_HOOKS[a.type]; if (!hook) return;
+      try {
+        let el = vivos.get(uid);
+        if (!el) {
+          el = document.createElement("div"); el.className = "ved-layer " + a.type;
+          el.dataset.uid = uid; el.dataset.sig = layerSig(a.item, a.type); el.style.zIndex = a.z;
+          hook.create(el, a.item, stage);
+          stage.appendChild(el);
+        }
+        hook.update(el, a.item, stage, t);
+        if (isSel(uid)) drawBBox(stage, el);
+      } catch (err) { console.warn("[edit] layer", uid, err); }
+    });
   }
+  function dropLayer(el) { el.querySelectorAll("video").forEach((v) => v.pause()); el.remove(); }
   function drawBBox(stage, el) {
     const bb = document.createElement("div"); bb.className = "ved-bbox";
     const r = el.getBoundingClientRect(), sr = stage.getBoundingClientRect();
@@ -401,9 +477,19 @@ Studio.register("edit", (ctx) => {
     ed(); St.zoom = clamp(num(ed().ui.zoom, 1), 0.25, 4); St.snap = ed().ui.snap !== false;
     try { St.beats = await api(`/api/projects/${ctx.pid()}/music/beats`); } catch (e) { St.beats = null; }
     St.history = []; St.future = []; St.selection = []; St.playhead = 0;
-    renderAll(); seekTo(0);
+    renderRoot(); seekTo(0);              // montar do zero só aqui, em resetTimeline e em onProject
   }
-  function renderAll() { renderRoot(); }
+  /** Render INCREMENTAL: o editor já montado é atualizado no lugar, sem recriar o `innerHTML`.
+   *  Sempre: timeline, preview (camadas reconciliadas), propriedades e header. Sob demanda:
+   *  painel esquerdo (`panel`) e áudio/pool de overlays (`audio`). [cross-feature] contrato 2. */
+  function renderDirty(opts) {
+    const o = opts || {};
+    renderTimeline(); renderPreview(); renderProps();
+    if (o.panel) renderPanel();
+    // `pruneOverlayPool` chega com o MP4 na VÍDEO 2 (task 04); a chamada é tolerante até lá.
+    if (o.audio) { mountAudio(); if (typeof pruneOverlayPool === "function") pruneOverlayPool(); }
+    syncHeader();
+  }
 
   // ============================================================ ROOT
   function renderRoot() {
@@ -453,6 +539,15 @@ Studio.register("edit", (ctx) => {
     document.getElementById("edRes").onchange = (e) => commit("resolução", () => { const r = RES.find((x) => x[1] == e.target.value); if (r) { proj().width = r[1]; proj().height = r[2]; } });
     document.getElementById("edFps").onchange = (e) => commit("fps", () => proj().fps = num(e.target.value, 30));
   }
+  /** Re-sincroniza o header com o estado SEM recriá-lo (os handlers de `bindHeader` continuam
+   *  válidos): os 3 selects do projeto e o status de salvamento. É o que faz undo/redo de
+   *  proporção/resolução/fps aparecer no header sem `renderRoot()`. */
+  function syncHeader() {
+    const p = proj();
+    const set = (id, v) => { const el = document.getElementById(id); if (el && el.value !== String(v)) el.value = String(v); };
+    set("edAspect", p.aspect); set("edRes", p.width); set("edFps", p.fps);
+    setStatus(St.saveStatus);
+  }
   function toggleFullscreen() { const r = root(); if (!document.fullscreenElement) r.requestFullscreen && r.requestFullscreen(); else document.exitFullscreen && document.exitFullscreen(); }
   function openGuide() {
     ui.modal({ title: "Studio de vídeo · aula 014", subtitle: "O que a aula ensina", html: `<div id="edGuideBody" class="guide">Carregando…</div>` });
@@ -462,10 +557,17 @@ Studio.register("edit", (ctx) => {
   }
 
   // ============================================================ BODY
+  /** Medidas de layout do editor: default de exibição (o CSS), faixa aceita pelo backend
+   *  (`normalize_ui`) e valor gravado em `editor.ui` — é o que faz a altura escolhida da timeline
+   *  e as larguras dos painéis sobreviverem ao F5. Chave ausente = default do CSS. */
+  const UI_SIZES = { tlHeight: [345, 150, 700], leftW: [236, 180, 420], rightW: [280, 220, 460] };
+  function uiSize(key) { const [d, lo, hi] = UI_SIZES[key]; return clamp(num(ed().ui[key], d), lo, hi); }
+  function uiStyle(key, prop) { return ed().ui[key] == null ? "" : ` style="${prop}:${uiSize(key)}px"`; }
+
   function bodyHTML() {
     return `<div class="ved-body">
       <nav class="ved-rail" id="edRail">${CATS.map(([id, ic, lb]) => `<button data-panel="${id}"${id == St.panel ? " class=on" : ""}><span class="ic">${ic}</span>${lb}</button>`).join("")}</nav>
-      <div class="ved-left" id="edLeft"><div class="ved-panel" id="edPanel"></div></div>
+      <div class="ved-left" id="edLeft"${uiStyle("leftW", "width")}><div class="ved-panel" id="edPanel"></div></div>
       <div class="ved-resize" data-resize="left"></div>
       <div class="ved-center">
         <div class="ved-stage-wrap" id="edStageWrap"><div class="ved-stage" id="edStage"></div></div>
@@ -484,7 +586,7 @@ Studio.register("edit", (ctx) => {
         </div>
       </div>
       <div class="ved-resize" data-resize="right"></div>
-      <div class="ved-right" id="edRight"><div class="ved-props" id="edProps"></div></div>
+      <div class="ved-right" id="edRight"${uiStyle("rightW", "width")}><div class="ved-props" id="edProps"></div></div>
     </div>`;
   }
   function bindPreview() {
@@ -533,14 +635,14 @@ Studio.register("edit", (ctx) => {
     list.querySelectorAll("[data-v2]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); addMediaItem(media.find((m) => m.id === b.dataset.v2), "v2"); });
     list.querySelectorAll("[data-mid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "media:" + t.dataset.mid)); t.addEventListener("dblclick", () => addMediaItem(media.find((m) => m.id === t.dataset.mid))); });
   }
-  function addPipelineClip(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return; commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }); }
+  function addPipelineClip(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return; commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }, { panel: true }); }
   /** `faixa === "v2"` manda o vídeo para a faixa VÍDEO 2 (overlay com `src` de vídeo);
    *  sem faixa, vídeo entra no backbone (VÍDEO 1) e imagem vira overlay, como antes. */
   function addMediaItem(m, faixa) {
     if (!m) return;
     if (m.kind === "video" && faixa === "v2") return addOverlayVideo(m.file, num(m.duration, 3), m.name);
-    if (m.kind === "video") commit("adicionar vídeo", () => St.timeline.clips.push({ id: newId("c"), scene: "upload", shot: (m.name || "media").replace(/\W+/g, "_"), take: "1", file: m.file, in: 0, out: Math.max(num(m.duration, 3), 0.5), speed: 1, blend: true, zoom: 1 }));
-    else commit("adicionar imagem", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), src: m.file, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+    if (m.kind === "video") commit("adicionar vídeo", () => St.timeline.clips.push({ id: newId("c"), scene: "upload", shot: (m.name || "media").replace(/\W+/g, "_"), take: "1", file: m.file, in: 0, out: Math.max(num(m.duration, 3), 0.5), speed: 1, blend: true, zoom: 1 }), { panel: true });
+    else commit("adicionar imagem", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), src: m.file, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
   }
   async function uploadMedia(files) { try { const r = await ui.upload(`${base()}/media/upload`, files); St.mediaLib = await api(`${base()}/media`); toast(`${r.added} mídia(s) importada(s)`); renderPanel(); } catch (err) { toast(err.message); } }
   function pText(el) {
@@ -705,7 +807,7 @@ Studio.register("edit", (ctx) => {
     const t = it.kind === "video" ? clipFx(it.clip.id) : (it.item.filters ? it.item : (it.item.filters = {}, it.item)); t.filters = t.filters || {};
     body.innerHTML = ADJ.map(([k, lb]) => adjSlider("cadj-" + k, lb, num(t.filters[k]))).join("") + `<button class="ved-linkbtn" id="cReset">Resetar ajustes</button>`;
     ADJ.forEach(([k]) => bindSlider("cadj-" + k, (v) => { if (v) t.filters[k] = v; else delete t.filters[k]; }, "ajuste", (v) => { const e = document.getElementById("cadj-" + k + "v"); if (e) e.textContent = (v > 0 ? "+" : "") + v; renderPreview(); }));
-    document.getElementById("cReset").onclick = () => commit("resetar ajustes", () => t.filters = {});
+    document.getElementById("cReset").onclick = () => commit("resetar ajustes", () => t.filters = {}, { panel: true });
   }
   function propsTextBody(body, it) {
     const o = it.item, s = o.style = o.style || {}, tf = tfOf(it);
@@ -739,7 +841,7 @@ Studio.register("edit", (ctx) => {
       bindNum("mOff", (v) => m.offset = Math.max(v, 0), "offset");
       bindSlider("mVol", (v) => m.volume = v / 100, "volume", (v) => { document.getElementById("mVolv").textContent = v + "%"; syncVolumes(); });
       bindSlider("mFo", (v) => St.timeline.fade_out = v, "fade out", (v) => document.getElementById("mFov").textContent = v);
-      document.getElementById("mMute").onclick = () => commit("mudo música", () => m.muted = !m.muted);
+      document.getElementById("mMute").onclick = () => commit("mudo música", () => m.muted = !m.muted, { panel: true, audio: true });
     } else {
       const s = it.sfx;
       if (St.rightTab === "speed") return void (body.innerHTML = `<p class="ved-hint">—</p>`);
@@ -759,7 +861,7 @@ Studio.register("edit", (ctx) => {
   // ============================================================ TIMELINE
   function timelineHTML() {
     return `<div class="ved-resize-v" data-resize="timeline"></div>
-      <div class="ved-timeline" id="edTimeline">
+      <div class="ved-timeline" id="edTimeline"${uiStyle("tlHeight", "height")}>
         <div class="ved-tlbar">
           <button class="tbtn" id="tSplit" title="Dividir no playhead (Ctrl+B)">✂ Dividir</button>
           <button class="tbtn" id="tDup" title="Duplicar (Ctrl+D)">⧉ Duplicar</button>
@@ -810,6 +912,7 @@ Studio.register("edit", (ctx) => {
 
   function renderTimeline() {
     const heads = document.getElementById("edTlHeads"), lanes = document.getElementById("edTracks"); if (!heads || !lanes) return;
+    const main = document.getElementById("edTlMain"), scroll = main ? main.scrollLeft : 0;
     const trs = tracks(), dur = duration(), px = pps(), W = Math.max(dur * px + 200, 800);
     const ruler = document.getElementById("edRuler"); ruler.style.width = W + "px"; ruler.innerHTML = "";
     const stepS = px > 80 ? 1 : px > 40 ? 2 : px > 18 ? 5 : 10;
@@ -820,7 +923,16 @@ Studio.register("edit", (ctx) => {
     document.getElementById("edPlayhead").style.height = (26 + lanes.offsetHeight) + "px";
     heads.querySelectorAll(".ved-thead").forEach((h) => h.querySelectorAll("button").forEach((b) => b.onclick = () => trackAction(h.dataset.tid, b.dataset.act)));
     const sel = document.getElementById("tSel"); if (sel) sel.textContent = St.selection.length ? St.selection.length + " selecionado(s)" : "clique num clipe";
+    // o conteúdo das faixas é refeito, a viewport NÃO: o scroll horizontal do usuário fica onde
+    // estava e só corre atrás do playhead quando ele sai da área visível.
+    if (main) { main.scrollLeft = scroll; revelarPlayhead(main, px); }
     paintPlayhead();
+  }
+  function revelarPlayhead(main, px) {
+    const x = St.playhead * px, vis = main.clientWidth;
+    if (vis <= 0) return;
+    if (x < main.scrollLeft + 8) main.scrollLeft = Math.max(0, x - 40);
+    else if (x > main.scrollLeft + vis - 8) main.scrollLeft = Math.max(0, x - vis + 80);
   }
   function laneHTML(t, px) {
     const c = COL[t.col || t.type];
@@ -921,28 +1033,28 @@ Studio.register("edit", (ctx) => {
   }
   function deleteItems(uids) {
     if (!uids || !uids.length) return;
-    commit("excluir", () => uids.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { if ((St.timeline.clips || []).length <= 1) return toast("A montagem precisa de ao menos um clipe"); St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); } else if (it.kind === "sfx") St.timeline.sfx = St.timeline.sfx.filter((_, i) => `sfx_${i}` !== u); else if (it.track && it.track.etrack) it.track.etrack.items = it.track.etrack.items.filter((x) => x.id !== u); }));
+    commit("excluir", () => uids.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { if ((St.timeline.clips || []).length <= 1) return toast("A montagem precisa de ao menos um clipe"); St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); } else if (it.kind === "sfx") St.timeline.sfx = St.timeline.sfx.filter((_, i) => `sfx_${i}` !== u); else if (it.track && it.track.etrack) it.track.etrack.items = it.track.etrack.items.filter((x) => x.id !== u); }), { panel: true, audio: true });
     St.selection = [];
   }
   function rippleDelete() {
     const u = St.selection[0]; const it = u && findItem(u); if (!it || it.kind !== "video") return deleteItems(St.selection);
     // mesma guarda do #tDel: a montagem da aula 014 não existe sem clipe
     if ((St.timeline.clips || []).length <= 1) return toast("A montagem precisa de ao menos um clipe");
-    commit("ripple delete", () => { St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); }); St.selection = [];
+    commit("ripple delete", () => { St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); }, { panel: true, audio: true }); St.selection = [];
   }
   function addText(text, style, type) {
     const tid = type === "caption" ? "t_cap" : "t_txt";
-    commit("adicionar " + type, () => { const t = etrack(tid, true); const it = { id: newId("tx"), start: +St.playhead.toFixed(2), end: +(St.playhead + 2.5).toFixed(2), text, style: { size: 40, weight: 700, align: "center", color: "#FFFFFF", shadow: true, ...style }, transform: { x: .5, y: type === "caption" ? .82 : .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, anim: { in: "fade", out: "fade" } }; t.items.push(it); St.selection = [it.id]; });
+    commit("adicionar " + type, () => { const t = etrack(tid, true); const it = { id: newId("tx"), start: +St.playhead.toFixed(2), end: +(St.playhead + 2.5).toFixed(2), text, style: { size: 40, weight: 700, align: "center", color: "#FFFFFF", shadow: true, ...style }, transform: { x: .5, y: type === "caption" ? .82 : .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, anim: { in: "fade", out: "fade" } }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
     renderPanel();
   }
   /** Vídeo na faixa VÍDEO 2: overlay com `src` de vídeo (o preview já compõe por cima do V1). */
   function addOverlayVideo(file, dur, rotulo) {
     if (!file) return;
-    commit("vídeo na VÍDEO 2", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + Math.max(num(dur, 3), .5)).toFixed(2), src: file, text: rotulo || "", transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+    commit("vídeo na VÍDEO 2", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + Math.max(num(dur, 3), .5)).toFixed(2), src: file, text: rotulo || "", transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
   }
   function clipParaV2(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (c) addOverlayVideo(c.file, clipLen(c), nameOf(c)); }
   function addOverlayShape(shape, nome) {
-    commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: nome || shape, shape, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; });
+    commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: nome || shape, shape, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
   }
   function applyTransition(type) {
     const u = St.selection.find((x) => itemType(x) === "video"); if (!u) return toast("Selecione um clipe de vídeo");
@@ -957,12 +1069,12 @@ Studio.register("edit", (ctx) => {
       actions: [{ label: "Remover", onClick: (m) => { commit("remover transição", () => ed().transitions = ed().transitions.filter((x) => x.id !== tid)); m.close(); } }, { label: "OK", primary: true, onClick: (m) => { commit("editar transição", () => { tr.type = document.getElementById("trT").value; tr.duration = num(document.getElementById("trD").value, .5); }); m.close(); } }] });
     setTimeout(() => { const d = document.getElementById("trD"); if (d) d.oninput = () => document.getElementById("trDv").textContent = d.value; }, 0);
   }
-  function toggleEffect(type) { const fx = adjustTarget(); if (!fx) return toast("Selecione um clipe"); commit("efeito " + type, () => { fx.effects = fx.effects || []; const t = type.toLowerCase(); if (fx.effects.some((e) => (e.type || "").toLowerCase() === t)) fx.effects = fx.effects.filter((e) => (e.type || "").toLowerCase() !== t); else fx.effects.push({ type, intensity: .5, enabled: true }); }); renderPanel(); }
-  function setFilter(id, css) { const fx = adjustTarget(); if (!fx) return toast("Selecione um clipe"); commit("filtro", () => { fx.filters = fx.filters || {}; fx.filters.preset = id; fx.presetCss = css; }); }
+  function toggleEffect(type) { const fx = adjustTarget(); if (!fx) return toast("Selecione um clipe"); commit("efeito " + type, () => { fx.effects = fx.effects || []; const t = type.toLowerCase(); if (fx.effects.some((e) => (e.type || "").toLowerCase() === t)) fx.effects = fx.effects.filter((e) => (e.type || "").toLowerCase() !== t); else fx.effects.push({ type, intensity: .5, enabled: true }); }, { panel: true }); }
+  function setFilter(id, css) { const fx = adjustTarget(); if (!fx) return toast("Selecione um clipe"); commit("filtro", () => { fx.filters = fx.filters || {}; fx.filters.preset = id; fx.presetCss = css; }, { panel: true }); }
   function adjustTarget() { const u = St.selection[0]; if (!u) return null; const it = findItem(u); if (!it) return null; if (it.kind === "video") return clipFx(it.clip.id); if (it.kind === "overlay") { it.item.filters = it.item.filters || {}; it.item.effects = it.item.effects || []; return it.item; } return null; }
   function addMarker() { commit("marcador", () => ed().markers.push({ id: newId("mk"), at: +St.playhead.toFixed(2), name: "Marcador" })); }
-  function addSfx(file) { commit("adicionar SFX", () => St.timeline.sfx.push({ file, at: +St.playhead.toFixed(2), gain: -6 })); }
-  async function uploadSfx(files) { try { const r = await ui.upload(`${base()}/sfx/upload`, files); St.sfxLib = await api(`${base()}/sfx`); const novos = St.sfxLib.slice(-r.added); commit("importar SFX", () => novos.forEach((s) => St.timeline.sfx.push({ file: s.file, at: +St.playhead.toFixed(2), gain: -6 }))); toast(`${r.added} SFX importados`); } catch (err) { toast(err.message); } }
+  function addSfx(file) { commit("adicionar SFX", () => St.timeline.sfx.push({ file, at: +St.playhead.toFixed(2), gain: -6 }), { panel: true, audio: true }); }
+  async function uploadSfx(files) { try { const r = await ui.upload(`${base()}/sfx/upload`, files); St.sfxLib = await api(`${base()}/sfx`); const novos = St.sfxLib.slice(-r.added); commit("importar SFX", () => novos.forEach((s) => St.timeline.sfx.push({ file: s.file, at: +St.playhead.toFixed(2), gain: -6 })), { panel: true, audio: true }); toast(`${r.added} SFX importados`); } catch (err) { toast(err.message); } }
   async function resetTimeline() { try { const r = await api(`${base()}/timeline/reset`, { method: "POST" }); St.timeline = r.timeline; load(); } catch (err) { toast(err.message); } }
 
   // ============================================================ CONTEXT MENU
@@ -1031,8 +1143,17 @@ Studio.register("edit", (ctx) => {
       const h = e.target.closest("[data-resize]"); if (!h || !root().contains(h)) return; e.preventDefault();
       const kind = h.dataset.resize, left = document.getElementById("edLeft"), right = document.getElementById("edRight"), tl = document.getElementById("edTimeline");
       const sx = e.clientX, sy = e.clientY, lw = left ? left.offsetWidth : 0, rw = right ? right.offsetWidth : 0, th = tl ? tl.offsetHeight : 0;
-      const move = (ev) => { if (kind === "left" && left) left.style.width = clamp(lw + (ev.clientX - sx), 180, 420) + "px"; if (kind === "right" && right) right.style.width = clamp(rw - (ev.clientX - sx), 220, 460) + "px"; if (kind === "timeline" && tl) tl.style.height = clamp(th - (ev.clientY - sy), 150, 520) + "px"; stageBox(); renderTimeline(); };
-      const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); };
+      const move = (ev) => { if (kind === "left" && left) left.style.width = clamp(lw + (ev.clientX - sx), 180, 420) + "px"; if (kind === "right" && right) right.style.width = clamp(rw - (ev.clientX - sx), 220, 460) + "px"; if (kind === "timeline" && tl) tl.style.height = clamp(th - (ev.clientY - sy), 260, 700) + "px"; stageBox(); renderTimeline(); };
+      // a medida ajustada vai para `editor.ui` e é salva: reabrir a etapa devolve o mesmo layout
+      const up = () => {
+        document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up);
+        const u = ed().ui;
+        if (kind === "left" && left) u.leftW = left.offsetWidth;
+        else if (kind === "right" && right) u.rightW = right.offsetWidth;
+        else if (kind === "timeline" && tl) u.tlHeight = tl.offsetHeight;
+        else return;
+        setStatus("dirty"); scheduleSave();
+      };
       document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
     });
   }
