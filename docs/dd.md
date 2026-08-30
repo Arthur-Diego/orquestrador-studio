@@ -3,17 +3,17 @@
 Lida pelo protocolo de Trello dos workflows `dd-*`
 (`~/.claude/skills/dd/references/trello.md`).
 
-- board: orquestrador-studio
-- lista-entrada: To Do
-- lista-execucao: Doing
-- lista-review: Review/PR
-- lista-conclusao: Done
+- board: senhordatecnologia (`BDwwpWPU`, id `65e781cd1a65f6c4e84c164a`)
+- lista-entrada: DD · To Do
+- lista-execucao: DD · Doing
+- lista-review: DD · Review/PR
+- lista-conclusao: DD · Done
 
-**Estado em 2026-08-25:** o board `orquestrador-studio` ainda **não existe** no Trello — o MCP
-não cria boards, só listas e cards. Criar o board manualmente com as quatro listas acima; até
-lá o protocolo segue a regra "Trello indisponível não bloqueia o ciclo" e registra no resumo
-final o que não foi anotado. Os nomes das listas são dicas: o protocolo resolve o nome real
-no board antes de mover qualquer card.
+**Estado em 2026-08-29 (Wave 8):** o board `orquestrador-studio` nunca foi criado; as duas famílias
+passam a usar o board `senhordatecnologia` com listas dedicadas `DD · To Do / Doing / Review/PR / Done`
+(criadas pelo MCP, ao lado das listas `QA ·` do `qa-studio`). As listas pessoais `TO DO/RUNNING/DONE`
+desse board são intocáveis. Os nomes das listas são dicas: o protocolo resolve o nome real no board
+antes de mover qualquer card.
 
 O card do Trello é o único registro de trabalho: status, dependências (checklist do card) e
 métricas (comentário) vivem nele. Não existe checklist em markdown.

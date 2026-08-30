@@ -5,13 +5,14 @@ Lida pelo protocolo de Trello dos workflows `dd-parallel-*`
 `docs/dd.md`: as duas famílias (`/dd` e `/dd-parallel`) operam o **mesmo board**, e um card
 nunca pertence a uma família — pertence ao trabalho.
 
-- board: orquestrador-studio
-- lista-entrada: To Do
-- lista-execucao: Doing
-- lista-review: Review/PR
-- lista-conclusao: Done
+- board: senhordatecnologia (`BDwwpWPU`, id `65e781cd1a65f6c4e84c164a`)
+- lista-entrada: DD · To Do
+- lista-execucao: DD · Doing
+- lista-review: DD · Review/PR
+- lista-conclusao: DD · Done
 
-Board ainda não criado (ver `docs/dd.md`). Trello indisponível nunca bloqueia o ciclo.
+Listas `DD ·` criadas na Wave 8 no board `senhordatecnologia` (ver `docs/dd.md`); as listas pessoais
+`TO DO/RUNNING/DONE` e as listas `QA ·` são de outros fluxos. Trello indisponível nunca bloqueia o ciclo.
 
 ## Específico do modo wave neste repositório
 
