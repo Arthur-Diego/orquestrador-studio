@@ -22,6 +22,8 @@ organizadas por módulo, e mostra o grafo de relacionamentos entre elas.
 | ADR-013 | Biblioteca Global de Mood Boards Reutilizáveis (estende a ADR-007) | STUDIO | Aceito | [ADR-013](generated/STUDIO/ADR-013-biblioteca-global-de-mood-boards-reutilizaveis.md) |
 | ADR-014 | A etapa 2 da campanha só escolhe e aplica um mood board da biblioteca (criação centralizada; estende a ADR-007, complementa a ADR-013) | STUDIO | Aceito | [ADR-014](generated/STUDIO/ADR-014-etapa-2-so-escolhe-e-aplica-um-mood-board-da-biblioteca.md) |
 | ADR-015 | A etapa 5 (Ângulos por cena) é fundida na etapa 4 (Storyboard) e sai do pipeline (storyboard passa a cobrir aulas 010+011; estende a ADR-004, amenda a moldura de numeração da ADR-011) | STUDIO | Aceito | [ADR-015](generated/STUDIO/ADR-015-fusao-da-etapa-5-angulos-na-etapa-4-storyboard.md) |
+| ADR-024 | Transcrição de legendas via OpenAI `whisper-1`, com fake sem chave (`[extensão]`; primeiro serviço externo HTTP do studio, import lazy, política assimétrica de falha) | STUDIO | Aceito | [ADR-024](generated/STUDIO/ADR-024-transcricao-de-legendas-via-openai-whisper-1-com-fake-sem-chave.md) |
+| ADR-030 | Editor de vídeo completo como extensão não destrutiva da etapa 8 (bloco `editor` aditivo em `timeline.json`, preview no browser e render fiel no ffmpeg) | STUDIO | Aceito | [ADR-030](generated/STUDIO/ADR-030-editor-de-video-completo-como-extensao-nao-destrutiva-da-etapa-8.md) |
 
 ## Grafo de relacionamentos
 
@@ -85,6 +87,8 @@ _Índice atualizado no fechamento da wave 4 (2026-08-27): ADR-010 a ADR-012, ger
 _ADR-014 (2026-08-27, ADH-OS-20260827-07): a criação de mood boards foi centralizada na biblioteca global e a etapa 2 da campanha passou a só escolher e aplicar um board — estende a ADR-007 e complementa a ADR-013._
 
 _ADR-015 (2026-08-27, ADH-OS-20260827-10): a etapa 5 (Ângulos por cena, aula 011) foi fundida na etapa 4 (Storyboard, aula 010) e saiu do pipeline — o Storyboard passa a cobrir as aulas 010+011, cada cena carrega várias imagens/ângulos, o pipeline encolhe para 10 etapas (animate=5, music=6, edit=7, export=8, publish=9, prospect=10) e o `animate` lê `storyboard/storyboard.json`. Estende a ADR-004 (`[extensão]`) e amenda a moldura de numeração da ADR-011 (a cena do produto é preservada, agora dentro da etapa 4)._
+
+_ADR-024 (2026-08-29, ADH-OS-20260829-39): a legenda automática da etapa 7 passou a ter transcrição — OpenAI `whisper-1` pelo SDK oficial com import lazy, `FakeTranscribe` determinístico sem `OPENAI_API_KEY`, política assimétrica de falha (com o nosso texto cai em estimativa; sem ele, 502) e a regra "nosso texto, tempo ouvido". É o primeiro serviço externo HTTP do studio; a ADR-002 (só a Higgsfield, e só por CLI) continua intacta e a ADR-008 é cumprida por fake + import lazy. `[extensão]` da aula 014. Nesta atualização a **ADR-030** também entrou na tabela (foi gerada na wave 7 sem linha no índice) — o intervalo ADR-016..ADR-023 segue fora, pendente de uma retro-indexação própria._
 
 **Legenda dos agrupamentos:**
 - **Backbone STUDIO** (ADR-001, ADR-003, ADR-006): a arquitetura base de processo único, sem

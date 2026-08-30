@@ -241,3 +241,31 @@ Ajustes pedidos pelo dono, todos `[extensão]`, sobre o editor já entregue:
 5. Campo **Início** editável na aba Básico; correções menores de paridade.
 </content>
 </invoke>
+
+---
+
+## Nota `[extensão]` — a legenda automática ganhou servidor (2026-08-29, ADH-OS-20260829-39)
+
+Nota **aditiva**: nada acima foi reescrito.
+
+A pendência registrada na §11 deste FDD — *"geração de legenda automática (depende de transcrição —
+não há no projeto hoje; a UI oferece legenda manual e deixa o 'gerar automático' como pendência)"* —
+passou a ser atendida **do lado servidor** pela frente B da wave 8, especificada em
+[`legendas-backend-fdd.md`](./legendas-backend-fdd.md).
+
+O que entrou: o pacote `studio/edit/captions/`, que devolve itens já no shape de
+`editor.tracks[t_cap].items[]` a partir de um roteiro colado (tempo proporcional determinístico) ou
+de um áudio do projeto (tempo real por palavra); as rotas `POST …/edit/captions/generate`,
+`POST …/edit/captions/narration/upload` e `GET …/edit/captions/narration`; os campos aditivos
+`mode`, `hi`, `chunk` e `words` no item de `caption` do `PUT /timeline` (item sem eles continua
+byte-idêntico); e o burn-in karaokê no `master.mp4` — um PNG por palavra, com a palavra corrente na
+cor `hi`.
+
+A transcrição usa a OpenAI `whisper-1`, o primeiro serviço externo HTTP do studio, registrada na
+[**ADR-024**](../../../adrs/generated/STUDIO/ADR-024-transcricao-de-legendas-via-openai-whisper-1-com-fake-sem-chave.md):
+SDK com import lazy, `FakeTranscribe` determinístico sem `OPENAI_API_KEY` e o texto do usuário como
+fonte do que aparece na tela ("nosso texto, tempo ouvido"). Sem chave, o app funciona inteiro — a
+legenda só não sincroniza com a fala.
+
+A **UI** do modal "Gerar legendas" (spans de karaokê no palco, propriedades da legenda) é a frente C
+da mesma wave e não faz parte desta entrega; até ela chegar, o servidor já responde o contrato.

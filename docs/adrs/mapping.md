@@ -649,3 +649,40 @@ transição start/end é justamente `start_image` + `end_image`.
 **substitui parcialmente a ADR-021** (só o §Decisão 4, parte da transição — a ADR-021 recebeu nota
 no topo e nada foi apagado). Relaciona ADR-002 (ponte só via CLI), ADR-004 (fidelidade),
 ADR-016 (créditos), ADR-021 e ADR-022.
+
+## Atualização 2026-08-29 (wave 8, frente ADH-OS-20260829-39)
+
+A parte **servidor** da legenda automática do editor completo (ADR-030). Até aqui a faixa `t_cap`
+existia e o burn-in de texto já saía no `master.mp4`, mas o botão "Gerar" só mostrava um toast: não
+havia transcrição no projeto. Tudo aqui é `[extensão]` aprovada — a aula 014 monta sem legendas.
+
+- **EDIT** — pacote novo `studio/edit/captions/` (`__init__.py` com as constantes do contrato
+  compartilhadas com o front — `WPS=2.4`, `CAPTION_MODES`, `HI_COLORS`, `CHUNK_OPTS`,
+  `word_in_window` e `effective_mode`; `transcribe.py` com `WordTiming`, `proportional`, `align`,
+  `FakeTranscribe` e `OpenAITranscribe`; `audio.py` com a extração `-vn -ac 1 -ar 16000` e o teto de
+  25 MB do whisper; `layout.py` com as janelas de uma linha, os itens prontos para `t_cap` e os
+  estados de karaokê; `service.py` com `generate`/`import_narration`/`list_narration`). Três rotas
+  novas em `etapas/edit/router.py`: `POST …/edit/captions/generate` (síncrono, **não persiste** — quem
+  grava é o `PUT /timeline`), `POST …/edit/captions/narration/upload` (biblioteca `edit/narration/`,
+  dedupe por sha1 do conteúdo) e `GET …/edit/captions/narration`. `editor.py` ganhou só
+  `normalize_caption_extra`, que aceita `mode`, `hi`, `chunk` e `words` no item de `caption` de
+  forma **aditiva** (item sem esses campos continua byte-idêntico; `words` inválidas são descartadas
+  uma a uma, nunca 422). No render, `burnin.py` passou a gerar **um PNG por palavra** para a legenda
+  em modo karaokê (a palavra corrente na cor `hi`, as demais em `style.color`) e `render.py` ganhou
+  o spec aditivo `kind:"concat"`: acima de `MAX_OVERLAY_INPUTS = 200` inputs, os PNGs viram uma
+  faixa + lista `ffconcat` num único input, com o mesmo resultado visual. O backbone da aula
+  (clipes, pretos, música, SFX, fade, loudnorm) e o `timeline.json` legado não mudaram.
+- **Índice de ADRs** — além da ADR-024, esta atualização **retro-indexa a ADR-030** em
+  `docs/adrs/README.md`: ela foi gerada na wave 7 e nunca entrou na tabela, que parava na ADR-015. O
+  intervalo ADR-016..ADR-023 continua fora do índice — retro-indexá-lo inteiro fugiria do escopo
+  desta frente e fica como pendência registrada.
+
+**ADR nova: ADR-024** (STUDIO) — transcrição de legendas via OpenAI `whisper-1` com fake sem chave;
+primeiro serviço externo HTTP do studio (import lazy do SDK, `verbose_json` por palavra,
+`language="pt"`, chave lida em runtime, `FakeTranscribe` respondendo `source:"estimate"` sem chave),
+política assimétrica de falha e a regra "nosso texto, tempo ouvido". Relaciona ADR-002 (que
+restringe **só** a Higgsfield — a ponte segue via CLI, sem conflito), ADR-003 (o `generate` não
+persiste), ADR-004 (`[extensão]`), ADR-006 (síncrono; job com polling é o plano B), ADR-008 (suíte
+100 % fake, sem rede), ADR-016 (o custo do whisper **não** entra no livro-caixa nesta entrega —
+lacuna intencional e registrada) e ADR-030 (a pendência "legenda automática" que ela fecha do lado
+servidor). O provedor real não foi exercitado: não há `OPENAI_API_KEY` neste ambiente.
