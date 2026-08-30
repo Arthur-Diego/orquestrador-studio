@@ -54,6 +54,7 @@ Studio.register("edit", (ctx) => {
   const fmtTC = (s) => { s = Math.max(0, s || 0); const f = fps(); const mm = Math.floor(s / 60), ss = Math.floor(s % 60), ff = Math.floor((s - Math.floor(s)) * f); return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`; };
   const clipLen = (c) => (num(c.out) - num(c.in)) / Math.max(num(c.speed, 1), 0.05);
   const nameOf = (c) => (c.file ? c.file.split("/").pop().replace(/\.[^.]+$/, "") : `${c.scene}_${c.shot}_${c.take}`);
+  const isVideoFile = (s) => /\.(mp4|webm|mov)$/i.test(s || "");
 
   // ------------------------------------------------------------ STORE
   const St = {
@@ -163,6 +164,58 @@ Studio.register("edit", (ctx) => {
   const sfxPool = new Map();          // file → <audio> do SFX (um por arquivo)
   let musicAudio = null;              // <audio id="edMusic"> — guardado aqui porque o re-render
                                       // do palco descarta o elemento e a trilha ficava muda
+  // MP4 na faixa VÍDEO 2: um <video> por ITEM (`item.id`), não por arquivo como o `videoPool` —
+  // dois overlays do mesmo MP4 tocam em instantes diferentes e não podem dividir o elemento.
+  const overlayPool = new Map();
+  /** `<video>` do overlay `o`, criado uma única vez e reaproveitado enquanto o item existir. */
+  function overlayVideoFor(o) {
+    const uid = String(o.id);
+    let v = overlayPool.get(uid);
+    if (!v) {
+      v = document.createElement("video");
+      v.preload = "auto"; v.muted = true; v.playsInline = true; v.setAttribute("playsinline", "");
+      v.dataset.ovid = uid;
+      v.addEventListener("error", () => { v.dataset.err = "1"; renderPreview(); });
+      // `currentTime` antes do metadata rebobina para 0 a cada frame: posicionar só quando dá.
+      v.addEventListener("loadedmetadata", () => {
+        const it = overlayItem(uid); if (!it) return;
+        try { v.currentTime = Math.max(St.playhead - num(it.start), 0); } catch (e) {}
+      });
+      overlayPool.set(uid, v);
+    }
+    const want = ctx.files(o.src);
+    if (v.getAttribute("src") !== want) { v.src = want; delete v.dataset.err; }
+    return v;
+  }
+  function overlayItem(uid) { const t = etrack("v2", false); return t ? (t.items || []).find((x) => String(x.id) === uid) : null; }
+  /** Overlay ativo em `t` toca e persegue o playhead; o que saiu da janela pausa. Tolerância de
+   *  0,3 s — a mesma de `syncMusic`. Pausado, só posiciona com o metadata já carregado. */
+  function syncOverlays(t) {
+    if (!overlayPool.size) return;
+    const tr = etrack("v2", false), ativos = new Map();
+    if (tr && tr.visible !== false) (tr.items || []).forEach((o) => {
+      if (o.src && t >= num(o.start) - 1e-3 && t <= num(o.end) + 1e-3) ativos.set(String(o.id), o);
+    });
+    overlayPool.forEach((v, uid) => {
+      const o = ativos.get(uid);
+      if (!o || v.dataset.err) { if (!v.paused) v.pause(); return; }
+      const want = Math.max(t - num(o.start), 0);
+      if (St.playing) {
+        if (v.paused) v.play().catch(() => {});
+        if (v.readyState >= 2 && Math.abs(v.currentTime - want) > 0.3) { try { v.currentTime = want; } catch (e) {} }
+      } else {
+        if (!v.paused) v.pause();
+        if (v.readyState >= 1 && Math.abs(v.currentTime - want) > 0.3) { try { v.currentTime = want; } catch (e) {} }
+      }
+    });
+  }
+  /** Tira do pool (e do DOM) os `<video>` de overlays que não existem mais na faixa VÍDEO 2 —
+   *  mesmo padrão do `sfxPool` em `mountAudio`. Chamado pelo `renderDirty({audio:true})`. */
+  function pruneOverlayPool() {
+    const tr = etrack("v2", false);
+    const vivos = new Set((tr ? tr.items || [] : []).map((o) => String(o.id)));
+    overlayPool.forEach((v, uid) => { if (!vivos.has(uid)) { v.pause(); v.remove(); overlayPool.delete(uid); } });
+  }
   function videoFor(file) {
     if (!file) return null;
     if (videoPool.has(file)) return videoPool.get(file);
@@ -236,7 +289,7 @@ Studio.register("edit", (ctx) => {
     const mu = musicEl(); if (mu) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} mu.volume = musicVolume(); mu.play().catch(() => {}); }
     setPlayIcon(); loopTick();
   }
-  function pause() { St.playing = false; if (raf) cancelAnimationFrame(raf), raf = null; videoPool.forEach((v) => v.pause()); if (musicAudio) musicAudio.pause(); pauseSfx(false); setPlayIcon(); }
+  function pause() { St.playing = false; if (raf) cancelAnimationFrame(raf), raf = null; videoPool.forEach((v) => v.pause()); overlayPool.forEach((v) => v.pause()); if (musicAudio) musicAudio.pause(); pauseSfx(false); setPlayIcon(); }
   function togglePlay() { St.playing ? pause() : play(); }
   function setPlayIcon() { const b = document.getElementById("pcPlay"); if (b) b.textContent = St.playing ? "❚❚" : "▶"; }
 
@@ -253,7 +306,7 @@ Studio.register("edit", (ctx) => {
       } else St.playhead += dt;
     } else St.playhead += dt;
     if (St.playhead >= duration() - 0.01) { if (St.loop) { seekTo(0); if (St.playing) playClock = performance.now(); } else { St.playhead = duration(); pause(); } }
-    syncMusic(); syncSfx(Math.min(antes, St.playhead), Math.max(antes, St.playhead));
+    syncMusic(); syncOverlays(St.playhead); syncSfx(Math.min(antes, St.playhead), Math.max(antes, St.playhead));
     paintPlayhead(); renderPreview();
     if (St.playing) raf = requestAnimationFrame(loopTick);
   }
@@ -271,7 +324,7 @@ Studio.register("edit", (ctx) => {
     St.playhead = clamp(t, 0, duration()); const seg = segAt(St.playhead);
     if (seg && seg.kind === "clip") { const v = videoFor(seg.clip.file); if (v) { try { v.currentTime = num(seg.clip.in) + (St.playhead - seg.start) * num(seg.clip.speed, 1); } catch (e) {} } }
     const mu = musicEl(); if (mu && mu.readyState >= 1) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} }
-    pauseSfx(true);
+    pauseSfx(true); syncOverlays(St.playhead);
     paintPlayhead(); renderPreview(); if (was) play();
   }
   function step(frames) { seekTo(St.playhead + frames / fps()); }
@@ -361,7 +414,7 @@ Studio.register("edit", (ctx) => {
   }
   function overlayLayerCreate(el, o, stage) {
     if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
-    else if (o.src) { const v = document.createElement("video"); v.src = ctx.files(o.src); v.muted = true; v.style.maxWidth = "60vw"; el.appendChild(v); }
+    else if (o.src) el.appendChild(overlayVideoFor(o));
     else if (SHAPES_CSS.includes(o.shape)) el.classList.add("shape", "shape-" + o.shape);
     else { el.style.color = "#fff"; }
   }
@@ -370,10 +423,18 @@ Studio.register("edit", (ctx) => {
     const img = el.querySelector("img"), v = el.querySelector("video");
     if (img) { const want = ctx.files(o.src); if (img.getAttribute("src") !== want) img.src = want; }
     else if (v) {
-      const want = ctx.files(o.src); if (v.getAttribute("src") !== want) v.src = want;
-      // o nó agora sobrevive entre renders: só reposicionar quando o quadro já saiu do lugar
-      const em = t - num(o.start);
-      if (v.readyState >= 1 && Math.abs(v.currentTime - em) > 0.3) { try { v.currentTime = em; } catch (e) {} }
+      const want = ctx.files(o.src); if (v.getAttribute("src") !== want) { v.src = want; delete v.dataset.err; }
+      if (v.parentNode !== el) el.appendChild(v);
+      // src quebrado: a camada rotula e o pool nunca tenta tocar (mesmo padrão de `videoFor`)
+      const falta = v.dataset.err === "1";
+      v.style.display = falta ? "none" : "";
+      let miss = el.querySelector(".ved-ovmiss");
+      if (falta && !miss) { miss = document.createElement("span"); miss.className = "ved-ovmiss"; miss.textContent = "mídia indisponível"; el.appendChild(miss); }
+      else if (!falta && miss) miss.remove();
+      // durante o play quem persegue o playhead é `syncOverlays`; parado, reposiciona aqui — e
+      // só com o metadata carregado, senão o quadro volta para o zero a cada render
+      const em = Math.max(t - num(o.start), 0);
+      if (!falta && !St.playing && v.readyState >= 1 && Math.abs(v.currentTime - em) > 0.3) { try { v.currentTime = em; } catch (e) {} }
     } else if (!el.classList.contains("shape")) {
       const g = GLIFO[o.shape] || o.shape || "▦";
       if (el.textContent !== g) el.textContent = g;
@@ -630,16 +691,27 @@ Studio.register("edit", (ctx) => {
     document.getElementById("mUpload").onclick = () => document.getElementById("mUp").click();
     document.getElementById("mUp").onchange = (e) => { if (e.target.files.length) uploadMedia([...e.target.files]); };
     ui.drop(document.getElementById("mDrop"), uploadMedia);
-    list.querySelectorAll("[data-cid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "clip:" + t.dataset.cid)); t.addEventListener("dblclick", () => addPipelineClip(t.dataset.cid)); });
+    list.querySelectorAll("[data-cid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "clip:" + t.dataset.cid)); t.addEventListener("dblclick", (e) => addPipelineClip(t.dataset.cid, e)); });
     list.querySelectorAll("[data-v2c]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); clipParaV2(b.dataset.v2c); });
     list.querySelectorAll("[data-v2]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); addMediaItem(media.find((m) => m.id === b.dataset.v2), "v2"); });
-    list.querySelectorAll("[data-mid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "media:" + t.dataset.mid)); t.addEventListener("dblclick", () => addMediaItem(media.find((m) => m.id === t.dataset.mid))); });
+    list.querySelectorAll("[data-mid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "media:" + t.dataset.mid)); t.addEventListener("dblclick", (e) => addMediaItem(media.find((m) => m.id === t.dataset.mid), null, e)); });
   }
-  function addPipelineClip(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return; commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }, { panel: true }); }
-  /** `faixa === "v2"` manda o vídeo para a faixa VÍDEO 2 (overlay com `src` de vídeo);
-   *  sem faixa, vídeo entra no backbone (VÍDEO 1) e imagem vira overlay, como antes. */
-  function addMediaItem(m, faixa) {
+  /** Com evento (dblclick no card) o take pergunta a faixa antes de entrar; sem evento (drop numa
+   *  lane, que já disse a faixa) vai direto para a VÍDEO 1. */
+  function addPipelineClip(cid, ev) {
+    const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return;
+    if (ev) return openTrackMenu(ev.clientX, ev.clientY, (dest) => { if (dest === "v2") clipParaV2(cid); else addPipelineClip(cid); });
+    commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }, { panel: true });
+  }
+  /** `faixa === "v2"` manda o vídeo para a faixa VÍDEO 2 (overlay com `src` de vídeo); `"v1"` para
+   *  o backbone. Vídeo SEM faixa definida abre o menu de escolha — imagem continua indo direto
+   *  para a VÍDEO 2, que é a única faixa que a recebe. */
+  function addMediaItem(m, faixa, ev) {
     if (!m) return;
+    if (m.kind === "video" && faixa !== "v1" && faixa !== "v2") {
+      const x = ev ? ev.clientX : innerWidth / 2, y = ev ? ev.clientY : innerHeight / 2;
+      return openTrackMenu(x, y, (dest) => addMediaItem(m, dest));
+    }
     if (m.kind === "video" && faixa === "v2") return addOverlayVideo(m.file, num(m.duration, 3), m.name);
     if (m.kind === "video") commit("adicionar vídeo", () => St.timeline.clips.push({ id: newId("c"), scene: "upload", shot: (m.name || "media").replace(/\W+/g, "_"), take: "1", file: m.file, in: 0, out: Math.max(num(m.duration, 3), 0.5), speed: 1, blend: true, zoom: 1 }), { panel: true });
     else commit("adicionar imagem", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), src: m.file, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
@@ -659,13 +731,15 @@ Studio.register("edit", (ctx) => {
   }
   function pAudio(el) {
     const rows = [];
-    const mf = (St.timeline.music || {}).file; if (mf) rows.push(["♪", mf.split("/").pop(), "trilha · música", "music"]);
-    (St.timeline.sfx || []).forEach((s) => rows.push(["♪", s.file.split("/").pop(), "sfx", "sfx"]));
-    St.sfxLib.forEach((s) => { if (!(St.timeline.sfx || []).some((x) => x.file === s.file)) rows.push(["♪", s.name || s.file.split("/").pop(), `${(s.duration || 0).toFixed(0)}s · biblioteca`, "lib:" + s.file]); });
+    // linha do que JÁ está na montagem sai com ✕ (exclui); linha de biblioteca com ＋ (adiciona)
+    const mf = (St.timeline.music || {}).file; if (mf) rows.push(["♪", mf.split("/").pop(), "trilha · música", "music", true]);
+    (St.timeline.sfx || []).forEach((s, i) => rows.push(["♪", s.file.split("/").pop(), "sfx", `sfx_${i}`, true]));
+    St.sfxLib.forEach((s) => { if (!(St.timeline.sfx || []).some((x) => x.file === s.file)) rows.push(["♪", s.name || s.file.split("/").pop(), `${(s.duration || 0).toFixed(0)}s · biblioteca`, "lib:" + s.file, false]); });
     el.innerHTML = phead("Áudio", rows.length) + `<label class="drop sm" id="sfxDrop" style="display:block;margin-bottom:10px;padding:10px;border:1px dashed var(--vbd3);border-radius:8px;text-align:center;color:var(--vtx4);font-size:11px">Arraste SFX aqui (gelo, ambiência, respiração, impacto)<input id="sfxUp" type="file" accept="audio/*" multiple hidden></label>`
-      + `<div class="ved-list">${rows.map(([ic, nm, sub, act]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${esc(nm)}</div><div class="rs">${sub}</div></div><button class="radd ic" data-aud="${act}">＋</button></div>`).join("")}</div>`;
+      + `<div class="ved-list">${rows.map(([ic, nm, sub, act, naTl]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${esc(nm)}</div><div class="rs">${sub}</div></div><button class="radd ic" ${naTl ? `data-audel="${act}" title="Excluir"` : `data-aud="${act}"`}>${naTl ? "✕" : "＋"}</button></div>`).join("")}</div>`;
     ui.drop(document.getElementById("sfxDrop"), uploadSfx);
     el.querySelectorAll("[data-aud]").forEach((b) => b.onclick = () => { const a = b.dataset.aud; if (a.startsWith("lib:")) addSfx(a.slice(4)); });
+    el.querySelectorAll("[data-audel]").forEach((b) => b.onclick = () => deleteItems([b.dataset.audel]));
   }
   function pTransitions(el) {
     el.innerHTML = phead("Transições", TRANSITIONS.length) + `<input class="ved-search" placeholder="Buscar…" oninput="const q=this.value.toLowerCase();this.parentNode.querySelectorAll('[data-tr]').forEach(b=>b.style.display=b.dataset.tr.toLowerCase().includes(q)?'':'none')"><div class="ved-pgrid">${TRANSITIONS.map((t) => `<button class="ved-pick" data-tr="${t}"><span class="sw">⧓</span>${t}<span class="sub">0.5s</span></button>`).join("")}</div><p class="ved-hint">[extensão] — aparece no preview; no master.mp4: fase seguinte. Selecione um clipe de vídeo antes.</p>`;
@@ -756,13 +830,33 @@ Studio.register("edit", (ctx) => {
     body.innerHTML = `<div class="ved-grid2">${nf("bX", "X", (tf.x * 100).toFixed(0), "%")}${nf("bY", "Y", (tf.y * 100).toFixed(0), "%")}${nf("bS", "Escala", (tf.scaleX * 100).toFixed(0), "%")}${nf("bR", "Rotação", tf.rotation, "°")}${nf("bIn", "Início", it.start.toFixed(2), "s")}${nf("bD", "Duração", it.dur.toFixed(2), "s")}</div>
       <div class="ved-slider"><label>Opacidade</label><input type="range" id="bOp" min="0" max="100" value="${(tf.opacity != null ? tf.opacity : 1) * 100 | 0}"><span class="val" id="bOpv">${(tf.opacity != null ? tf.opacity : 1) * 100 | 0}%</span></div>
       <div class="ved-slider"><label>Escala</label><input type="range" id="bSc" min="10" max="300" value="${tf.scaleX * 100 | 0}"><span class="val" id="bScv">${tf.scaleX * 100 | 0}%</span></div>
-      <div class="ved-grid2"><button class="ved-btn" id="bFx" style="padding:6px">⇋ Flip X</button><button class="ved-btn" id="bFy" style="padding:6px">⇵ Flip Y</button></div>`;
+      <div class="ved-grid2"><button class="ved-btn" id="bFx" style="padding:6px">⇋ Flip X</button><button class="ved-btn" id="bFy" style="padding:6px">⇵ Flip Y</button></div>${trackPickerHTML(it)}`;
+    bindTrackPicker(body, it);
     bindNum("bX", (v) => tf.x = v / 100); bindNum("bY", (v) => tf.y = v / 100); bindNum("bS", (v) => tf.scaleX = tf.scaleY = v / 100); bindNum("bR", (v) => tf.rotation = v);
     bindNum("bIn", (v) => setItemStart(it, v)); bindNum("bD", (v) => setItemDur(it, v));
     bindSlider("bOp", (v) => tf.opacity = v / 100, "opacidade", (v) => document.getElementById("bOpv").textContent = v + "%");
     bindSlider("bSc", (v) => tf.scaleX = tf.scaleY = v / 100, "escala", (v) => document.getElementById("bScv").textContent = v + "%");
     document.getElementById("bFx").onclick = () => commit("flip", () => tf.flipX = !tf.flipX);
     document.getElementById("bFy").onclick = () => commit("flip", () => tf.flipY = !tf.flipY);
+  }
+  /** Troca de faixa nas Propriedades: o botão da faixa atual fica marcado e o outro move o item.
+   *  Só aparece para o que pode viver nas duas faixas (clipe da VÍDEO 1 e overlay de vídeo). */
+  function trackPicker(it) {
+    if (it.kind === "video") return "v1";
+    if (it.kind === "overlay" && isVideoFile((it.item || {}).src)) return "v2";
+    return null;
+  }
+  function trackPickerHTML(it) {
+    const atual = trackPicker(it); if (!atual) return "";
+    return `<div class="ved-kick" style="margin:10px 0 4px">Faixa</div>
+      <div class="ved-speedgrid" style="grid-template-columns:repeat(2,1fr)">
+        <button data-trk="v1"${atual === "v1" ? " class=on" : ""}>VÍDEO 1</button>
+        <button data-trk="v2"${atual === "v2" ? " class=on" : ""}>VÍDEO 2</button></div>
+      <p class="ved-hint">Mover é mover: o item sai da faixa de origem e os efeitos do clipe não vão junto. Na VÍDEO 2 o vídeo aparece no preview — no master.mp4: fase seguinte.</p>`;
+  }
+  function bindTrackPicker(body, it) {
+    const atual = trackPicker(it); if (!atual) return;
+    body.querySelectorAll("[data-trk]").forEach((b) => b.onclick = () => { if (b.dataset.trk !== atual) moveToTrack(it.uid, b.dataset.trk); });
   }
   function propsVideo(body, it) {
     if (it.kind !== "video") return void (body.innerHTML = `<p class="ved-hint">Sem controles de vídeo para este item.</p>`);
@@ -905,7 +999,7 @@ Studio.register("edit", (ctx) => {
       e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || "");
       const lane = e.target.closest(".ved-lane"), faixa = lane ? lane.dataset.tid : null;
       if (d.startsWith("clip:")) { if (faixa === "v2") clipParaV2(d.slice(5)); else addPipelineClip(d.slice(5)); }
-      else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6)), faixa);
+      else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6)), faixa, e);
     });
   }
   function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); setStatus("dirty"); scheduleSave(); }
@@ -1031,16 +1125,39 @@ Studio.register("edit", (ctx) => {
     if (!St.selection.length) return;
     commit("duplicar", () => St.selection.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { const i = St.timeline.clips.findIndex((x) => x.id === u); const d = clone(it.clip); d.id = newId("c"); St.timeline.clips.splice(i + 1, 0, d); } else if (it.kind === "sfx") St.timeline.sfx.push({ ...clone(it.sfx), at: num(it.sfx.at) + .2 }); else if (it.item && it.track) { const d = clone(it.item); d.id = newId("it"); d.start = num(d.start) + .3; d.end = num(d.end) + .3; it.track.items.push(d); } }));
   }
+  /** Exclui qualquer seleção — inclusive a música e o ÚLTIMO clipe. A montagem pode ficar vazia:
+   *  quem exige clipe é a exportação (`startRender`), não a edição. Os itens são resolvidos ANTES
+   *  do commit (nada de `toast` dentro do mutator, nenhuma entrada no histórico quando nada
+   *  resolve) e o SFX sai por REFERÊNCIA ao objeto — por índice, excluir dois de uma vez removia
+   *  o errado, porque o `sfx_<i>` do segundo já tinha mudado de significado. */
   function deleteItems(uids) {
     if (!uids || !uids.length) return;
-    commit("excluir", () => uids.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { if ((St.timeline.clips || []).length <= 1) return toast("A montagem precisa de ao menos um clipe"); St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); } else if (it.kind === "sfx") St.timeline.sfx = St.timeline.sfx.filter((_, i) => `sfx_${i}` !== u); else if (it.track && it.track.etrack) it.track.etrack.items = it.track.etrack.items.filter((x) => x.id !== u); }), { panel: true, audio: true });
-    St.selection = [];
+    const its = uids.map((u) => findItem(u)).filter(Boolean);
+    if (!its.length) return;
+    if (its.some((it) => it.kind === "music") && musicAudio) musicAudio.pause();
+    commit("excluir", () => {
+      its.forEach((it) => {
+        const u = it.uid;
+        if (it.kind === "video") {
+          St.timeline.clips = (St.timeline.clips || []).filter((x) => x.id !== u);
+          ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u);
+        } else if (it.kind === "music") St.timeline.music = { file: null, offset: 0 };
+        else if (it.kind === "sfx") St.timeline.sfx = (St.timeline.sfx || []).filter((x) => x !== it.sfx);
+        else if (it.track && it.track.etrack) it.track.etrack.items = (it.track.etrack.items || []).filter((x) => x.id !== u);
+      });
+      St.selection = [];      // dentro do mutator: o render do commit já sai sem a seleção morta
+    }, { panel: true, audio: true });
   }
   function rippleDelete() {
     const u = St.selection[0]; const it = u && findItem(u); if (!it || it.kind !== "video") return deleteItems(St.selection);
-    // mesma guarda do #tDel: a montagem da aula 014 não existe sem clipe
-    if ((St.timeline.clips || []).length <= 1) return toast("A montagem precisa de ao menos um clipe");
-    commit("ripple delete", () => { St.timeline.clips = St.timeline.clips.filter((x) => x.id !== u); ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u); }, { panel: true, audio: true }); St.selection = [];
+    const pos = it.clip.start != null ? num(it.clip.start) : null, delta = clipLen(it.clip);
+    commit("ripple delete", () => {
+      St.timeline.clips = (St.timeline.clips || []).filter((x) => x.id !== u);
+      ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u);
+      // no modo posicional o buraco não fecha sozinho: puxar os seguintes para trás é o "ripple"
+      if (pos != null) (St.timeline.clips || []).forEach((c) => { if (c.start != null && num(c.start) > pos) c.start = Math.max(+(num(c.start) - delta).toFixed(3), 0); });
+      St.selection = [];
+    }, { panel: true, audio: true });
   }
   function addText(text, style, type) {
     const tid = type === "caption" ? "t_cap" : "t_txt";
@@ -1053,6 +1170,35 @@ Studio.register("edit", (ctx) => {
     commit("vídeo na VÍDEO 2", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + Math.max(num(dur, 3), .5)).toFixed(2), src: file, text: rotulo || "", transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
   }
   function clipParaV2(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (c) addOverlayVideo(c.file, clipLen(c), nameOf(c)); }
+  /** Move um vídeo entre VÍDEO 1 e VÍDEO 2 preservando o `start` efetivo. É MOVER, não copiar: o
+   *  item de origem sai da timeline. Os efeitos do clipe (`clip_fx`) NÃO migram para o overlay —
+   *  o overlay nasce limpo e o usuário reaplica (decisão registrada no FDD §4d). */
+  function moveToTrack(uid, dest) {
+    const it = uid ? findItem(uid) : null; if (!it) return;
+    if (dest === "v2") {
+      if (it.kind !== "video") { console.warn("[edit] moveToTrack", uid, dest); return toast("Só clipes da VÍDEO 1 podem ir para a VÍDEO 2"); }
+      const c = it.clip, start = +num(it.start).toFixed(2), end = +(num(it.start) + num(it.dur)).toFixed(2), novo = newId("ov");
+      commit("mover para VÍDEO 2", () => {
+        const t = etrack("v2", true);
+        t.items.push({ id: novo, start, end, src: c.file, text: nameOf(c), transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} });
+        St.timeline.clips = (St.timeline.clips || []).filter((x) => x.id !== uid);
+        ed().transitions = (ed().transitions || []).filter((t2) => t2.from !== uid && t2.to !== uid);
+        St.selection = [novo];
+      }, { panel: true });
+    } else if (dest === "v1") {
+      const o = it.item;
+      if (it.kind !== "overlay" || !o || !isVideoFile(o.src)) { console.warn("[edit] moveToTrack", uid, dest); return toast("Só vídeo pode ir para a VÍDEO 1"); }
+      const start = num(o.start), out = Math.max(num(o.end) - start, .5), novo = newId("c"), tr = it.track.etrack;
+      commit("mover para VÍDEO 1", () => {
+        ensurePositions();          // com `start` a timeline vira posicional: fixar os outros ANTES
+        St.timeline.clips = St.timeline.clips || [];
+        St.timeline.clips.push({ id: novo, scene: "upload", shot: (o.text || "media").replace(/\W+/g, "_"), take: "1", file: o.src, in: 0, out, speed: 1, blend: true, zoom: 1, start });
+        if (tr) tr.items = (tr.items || []).filter((x) => x.id !== uid);
+        St.selection = [novo];
+      }, { panel: true });
+      pruneOverlayPool();           // o <video> do overlay que saiu não fica pendurado no pool
+    } else toast("Faixa inválida");
+  }
   function addOverlayShape(shape, nome) {
     commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: nome || shape, shape, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
   }
@@ -1079,15 +1225,42 @@ Studio.register("edit", (ctx) => {
 
   // ============================================================ CONTEXT MENU
   function openMenu(x, y) {
-    closeMenu(); const isV = itemType(St.selection[0]) === "video";
-    const items = [["Dividir", splitAtPlayhead, "Ctrl+B", isV], ["Copiar", () => { St._clip = St.selection.slice(); toast("Copiado"); }, "Ctrl+C", true], ["Duplicar", duplicateSelection, "Ctrl+D", true], ["sep"], ["Ripple delete", rippleDelete, "", isV], ["Velocidade", () => { St.rightTab = "speed"; renderProps(); }, "", isV], ["Congelar quadro", () => toast("Freeze frame entra na próxima fase"), "", isV], ["sep"], ["Excluir", () => deleteItems(St.selection), "Del", true, "danger"]];
+    closeMenu();
+    const u = St.selection[0], sel = u ? findItem(u) : null;
+    const isV = !!sel && sel.kind === "video";
+    const isOv = !!sel && sel.kind === "overlay" && isVideoFile((sel.item || {}).src);
+    const items = [["Dividir", splitAtPlayhead, "Ctrl+B", isV], ["Copiar", () => { St._clip = St.selection.slice(); toast("Copiado"); }, "Ctrl+C", true], ["Duplicar", duplicateSelection, "Ctrl+D", true], ["sep"], ["Mover para VÍDEO 2", () => moveToTrack(u, "v2"), "", isV], ["Mover para VÍDEO 1", () => moveToTrack(u, "v1"), "", isOv], ["Ripple delete", rippleDelete, "", isV], ["Velocidade", () => { St.rightTab = "speed"; renderProps(); }, "", isV], ["Congelar quadro", () => toast("Freeze frame entra na próxima fase"), "", isV], ["sep"], ["Excluir", () => deleteItems(St.selection), "Del", true, "danger"]];
     const m = document.createElement("div"); m.className = "ved-menu"; m.id = "vedMenu";
     m.innerHTML = items.filter((i) => i[0] === "sep" || i[3] !== false).map((i) => i[0] === "sep" ? `<div class="sep"></div>` : `<button class="${i[4] || ""}" data-i="${i[0]}">${i[0]}<kbd>${i[2] || ""}</kbd></button>`).join("");
     document.body.appendChild(m); const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 8) + "px"; m.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
     m.querySelectorAll("button").forEach((b) => b.onclick = () => { const f = items.find((i) => i[0] === b.dataset.i); if (f && f[1]) f[1](); closeMenu(); });
-    setTimeout(() => document.addEventListener("pointerdown", closeMenu, { once: true }), 0);
+    armarFechamento();
   }
-  function closeMenu() { const m = document.getElementById("vedMenu"); if (m) m.remove(); }
+  let menuFora = null;
+  function closeMenu() {
+    const m = document.getElementById("vedMenu"); if (m) m.remove();
+    if (menuFora) { document.removeEventListener("pointerdown", menuFora, true); menuFora = null; }
+  }
+  /** Fecha o menu no primeiro clique FORA dele. Fechar em QUALQUER `pointerdown` (como antes)
+   *  tirava o botão do DOM entre o pointerdown e o click: nenhum item do menu chegava a rodar. */
+  function armarFechamento() {
+    if (menuFora) document.removeEventListener("pointerdown", menuFora, true);
+    menuFora = (e) => { if (!e.target.closest("#vedMenu")) closeMenu(); };
+    const armar = menuFora;
+    setTimeout(() => { if (menuFora === armar) document.addEventListener("pointerdown", armar, true); }, 0);
+  }
+  /** Menu de escolha da faixa ao adicionar um vídeo — mesma estrutura do `openMenu`. Chama
+   *  `onPick("v1"|"v2")`; fechar sem escolher não adiciona nada. */
+  function openTrackMenu(x, y, onPick) {
+    closeMenu();
+    const faixas = [["v1", "Adicionar na VÍDEO 1"], ["v2", "Adicionar na VÍDEO 2 (sobreposição)"]];
+    const m = document.createElement("div"); m.className = "ved-menu"; m.id = "vedMenu";
+    m.innerHTML = faixas.map(([v, lb]) => `<button data-faixa="${v}">${lb}</button>`).join("");
+    document.body.appendChild(m); const r = m.getBoundingClientRect();
+    m.style.left = Math.min(x, innerWidth - r.width - 8) + "px"; m.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+    m.querySelectorAll("button").forEach((b) => b.onclick = () => { const f = b.dataset.faixa; closeMenu(); onPick(f); });
+    armarFechamento();
+  }
 
   // ============================================================ EXPORT
   function openExport() {
@@ -1109,6 +1282,8 @@ Studio.register("edit", (ctx) => {
   }
   function startRender(target, opts) {
     if (!St.hasFfmpeg) return toast("ffmpeg ausente — render bloqueado");
+    // a montagem pode ficar vazia na edição; quem exige clipe é a EXPORTAÇÃO
+    if (!St.timeline || !(St.timeline.clips || []).length) return toast("Adicione ao menos um clipe na VÍDEO 1 antes de exportar");
     save(true).then(() => ui.progressJob({ title: target === "master" ? "Renderizar master" : "Prévia (rough)", subtitle: "Studio de vídeo (ffmpeg)", start: () => api(`${base()}/render`, { method: "POST", body: JSON.stringify({ target, ...(opts || {}) }) }), jobUrl: `${base()}/render/job`, done: (j) => { if (j.output) toast(`${j.output} pronto — assista na etapa 9`); ctx.guide(); } }).catch((err) => toast(err.message)));
   }
 
@@ -1167,6 +1342,6 @@ Studio.register("edit", (ctx) => {
       try { St.mediaLib = await api(`${base()}/media`); } catch (e) { St.mediaLib = []; }
       await load();
     },
-    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); sfxPool.clear(); musicAudio = null; },
+    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); videoPool.clear(); sfxPool.clear(); overlayPool.forEach((v) => { v.pause(); v.remove(); }); overlayPool.clear(); musicAudio = null; },
   };
 });

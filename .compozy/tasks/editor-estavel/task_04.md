@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Exclusão total, MP4 na VÍDEO 2 e movimento V1 ↔ V2
 type: frontend
 complexity: high
@@ -53,17 +53,17 @@ Tudo em `view.js`/`view.html`, em cima do `renderDirty` e do `LAYER_HOOKS` da ta
 </requirements>
 
 ## Subtasks
-- [ ] 4.1 Ler `_techspec.md` §4 fluxos (c) e (d), §3 itens 3 a 5, §6 (matriz de erros) e §10 risco 3.
-- [ ] 4.2 Reescrever `deleteItems` (validação fora do commit, música, SFX por referência, seleção).
-- [ ] 4.3 Reescrever `rippleDelete` com o recuo dos clipes seguintes no modo posicional.
-- [ ] 4.4 Acrescentar os `✕` no painel Áudio e a guarda de zero clipes em `startRender`.
-- [ ] 4.5 Corrigir o CSS do palco e da camada de vídeo em `view.html`.
-- [ ] 4.6 Criar `overlayVideoFor(item)` + `overlayPool` + `pruneOverlayPool()` e ligá-los ao
+- [x] 4.1 Ler `_techspec.md` §4 fluxos (c) e (d), §3 itens 3 a 5, §6 (matriz de erros) e §10 risco 3.
+- [x] 4.2 Reescrever `deleteItems` (validação fora do commit, música, SFX por referência, seleção).
+- [x] 4.3 Reescrever `rippleDelete` com o recuo dos clipes seguintes no modo posicional.
+- [x] 4.4 Acrescentar os `✕` no painel Áudio e a guarda de zero clipes em `startRender`.
+- [x] 4.5 Corrigir o CSS do palco e da camada de vídeo em `view.html`.
+- [x] 4.6 Criar `overlayVideoFor(item)` + `overlayPool` + `pruneOverlayPool()` e ligá-los ao
       `LAYER_HOOKS.overlay`.
-- [ ] 4.7 Sincronizar o overlay em `loopTick`, `pause`, `seekTo` e limpá-lo em `destroy`.
-- [ ] 4.8 Criar `openTrackMenu(x, y, onPick)` e ligá-lo a `addMediaItem`/`addPipelineClip`.
-- [ ] 4.9 Criar `moveToTrack(uid, dest)` e expô-lo no menu de contexto e em `propsBasic`.
-- [ ] 4.10 Rodar `make verify`.
+- [x] 4.7 Sincronizar o overlay em `loopTick`, `pause`, `seekTo` e limpá-lo em `destroy`.
+- [x] 4.8 Criar `openTrackMenu(x, y, onPick)` e ligá-lo a `addMediaItem`/`addPipelineClip`.
+- [x] 4.9 Criar `moveToTrack(uid, dest)` e expô-lo no menu de contexto e em `propsBasic`.
+- [x] 4.10 Rodar `make verify`.
 
 ## Implementation Details
 Modificar `studio/etapas/edit/view.js` (Ações: `deleteItems`, `rippleDelete`; Panels: `pAudio`,
@@ -99,12 +99,12 @@ indisponível" sem tentar `play()`; `currentTime` nunca é setado antes do `load
 
 ## Tests
 
-- [ ] `grep` em `view.js`: contém `moveToTrack(`, `openTrackMenu(`, `overlayPool` e
+- [x] `grep` em `view.js`: contém `moveToTrack(`, `openTrackMenu(`, `overlayPool` e
       `pruneOverlayPool(`; **não** contém mais a string "A montagem precisa de ao menos um clipe".
-- [ ] `grep` em `view.html`: contém `.ved-stage > video` e `.ved-layer video`.
-- [ ] Regressão: `tests/test_edit_api.py::test_put_removes_music_and_persists` e
+- [x] `grep` em `view.html`: contém `.ved-stage > video` e `.ved-layer video`.
+- [x] Regressão: `tests/test_edit_api.py::test_put_removes_music_and_persists` e
       `test_put_with_zero_clips_is_200_and_render_is_422` (entregues na task 01) continuam verdes.
-- [ ] `make verify` verde.
+- [x] `make verify` verde.
 
 Critérios do FDD §9 cobrados no smoke Playwright do fechamento: 13 (exclusão de música/clipes/SFX
 em lote e guarda de exportação), 14 (overlay MP4 visível, tocando, com desvio ≤ 0,3 s e um único
