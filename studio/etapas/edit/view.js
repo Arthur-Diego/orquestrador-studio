@@ -1676,7 +1676,7 @@ Studio.register("edit", (ctx) => {
   }
   function duplicateSelection() {
     if (!St.selection.length) return;
-    commit("duplicar", () => St.selection.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { const i = St.timeline.clips.findIndex((x) => x.id === u); const d = clone(it.clip); d.id = newId("c"); St.timeline.clips.splice(i + 1, 0, d); } else if (it.kind === "sfx") St.timeline.sfx.push({ ...clone(it.sfx), at: num(it.sfx.at) + .2 }); else if (it.item && it.track) { const d = clone(it.item); d.id = newId("it"); d.start = num(d.start) + .3; d.end = num(d.end) + .3; shiftWords(d, .3); it.track.items.push(d); } }));
+    commit("duplicar", () => St.selection.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { const i = St.timeline.clips.findIndex((x) => x.id === u); const d = clone(it.clip); d.id = newId("c"); St.timeline.clips.splice(i + 1, 0, d); } else if (it.kind === "sfx") St.timeline.sfx.push({ ...clone(it.sfx), at: num(it.sfx.at) + .2 }); else if (it.item && it.track) { const d = clone(it.item); d.id = newId("it"); d.start = num(d.start) + .3; d.end = num(d.end) + .3; shiftWords(d, .3); const et = it.track.etrack || etrack(it.track.id, true); if (et) et.items.push(d); } }));
   }
   /** Exclui qualquer seleção — inclusive a música e o ÚLTIMO clipe. A montagem pode ficar vazia:
    *  quem exige clipe é a exportação (`startRender`), não a edição. Os itens são resolvidos ANTES
@@ -1904,7 +1904,20 @@ Studio.register("edit", (ctx) => {
     // o editor encosta em 0 em vez de herdar a largura de um elemento que não está mais na tela
     const l = side && side.offsetParent !== null ? side.getBoundingClientRect().right : 0, top = topbar ? topbar.getBoundingClientRect().height : 0;
     if (document.fullscreenElement === r) { r.style.top = "0"; r.style.left = "0"; } else { r.style.top = top + "px"; r.style.left = l + "px"; }
+    fitTimeline(r);
     stageBox();
+  }
+  /** Em viewport baixa (ex.: 1024×768) a altura preferida da timeline (`ui.tlHeight`, 345 px) não cabe
+   *  junto do header + controles do player: a timeline passava por cima do player. A preferência continua
+   *  gravada; o que se aplica na tela é o mínimo entre ela e o espaço que sobra (palco ≥ 160 px). */
+  function fitTimeline(r) {
+    const tl = document.getElementById("edTimeline"), topo = r.querySelector(".ved-top"), pctl = document.getElementById("edPctl");
+    if (!tl || !St.timeline) return;
+    const reserva = (topo ? topo.offsetHeight : 50) + (pctl ? pctl.offsetHeight : 50) + 160;
+    const teto = Math.max(UI_SIZES.tlHeight[1], r.clientHeight - reserva);
+    const querido = ed().ui.tlHeight == null ? UI_SIZES.tlHeight[0] : uiSize("tlHeight");
+    const alvo = Math.min(querido, teto);
+    if (Math.abs(tl.offsetHeight - alvo) > 1) tl.style.height = alvo + "px";
   }
   function bindResizers() {
     document.addEventListener("pointerdown", (e) => {

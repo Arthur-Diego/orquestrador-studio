@@ -419,7 +419,7 @@
               "if (pm.response.code === 200) {",
               "  const b = pm.response.json();",
               "  pm.test('grava em edit/last_frames', () => pm.expect(b.file).to.match(/^edit\\/last_frames\\/.+_last\\.png$/));",
-              "  pm.test('instrução da aula para a etapa 6', () => pm.expect(b.instruction).to.include('etapa 6'));",
+              "  pm.test('instrução da aula para a etapa 5 (animação)', () => pm.expect(b.instruction).to.include('etapa 5'));",
               "}"
             ]
           }
@@ -595,7 +595,7 @@
             "exec": [
               "pm.test('200', () => pm.response.to.have.status(200));",
               "const g = pm.response.json();",
-              "pm.test('é a etapa 8 da aula 014', () => { pm.expect(g.id).to.eql('edit'); pm.expect(g.n).to.eql(8); pm.expect(g.aula).to.eql('014'); });",
+              "pm.test('é a etapa 7 da aula 014', () => { pm.expect(g.id).to.eql('edit'); pm.expect(g.n).to.eql(7); pm.expect(g.aula).to.eql('014'); });",
               "pm.test('a trilha é entrada bloqueante', () => pm.expect(g.inputs.map(i => i.id)).to.include('music'));",
               "pm.test('saídas: ritmo primeiro, refinamento depois', () => pm.expect(g.outputs.map(o => o.id)).to.eql(['rough','master']));",
               "pm.test('validação de cortes no ritmo presente', () => pm.expect(g.validations.map(v => v.id)).to.include('cuts_on_beats'));"
