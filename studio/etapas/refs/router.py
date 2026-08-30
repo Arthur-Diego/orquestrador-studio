@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...refs import service
 
@@ -13,6 +13,17 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 class SearchReq(BaseModel):
     terms: list[str]
     max_per_term: int = 30
+    headless: bool = True
+
+
+class ImportUrlReq(BaseModel):
+    """`[extensão]` Import de pin/board por URL. `max_pins` só vale para board (pin é sempre 1).
+
+    A faixa 1..100 espelha a do `max_per_term` do search (HLD refs: 5-100 imagens/termo) e o volume
+    deliberadamente baixo que a ADR-005 pede para não virar crawler agressivo.
+    """
+    url: str
+    max_pins: int = Field(30, ge=1, le=100)
     headless: bool = True
 
 
@@ -90,6 +101,22 @@ async def refs_upload(pid: str, files: list[UploadFile] = File(...)):  # noqa: B
             raise HTTPException(413, f"{f.filename}: arquivo acima de 25 MB")
         payload.append((f.filename or "ref.jpg", data))
     return service.import_upload(pid, payload)
+
+
+@router.post("/api/projects/{pid}/refs/import/url")
+def refs_import_url(pid: str, req: ImportUrlReq):
+    """`[extensão]` Importa um pin ou um board do Pinterest apontado por URL (aula 009 não ensina).
+
+    `422` URL não reconhecida (nenhum job criado), `409` já há um job de coleta em andamento no
+    projeto (busca ou import), `404` projeto inexistente. Sucesso devolve o mesmo `job_status` do
+    search, para a tela pollar o `GET .../refs/job` de sempre.
+    """
+    try:
+        return service.start_import_url(pid, req.url, req.max_pins, req.headless)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @router.post("/api/projects/{pid}/refs/select")

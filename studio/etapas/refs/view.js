@@ -63,7 +63,7 @@ Studio.register("refs", (ctx) => {
       renderJob(j);
       if (j.last && j.last.stage === "start") setSession(!!j.last.logged_in);
       if (j.state === "running") { if (j.total) load(true); return; }
-      $("#btnSearch").disabled = false;
+      $("#btnSearch").disabled = $("#btnImportUrl").disabled = false;
       if (j.state === "error") {
         $("#log").innerHTML += `\n<span class="warn">ERRO: ${ui.esc(j.error || "")}</span>`;
         toast("Falhou: " + j.error);
@@ -188,6 +188,21 @@ Studio.register("refs", (ctx) => {
           done: async () => { renderJob(await api(`/api/projects/${ctx.pid()}/refs/job`)); await load(); ctx.guide(); },
         }).catch((err) => toast("Falhou: " + err.message)).finally(() => { $("#btnSearch").disabled = false; });
       };
+      // `[extensão]` Import por URL (Wave 9): mesmo job e mesmo polling da busca — só muda a
+      // porta de entrada (um link de pin ou de board em vez de termos).
+      $("#btnImportUrl").onclick = async () => {
+        const url = $("#refsUrl").value.trim();
+        if (!url) return toast("Cole a URL de um pin ou de um board do Pinterest");
+        $("#btnImportUrl").disabled = true; $("#log").innerHTML = "";
+        ui.progressJob({
+          title: "Importar por URL",
+          subtitle: "[extensão] pin ou board do Pinterest",
+          start: () => api(`/api/projects/${ctx.pid()}/refs/import/url`, { method: "POST", body: JSON.stringify({
+            url, max_pins: +$("#maxPins").value, headless: !$("#headed").checked }) }),
+          jobUrl: `/api/projects/${ctx.pid()}/refs/job`,
+          done: async () => { renderJob(await api(`/api/projects/${ctx.pid()}/refs/job`)); await load(); ctx.guide(); },
+        }).catch((err) => toast("Falhou: " + err.message)).finally(() => { $("#btnImportUrl").disabled = false; });
+      };
       // O protótipo não desenha painel de upload: o painel de escolha inteiro é o alvo do drop
       // (`.panel.over`) e o `input[type=file]` é aberto pelo link discreto do cabeçalho.
       ui.drop($("#refsPick"), upload);
@@ -230,7 +245,7 @@ Studio.register("refs", (ctx) => {
       this.onProject();
     },
     async onProject() {
-      $("#btnSearch").disabled = $("#btnSave").disabled = !ctx.pid();
+      $("#btnSearch").disabled = $("#btnSave").disabled = $("#btnImportUrl").disabled = !ctx.pid();
       filterTerms.clear(); filterSources.clear();     // filtros são por projeto
       await load();
       if (ctx.pid()) {
@@ -240,7 +255,11 @@ Studio.register("refs", (ctx) => {
         const j = await api(`/api/projects/${ctx.pid()}/refs/job`);
         renderJob(j);
         // Retoma o feedback em tela se um scrape já estava rodando ao abrir a etapa.
-        if (j.state === "running" && !job) { $("#btnSearch").disabled = true; startPoll(); }
+        // Um job de coleta por projeto (busca OU import por URL): as duas ações ficam travadas.
+        if (j.state === "running" && !job) {
+          $("#btnSearch").disabled = $("#btnImportUrl").disabled = true;
+          startPoll();
+        }
       }
       ctx.guide();
     },

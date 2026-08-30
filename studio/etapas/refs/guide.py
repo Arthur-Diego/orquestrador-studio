@@ -50,7 +50,9 @@ def guide(pid: str) -> dict:
         '(ex.: "Red Bull", depois "Red Bull snow ads") e role o "buraco de minhoca" que o Pinterest '
         "abre. Marque só o que você gosta e o que foge do clichê — nada de \"lata com fundo preto\". "
         "Se quiser, traga também imagens salvas do Explore do Midjourney (arraste-as sobre a "
-        "galeria de candidatas). Ao salvar, as escolhidas vão para refs/brainstorming/; depois de "
+        "galeria de candidatas) ou importe um pin/board que você já tem colando a URL dele "
+        "(`[extensão]` do Studio: a aula só busca por termos). "
+        "Ao salvar, as escolhidas vão para refs/brainstorming/; depois de "
         "ver tudo, volte e desmarque o que já não te agrada. Por direitos autorais elas não entram "
         "no vídeo — regra do Studio, não da aula.",
         ["Busquei por uma marca validada, não só pela categoria do produto",
@@ -71,7 +73,8 @@ def guide(pid: str) -> dict:
 
     # Validações (auditoria §1.5): qualidade, nunca bloqueio.
     g.check("candidates", f"Candidatas baixadas do Pinterest ({len(cands)})", "ok" if cands else "todo",
-            detail=f"{len(cands)} candidatas", fix=None if cands else "Rode uma busca ou traga imagens por upload")
+            detail=f"{len(cands)} candidatas",
+            fix=None if cands else "Rode uma busca, importe uma URL ou traga imagens por upload")
     if not selected:
         g.check("min_refs", f"{MIN_REFS} ou mais referências escolhidas", "todo",
                 detail="a aula fica com ~6 imagens")
