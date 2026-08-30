@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Frontend — canvas `annotate.js` e painel "Área marcada" na etapa 4
 type: frontend
 complexity: medium
@@ -63,19 +63,19 @@ blocos novos no `view.js`/`view.html` da etapa, sem reescrever funções existen
 </requirements>
 
 ## Subtasks
-- [ ] 2.1 Ler `_techspec.md` seções 4 (fluxo principal, passos 1 a 7), 5 (contrato 4), 6 (fallback)
+- [x] 2.1 Ler `_techspec.md` seções 4 (fluxo principal, passos 1 a 7), 5 (contrato 4), 6 (fallback)
       e 9 (critério 7); ler `studio/web/multishot.js` inteiro como molde.
-- [ ] 2.2 Escrever `studio/web/annotate.js`: modal, canvas, pincel, espessura, desfazer, limpar,
+- [x] 2.2 Escrever `studio/web/annotate.js`: modal, canvas, pincel, espessura, desfazer, limpar,
       export achatado em PNG na resolução original, callback `onSave(blob)`.
-- [ ] 2.3 Acrescentar ao `view.html` o CSS escopado do painel/modal e os elementos novos do painel
+- [x] 2.3 Acrescentar ao `view.html` o CSS escopado do painel/modal e os elementos novos do painel
       "Área marcada" com o aviso fixo e o rótulo `[extensão]`.
-- [ ] 2.4 Acrescentar ao `view.js` o carregamento dinâmico do componente e o handler do botão
+- [x] 2.4 Acrescentar ao `view.js` o carregamento dinâmico do componente e o handler do botão
       "Marcar área", ligando o upload em `POST .../storyboard/annotate`.
-- [ ] 2.5 Ligar o fluxo pago (`cost` → `confirmCost` → `generate` → `progressJob`) e o refresh da
+- [x] 2.5 Ligar o fluxo pago (`cost` → `confirmCost` → `generate` → `progressJob`) e o refresh da
       galeria ao término do job.
-- [ ] 2.6 Tratar o caso sem CLI (modo desabilitado com a dica) e os erros 4xx do backend via toast.
-- [ ] 2.7 Escrever os testes de contrato de DOM/JS listados em `## Tests`.
-- [ ] 2.8 Rodar `make verify` e deixar verde.
+- [x] 2.6 Tratar o caso sem CLI (modo desabilitado com a dica) e os erros 4xx do backend via toast.
+- [x] 2.7 Escrever os testes de contrato de DOM/JS listados em `## Tests`.
+- [x] 2.8 Rodar `make verify` e deixar verde.
 
 ## Implementation Details
 

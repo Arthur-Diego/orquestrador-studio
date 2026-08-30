@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Backend — persistência da marcação, kind `edit_area` e ação `storyboard.inpaint`
 type: backend
 complexity: high
@@ -71,20 +71,20 @@ ou schema existente muda.
 </requirements>
 
 ## Subtasks
-- [ ] 1.1 Ler `_techspec.md` seções 5 (contratos 1, 2, 3 e 5), 6 (matriz de erros), 9 (critérios 1 a 6)
+- [x] 1.1 Ler `_techspec.md` seções 5 (contratos 1, 2, 3 e 5), 6 (matriz de erros), 9 (critérios 1 a 6)
       e 11 (build order), e `_prd.md`.
-- [ ] 1.2 Acrescentar o kind `edit_area` em `KINDS` e o ramo da instrução fixa em `build_instruction`.
-- [ ] 1.3 Implementar a persistência da marcação no serviço (decode, resolução do `parent`, dedupe
+- [x] 1.2 Acrescentar o kind `edit_area` em `KINDS` e o ramo da instrução fixa em `build_instruction`.
+- [x] 1.3 Implementar a persistência da marcação no serviço (decode, resolução do `parent`, dedupe
       explícito por SHA-1, retorno do contrato 1).
-- [ ] 1.4 Filtrar anotações da galeria e recusá-las em seleção de ideia e como imagem de cena.
-- [ ] 1.5 Estender `_cli_request` para devolver lista de referências e validar `annotation_id`
+- [x] 1.4 Filtrar anotações da galeria e recusá-las em seleção de ideia e como imagem de cena.
+- [x] 1.5 Estender `_cli_request` para devolver lista de referências e validar `annotation_id`
       (existência, `role`, `parent` × original).
-- [ ] 1.6 Estender `cost` e `start_generate` com `annotation_id`; ligar `record_generation` só no
+- [x] 1.6 Estender `cost` e `start_generate` com `annotation_id`; ligar `record_generation` só no
       ramo `edit_area` e gravar `meta.annotation` nos candidatos importados.
-- [ ] 1.7 Acrescentar `storyboard.inpaint` em `ACTIONS`/`DEFAULTS`.
-- [ ] 1.8 Acrescentar `annotation_id` ao `GenerateReq` e a rota `POST .../storyboard/annotate`.
-- [ ] 1.9 Escrever os testes de serviço e de API listados em `## Tests`.
-- [ ] 1.10 Rodar `make verify` e deixar verde (a suíte inteira leva ~6 min; use
+- [x] 1.7 Acrescentar `storyboard.inpaint` em `ACTIONS`/`DEFAULTS`.
+- [x] 1.8 Acrescentar `annotation_id` ao `GenerateReq` e a rota `POST .../storyboard/annotate`.
+- [x] 1.9 Escrever os testes de serviço e de API listados em `## Tests`.
+- [x] 1.10 Rodar `make verify` e deixar verde (a suíte inteira leva ~6 min; use
       `.venv/bin/pytest tests/test_storyboard_service.py tests/test_storyboard_api.py` durante o
       desenvolvimento e a suíte completa no fim).
 
