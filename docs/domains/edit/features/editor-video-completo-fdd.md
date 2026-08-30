@@ -269,3 +269,34 @@ legenda só não sincroniza com a fala.
 
 A **UI** do modal "Gerar legendas" (spans de karaokê no palco, propriedades da legenda) é a frente C
 da mesma wave e não faz parte desta entrega; até ela chegar, o servidor já responde o contrato.
+
+---
+
+## Rodada 3 — editor estável (ADH-OS-20260829-38)
+
+Terceira rodada `[extensão]` sobre o mesmo editor, especificada no FDD próprio
+`docs/domains/edit/features/editor-estavel-fdd.md` (Wave 8, frente A — entra por PR de docs
+separado). O que mudou de forma, sem reescrever o que está acima:
+
+1. **Render incremental.** `renderAll()` não existe mais: `commit(label, mutator, opts)` chama
+   `renderDirty(opts)` e o `renderRoot()` fica restrito a `load`/`resetTimeline`/`onProject`. As
+   camadas do palco são reconciliadas por `data-uid` (`renderLayers` + `LAYER_HOOKS`), então
+   altura da timeline, larguras dos painéis e `scrollLeft` sobrevivem a qualquer ação.
+2. **Timeline estável.** `.ved-timeline` abre em 345 px com `.ved-tl-main{overflow-y:auto}` — as 6
+   faixas cabem e MÚSICA/SFX não ficam mais cortadas; a altura e as larguras escolhidas persistem
+   no bloco `ui` (`tlHeight`/`leftW`/`rightW`, aditivo em `normalize_editor`).
+3. **Exclusão total.** Dá para excluir a música e todos os clipes; a guarda de "precisa de clipe"
+   passa a valer só na exportação (`startRender`), não no `PUT /timeline`.
+4. **MP4 na VÍDEO 2** toca no preview via `overlayPool` e segue o playhead — rotulado
+   "no master.mp4: fase seguinte", nunca simulado (ADR-030).
+5. **Movimento V1 ↔ V2** explícito por menu de contexto e Propriedades: `moveToTrack(uid, faixa)`
+   move o item, não copia.
+6. **Efeitos e ajustes em qualquer camada** (vídeo, overlay, texto, legenda) no preview, persistidos
+   em `effects`/`filters`/`presetCss` também nos itens `text`/`caption`.
+7. **Menu lateral ocultável** (`.app.side-hidden`, preferência em `localStorage`).
+8. **Etapa 7 renomeada para "Studio de vídeo"** no catálogo, no META do plugin, nos rótulos da UI e
+   no README — o **nome da aula 014 continua "Montagem no ritmo"** nas docstrings e no guia.
+
+Contrato de UI fixado por `tests/test_edit_api.py::test_view_has_side_toggle_and_stable_timeline_css`
+(front sem teste unitário, ADR-008). Segue pendente para fase seguinte: transições, overlays e
+efeitos de texto/legenda **no encode ffmpeg**.

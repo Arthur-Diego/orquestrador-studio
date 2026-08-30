@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Contrato de UI por string e fechamento de documentação
 type: test
 complexity: low
@@ -38,11 +38,11 @@ rodada anterior, fechando o ciclo de documentação da frente.
 </requirements>
 
 ## Subtasks
-- [ ] 6.1 Ler `_techspec.md` §8 (strings congeladas) e §9 critério 9.
-- [ ] 6.2 Escrever `test_view_has_side_toggle_and_stable_timeline_css` no fim de `tests/test_edit_api.py`.
-- [ ] 6.3 Conferir os rótulos preview-only do painel Efeitos e do overlay de vídeo.
-- [ ] 6.4 Acrescentar a nota de rodada 3 ao `editor-video-completo-fdd.md`.
-- [ ] 6.5 Rodar `make verify` com evidência fresca e conferir que a suíte inteira está verde.
+- [x] 6.1 Ler `_techspec.md` §8 (strings congeladas) e §9 critério 9.
+- [x] 6.2 Escrever `test_view_has_side_toggle_and_stable_timeline_css` no fim de `tests/test_edit_api.py`.
+- [x] 6.3 Conferir os rótulos preview-only do painel Efeitos e do overlay de vídeo.
+- [x] 6.4 Acrescentar a nota de rodada 3 ao `editor-video-completo-fdd.md`.
+- [x] 6.5 Rodar `make verify` com evidência fresca e conferir que a suíte inteira está verde.
 
 ## Implementation Details
 `tests/test_edit_api.py` já tem o padrão exato a seguir nos dois testes de contrato de UI: pegam
@@ -72,9 +72,9 @@ timeline estável, exclusão total, MP4 na V2, V1↔V2, efeitos por camada, side
 
 ## Tests
 
-- [ ] `tests/test_edit_api.py::test_view_has_side_toggle_and_stable_timeline_css` — conforme
+- [x] `tests/test_edit_api.py::test_view_has_side_toggle_and_stable_timeline_css` — conforme
       `<requirements>` acima.
-- [ ] Suíte inteira: `make verify` verde, com o output real anexado ao commit/PR.
+- [x] Suíte inteira: `make verify` verde, com o output real anexado ao commit/PR.
 
 ## Success Criteria
 - Every assigned test case implemented and passing.

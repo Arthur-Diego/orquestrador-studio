@@ -1182,8 +1182,10 @@ Studio.register("edit", (ctx) => {
     else if (it.kind === "overlay") label = it.item.text || "overlay";
     else if (it.kind === "music") label = (it.music.file || "música").split("/").pop();
     else if (it.kind === "sfx") label = it.sfx.file.split("/").pop();
+    // ADR-030 — nunca simular: o MP4 na VÍDEO 2 toca no preview, mas ainda não entra no encode.
+    const nota = it.kind === "overlay" && isVideoFile((it.item || {}).src) ? ` title="no master.mp4: fase seguinte"` : "";
     const trim = it.kind !== "music" ? `<div class="cl-trim l" style="background:${tcol}"></div><div class="cl-trim r" style="background:${tcol}"></div>` : "";
-    return `<div class="ved-clip ${it.kind}${isSel(it.uid) ? " sel" : ""}" data-uid="${it.uid}" data-tid="${t.id}" style="left:${x}px;width:${w}px;height:${h}px;background:${bg};border-color:${c[1]}">${trim}<span class="cl-name" style="color:${tcol}">${esc(label)}</span></div>`;
+    return `<div class="ved-clip ${it.kind}${isSel(it.uid) ? " sel" : ""}" data-uid="${it.uid}" data-tid="${t.id}"${nota} style="left:${x}px;width:${w}px;height:${h}px;background:${bg};border-color:${c[1]}">${trim}<span class="cl-name" style="color:${tcol}">${esc(label)}</span></div>`;
   }
   function trackAction(tid, act) {
     if (["v1", "t_mus", "t_sfx"].includes(tid)) { if (act === "vis" && tid !== "t_mus") return toast("Faixa do backbone da aula — sempre na montagem."); if (tid === "t_mus" && act === "vis") return commit("mudo música", () => St.timeline.music = { ...(St.timeline.music || {}), muted: !(St.timeline.music || {}).muted }); return; }
