@@ -540,3 +540,32 @@ def test_captions_generated_items_survive_the_timeline_roundtrip(client, project
     for antes, depois in zip(saved, items, strict=True):
         assert antes["words"] == depois["words"]
         assert (antes["mode"], antes["hi"], antes["chunk"]) == (depois["mode"], depois["hi"], depois["chunk"])
+
+
+# ---------- rodada 3: exclusão total (a guarda de clipes é só da exportação) ----------
+def test_put_removes_music_and_persists(client, project, root):
+    """Item 3: dá para excluir a trilha da faixa MÚSICA — o PUT é 200 e o reload continua sem ela."""
+    seed(root)
+    tl = body(client.get(url(project, "/timeline")).json()["timeline"])
+    assert tl["music"]["file"], "a fixture precisa começar COM trilha para o teste ter sentido"
+    tl["music"] = {"file": None, "offset": 0.0}
+    r = client.put(url(project, "/timeline"), json=tl)
+    assert r.status_code == 200, r.text
+    assert r.json()["timeline"]["music"]["file"] is None
+    stored = client.get(url(project, "/timeline")).json()["timeline"]
+    assert stored["music"]["file"] is None
+
+
+def test_put_with_zero_clips_is_200_and_render_is_422(client, project, root):
+    """Item 3: esvaziar a VÍDEO 1 é edição válida; quem recusa é o render, não o save."""
+    seed(root)
+    tl = body(client.get(url(project, "/timeline")).json()["timeline"])
+    assert tl["clips"], "a fixture precisa começar COM clipes"
+    tl["clips"] = []
+    r = client.put(url(project, "/timeline"), json=tl)
+    assert r.status_code == 200, r.text
+    assert r.json()["timeline"]["clips"] == [] and r.json()["duration"] == 0.0
+    if not has_ffmpeg():
+        pytest.skip("ffmpeg não disponível")
+    rendered = client.post(url(project, "/render"), json={"target": "rough"})
+    assert rendered.status_code == 422 and "sem clipes" in rendered.json()["detail"]

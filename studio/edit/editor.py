@@ -42,6 +42,9 @@ FONT_SIZE_RANGE = (4, 400)
 FONT_WEIGHT_RANGE = (100, 900)
 UI_ZOOM_RANGE = (0.25, 4.0)      # zoom da timeline: FATOR (o px/s efetivo é do frontend)
 UI_ZOOM_DEFAULT = 1.0
+UI_TL_HEIGHT_RANGE = (150.0, 700.0)   # altura da timeline: abaixo de 150 MÚSICA/SFX somem
+UI_LEFT_W_RANGE = (180.0, 420.0)      # largura do painel esquerdo (Mídia, Texto, Efeitos…)
+UI_RIGHT_W_RANGE = (220.0, 460.0)     # largura do painel direito (Propriedades)
 
 # Limites de tamanho (proteção; excedente é truncado com aviso, nunca derruba o save).
 MAX_TRACKS = 40
@@ -312,6 +315,15 @@ def normalize_item(track_type: str, raw: dict, root: Path) -> dict | None:
         item["style"] = normalize_style(raw.get("style"))
         item["transform"] = normalize_transform(raw.get("transform"))
         item["anim"] = normalize_anim(raw.get("anim"))
+        # [extensão] efeitos/ajustes também valem para texto e legenda (preview-only, ADR-030).
+        # Diferente do overlay, só gravamos o que veio: item legado tem de voltar byte-idêntico.
+        if "effects" in raw:
+            item["effects"] = normalize_effects(raw.get("effects"))
+        if "filters" in raw:
+            item["filters"] = normalize_filters(raw.get("filters"))
+        preset_css = _s(raw.get("presetCss", ""), MAX_STR)
+        if preset_css:
+            item["presetCss"] = preset_css
         item.update(normalize_caption_extra(raw) if track_type == "caption" else {})
     elif track_type in ("overlay", "video"):
         if raw.get("src") is not None:
@@ -403,6 +415,22 @@ def normalize_ui_zoom(value) -> float:
     return _clamp(z, *UI_ZOOM_RANGE, UI_ZOOM_DEFAULT)
 
 
+def normalize_ui(raw: dict | None) -> dict:
+    """Preferências de layout do editor: zoom/snap sempre; as MEDIDAS só quando enviadas.
+
+    `tlHeight`/`leftW`/`rightW` sobrevivem ao F5 (a timeline não volta a cortar MÚSICA e SFX),
+    mas não ganham default gravado: `{"zoom":1,"snap":true}` continua byte-idêntico no round-trip.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    ui = {"zoom": normalize_ui_zoom(raw.get("zoom", UI_ZOOM_DEFAULT)),
+          "snap": _b(raw.get("snap", True), True)}
+    for key, rng in (("tlHeight", UI_TL_HEIGHT_RANGE), ("leftW", UI_LEFT_W_RANGE),
+                     ("rightW", UI_RIGHT_W_RANGE)):
+        if key in raw:
+            ui[key] = _clamp(raw.get(key), *rng)
+    return ui
+
+
 def normalize_marker(raw: dict) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -464,7 +492,6 @@ def normalize_editor(root: Path, raw) -> dict | None:
                for x in (raw.get("markers") if isinstance(raw.get("markers"), list) else [])[:MAX_MARKERS])
                if n is not None]
 
-    ui_raw = raw.get("ui") if isinstance(raw.get("ui"), dict) else {}
     return {
         "version": _clampi(raw.get("version", EDITOR_VERSION), 1, 999, EDITOR_VERSION),
         "project": normalize_project(raw.get("project")),
@@ -472,8 +499,7 @@ def normalize_editor(root: Path, raw) -> dict | None:
         "clip_fx": normalize_clip_fx(raw.get("clip_fx"), root),
         "transitions": transitions,
         "markers": markers,
-        "ui": {"zoom": normalize_ui_zoom(ui_raw.get("zoom", UI_ZOOM_DEFAULT)),
-               "snap": _b(ui_raw.get("snap", True), True)},
+        "ui": normalize_ui(raw.get("ui")),
     }
 
 

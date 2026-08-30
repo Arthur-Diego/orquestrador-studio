@@ -470,3 +470,60 @@ def test_captions_extra_is_idempotent():
     assert once == {"mode": "karaoke", "hi": "#C8F751", "chunk": 20,
                     "words": [{"w": "a", "start_s": 0.0, "end_s": 0.5},
                               {"w": "b", "start_s": 9.0, "end_s": 9.0}]}
+
+
+# ---------- rodada 3: fx em texto/legenda e medidas de layout no bloco `ui` ----------
+def _fx_item(item_id: str) -> dict:
+    """Item com os três campos novos: um efeito estourado, um ajuste, um preset e o CSS dele."""
+    return {"id": item_id, "start": 0.0, "end": 2.0, "text": "Olá",
+            "effects": [{"type": "Glow", "intensity": 0.7},
+                        {"type": "Shake", "intensity": 1.4}],
+            "filters": {"contrast": 20, "preset": "noir", "desconhecido": 5},
+            "presetCss": "grayscale(1) contrast(1.1)"}
+
+
+def test_text_and_caption_keep_effects_filters_preset(tmp_path):
+    """Item 6: efeito/ajuste aplicado a texto ou legenda sobrevive ao PUT (antes morria no save)."""
+    raw = {"tracks": [{"id": "t_txt", "type": "text", "items": [_fx_item("tx1")]},
+                      {"id": "t_cap", "type": "caption", "items": [_fx_item("cap1")]}]}
+    once = ed.normalize_editor(tmp_path, raw)
+    for track in once["tracks"]:
+        item = track["items"][0]
+        assert item["effects"] == [{"type": "Glow", "intensity": 0.7, "enabled": True},
+                                   {"type": "Shake", "intensity": 1.0, "enabled": True}]  # 1.4 -> 1.0
+        assert item["filters"] == {"contrast": 20.0, "preset": "noir"}   # a chave desconhecida some
+        assert item["presetCss"] == "grayscale(1) contrast(1.1)"
+    assert ed.normalize_editor(tmp_path, once) == once                   # idempotente
+
+
+def test_text_without_fx_is_byte_identical(tmp_path):
+    """Retrocompat: item de texto legado NÃO ganha `effects: []`/`filters: {}` do nada."""
+    e = ed.normalize_editor(tmp_path, {"tracks": [{"id": "t_txt", "type": "text", "items": [
+        {"id": "tx1", "start": 0.0, "end": 2.0, "text": "Olá"}]}]})
+    item = e["tracks"][0]["items"][0]
+    assert set(item) == {"id", "start", "end", "text", "style", "transform", "anim"}
+    assert item["id"] == "tx1" and item["start"] == 0.0 and item["end"] == 2.0
+
+
+def test_ui_tlheight_and_panel_widths_clamped(tmp_path):
+    """Item 2: a altura da timeline escolhida pelo usuário sobrevive ao F5, dentro de 150–700."""
+    def ui(**medidas):
+        return ed.normalize_editor(tmp_path, {"ui": {"zoom": 1, "snap": True, **medidas}})["ui"]
+
+    assert ui(tlHeight=900)["tlHeight"] == 700.0
+    assert ui(tlHeight=10)["tlHeight"] == 150.0
+    assert ui(tlHeight=345)["tlHeight"] == 345.0
+    assert ui(leftW=100)["leftW"] == 180.0
+    assert ui(rightW=9999)["rightW"] == 460.0
+    assert ui(leftW=300, rightW=300) == {"zoom": 1.0, "snap": True, "leftW": 300.0, "rightW": 300.0}
+    # ausentes = chaves ausentes (nada de default gravado, senão o round-trip legado muda)
+    assert ui() == {"zoom": 1.0, "snap": True}
+
+
+def test_empty_clips_and_null_music_pass_validation(tmp_path):
+    """Item 3: exclusão total é válida — a guarda de 'precisa de clipe' é só do render."""
+    from studio.edit import service as edit_service
+    tl = edit_service.validate_timeline(tmp_path, {
+        "clips": [], "blacks": [], "music": {"file": None, "offset": 0},
+        "sfx": [], "fade_out": 1.5, "loudnorm": True})
+    assert tl["clips"] == [] and tl["music"] == {"file": None, "offset": 0.0}

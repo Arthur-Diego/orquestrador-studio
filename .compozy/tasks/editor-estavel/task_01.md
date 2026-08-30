@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Backend aditivo — efeitos em text/caption, ui de layout e testes de exclusão
 type: backend
 complexity: medium
@@ -40,15 +40,15 @@ Fecha ainda os testes de API que provam que excluir toda a música e todos os cl
 </requirements>
 
 ## Subtasks
-- [ ] 1.1 Ler `_techspec.md` §5 (contrato 1), §8 (garantias de compatibilidade) e §9 (critérios 1 a 6).
-- [ ] 1.2 Acrescentar a persistência de `effects`/`filters`/`presetCss` no ramo `text`/`caption` de
+- [x] 1.1 Ler `_techspec.md` §5 (contrato 1), §8 (garantias de compatibilidade) e §9 (critérios 1 a 6).
+- [x] 1.2 Acrescentar a persistência de `effects`/`filters`/`presetCss` no ramo `text`/`caption` de
       `normalize_item`, sem alterar os demais ramos.
-- [ ] 1.3 Extrair `normalize_ui(raw)` e ligar `tlHeight`/`leftW`/`rightW` com os clamps do contrato.
-- [ ] 1.4 Escrever os testes de normalização (fx idempotente, retrocompat byte-idêntica, clamps de `ui`).
-- [ ] 1.5 Escrever o teste que prova que `validate_timeline` aceita `clips: []` + `music.file: null`.
-- [ ] 1.6 Escrever os testes de API de exclusão (PUT remove música; PUT com zero clipes é 200 e o
+- [x] 1.3 Extrair `normalize_ui(raw)` e ligar `tlHeight`/`leftW`/`rightW` com os clamps do contrato.
+- [x] 1.4 Escrever os testes de normalização (fx idempotente, retrocompat byte-idêntica, clamps de `ui`).
+- [x] 1.5 Escrever o teste que prova que `validate_timeline` aceita `clips: []` + `music.file: null`.
+- [x] 1.6 Escrever os testes de API de exclusão (PUT remove música; PUT com zero clipes é 200 e o
       render seguinte é 422).
-- [ ] 1.7 Rodar `make verify` e deixar verde.
+- [x] 1.7 Rodar `make verify` e deixar verde.
 
 ## Implementation Details
 Modificar `studio/edit/editor.py`: ramo `text`/`caption` de `normalize_item` (hoje nas linhas do
@@ -88,24 +88,24 @@ clamp do restante do módulo.
 
 Não há `_tests.md` neste workflow (o FDD é a techspec e traz os critérios na §9). Casos concretos:
 
-- [ ] `tests/test_edit_editor.py::test_text_and_caption_keep_effects_filters_preset` — `normalize_editor`
+- [x] `tests/test_edit_editor.py::test_text_and_caption_keep_effects_filters_preset` — `normalize_editor`
       com um item `text` e um item `caption` contendo `effects` (um com `intensity: 1.4`), `filters`
       (`contrast: 20`, `preset: "noir"`, e uma chave desconhecida) e `presetCss`: os três campos voltam,
       a intensidade é clampada para `1.0`, a chave desconhecida some, e normalizar a saída de novo dá
       exatamente o mesmo dicionário (idempotência).
-- [ ] `tests/test_edit_editor.py::test_text_without_fx_is_byte_identical` — item `text` sem os campos
+- [x] `tests/test_edit_editor.py::test_text_without_fx_is_byte_identical` — item `text` sem os campos
       novos produz exatamente `{id, start, end, text, style, transform, anim}` (sem `effects`,
       sem `filters`, sem `presetCss`).
-- [ ] `tests/test_edit_editor.py::test_ui_tlheight_and_panel_widths_clamped` — `ui.tlHeight` 900 → 700,
+- [x] `tests/test_edit_editor.py::test_ui_tlheight_and_panel_widths_clamped` — `ui.tlHeight` 900 → 700,
       10 → 150, 345 → 345; `leftW` 100 → 180; `rightW` 9999 → 460; ausentes → chaves ausentes na saída.
-- [ ] `tests/test_edit_editor.py::test_empty_clips_and_null_music_pass_validation` — `validate_timeline`
+- [x] `tests/test_edit_editor.py::test_empty_clips_and_null_music_pass_validation` — `validate_timeline`
       aceita `{clips: [], blacks: [], music: {file: None, offset: 0}, sfx: [], fade_out: 1.5,
       loudnorm: True}` sem levantar.
-- [ ] `tests/test_edit_api.py::test_put_removes_music_and_persists` — `PUT /timeline` com
+- [x] `tests/test_edit_api.py::test_put_removes_music_and_persists` — `PUT /timeline` com
       `music.file = None` responde 200 e o `GET` seguinte devolve `music.file is None`.
-- [ ] `tests/test_edit_api.py::test_put_with_zero_clips_is_200_and_render_is_422` — `PUT` com
+- [x] `tests/test_edit_api.py::test_put_with_zero_clips_is_200_and_render_is_422` — `PUT` com
       `clips: []` responde 200 e o `POST /render {"target": "rough"}` seguinte responde 422.
-- [ ] Regressão: `test_ui_zoom_is_a_factor` e `test_put_without_editor_is_legacy` continuam verdes
+- [x] Regressão: `test_ui_zoom_is_a_factor` e `test_put_without_editor_is_legacy` continuam verdes
       sem alteração no arquivo de teste.
 
 ## Success Criteria
