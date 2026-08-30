@@ -7,6 +7,7 @@ Camada sem ffmpeg, sem HTTP e sem rede — o SDK da OpenAI NUNCA é importado de
 from __future__ import annotations
 
 import importlib
+import re
 import sys
 import types
 
@@ -21,6 +22,14 @@ from studio.edit.captions import (
     effective_mode,
     word_in_window,
 )
+from studio.edit.captions.audio import duration_of, extract_wav, extracted
+from studio.edit.captions.layout import (
+    GAP_S,
+    KARAOKE_MIN_WORDS,
+    LayoutOpts,
+    build_items,
+    layout_windows,
+)
 from studio.edit.captions.transcribe import (
     FakeTranscribe,
     OpenAITranscribe,
@@ -31,6 +40,7 @@ from studio.edit.captions.transcribe import (
     get_transcribe,
     proportional,
 )
+from tests.conftest import make_audio, make_image
 
 # --------------------------------------------------------------- SDK falso (sem rede)
 
@@ -277,3 +287,146 @@ def test_captions_fake_transcribe_devolve_texto_falso_e_tempos_proporcionais(aud
     assert texto == fake_transcript(audio.name, 5.0)
     assert palavras == proportional(texto, 5.0)
     assert len(palavras) == len(texto.split()) == 12
+
+
+# ====================================================================== layout
+# Fatiamento da fala em janelas de uma linha e itens prontos para a faixa `t_cap`.
+
+DEZ = "uma duas tres quatro cinco seis sete oito nove dez"
+
+#: Longo o bastante para estourar `0.84 * 1920 px` com a fonte real do burn-in (Liberation a
+#: 34 px) e também com a fonte bitmap de fallback do Pillow, bem mais estreita — a quebra por
+#: largura não pode depender de qual fonte a máquina tem instalada.
+LONGO = (
+    "Ninguém te conta isso mas a diferença entre um vídeo que prende e um vídeo que passa "
+    "batido está inteira no ritmo do corte e na respiração da narração que você grava muito "
+    "antes de abrir o editor e começar a montar a sequência inteira no ritmo da trilha que "
+    "escolheu para o projeto"
+)
+
+
+def test_captions_build_items_respeita_o_chunk_e_nao_perde_palavra():
+    items = build_items(proportional(DEZ, 10 / WPS), LayoutOpts(chunk=6))
+
+    assert all(len(i["words"]) <= 6 for i in items)
+    # a união das janelas é exatamente a fala original: mesma ordem, sem duplicata nem perda
+    assert [w["w"] for i in items for w in i["words"]] == DEZ.split()
+
+
+def test_captions_chunk_dois_nunca_passa_de_duas_palavras_por_item():
+    items = build_items(proportional(DEZ, 10 / WPS), LayoutOpts(chunk=2))
+
+    assert all(len(i["words"]) <= 2 for i in items)
+    assert [w["w"] for i in items for w in i["words"]] == DEZ.split()
+
+
+def test_captions_chunk_zero_fecha_a_janela_pela_largura_real_da_linha():
+    """Sem teto de contagem, quem quebra a linha é a largura medida com a fonte do burn-in."""
+    janelas = layout_windows(proportional(LONGO, 30.0),
+                             LayoutOpts(chunk=0, style={"size": 34, "weight": 700}))
+
+    assert len(janelas) > 1
+    # janela de uma palavra só pisca na tela: só a última pode ficar abaixo do mínimo
+    assert all(len(j) >= KARAOKE_MIN_WORDS for j in janelas[:-1])
+
+
+def test_captions_itens_cobrem_o_trecho_inteiro_sem_buraco_nem_sobreposicao():
+    start, duracao = 3.0, 10 / WPS
+
+    items = build_items(proportional(DEZ, duracao), LayoutOpts(chunk=4, start=start))
+
+    assert items[0]["start"] == start
+    assert all(items[i]["end"] == items[i + 1]["start"] for i in range(len(items) - 1))
+    assert items[-1]["end"] == round(start + round(duracao, 3), 3)
+
+
+def test_captions_pausa_maior_que_gap_separa_as_janelas():
+    """Duas frases com um respiro no meio nunca viram a mesma linha, mesmo cabendo no `chunk`."""
+    palavras = [WordTiming("antes", 0.0, 0.5), WordTiming("da", 0.5, 0.8),
+                WordTiming("pausa", 0.8, 1.2),
+                WordTiming("depois", 1.2 + GAP_S + 0.5, 3.2), WordTiming("dela", 3.2, 3.6)]
+
+    items = build_items(palavras, LayoutOpts(chunk=20))
+
+    assert len(items) == 2
+    assert [w["w"] for w in items[0]["words"]] == ["antes", "da", "pausa"]
+    assert [w["w"] for w in items[1]["words"]] == ["depois", "dela"]
+
+
+def test_captions_dois_generate_com_starts_distintos_nunca_compartilham_item():
+    texto = "primeira fala do video"
+
+    antes = build_items(proportional(texto, 4.0), LayoutOpts(chunk=6, start=0.0))
+    depois = build_items(proportional(texto, 4.0), LayoutOpts(chunk=6, start=10.0))
+
+    assert antes[-1]["end"] <= depois[0]["start"]          # cada chamada cobre só o seu intervalo
+    assert {i["id"] for i in antes}.isdisjoint({i["id"] for i in depois})
+
+
+def test_captions_item_tem_exatamente_as_chaves_do_contrato():
+    items = build_items(proportional(DEZ, 4.0), LayoutOpts(chunk=6, hi="#57E2F0", mode="karaoke"))
+
+    assert set(items[0]) == {"id", "start", "end", "text", "mode", "hi", "chunk",
+                             "words", "style", "transform", "anim"}
+    assert re.fullmatch(r"cap_[0-9a-f]{6}", items[0]["id"])
+    assert items[0]["mode"] == "karaoke" and items[0]["hi"] == "#57E2F0" and items[0]["chunk"] == 6
+    assert items[0]["anim"] == {"in": "fade", "out": "fade"}
+    assert items[0]["transform"] == {"x": 0.5, "y": 0.82, "scaleX": 1, "scaleY": 1,
+                                     "rotation": 0, "opacity": 1}
+
+
+@pytest.mark.parametrize(("position", "y"), [("top", 0.12), ("middle", 0.5), ("bottom", 0.82)])
+def test_captions_transform_y_segue_a_posicao_pedida(position, y):
+    items = build_items(proportional(DEZ, 4.0), LayoutOpts(chunk=6, position=position))
+
+    assert items[0]["transform"]["y"] == y
+
+
+def test_captions_texto_do_item_e_a_juncao_das_palavras_por_espaco_simples():
+    items = build_items(proportional(DEZ, 4.0), LayoutOpts(chunk=3))
+
+    assert items[0]["text"] == "uma duas tres"
+    assert all(i["text"] == " ".join(w["w"] for w in i["words"]) for i in items)
+
+
+# ======================================================================= áudio
+# Extração do wav 16 kHz mono que o whisper aceita (precisa do ffmpeg de verdade).
+
+
+def test_captions_extract_wav_produz_audio_e_respeita_o_recorte(ffmpeg_or_skip, tmp_path):
+    src = make_audio(tmp_path / "voz.wav", seconds=3)
+
+    inteiro = extract_wav(src, tmp_path / "inteiro.wav")
+    curto = extract_wav(src, tmp_path / "curto.wav", duration=1.0)
+
+    assert ffmpeg_or_skip.probe(inteiro)["has_audio"] is True
+    assert ffmpeg_or_skip.probe(curto)["duration"] == pytest.approx(1.0, abs=0.2)
+
+
+def test_captions_duration_of_le_a_duracao_do_arquivo(ffmpeg_or_skip, tmp_path):
+    assert duration_of(make_audio(tmp_path / "voz.wav", seconds=3)) == pytest.approx(3.0, abs=0.3)
+
+
+def test_captions_duration_of_sem_trilha_de_audio_levanta_value_error(ffmpeg_or_skip, tmp_path):
+    """Take mudo ou imagem não chegam ao whisper: a chamada seria paga para devolver nada."""
+    mudo = make_image(tmp_path / "frame.jpg")
+
+    with pytest.raises(ValueError) as exc:
+        duration_of(mudo)
+
+    assert str(exc.value).startswith("file: ")
+
+
+def test_captions_extracted_apaga_o_temporario_inclusive_em_erro(ffmpeg_or_skip, tmp_path):
+    src = make_audio(tmp_path / "voz.wav", seconds=1)
+
+    with extracted(src) as wav:
+        assert wav.exists()
+        ok = wav
+    assert not ok.exists() and not ok.parent.exists()
+
+    with pytest.raises(RuntimeError):
+        with extracted(src) as wav:
+            explodiu = wav
+            raise RuntimeError("boom")
+    assert not explodiu.exists() and not explodiu.parent.exists()

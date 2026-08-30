@@ -1,12 +1,16 @@
 """Rotas da etapa 7 — Montagem no ritmo (aula 014)."""
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...common import ffmpeg as ff
 from ...edit import render
 from ...edit import service as edit
+from ...edit.captions import service as captions
+from ...edit.captions.transcribe import ProviderError
 from ...refs import service as refs
 
 router = APIRouter(tags=["edit"])
@@ -78,6 +82,31 @@ class RenderReq(BaseModel):
     height: int | None = None
     fps: int | None = None
     quality: str | None = None
+
+
+class CaptionStyleReq(BaseModel):
+    """[extensão] Preset de legenda do editor. `extra="allow"` deixa fonte/sombra/uppercase
+    do preset atravessarem intactos até o item — quem normaliza `style` é o `PUT /timeline`."""
+    model_config = ConfigDict(extra="allow")
+    size: int = 34
+    weight: int = 700
+    align: str = "center"
+    color: str = "#FFFFFF"
+    bg: str = "transparent"
+
+
+class CaptionsGenerateReq(BaseModel):
+    """[extensão] Pedido de geração de legendas (contrato congelado da wave 8)."""
+    source: Literal["script", "audio"]
+    text: str | None = None
+    file: str | None = None
+    start: float = 0.0
+    duration: float | None = None
+    mode: Literal["karaoke", "linha", "bloco"] = "karaoke"
+    chunk: int = Field(6, ge=0, le=20)     # 0 = uma janela por linha de largura
+    hi: str = Field("#C8F751", pattern=r"^#[0-9A-Fa-f]{6}$")
+    position: Literal["top", "middle", "bottom"] = "bottom"
+    style: CaptionStyleReq = CaptionStyleReq()
 
 
 def _translate(e: Exception) -> HTTPException:
@@ -184,6 +213,47 @@ async def upload_media(pid: str, files: list[UploadFile] = File(...)):  # noqa: 
         return edit.import_media(pid, payload)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+
+
+# ---------- legendas [extensão] (a aula 014 monta sem legenda; ver ADR-024) ----------
+@router.post("/api/projects/{pid}/edit/captions/generate")
+def captions_generate(pid: str, req: CaptionsGenerateReq):
+    """Itens prontos para a faixa de legenda, a partir do roteiro colado ou de um áudio do projeto.
+
+    Síncrono e sem persistência: quem grava é o `PUT /timeline` que o front já chama. O 409 vem
+    antes do serviço porque sem ffmpeg não há como extrair o wav — a etapa segue editável, só a
+    geração por áudio trava (mesma regra do render e do último frame).
+    """
+    root = refs.project_dir(pid)
+    if req.source == "audio" and not ff.available():
+        raise HTTPException(409, NO_FFMPEG)
+    try:
+        return captions.generate(root, req.model_dump())
+    except ProviderError as e:
+        raise HTTPException(502, str(e)) from e
+    except (FileNotFoundError, ValueError) as e:
+        raise _translate(e) from e
+
+
+@router.post("/api/projects/{pid}/edit/captions/narration/upload")
+async def upload_narration(pid: str, files: list[UploadFile] = File(...)):  # noqa: B008
+    """[extensão] Biblioteca de narração do projeto — a fonte de áudio da legenda."""
+    root = refs.project_dir(pid)
+    payload = []
+    for f in files:
+        data = await f.read()
+        if len(data) > MAX_MEDIA_BYTES:
+            raise HTTPException(413, f"{f.filename}: arquivo acima de {MAX_MEDIA_BYTES // (1024 * 1024)} MB")
+        payload.append((f.filename or "narracao.wav", data))
+    try:
+        return captions.import_narration(root, payload)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@router.get("/api/projects/{pid}/edit/captions/narration")
+def list_narration(pid: str):
+    return captions.list_narration(refs.project_dir(pid))
 
 
 @router.post("/api/projects/{pid}/edit/render")
