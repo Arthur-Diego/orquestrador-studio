@@ -64,11 +64,16 @@ class ImportTarget:
     term: str                # `Candidate.term` derivado (slug do board, ou "url" para pin avulso)
 
 
-class PinUnavailable(RuntimeError):
+class PinUnavailable(Exception):
     """Pin sem nenhuma imagem acessível: privado, removido ou atrás do login.
 
     Erro de negócio (mensagem vai crua para o job), ao contrário das falhas inesperadas do
     scraper, que o serviço reporta no formato `TypeName: msg`.
+
+    **Não** herda de `RuntimeError` de propósito: a rota traduz `RuntimeError` em 409 ("já existe
+    uma busca em andamento"). Hoje esta exceção só nasce dentro da thread do job, mas se um dia a
+    checagem do pin subir para o trecho síncrono, herdar de `RuntimeError` faria "pin inacessível"
+    responder 409 — um erro de contrato silencioso.
     """
 
 
