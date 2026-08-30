@@ -660,3 +660,95 @@ def test_template_only_obeys_an_explicit_preset(client, pid):
     assert depois.status_code == 200 and depois.json()["preset"] == "documentary-street"
     assert depois.json()["prompt"] == antes.json()["prompt"], "default resolvido não mexe no template"
     assert not any(rig in depois.json()["prompt"] for rig in _RIGS)
+# ---------- kind "clean": limpeza de marca `[extensão]` (wave 9) ----------
+def _bridge(hf, monkeypatch, credits=2):
+    """Ponte falsificada disponível e logada — o 409 do router vem antes do 422 do serviço."""
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    monkeypatch.setattr(hf, "cost", lambda model, params: {"credits": credits, "model": model, "raw": {}})
+
+
+def _run_job(client, pid):
+    import threading
+    for _ in range(100):
+        if client.get(f"/api/projects/{pid}/base/job").json()["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    return client.get(f"/api/projects/{pid}/base/job").json()
+
+
+def test_clean_cost_accepts_the_new_kind(client, pid, hf, monkeypatch):
+    """FDD §5 contrato 1: `kind:"clean"` passa pelo `Literal` e cobra as 3 variações do passo."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    r = client.post(f"/api/projects/{pid}/base/cost", json={"kind": "clean", "target": "Red Bull"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["per_item"] == 2 and body["count"] == 3 and body["total"] == 6
+
+
+def test_clean_generate_accepts_the_new_kind_and_target(client, pid, hf, monkeypatch):
+    """FDD §5 contrato 2: o `target` do corpo chega ao prompt enviado ao CLI."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    calls = []
+
+    def fake_generate(model, params):
+        calls.append(params)
+        return {"urls": ["https://cdn.higgsfield/x/out.png"], "id": "job1", "raw": {}}
+
+    monkeypatch.setattr(hf, "generate", fake_generate)
+    monkeypatch.setattr(hf, "download", lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True),
+                                                           dest.write_bytes(image_bytes(color=(7, 8, 9))), dest)[-1])
+    r = client.post(f"/api/projects/{pid}/base/generate", json={"kind": "clean", "target": "Red Bull"})
+    assert r.status_code == 200
+    # schema atual do JobRegistry (o FDD §5 remete a ele): estado + total + extras do passo
+    assert r.json()["state"] == "running" and r.json()["kind"] == "clean" and r.json()["total"] == 3
+    assert _run_job(client, pid)["state"] == "done"
+    assert calls and all('"Red Bull"' in p["prompt"] for p in calls)
+    cands = client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+    assert [c for c in cands if c["kind"] == "clean"], "a geração paga entrou como candidata do passo"
+
+
+def test_clean_unknown_kind_is_rejected_by_the_literal(client, pid, hf, monkeypatch):
+    """FDD §6: kind fora dos quatro valores é 422 do Pydantic, antes de chegar ao serviço."""
+    _bridge(hf, monkeypatch)
+    assert client.post(f"/api/projects/{pid}/base/cost", json={"kind": "nope"}).status_code == 422
+    assert client.post(f"/api/projects/{pid}/base/generate", json={"kind": "nope"}).status_code == 422
+
+
+def test_clean_cost_without_selected_situation_is_422(client, pid, hf, monkeypatch):
+    """FDD §6/§9 critério 9: sem situação escolhida, a limpeza usa a mensagem existente do rótulo."""
+    _bridge(hf, monkeypatch)
+    r = client.post(f"/api/projects/{pid}/base/cost", json={"kind": "clean"})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Escolha primeiro a melhor imagem de situação (aula 009)."
+
+
+def test_clean_imports_accept_the_new_kind(client, pid, studio_env):
+    """FDD §5 contrato 3: o caminho sem custo (modo UI ilimitado) classifica candidatas `clean`."""
+    make_image(studio_env["tmp"] / "downloads" / "limpa.jpg")
+    r = client.post(f"/api/projects/{pid}/base/import/downloads", json={"since_minutes": 60, "kind": "clean"})
+    assert r.status_code == 200 and r.json()["added"] == 1
+    r = client.post(f"/api/projects/{pid}/base/import/upload",
+                    files=[("files", ("c.png", image_bytes(color=(40, 200, 40)), "image/png"))],
+                    data={"kind": "clean"})
+    assert r.status_code == 200 and r.json()["added"] == 1
+    cands = client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+    assert len([c for c in cands if c["kind"] == "clean"]) == 2
+    assert client.post(f"/api/projects/{pid}/base/import/downloads",
+                       json={"since_minutes": 60, "kind": "nope"}).status_code == 422
+
+
+def test_clean_select_response_carries_the_clean_key(client, pid):
+    """FDD §5 contrato 4: a chave `clean` entra no mapa `chain` da resposta de `select`."""
+    _seed_situation(client, pid)
+    client.post(f"/api/projects/{pid}/base/import/upload",
+                files=[("files", ("c.png", image_bytes(color=(40, 200, 40)), "image/png"))],
+                data={"kind": "clean"})
+    cid = [c for c in client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+           if c["kind"] == "clean"][-1]["id"]
+    r = client.post(f"/api/projects/{pid}/base/select", json={"id": cid})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "clean" and "clean" in body["chain"] and body["chain"]["clean"] == cid

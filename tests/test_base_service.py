@@ -723,3 +723,46 @@ def test_clean_generate_requires_a_selected_situation(studio_env, svc, project, 
     with pytest.raises(ValueError) as e:
         svc.start_generate(project, "clean")
     assert str(e.value) == "Escolha primeiro a melhor imagem de situação (aula 009)."
+
+
+# ---------- seleção, cadeia e base.md do kind "clean" (wave 9) ----------
+def test_clean_select_drops_label_and_upscale(studio_env, svc, project):
+    """FDD §9 critério 5: a limpeza é um passo ANTES do rótulo — escolhê-la recomeça a cadeia dali."""
+    root, sit = _clean_ready(studio_env, svc, project)
+    cln = _up(svc, project, "clean", (40, 200, 40))
+    lbl = _up(svc, project, "label", (40, 40, 200))
+    up = _up(svc, project, "upscale", (90, 90, 90))
+    svc.select(project, cln)
+    svc.select(project, lbl)
+    svc.select(project, up)
+    r = svc.select(project, cln)
+    assert r["kind"] == "clean" and r["chain"]["clean"] == cln
+    assert r["chain"]["label"] is None and r["chain"]["upscale"] is None, "os passos seguintes caem"
+    assert r["chain"]["situation"] == sit["id"], "a situação escolhida continua de pé"
+    src = root / [c for c in svc.load(project) if c["id"] == cln][0]["file"]
+    assert (root / "base" / "base_final.png").read_bytes() == src.read_bytes()
+
+
+def test_clean_md_records_the_cleaning_step(studio_env, svc, project):
+    """B10: o dever de casa da aula guarda o prompt de cada passo — inclusive o da limpeza."""
+    root, _ = _clean_ready(studio_env, svc, project)
+    texto = svc.clean_prompt("Red Bull")
+    svc.import_upload(project, [("c.png", _png(1024, 576, (10, 20, 30)))], "clean", None, texto)
+    svc.select(project, [c for c in svc.load(project) if c["kind"] == "clean"][-1]["id"])
+    md = (root / "base" / "base.md").read_text()
+    assert f"| {svc.KIND_LABEL['clean']} |" in md, "linha da limpeza na tabela da cadeia"
+    cabeca, prompts = md.split("## Prompts e instruções usados")
+    assert svc.KIND_LABEL["clean"].capitalize() in prompts
+    assert texto in prompts, "o prompt integral (não o truncado da tabela) fica na seção de prompts"
+    assert cabeca
+
+
+def test_clean_most_advanced_ranks_between_situation_and_label(studio_env, svc, project):
+    """FDD §9 critério 6: RANK situação < limpeza < rótulo — o `base_final` segue o mais avançado."""
+    _clean_ready(studio_env, svc, project)
+    cln = _up(svc, project, "clean", (40, 200, 40))
+    svc.select(project, cln)
+    assert svc.most_advanced(svc.load(project))["id"] == cln
+    lbl = _up(svc, project, "label", (40, 40, 200))
+    svc.select(project, lbl)
+    assert svc.most_advanced(svc.load(project))["id"] == lbl
