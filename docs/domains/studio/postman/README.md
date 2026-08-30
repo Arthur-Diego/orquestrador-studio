@@ -15,9 +15,9 @@ Arquivos:
 
 | Arquivo | Conteúdo |
 |---|---|
-| `prompter-presets-realismo.postman_collection.json` | Collection v2.1.0 — 15 requests em 6 pastas |
+| `prompter-presets-realismo.postman_collection.json` | Collection v2.1.0 — 18 requests em 6 pastas |
 | `prompter-presets-realismo.postman_environment.json` | `baseUrl`, `pid`, `accessToken` (não usado) |
-| `divergencias.md` | FDD × implementação publicada (3 itens, nenhum de severidade ALTA) |
+| `divergencias.md` | FDD × implementação (4 itens: 3 MEDIA, 1 BAIXA; nenhum ALTA) |
 
 ## Rotas cobertas (todas em `studio/creditos/router.py`)
 
@@ -79,6 +79,14 @@ newman run docs/domains/studio/postman/prompter-presets-realismo.postman_collect
   -e docs/domains/studio/postman/prompter-presets-realismo.postman_environment.json \
   --reporters cli --suppress-exit-code
 ```
+
+### Execução de 2026-08-30 (na geração)
+
+`newman` está instalado (`/home/arthu/.local/bin/newman`) e leu a coleção: **18 requests, 23
+asserções**, run em 296 ms. **Todos** os requests falharam com `ECONNREFUSED 127.0.0.1:8766` —
+o app não estava no ar e esta sessão não sobe servidor. Ou seja: o formato da coleção e os
+scripts estão validados; **o contrato ainda não foi verificado contra o serviço**. Suba o app na
+porta 8766 e rode de novo para ter o resultado real.
 
 ## Casos da §6 não cobertos por HTTP
 

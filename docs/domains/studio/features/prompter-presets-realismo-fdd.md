@@ -108,6 +108,17 @@ código entregue é mais preciso que o texto da v1.0, sem mudar o contrato da §
   `?pid=` de projeto inexistente responde **404**, pelo mesmo `project_dir(pid)` das demais rotas
   por projeto do módulo. O "200 sempre" da §5 vale para o catálogo em si (dict em memória, sem
   I/O), não para um pid inválido. Consumidores que só querem o catálogo devem chamar sem `pid`.
+- **Shape de `GET /api/prompter/preset-config`** (que a §5 declarava sem fixar): responde
+  `{"defaults": {ação: {preset, source}}}`, o mesmo bloco do endpoint de catálogo, restrito ao
+  nível global (sem `pid`).
+- **`fidelity` não vai na resposta HTTP.** O campo é comum a todo preset e vive em
+  `REALISM_PRESETS` (critério 1 da §9); o exemplo de resposta da §5 já o omitia. Consumidores
+  in-process leem `prompter.REALISM_PRESETS[<id>]["fidelity"]`; a API expõe rig/luz/grade/
+  negativos, que é o que a UI precisa para montar seletor.
+- **Limitação conhecida: não há rota para REMOVER o override global**, só para sobrescrevê-lo
+  (inclusive com `null`). Por projeto existe o `DELETE`. Como o default de código é `null`, gravar
+  `null` no global produz hoje o mesmo efeito observável de não ter override; a rota de remoção
+  fica como evolução, sem impacto no contrato da §5.
 - **`settings.resolve_preset(kind, pid, preset)`** foi introduzida como o ponto único que devolve
   `(resolvido, explícito)`. Só o preset **explícito** alimenta `fallback_template`, o que preserva
   o determinismo do template do curso quando o preset veio apenas de um default configurado
