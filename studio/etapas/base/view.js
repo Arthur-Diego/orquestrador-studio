@@ -220,6 +220,35 @@ Studio.register("base", (ctx) => {
     }
   }
 
+  // ---------- preset de realismo `[extensão]` (opt-in) ----------
+  // Catálogo global em `GET /api/prompter/presets`. O `<select>` pré-seleciona o default RESOLVIDO
+  // da ação `base` (projeto → global → código); com o default de código `null` do gate W3 isso é
+  // "(sem preset)" e a tela NÃO passa a mandar preset por conta própria — quem escolhe é o usuário.
+  // `defaults` é mapa ABERTO: lemos a chave da ação, nunca assumimos o conjunto de chaves.
+  async function loadRealismPresets() {
+    const sel = $("#baseRealismPreset");
+    if (!sel) return;
+    const vazio = `<option value="">(sem preset)</option>`;
+    try {
+      const r = await api(`/api/prompter/presets?pid=${encodeURIComponent(ctx.pid())}`);
+      const def = ((r.defaults || {})["base"] || {}).preset || "";
+      sel.innerHTML = vazio + (r.presets || []).map((p) =>
+        `<option value="${ui.esc(p.id)}" title="${ui.esc(p.desc_pt)}">${ui.esc(p.name)} — ${ui.esc(p.desc_pt)}</option>`).join("");
+      sel.value = def;
+      if (sel.value !== def) sel.value = "";   // default apontando para id fora do catálogo
+    } catch (err) {
+      // Falha graciosa: sem catálogo a tela segue igual à de hoje — só "(sem preset)", e o
+      // "Gerar prompt" continua funcionando (manda `preset: null`).
+      sel.innerHTML = vazio;
+    }
+  }
+
+  // "" = "(sem preset)" → `null` no body; nunca string vazia (o router valida contra o catálogo).
+  function realismPreset() {
+    const sel = $("#baseRealismPreset");
+    return sel && sel.value ? sel.value : null;
+  }
+
   async function gerarPrompt(noBias) {
     const btn = noBias ? $("#btnPromptNoBias") : $("#btnPrompt");
     // O protótipo não desenha o seletor de modo: o app sempre pede com as imagens (referência +
@@ -234,6 +263,7 @@ Studio.register("base", (ctx) => {
       no_bias: !!noBias,
       no_people: false,
       board: boardSel,   // [extensão] ADR-013: usa as imagens do board como referência
+      preset: realismPreset(),   // [extensão] preset de realismo: id escolhido ou null (sem preset)
     };
     const gen = () => api(url("prompts/generate"), { method: "POST", body: JSON.stringify(body) });
     const aplicar = (e) => {
@@ -575,6 +605,7 @@ Studio.register("base", (ctx) => {
       Object.keys(edits).forEach((k) => delete edits[k]);
       loadBrand();
       loadMoodSources();
+      loadRealismPresets();
       await loadPrompts();
       load();
       ui.renderGuide("base");

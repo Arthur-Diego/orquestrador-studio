@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Seletor de preset `[extensão]` nas telas das etapas 3 e 4
 type: frontend
 complexity: medium
@@ -54,16 +54,16 @@ A etapa 2 fica **fora** por decisão registrada (amenda A4 do `_techspec.md`).
 
 ## Subtasks
 
-- [ ] 4.1 Acrescentar o `<select>` de preset (+ rótulo com a marca `[extensão]`) ao painel 01 de
+- [x] 4.1 Acrescentar o `<select>` de preset (+ rótulo com a marca `[extensão]`) ao painel 01 de
       `studio/etapas/base/view.html`, junto do botão "Gerar prompt".
-- [ ] 4.2 Em `studio/etapas/base/view.js`, carregar o catálogo, popular o seletor, pré-selecionar
+- [x] 4.2 Em `studio/etapas/base/view.js`, carregar o catálogo, popular o seletor, pré-selecionar
       o default resolvido e incluir `preset` no body de `gerarPrompt`.
-- [ ] 4.3 Acrescentar o seletor ao bloco de vídeo por foto da etapa 4 (markup dinâmico em
+- [x] 4.3 Acrescentar o seletor ao bloco de vídeo por foto da etapa 4 (markup dinâmico em
       `photoRow`) e/ou ao modal "Gerar animação", com id prefixado por `realism`.
-- [ ] 4.4 Em `studio/etapas/storyboard/view.js`, incluir `preset` no body de `genVideoPrompt`.
-- [ ] 4.5 Implementar a falha graciosa do carregamento do catálogo nas duas telas.
-- [ ] 4.6 Escrever os testes de view da seção `## Tests`.
-- [ ] 4.7 Rodar a verificação final da feature: `make verify` (ruff + pytest) com evidência real,
+- [x] 4.4 Em `studio/etapas/storyboard/view.js`, incluir `preset` no body de `genVideoPrompt`.
+- [x] 4.5 Implementar a falha graciosa do carregamento do catálogo nas duas telas.
+- [x] 4.6 Escrever os testes de view da seção `## Tests`.
+- [x] 4.7 Rodar a verificação final da feature: `make verify` (ruff + pytest) com evidência real,
       e conferir `git diff --name-only` contra `studio/web/`.
 
 ## Implementation Details
@@ -125,27 +125,27 @@ Pontos de encaixe já verificados no código:
 Sem `_tests.md` neste workflow: casos concretos inline, no padrão de asserção textual dos testes
 de view do repositório.
 
-- [ ] **T4.1 — seletor na etapa 3.** `GET /steps/base/view.html` contém um `<select>` com o id do
+- [x] **T4.1 — seletor na etapa 3.** `GET /steps/base/view.html` contém um `<select>` com o id do
       preset de realismo e a opção "(sem preset)"; o rótulo próximo contém
       `<span class="ext">[extensão]</span>`.
-- [ ] **T4.2 — etapa 3 consome o catálogo.** `GET /steps/base/view.js` contém a string
+- [x] **T4.2 — etapa 3 consome o catálogo.** `GET /steps/base/view.js` contém a string
       `"/api/prompter/presets"` e envia o campo `preset` no body de `gerarPrompt`.
-- [ ] **T4.3 — seletor na etapa 4 com id próprio.** `GET /steps/storyboard/view.js` (ou
+- [x] **T4.3 — seletor na etapa 4 com id próprio.** `GET /steps/storyboard/view.js` (ou
       `view.html`, conforme onde o seletor for montado) contém o id prefixado por `realism`, e
       **continua** contendo `sbPreset` e `— fórmulas da aula —` intactos (o conceito antigo não
       foi renomeado).
-- [ ] **T4.4 — etapa 4 envia o preset.** `GET /steps/storyboard/view.js` contém
+- [x] **T4.4 — etapa 4 envia o preset.** `GET /steps/storyboard/view.js` contém
       `"/api/prompter/presets"` e o campo `preset` no body enviado por `genVideoPrompt`; a
       asserção existente `'"/video-prompt"' in js` continua valendo.
-- [ ] **T4.5 — etapa 2 intocada.** `GET /steps/mood/view.js` **não** contém
+- [x] **T4.5 — etapa 2 intocada.** `GET /steps/mood/view.js` **não** contém
       `"mood/prompts/generate"` nem `"/api/prompter/presets"`; `tests/test_mood_view.py` passa sem
       alteração.
-- [ ] **T4.6 — nada em `studio/web/`.** Teste (ou verificação de fechamento registrada no PR) de
+- [x] **T4.6 — nada em `studio/web/`.** Teste (ou verificação de fechamento registrada no PR) de
       que `git diff --name-only develop...HEAD` não lista nenhum caminho sob `studio/web/`.
-- [ ] **T4.7 — opção "(sem preset)" é o estado inicial.** O JS pré-seleciona a partir de
+- [x] **T4.7 — opção "(sem preset)" é o estado inicial.** O JS pré-seleciona a partir de
       `defaults[<ação>].preset`; com o default opt-in (`null`), a opção selecionada é a vazia —
       assertável pela presença da lógica de pré-seleção lendo a chave da ação no mapa `defaults`.
-- [ ] **T4.8 — falha graciosa.** O carregamento do catálogo está dentro de tratamento de erro
+- [x] **T4.8 — falha graciosa.** O carregamento do catálogo está dentro de tratamento de erro
       (try/catch ou equivalente do helper de API da tela), de modo que uma falha não impeça a
       geração de prompt.
 

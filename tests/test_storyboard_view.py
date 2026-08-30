@@ -111,6 +111,55 @@ def test_load_cands_reidrata_a_escolha_salva_da_cena(js):
     assert "order =" in corpo, "loadCands() deve reescrever `order` com a escolha salva"
 
 
+# ---------- `[extensão]` preset de REALISMO (feature prompter-presets-realismo, task_04) ----------
+def test_preset_de_realismo_usa_identificador_proprio(js, html):
+    """Amenda A3: `sbPreset` é das FÓRMULAS DA AULA e não pode ser reusado nem renomeado — o preset
+    de realismo entra com identificador próprio, prefixado por `realism`."""
+    assert "sbRealismPreset" in js, "o seletor de preset de realismo sumiu da etapa 4"
+    # o conceito antigo continua de pé, intacto, nos dois arquivos
+    assert 'id="sbPreset"' in html and "— fórmulas da aula —" in html
+    assert "$(\"#sbPreset\")" in js and "— fórmulas da aula —" in js
+
+
+def test_preset_de_realismo_marcado_como_extensao_com_rota_de_fuga(js):
+    corpo = js[js.index("function realismPresetField"):js.index("function realismPresetOf")]
+    assert '<option value="">(sem preset)</option>' in corpo, \
+        "a rota de fuga `(sem preset)` é a primeira opção, com valor vazio"
+    assert '<span class="ext">[extensão]</span>' in corpo, "ADR-004: nenhuma aula ensina presets"
+
+
+def test_preset_de_realismo_nos_dois_caminhos_que_geram_prompt(js):
+    """O bloco de vídeo por foto (`photoRow`) E o modal `Gerar animação` chamam `genVideoPrompt`:
+    os dois precisam do seletor."""
+    i, j = js.index("function photoRow("), js.index("function modalAnimate(")
+    # `ui.modal(` também aparece em modais anteriores: ancore a busca do fim no início da função.
+    linha = js[i:js.index("function seedPhotoState", i)]
+    modal = js[j:js.index("const m = ui.modal(", j)]
+    assert "realismPresetField(m.preset)" in linha, "a linha-foto não desenha o seletor"
+    assert "realismPresetField(m0.preset)" in modal, "o modal `Gerar animação` não desenha o seletor"
+
+
+def test_etapa4_consome_o_catalogo_e_envia_o_preset(js):
+    assert "/api/prompter/presets" in js, "o seletor é populado pelo catálogo da feature"
+    corpo = js[js.index("async function genVideoPrompt"):js.index("function modalAnimate(")]
+    assert "const preset = realismPresetOf(container)" in corpo
+    assert "frames: { mode: \"single\", image: img }, preset }" in corpo, \
+        "o `preset` entra no body do POST /video-prompt já existente"
+    assert '"/video-prompt"' in corpo, "a rota do contrato congelado continua a mesma"
+    # `""` = "(sem preset)" vira `null`, nunca string vazia.
+    escolha = js[js.index("function realismPresetOf"):js.index("function kindHint")]
+    assert "el.value ? el.value : null" in escolha
+
+
+def test_etapa4_preseleciona_o_default_da_acao_e_falha_graciosamente(js):
+    corpo = js[js.index("async function loadRealismPresets"):js.index("function realismPresetField")]
+    assert '(r.defaults || {})["motion"]' in corpo, \
+        "o default sai da chave da ação em `defaults` (mapa ABERTO — nunca as três chaves fixas)"
+    assert '.preset || ""' in corpo, "default `null` (opt-in do gate W3) resolve para `(sem preset)`"
+    assert "try {" in corpo and "} catch (err) { realismPresets = []" in corpo, \
+        "falhar o catálogo não pode impedir a geração de prompt de vídeo"
+
+
 # ---------- sintaxe do view.js (equivalente ao `node --check`) ----------
 def test_view_js_node_check():
     node = shutil.which("node")

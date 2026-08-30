@@ -43,10 +43,18 @@ Studio.register("storyboard", (ctx) => {
     // o mapeamento aqui torna trivial migrar per-cena↔per-foto e plugar a ponte com o downstream.
     const photoState = new Map();            // chave `${sid}:${img}` -> { desc, prompt, videos:[] }
     let videoModels = [], videoModelDefaults = { single: "", start_end: "" };  // seletor do modal (ADR-022)
+    // `[extensão]` PRESET DE REALISMO — não confundir com `#sbPreset`, que é o das FÓRMULAS DA AULA
+    // (outro conceito, intocado). Por isso o identificador local leva o prefixo `realism`. É CLASSE,
+    // não id: o bloco se repete por foto (uma linha por foto + o modal), e id duplicado seria
+    // HTML inválido — mesmo padrão de `.sbVidDesc`/`.sbVidPromptBox`.
+    let realismPresets = [], realismDefault = "";
     const pkey = (sid, img) => `${sid}:${img}`;
     function photoMeta(sid, img) {
       const k = pkey(sid, img);
-      if (!photoState.has(k)) photoState.set(k, { desc: "", prompt: "", videos: [] });
+      // `preset: null` = o usuário não mexeu no seletor → vale o default resolvido. String (inclusive
+      // "") = escolha explícita dele. Campo só de tela: `collect()` não o manda no PUT /scenes
+      // (amenda A5 — o schema de `scenes.json` não muda).
+      if (!photoState.has(k)) photoState.set(k, { desc: "", prompt: "", videos: [], preset: null });
       return photoState.get(k);
     }
 
@@ -83,6 +91,35 @@ Studio.register("storyboard", (ctx) => {
         meta.presets.map((p, i) => `<option value="${i}">${esc(p.label)}</option>`).join("");
       kindHint();
     }
+    // Catálogo global do preset de realismo. O default vem do mapa ABERTO `defaults`, lido pela
+    // chave da ação (`motion`) — nunca assumindo o conjunto de chaves. Com o default de código
+    // `null` do gate W3, o estado inicial é "(sem preset)": a tela não manda preset sozinha.
+    // Falha graciosa: sem catálogo sobra só "(sem preset)" e a geração de prompt segue igual.
+    async function loadRealismPresets() {
+      try {
+        const r = await api(`/api/prompter/presets?pid=${encodeURIComponent(ctx.pid())}`);
+        realismPresets = r.presets || [];
+        realismDefault = ((r.defaults || {})["motion"] || {}).preset || "";
+        if (!realismPresets.some((p) => p.id === realismDefault)) realismDefault = "";
+      } catch (err) { realismPresets = []; realismDefault = ""; }
+    }
+
+    // Bloco do seletor, usado na linha-foto E no modal "Gerar animação" (os dois caminhos que
+    // geram prompt de vídeo). `sel` indefinido = usa o default resolvido.
+    function realismPresetField(sel) {
+      const cur = sel === undefined ? realismDefault : (sel || "");
+      const opts = [`<option value="">(sem preset)</option>`].concat(realismPresets.map((p) =>
+        `<option value="${esc(p.id)}"${p.id === cur ? " selected" : ""} title="${esc(p.desc_pt)}">${esc(p.name)} — ${esc(p.desc_pt)}</option>`));
+      return `<label class="field sb-realism"><span class="eyebrow lbl">preset de realismo <span class="ext">[extensão]</span></span>
+            <select class="sbRealismPreset" aria-label="Preset de realismo (extensão)">${opts.join("")}</select></label>`;
+    }
+
+    // "" = "(sem preset)" → `null` no body; nunca string vazia.
+    function realismPresetOf(container) {
+      const el = container ? container.querySelector(".sbRealismPreset") : null;
+      return el && el.value ? el.value : null;
+    }
+
     function kindHint() {
       const k = meta.kinds.find((x) => x.kind === $("#sbKind").value);
       $("#sbKind").title = k ? k.ui_hint : "";
@@ -255,6 +292,7 @@ Studio.register("storyboard", (ctx) => {
          </div>
          <div class="sb-photocol">
             <textarea class="txt sbVidDesc" rows="2" placeholder="o que acontece no vídeo desta foto (em inglês)">${esc(m.desc)}</textarea>
+            ${realismPresetField(m.preset)}
             <div class="prompt sm sbVidPromptBox${has ? "" : " hidden"}">
               <div class="row"><span class="eyebrow">Prompt de vídeo</span>
                 <button type="button" class="link sbVidCopy">Copiar</button><span class="ok"></span></div>
@@ -282,7 +320,7 @@ Studio.register("storyboard", (ctx) => {
         (s.images || []).forEach((img) => {
           const e = ph[img] || {};
           photoState.set(pkey(s.id || "", img),
-            { desc: e.video_desc || "", prompt: e.video_prompt || "", videos: (e.videos || []).slice() });
+            { desc: e.video_desc || "", prompt: e.video_prompt || "", videos: (e.videos || []).slice(), preset: null });
         });
       });
     }
@@ -293,6 +331,7 @@ Studio.register("storyboard", (ctx) => {
         const m = photoMeta(sid, pr.dataset.img);
         const d = pr.querySelector(".sbVidDesc"); if (d) m.desc = d.value;
         const p = pr.querySelector(".sbVidPromptText"); if (p) m.prompt = p.textContent;
+        const rp = pr.querySelector(".sbRealismPreset"); if (rp) m.preset = rp.value;
       });
     }
 
@@ -380,20 +419,22 @@ Studio.register("storyboard", (ctx) => {
       if (!sid) return toast("Salve as cenas primeiro.");
       const descEl = container.querySelector(".sbVidDesc");
       const description = (descEl ? descEl.value : "").trim();
+      const preset = realismPresetOf(container);   // `[extensão]` id escolhido ou null (sem preset)
       const p = ui.progress({ title: "Gerar prompt de vídeo", subtitle: "o Claude escreve o prompt de movimento" });
       p.step("Chamando o Claude…");
       try {
-        const r = await api(url("/video-prompt"), { method: "POST", body: JSON.stringify({ scene_id: sid, description, frames: { mode: "single", image: img } }) });
+        const r = await api(url("/video-prompt"), { method: "POST", body: JSON.stringify({ scene_id: sid, description, frames: { mode: "single", image: img }, preset }) });
         const box = container.querySelector(".sbVidPromptBox"), txt = container.querySelector(".sbVidPromptText");
         if (txt) txt.textContent = r.prompt || "";
         if (box) box.classList.toggle("hidden", !r.prompt);
-        const m = photoMeta(sid, img); m.desc = description; m.prompt = r.prompt || "";
+        const m = photoMeta(sid, img); m.desc = description; m.prompt = r.prompt || ""; m.preset = preset || "";
         // Reflete no outro lugar (linha↔modal) para o `syncPhotoDom` do collect() não apagar o prompt.
         const pr = photoRowEl(sid, img);
         if (pr && pr !== container.closest(".sb-photorow")) {
           const rt = pr.querySelector(".sbVidPromptText"); if (rt) rt.textContent = m.prompt;
           const rb = pr.querySelector(".sbVidPromptBox"); if (rb) rb.classList.toggle("hidden", !m.prompt);
           const rd = pr.querySelector(".sbVidDesc"); if (rd) rd.value = m.desc;
+          const rs = pr.querySelector(".sbRealismPreset"); if (rs) rs.value = m.preset;
         }
         p.ok("Prompt pronto");
         p.note(`<span class="fine">fonte: ${esc(r.source || "claude")}${r.seconds ? ` · sugestão ${esc(r.seconds)}s` : ""}</span>`);
@@ -419,6 +460,7 @@ Studio.register("storyboard", (ctx) => {
           </div>
           <div class="sb-anim-ctrls">
             <textarea class="txt sbVidDesc" rows="2" placeholder="o que acontece no vídeo (em inglês)">${esc(m0.desc)}</textarea>
+            ${realismPresetField(m0.preset)}
             <div class="row wrap"><button type="button" class="ghost mini sbVidPrompt">Gerar prompt de vídeo</button></div>
             <div class="prompt sm sbVidPromptBox${m0.prompt ? "" : " hidden"}">
               <div class="row"><span class="eyebrow">Prompt de vídeo</span>
@@ -860,6 +902,7 @@ Studio.register("storyboard", (ctx) => {
         if (!ctx.pid()) return;
         instruction = ""; renderInstruction();
         await loadPresets();
+        await loadRealismPresets();   // `[extensão]` antes de `loadScenes()`: as linhas-foto já nascem com o seletor
         await loadStatus();
         await loadIdeas();
         await loadScenes();
