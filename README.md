@@ -73,7 +73,7 @@ troca de modelo **sugerida** após 3 falhas; corte para preto como fallback → 
 Candidatas por upload/Downloads/histórico ou `sonilo_music` via CLI; escolha "sentindo" no player;
 batidas e impactos detectados (numpy + ffmpeg) → `audio/music.*`, `audio/beats.json`, `license.txt`.
 
-### 7 · Montagem no ritmo (aula 014)
+### 7 · Studio de vídeo (aula 014)
 Timeline dos takes escolhidos, cortes propostos nos impactos, velocidade com mistura de quadros,
 pretos, offset da música, fade, SFX, último frame para transição colada → `edit/master.mp4`
 (1920×1080/30 fps, H.264/AAC) — tudo por ffmpeg.

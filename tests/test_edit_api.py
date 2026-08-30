@@ -540,3 +540,54 @@ def test_captions_generated_items_survive_the_timeline_roundtrip(client, project
     for antes, depois in zip(saved, items, strict=True):
         assert antes["words"] == depois["words"]
         assert (antes["mode"], antes["hi"], antes["chunk"]) == (depois["mode"], depois["hi"], depois["chunk"])
+
+
+# ---------- rodada 3: exclusão total (a guarda de clipes é só da exportação) ----------
+def test_put_removes_music_and_persists(client, project, root):
+    """Item 3: dá para excluir a trilha da faixa MÚSICA — o PUT é 200 e o reload continua sem ela."""
+    seed(root)
+    tl = body(client.get(url(project, "/timeline")).json()["timeline"])
+    assert tl["music"]["file"], "a fixture precisa começar COM trilha para o teste ter sentido"
+    tl["music"] = {"file": None, "offset": 0.0}
+    r = client.put(url(project, "/timeline"), json=tl)
+    assert r.status_code == 200, r.text
+    assert r.json()["timeline"]["music"]["file"] is None
+    stored = client.get(url(project, "/timeline")).json()["timeline"]
+    assert stored["music"]["file"] is None
+
+
+def test_put_with_zero_clips_is_200_and_render_is_422(client, project, root):
+    """Item 3: esvaziar a VÍDEO 1 é edição válida; quem recusa é o render, não o save."""
+    seed(root)
+    tl = body(client.get(url(project, "/timeline")).json()["timeline"])
+    assert tl["clips"], "a fixture precisa começar COM clipes"
+    tl["clips"] = []
+    r = client.put(url(project, "/timeline"), json=tl)
+    assert r.status_code == 200, r.text
+    assert r.json()["timeline"]["clips"] == [] and r.json()["duration"] == 0.0
+    if not has_ffmpeg():
+        pytest.skip("ffmpeg não disponível")
+    rendered = client.post(url(project, "/render"), json={"target": "rough"})
+    assert rendered.status_code == 422 and "sem clipes" in rendered.json()["detail"]
+
+
+# ---------- rodada 3: contrato de UI do editor estável (ADR-008: front sem teste unitário) ----------
+def test_view_has_side_toggle_and_stable_timeline_css(client):
+    """Rodada 3 [extensão]: o editor deixou de se refazer a cada ação. O front não tem teste
+    unitário (ADR-008), então o que dá para fixar no pytest é a presença das strings que provam a
+    mudança de forma: o toggle do menu lateral, a timeline com scroll próprio e o render
+    incremental que substituiu o `renderAll()` destrutivo."""
+    html = client.get("/steps/edit/view.html").text
+    js = client.get("/steps/edit/view.js").text
+    # item 7: esconder o menu lateral do Studio é uma classe no shell, não um innerHTML novo
+    assert ".app.side-hidden" in html, "classe que esconde a sidebar do Studio"
+    # item 2: a timeline rola por dentro — MÚSICA e SFX não ficam mais cortadas fora da viewport
+    regra = next((ln for ln in html.splitlines() if ".ved-tl-main{" in ln), "")
+    assert "overflow-y:auto" in regra, f"a área da timeline precisa rolar na vertical: {regra!r}"
+    # item 1: toda ação de edição passa pelo render incremental; o render destrutivo saiu do arquivo
+    assert "renderDirty(" in js, "render incremental"
+    assert "renderAll(" not in js, "o render destrutivo do editor inteiro não existe mais"
+    # item 7: a preferência de sidebar sobrevive ao reload
+    assert "studio.edit.sideHidden" in js, "preferência do menu lateral lembrada"
+    # item 5: mover entre VÍDEO 1 e VÍDEO 2 é explícito (mover, não copiar)
+    assert "moveToTrack(" in js, "movimento V1 ↔ V2"

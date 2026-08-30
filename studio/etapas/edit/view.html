@@ -104,7 +104,7 @@
   .ved-mcard .th{aspect-ratio:16/10;position:relative;display:flex;align-items:center;justify-content:center;color:var(--vtx2);font-size:18px}
   .ved-mcard .th video,.ved-mcard .th img{width:100%;height:100%;object-fit:cover}
   .ved-mcard .th .ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;text-shadow:0 1px 4px #000}
-  .ved-mcard .mv2{position:absolute;right:4px;top:4px;z-index:2;border:1px solid var(--vbd2);background:rgba(8,9,12,.62);color:#fff;border-radius:5px;font-size:8px;letter-spacing:.04em;padding:2px 5px;line-height:1.3}
+  .ved-mcard .mv2{position:absolute;right:4px;top:4px;z-index:2;border:1px solid var(--vbd2);background:rgba(8,9,12,.86);color:#fff;border-radius:5px;font-size:9px;letter-spacing:.04em;padding:3px 6px;line-height:1.3}
   .ved-mcard .mv2:hover{border-color:var(--vac);color:var(--vac)}
   .ved-mcard .cap{padding:5px 7px}
   .ved-mcard .nm{font-size:10.5px;color:var(--vtx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -121,6 +121,13 @@
   /* O rótulo manda na largura: "aplicar" estourava a caixa fixa de 24 px e desalinhava os ＋/✕. */
   .ved-row .radd{min-width:24px;height:24px;padding:0 7px;border-radius:6px;border:1px solid var(--vbd2);background:transparent;color:var(--vac);font-size:11px;line-height:1;flex:none;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
   .ved-row .radd.ic{padding:0;font-size:14px}
+  /* painel Efeitos: linha aplicada, linha que o tipo selecionado não aceita ("só vídeo") e o
+     slider de intensidade inline, que é IRMÃO da linha para o clique nele não desligar o efeito */
+  .ved-row.on{border-color:var(--vac);background:var(--vacd)}
+  .ved-row.off{opacity:.45;cursor:default}
+  .ved-row.off:hover{border-color:var(--vbd2)}
+  .ved-row.off .radd{color:var(--vtx4)}
+  .ved-slider.ved-fxint{margin:2px 0 6px;padding:0 8px}
   .ved-feature{width:100%;display:flex;align-items:center;gap:7px;justify-content:center;background:var(--vacd);border:1px solid rgba(79,200,217,.4);color:var(--vac);border-radius:8px;padding:9px;font-size:12px;margin-bottom:10px}
 
   .ved-pgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -134,10 +141,17 @@
   .ved-center{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--vpreview)}
   .ved-stage-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:18px;min-height:0;overflow:hidden}
   .ved-stage{position:relative;background:#000;overflow:hidden;box-shadow:0 6px 40px rgba(0,0,0,.6);border:1px solid var(--vbd)}
-  .ved-stage video,.ved-stage img.base{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none}
+  .ved-stage > video,.ved-stage img.base{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none}
   .ved-ph-empty{position:absolute;inset:0;background:repeating-linear-gradient(135deg,#0d2a30 0 22px,#0a1418 22px 44px)}
   .ved-cliplabel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.55);color:var(--vtx2);font-size:11px;padding:5px 12px;border-radius:20px;font-family:"IBM Plex Mono",monospace;pointer-events:none}
   .ved-layer{position:absolute;transform-origin:center;will-change:transform;cursor:move;pointer-events:auto}
+  /* MP4 na faixa VÍDEO 2: a camada é o overlay, então o <video> precisa de tamanho próprio
+     (o seletor do palco acima é só do vídeo da VÍDEO 1, filho direto). */
+  /* o teto é da CAMADA (medida em px pelo `overlayLayerUpdate`, contra o palco). Aqui o `60%` do
+     vídeo resolveria contra a largura INTRÍNSECA do arquivo (1920 px), não contra o palco — o
+     overlay saía maior que o quadro e era cortado pelo `overflow:hidden` da `.ved-stage`. */
+  .ved-layer video{display:block;max-width:100%;max-height:100%;object-fit:contain}
+  .ved-ovmiss{display:block;background:rgba(0,0,0,.55);color:var(--vtx3);font-size:11px;padding:5px 12px;border-radius:20px;font-family:"IBM Plex Mono",monospace;white-space:nowrap}
   /* Elementos do painel Elementos: as formas geométricas são desenhadas (não são caractere).
      Medidas em % do palco para acompanhar a proporção/resolução do projeto. */
   .ved-layer.shape{background:var(--vac);border-radius:4px}
@@ -146,8 +160,36 @@
   .ved-layer.shape-bar{width:72%;height:5%;border-radius:3px}
   .ved-layer.shape-lower{width:46%;height:13%;border-radius:6px;background:linear-gradient(90deg,var(--vac),rgba(0,0,0,.05))}
   .ved-layer.shape-bg{width:100%;height:100%;border-radius:0;background:rgba(0,0,0,.55)}
+
+  /* ---------- EFEITOS (classes `fx-*` escritas por `applyEffectClasses`) ----------
+     O que não cabe em `filter:` vira classe: pseudo-elemento (vinheta, grão, ruído) ou keyframes.
+     `--fx-i` é a intensidade (0–1) e `--fx-dur` a duração da animação. A animação é do compositor,
+     nunca JS por frame. Os deslocamentos usam as propriedades INDIVIDUAIS `scale:`/`translate:`,
+     que compõem com o `transform` inline da camada — usar `transform` aqui seria sobrescrito por
+     `layerBase`. As regras que citam `.ved-stage>video` valem para o clipe da VÍDEO 1, que recebe
+     as classes no próprio <video> (nele os pseudo-elementos não pintam — limitação do elemento). */
+  .ved-layer.text,.ved-layer.caption{text-shadow:var(--tx-shadow,none)}
+  .ved-layer.fx-glow{text-shadow:0 0 calc(4px + var(--fx-i,.5) * 20px) currentColor}
+  .ved-layer.fx-chromatic{text-shadow:calc(var(--fx-i,.5) * -3px) 0 red,calc(var(--fx-i,.5) * 3px) 0 cyan}
+  .ved-layer.fx-rgbsplit{text-shadow:0 calc(var(--fx-i,.5) * -3px) red,0 calc(var(--fx-i,.5) * 3px) cyan}
+  .ved-layer.fx-vignette::after,.ved-layer.fx-grain::before,.ved-layer.fx-noise::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit}
+  .ved-layer.fx-vignette::after{background:radial-gradient(closest-side,transparent 55%,rgba(0,0,0,calc(var(--fx-i,.5) * .8)))}
+  .ved-layer.fx-grain::before{opacity:calc(var(--fx-i,.5) * .5);mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter%20id='g'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.65'%20numOctaves='3'%20stitchTiles='stitch'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23g)'/%3E%3C/svg%3E")}
+  .ved-layer.fx-noise::before{opacity:calc(var(--fx-i,.5) * .7);mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='1.4'%20numOctaves='2'%20stitchTiles='stitch'/%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E")}
+  .ved-layer.fx-pixelate img,.ved-layer.fx-pixelate video,.ved-stage>video.fx-pixelate{image-rendering:pixelated}
+  .ved-layer.fx-pixelate img,.ved-layer.fx-pixelate video{scale:calc(1 + var(--fx-i,.5) * .5)}
+  .ved-layer.fx-motion,.ved-stage>video.fx-motion{scale:calc(1 + var(--fx-i,.5) * .1) 1}
+  .ved-layer.fx-lens,.ved-stage>video.fx-lens{border-radius:calc(var(--fx-i,.5) * 14px);overflow:hidden}
+  /* só UMA animação roda (o shorthand da última regra vence): `applyEffectClasses` calcula o
+     `--fx-dur` seguindo esta MESMA ordem — shake, glitch, zoom */
+  .ved-layer.fx-shake,.ved-stage>video.fx-shake{animation:ved-fx-shake var(--fx-dur,.4s) infinite}
+  .ved-layer.fx-glitch,.ved-stage>video.fx-glitch{animation:ved-fx-glitch var(--fx-dur,.8s) steps(2) infinite}
+  .ved-layer.fx-zoom,.ved-stage>video.fx-zoom{animation:ved-fx-zoom var(--fx-dur,1.5s) ease-in-out infinite alternate}
+  @keyframes ved-fx-shake{0%,100%{translate:0 0}25%{translate:calc(var(--fx-i,.5) * -4px) calc(var(--fx-i,.5) * 2px)}50%{translate:calc(var(--fx-i,.5) * 4px) calc(var(--fx-i,.5) * -2px)}75%{translate:calc(var(--fx-i,.5) * -3px) 0}}
+  @keyframes ved-fx-glitch{0%{clip-path:inset(0 0 0 0);translate:0}30%{clip-path:inset(18% 0 42% 0);translate:calc(var(--fx-i,.5) * -6px) 0}60%{clip-path:inset(58% 0 12% 0);translate:calc(var(--fx-i,.5) * 6px) 0}100%{clip-path:inset(0 0 0 0);translate:0}}
+  @keyframes ved-fx-zoom{from{scale:1}to{scale:calc(1 + var(--fx-i,.5) * .3)}}
   .ved-black{position:absolute;inset:0;background:#000}
-  .ved-bbox{position:absolute;border:1.5px solid var(--vac);pointer-events:none}
+  .ved-bbox{position:absolute;border:1.5px solid var(--vac);pointer-events:none;z-index:6}
   .ved-bbox .h{position:absolute;width:9px;height:9px;background:#fff;border:1.5px solid var(--vac);border-radius:2px;pointer-events:auto}
   .ved-bbox .h.rot{border-radius:50%;top:-22px;left:calc(50% - 5px)}
   .ved-bbox .h.nw{top:-5px;left:-5px;cursor:nwse-resize}.ved-bbox .h.ne{top:-5px;right:-5px;cursor:nesw-resize}
@@ -202,7 +244,7 @@
   /* ---------- TIMELINE ---------- */
   .ved-resize{width:5px;cursor:col-resize;flex:none}.ved-resize:hover{background:var(--vac)}
   .ved-resize-v{height:5px;cursor:row-resize}.ved-resize-v:hover{background:var(--vac)}
-  .ved-timeline{height:262px;min-height:150px;max-height:520px;flex:none;display:flex;flex-direction:column;background:var(--vpanel);border-top:1px solid var(--vbd)}
+  .ved-timeline{height:345px;min-height:260px;max-height:700px;flex:none;display:flex;flex-direction:column;background:var(--vpanel);border-top:1px solid var(--vbd)}
   .ved-tlbar{height:46px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;border-bottom:1px solid var(--vbd)}
   .ved-tlbar .tbtn{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--vbd2);background:transparent;color:var(--vtx3);border-radius:7px;padding:6px 10px;font-size:11px}
   .ved-tlbar .tbtn:hover{border-color:var(--vbdh);color:var(--vtx)}
@@ -220,7 +262,7 @@
   .ved-thead .tn{flex:1;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--vtx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ved-thead button{border:0;background:transparent;color:var(--vtx4);font-size:11px;padding:1px}
   .ved-thead button.act{color:var(--vac)}
-  .ved-tl-main{position:relative;overflow-x:auto;overflow-y:hidden;background:var(--vtracks)}
+  .ved-tl-main{position:relative;overflow-x:auto;overflow-y:auto;background:var(--vtracks)}
   .ved-ruler{position:sticky;top:0;height:26px;background:var(--vpanel);border-bottom:1px solid var(--vbd);z-index:4}
   .ved-ruler .tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--vbd);font-size:9px;color:var(--vtx5);padding-left:3px;padding-top:2px}
   .ved-ruler .mk{position:absolute;top:0;color:var(--vac);font-size:11px;cursor:pointer}
@@ -249,13 +291,19 @@
   .ved-menu .sep{height:1px;background:var(--vbd);margin:4px 0}
   .ved-menu kbd{font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--vtx5)}
 
+  /* ÚNICA regra desta etapa fora do escopo `.ved`: o botão "⇤ Menu" (#edSide) esconde o menu
+     lateral do Studio para o editor ocupar a tela inteira. Vive aqui, e não no `style.css` do
+     shell, porque a regra é do editor — `destroy()` remove a classe ao sair da etapa. */
+  .app.side-hidden{grid-template-columns:0 minmax(0,1fr)}
+  .app.side-hidden .side{display:none}
+
   @media (max-width:1180px){ .ved{left:0} }
   @media (max-width:860px){ .ved-left{display:none} .ved-right{display:none} }
 </style>
 
 <header class="stephead ved-fallback">
   <span class="eyebrow">Etapa 7 · aula 014 · editor [extensão]</span>
-  <h2>Montagem de vídeo</h2>
+  <h2>Studio de vídeo</h2>
 </header>
 
 <!-- Guia da aula 014 (hook puro guide.py): "gelo, ambiência, respiração, impacto", ritmo, dever

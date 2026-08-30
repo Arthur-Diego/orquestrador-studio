@@ -20,7 +20,7 @@ SOON = [
      "desc": "Image-to-video por take, start/end frame, troca de modelo após falhas."},
     {"id": "music",     "n": 6,  "title": "Trilha",            "aula": "013",
      "desc": "Trilha antes da montagem: escolher sentindo, detectar batidas."},
-    {"id": "edit",      "n": 7,  "title": "Montagem no ritmo", "aula": "014",
+    {"id": "edit",      "n": 7,  "title": "Studio de vídeo",   "aula": "014",
      "desc": "Cortes nos impactos, speed ramp, pretos, transições coladas, SFX."},
     {"id": "export",    "n": 8,  "title": "Export e QA",       "aula": "014",
      "desc": "9:16 / 1:1, legendas, checklist."},
