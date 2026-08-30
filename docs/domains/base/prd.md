@@ -37,3 +37,26 @@ opcionalmente, CLI logado para gerar por créditos.
 - Múltiplas imagens base por projeto; a aula produz uma só.
 - Qualquer chamada a `api.higgsfield.ai` ou automação da UI (ADR-002).
 - Alterar `app.py`, `steps.py`, `index.html`, `app.js`, `conftest.py`, `higgsfield.py`, `requirements*`.
+
+## Feature: base-clean-marca `[extensão]` (Wave 9)
+
+Adição da Wave 9 (modo batch; spec: `features/base-clean-marca-fdd.md`). O levantamento do curso
+(passo 4.3, fonte externa ao repo: pendência confirmada no gate em lote da wave) pede um passo de
+**limpeza de marca**: remover marca/logo/texto alheios da imagem de situação antes de aplicar a
+marca do usuário no rótulo.
+
+- Novo `kind="clean"` na etapa 3, entre `situation` e `label` na cadeia
+  (situation → clean opcional → label → upscale). Remoção por prompt no `nano_banana_2`
+  (best-effort: o CLI não tem máscara/inpaint, ADR-002); prompt em inglês, determinístico,
+  editável na tela; 3 variações por default (mesmo padrão do rótulo).
+- Sem rota nova: os endpoints existentes da etapa (`cost`, `generate`, `import/*`, `select`)
+  aceitam o valor novo de `kind`, no padrão do `kind="label"`. Campo opcional `target` nomeia a
+  marca a remover; a tela o pré-preenche com a marca validada da etapa 1
+  (`GET .../refs/validated-brand`, ADR-020, leitura só no cliente).
+- Fluxo pago com ação de custo própria `base.clean` (ADR-016): `cost` → `confirmCost` → job →
+  `record_generation`; modo UI ilimitado com import `kind:"clean"` continua sendo o caminho sem
+  custo.
+- "Trocar por minha marca" não é um kind híbrido: após selecionar a clean, o passo `label`
+  existente aplica `base/brand.json` partindo da clean selecionada (fallback: situação, como hoje).
+- Fora de escopo da feature: inpaint real com máscara, limpar referências cruas da etapa 1,
+  ler `refs/validated_brand.json` no backend da etapa 3.
