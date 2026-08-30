@@ -230,6 +230,27 @@ identical, realistic." da aula 010) + convenção image 1/image 2 já usada na a
 | Falha do `hf.generate`/download dentro do job | job `error`/`log` | padrão `JobRegistry`; itens já baixados são mantidos |
 | Anotação usada em `candidates/select` ou como imagem de cena | 422 | "marcação não pode ser selecionada como ideia" |
 
+**Notas de fechamento da implementação (2026-08-30)** — divergências residuais entre esta matriz e
+o comportamento entregue, registradas em vez de silenciadas:
+
+- A última linha junta dois casos com mensagens diferentes. Em `candidates/select` sai exatamente
+  "marcação não pode ser selecionada como ideia" (guarda explícita). Como **imagem de cena** o 422
+  vem da barreira já existente `_check_image` ("imagem fora de storyboard/ideas/ ou inexistente"),
+  porque a anotação nunca é copiada para `storyboard/ideas/` — não há estado que produza o outro
+  caminho. Coberto por `test_annotation_can_never_become_a_scene_image`.
+- Precedência sobre as linhas de 422 do `edit_area`: `cost`/`generate` chamam `_cli_ready()` e
+  `_require_base` **antes** das validações da marcação, então sem CLI logado ou sem a base o
+  resultado é 409, não 422. É o comportamento das rotas de hoje, preservado de propósito.
+- Contrato 1: enviar bytes idênticos aos de uma **ideia comum** (nenhum rabisco) é recusado com 422
+  "essa imagem já existe como ideia, sem marcação: rabisque a região antes de salvar". O dedupe de
+  `deduped: true` vale só entre marcações — devolver 200 aqui daria `role`/`parent` vazios, fora do
+  domínio do contrato.
+- Contrato 1: `thumb` é `null` quando o `ingest` não gera miniatura, e o upload aceita qualquer
+  imagem decodificável pelo Pillow (não só PNG) — o canvas sempre envia PNG.
+- Seção 8: `GET .../storyboard/instructions` passa a listar 4 kinds em vez de 3. É o efeito
+  pretendido do kind aditivo (nenhum kind existente muda); o exemplo de resposta no
+  `storyboard-fdd.md` §5 foi atualizado junto.
+
 - Estratégias de resiliência: as do fluxo atual (timeout 600 s por chamada do CLI, job em
   thread, polling; sem retry novo).
 - Política de fallback: sem CLI, o modo área marcada fica desabilitado na UI com a dica de usar

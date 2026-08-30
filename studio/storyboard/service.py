@@ -348,10 +348,15 @@ def import_annotation(pid: str, data: bytes, name: str = "annotation.png",
 
     cid = hashlib.sha1(data).hexdigest()[:12]
     existing = next((c for c in cands if c["id"] == cid), None)
-    if existing:
+    if existing and _is_annotation(existing):
         log.info("annotation_saved %s", {"pid": pid, "id": cid, "parent": existing.get("parent", ""),
                                          "deduped": True})
         return _annotation_row(existing, True)
+    if existing:
+        # O SHA-1 bate com um candidato COMUM: são os bytes de uma ideia, sem rabisco nenhum. Devolver
+        # 200 aqui daria um `role`/`parent` vazios (fora do domínio do Contrato 1) e o id resultante
+        # seria recusado depois no `edit_area`. Recusa cedo, com a causa real.
+        raise Invalid("essa imagem já existe como ideia, sem marcação: rabisque a região antes de salvar")
 
     c = ingest.ingest_bytes(root, STEP, data, "annotation", name, "",
                             {"role": "annotation", "parent": parent})

@@ -147,7 +147,8 @@ Todas as rotas sob `/api/projects/{pid}/storyboard/...`; JSON em UTF-8; `pid` in
   "kinds": [
     {"kind": "draw_to_edit", "label": "Draw to Edit", "ui_hint": "Na Higgsfield, abra a imagem base, desenhe a ideia e cole a instrução."},
     {"kind": "edit", "label": "Edição (uma instrução)", "ui_hint": "Use a última imagem como referência e cole uma única instrução."},
-    {"kind": "multishot", "label": "Multi Shot", "ui_hint": "Selecione a imagem e peça outro ponto de vista."}
+    {"kind": "multishot", "label": "Multi Shot", "ui_hint": "Selecione a imagem e peça outro ponto de vista."},
+    {"kind": "edit_area", "label": "Área marcada (inpaint aproximado) [extensão]", "ui_hint": "Marque a região na imagem e descreva a mudança; a marcação vai como referência extra."}
   ],
   "presets": [
     {"kind": "edit", "label": "Menor e mais realista", "text": "Make the climber even smaller and more realistic"},

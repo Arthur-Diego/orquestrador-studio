@@ -259,3 +259,19 @@ def test_recorte_do_bloco_extensao_isola_os_marcadores_pagos(js, html):
     for termo in ("Gerar via CLI", "source_id", "hfChip", "meta.models"):
         assert termo not in js_sem_area_marcada(js) + html_sem_area_marcada(html), termo
     assert "sbAreaModel" in js and '"edit_area"' in js
+
+
+def test_cancelar_o_custo_nao_dispara_o_generate_do_modo_area_marcada(js):
+    """Critério 5 do FDD (metade "job cancelado no confirmCost não grava nada").
+
+    É lógica de tela, sem rota HTTP: o pino é textual (ADR-008). Prova que a chamada de custo do
+    modo `edit_area` é seguida da guarda de cancelamento ANTES do `progressJob` que dispara o
+    `/generate` — ou seja, que não existe caminho do cancelamento até a geração paga.
+    """
+    i = js.index("sbAreaGen") if "sbAreaGen" in js else -1
+    assert i > 0, "handler de geração do modo área marcada ausente"
+    bloco = js[js.index('kind: "edit_area"'):]
+    custo = bloco.index("confirmCost")
+    guarda = bloco.index("if (!ok) return;", custo)
+    gerar = bloco.index('url("/generate")', custo)
+    assert custo < guarda < gerar, "a guarda de cancelamento tem que ficar entre o custo e o generate"

@@ -837,3 +837,35 @@ def test_inpaint_action_resolves_the_default_model(sb, project, studio_env):
     settings.set_project_default(project, "storyboard.inpaint", "nano_banana_2", "2k")
     assert settings.default_for("storyboard.inpaint", project)["source"] == "project"
     assert "storyboard.inpaint" in {a["key"] for a in settings.all_defaults(project)}
+
+
+def test_annotation_refuses_bytes_that_are_a_plain_candidate(sb, project, base):
+    """Divergência D1 do fechamento: o SHA-1 idêntico ao de uma IDEIA comum não é dedupe de marcação.
+
+    Devolver 200 nesse caso daria `role`/`parent` vazios (fora do domínio do Contrato 1) e o id
+    resultante seria recusado depois pelo `edit_area`. A recusa acontece cedo, com a causa real.
+    """
+    data = image_bytes(color=(9, 9, 9))
+    sb.import_upload(project, [("a.png", data)])
+    with pytest.raises(sb.Invalid) as e:
+        sb.import_annotation(project, data, "a.png")
+    assert str(e.value) == "essa imagem já existe como ideia, sem marcação: rabisque a região antes de salvar"
+    # e a ideia comum continua intacta na galeria (a recusa não mexeu em candidates.json)
+    assert len(sb.list_ideas(project)["ideas"]) == 1
+
+
+def test_annotation_can_never_become_a_scene_image(sb, project, base):
+    """Matriz §6, metade "como imagem de cena": a marcação nunca chega a `storyboard/ideas/`.
+
+    `select_ideas` já a recusa, então ela não é copiada para `ideas/` — e `_check_image` barra
+    qualquer caminho fora dali. O teste prova a barreira de ponta a ponta (a mensagem que sai é a
+    de `_check_image`, não a da linha de seleção da matriz: divergência registrada no fechamento).
+    """
+    ann = _annotate(sb, project, (80, 80, 80))
+    scenes = sb.load_scenes(project)["scenes"]
+    scenes[0]["images"] = [f"storyboard/candidates/{ann['id']}.png"]
+    scenes[0]["primary"] = scenes[0]["images"][0]
+    with pytest.raises(sb.Invalid) as e:
+        sb.save_scenes(project, scenes)
+    assert "storyboard/ideas" in str(e.value)
+    assert not (sb.project_dir(project) / "storyboard" / "ideas" / f"{ann['id']}.png").exists()
