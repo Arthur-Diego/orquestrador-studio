@@ -55,6 +55,11 @@ DEFAULT_MODEL_LABEL = "nano_banana_2"
 DEFAULT_MODEL_UPSCALE = "bytedance_image_upscale"
 DEFAULT_MODELS = {"situation": DEFAULT_MODEL, "clean": DEFAULT_MODEL, "label": DEFAULT_MODEL_LABEL,
                   "upscale": DEFAULT_MODEL_UPSCALE}
+#: Ação de custo de cada `kind` (ADR-016): fonte ÚNICA da regra, lida tanto por `_default_model`
+#: (modelo default resolvido da config) quanto pelo `record_generation` do job (livro-caixa).
+#: Kind ausente aqui cai em `base.image`, a ação genérica de edição/geração de imagem da etapa.
+KIND_ACTION = {"upscale": "base.upscale", "clean": "base.clean"}
+ACTION_DEFAULT = "base.image"
 
 MOOD_REFS_MAX = 3          # a aula anexa a referência + algumas imagens do mood, não o mood inteiro
 #: B11 (wave 2): a aula 009 põe "no people" no MOOD, não na base (ela até imagina "um mini ser
@@ -484,7 +489,7 @@ def cand_size(root: Path, c: dict | None) -> tuple[int, int]:
 def upscale_warnings(root: Path, cands: list[dict], new_ids: set[str]) -> list[str]:
     """B6: a aula manda "2x, preset High Fidelity V2". Compara a largura da candidata importada
     como `upscale` com a da candidata de origem selecionada. Aviso — nunca recusa o import."""
-    src = most_advanced([c for c in cands if c.get("kind") in ("situation", "label")])
+    src = most_advanced([c for c in cands if c.get("kind") in ("situation", "clean", "label")])
     base_w = cand_size(root, src)[0]
     if not base_w:
         return []
@@ -505,7 +510,7 @@ def upscale_warnings(root: Path, cands: list[dict], new_ids: set[str]) -> list[s
 def upscale_ratio(root: Path, cands: list[dict]) -> tuple[float | None, int, int]:
     """Razão entre a largura do upscale escolhido e a da candidata de origem da cadeia."""
     up = _selected(cands, "upscale")
-    src = _selected(cands, "label") or _selected(cands, "situation")
+    src = _selected(cands, "label") or _selected(cands, "clean") or _selected(cands, "situation")
     w0, w1 = cand_size(root, src)[0], cand_size(root, up)[0]
     return (round(w1 / w0, 2) if w0 and w1 else None), w0, w1
 
@@ -517,8 +522,7 @@ def _default_model(pid: str, kind: str) -> str:
     não de um id fixo, para o painel admin de "Créditos & Custos" mandar de fato.
     """
     kind = _check_kind(kind)
-    action = "base.upscale" if kind == "upscale" else "base.image"
-    chosen = settings.default_for(action, pid).get("model")
+    chosen = settings.default_for(KIND_ACTION.get(kind, ACTION_DEFAULT), pid).get("model")
     return chosen or DEFAULT_MODELS[kind]
 
 
@@ -678,10 +682,11 @@ def final_file(pid: str) -> str | None:
 
 # ---------- geração via CLI (paga créditos) ----------
 def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
-          prompt: str = "", board: str | None = None) -> tuple[list[dict], str]:
+          prompt: str = "", board: str | None = None, target: str = "") -> tuple[list[dict], str]:
     """Itens do job (um por chamada ao CLI) + o prompt/instrução que cada um usa.
     `prompt` não vazio é o texto EDITADO na tela (B4) e vence o histórico/template.
-    `board` `[extensão]` (ADR-013): referência de estilo vinda de um board da biblioteca."""
+    `board` `[extensão]` (ADR-013): referência de estilo vinda de um board da biblioteca.
+    `target` `[extensão]` (wave 9): marca a remover, só usada pelo `kind="clean"`."""
     _check_kind(kind)
     cands = _normalize(ingest.load_candidates(root, STEP))
     mood = [str(m) for m in _ref_mood_paths(root, board)][:MOOD_REFS_MAX]
@@ -701,8 +706,21 @@ def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
             items.append({"ref_id": r["ref_id"], "prompt": text,
                           "image_references": [str(r["path"]), *mood]})
         return items, items[0]["prompt"]
-    if kind == "label":
+    if kind == "clean":
+        # `[extensão]` wave 9: limpeza sempre parte da SITUAÇÃO escolhida — é ela que herda a marca
+        # alheia da referência. Mesma pré-condição (e mesma mensagem) do rótulo, FDD §6.
         base = _selected(cands, "situation")
+        if base is None:
+            raise ValueError("Escolha primeiro a melhor imagem de situação (aula 009).")
+        # `clean_prompt` sempre devolve texto (sem `target`, fica genérico): não há segundo `raise`.
+        text = prompt.strip() or clean_prompt(target)
+        item = {"ref_id": base.get("ref_id"), "prompt": text,
+                "image_references": [str(root / base["file"])]}
+        return [dict(item) for _ in range(max(1, count))], text
+    if kind == "label":
+        # Com a limpeza `[extensão]` escolhida, o rótulo é aplicado sobre a embalagem já limpa;
+        # sem ela, parte da situação exatamente como antes da wave 9 (fallback aditivo, FDD §4).
+        base = _selected(cands, "clean") or _selected(cands, "situation")
         if base is None:
             raise ValueError("Escolha primeiro a melhor imagem de situação (aula 009).")
         text = prompt.strip() or label_prompt(_brand_from_disk(root))
@@ -724,13 +742,14 @@ def _brand_from_disk(root: Path) -> dict:
 
 def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,
                   count: int | None = None, aspect_ratio: str | None = None, resolution: str = "2k",
-                  prompt: str = "", board: str | None = None) -> dict:
+                  prompt: str = "", board: str | None = None, target: str = "") -> dict:
     """Estimativa de créditos SEM gerar (a UI mostra e pede `confirm()` antes de gastar).
-    `count` ausente usa o default do passo (B4: 3 no rótulo); `aspect_ratio` ausente, o do projeto (G3)."""
+    `count` ausente usa o default do passo (B4: 3 no rótulo); `aspect_ratio` ausente, o do projeto (G3).
+    `target` `[extensão]` (wave 9): marca a remover, só usada pelo `kind="clean"`."""
     root = project_dir(pid)
     count = count or DEFAULT_COUNT[_check_kind(kind)]
     aspect_ratio = aspect_ratio or project_aspect(root)
-    items, text = _plan(root, kind, ref_ids, count, prompt, board)
+    items, text = _plan(root, kind, ref_ids, count, prompt, board, target)
     n = len(items) * (count if kind == "situation" else 1)
     model = model or _default_model(pid, kind)
     params: dict = {}
@@ -746,12 +765,13 @@ def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[s
 
 def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,
                    count: int | None = None, aspect_ratio: str | None = None, resolution: str = "2k",
-                   prompt: str = "", board: str | None = None) -> dict:
-    """Caminho pago: o Studio chama o CLI por item e importa o resultado. Sem retry automático."""
+                   prompt: str = "", board: str | None = None, target: str = "") -> dict:
+    """Caminho pago: o Studio chama o CLI por item e importa o resultado. Sem retry automático.
+    `target` `[extensão]` (wave 9): marca a remover, só usada pelo `kind="clean"`."""
     root = project_dir(pid)
     count = count or DEFAULT_COUNT[_check_kind(kind)]
     aspect_ratio = aspect_ratio or project_aspect(root)
-    items, _ = _plan(root, kind, ref_ids, count, prompt, board)
+    items, _ = _plan(root, kind, ref_ids, count, prompt, board, target)
     model = model or _default_model(pid, kind)
 
     log.info("base: job início pid=%s kind=%s itens=%s model=%s", pid, kind, len(items), model)
@@ -770,7 +790,7 @@ def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[
                 added = _ingest_job(root, res, kind, item, model, job)
                 job["added"] += added
                 # `[extensão]` livro-caixa de créditos (ADR-016): registra o gasto real por chamada.
-                settings.record_generation(action="base.upscale" if kind == "upscale" else "base.image",
+                settings.record_generation(action=KIND_ACTION.get(kind, ACTION_DEFAULT),
                                            model=model, params=params, count=count if kind == "situation" else 1,
                                            pid=pid, step=STEP, job_id=res.get("id"))
                 job["log"].append(f"[{kind}] ref={item.get('ref_id') or '—'} model={model} "
