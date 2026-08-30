@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Renomear a etapa 7 para "Studio de vídeo"
 type: chore
 complexity: low
@@ -36,16 +36,16 @@ dizendo "Montagem no ritmo (aula 014)", porque a aula não mudou de nome.
 </requirements>
 
 ## Subtasks
-- [ ] 2.1 Ler `_techspec.md` §3 item 8, §4 fluxo (g) e §8 (lista de strings congeladas).
-- [ ] 2.2 Trocar o `title` do META do plugin e o `title` da linha `edit` de `SOON`.
-- [ ] 2.3 Trocar os quatro rótulos de UI em `view.js`: kick do header (`Etapa 7 · Montagem` →
+- [x] 2.1 Ler `_techspec.md` §3 item 8, §4 fluxo (g) e §8 (lista de strings congeladas).
+- [x] 2.2 Trocar o `title` do META do plugin e o `title` da linha `edit` de `SOON`.
+- [x] 2.3 Trocar os quatro rótulos de UI em `view.js`: kick do header (`Etapa 7 · Montagem` →
       `Etapa 7 · Studio de vídeo`), título do modal do guia (`Montagem no ritmo — aula 014` →
       `Studio de vídeo · aula 014`) e o subtítulo do job de render (`Montagem no ritmo (ffmpeg)` →
       `Studio de vídeo (ffmpeg)`).
-- [ ] 2.4 Trocar o `<h2>` de fallback em `view.html` (`Montagem de vídeo` → `Studio de vídeo`),
+- [x] 2.4 Trocar o `<h2>` de fallback em `view.html` (`Montagem de vídeo` → `Studio de vídeo`),
       preservando o eyebrow acima dele.
-- [ ] 2.5 Atualizar o título da seção 7 do `README.md`.
-- [ ] 2.6 Escrever o teste de catálogo e rodar `make verify`.
+- [x] 2.5 Atualizar o título da seção 7 do `README.md`.
+- [x] 2.6 Escrever o teste de catálogo e rodar `make verify`.
 
 ## Implementation Details
 Ordem de precedência do título: `all_steps()` faz `{**s, **plugins[id]["meta"]}`, logo o META do
@@ -77,15 +77,15 @@ não o `title`; ainda assim os dois devem ficar iguais.
 
 ## Tests
 
-- [ ] `tests/test_steps_and_config.py::test_edit_step_is_named_studio_de_video` — `all_steps()`
+- [x] `tests/test_steps_and_config.py::test_edit_step_is_named_studio_de_video` — `all_steps()`
       devolve `title == "Studio de vídeo"` para o id `edit`, e o `META["title"]` do plugin é igual
       ao `title` da linha `edit` de `SOON`.
-- [ ] Regressão: `test_steps_follow_course_order`,
+- [x] Regressão: `test_steps_follow_course_order`,
       `test_ready_steps_are_exactly_the_discovered_plugins`,
       `test_step_screen_is_the_editor_extension` e
       `test_step_editor_reuses_design_system_and_lesson_stays_in_guide` continuam verdes **sem
       alteração nos arquivos de teste**.
-- [ ] Regressão: `tests/test_edit_guide.py` inteiro continua verde sem alteração.
+- [x] Regressão: `tests/test_edit_guide.py` inteiro continua verde sem alteração.
 
 ## Success Criteria
 - Every assigned test case implemented and passing.

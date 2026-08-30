@@ -66,3 +66,14 @@ def test_plugins_serve_their_assets(client):
         assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
     assert client.get("/steps/nao-existe/view.html").status_code == 404
     assert client.get("/steps/refs/secret.txt").status_code == 404
+
+
+def test_edit_step_is_named_studio_de_video(studio_env):
+    """A etapa 7 se chama "Studio de vídeo" no catálogo; META e SOON dizem o mesmo título."""
+    from studio.etapas import discover
+    from studio.steps import SOON, all_steps
+    by_id = {s["id"]: s for s in all_steps()}
+    assert by_id["edit"]["title"] == "Studio de vídeo"
+    soon = {s["id"]: s for s in SOON}["edit"]
+    assert discover()["edit"]["meta"]["title"] == soon["title"], "META e catálogo divergem no título"
+    assert soon["n"] == 7 and soon["aula"] == "014", "o número e a aula da etapa não mudam"

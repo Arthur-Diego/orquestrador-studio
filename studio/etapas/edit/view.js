@@ -425,7 +425,7 @@ Studio.register("edit", (ctx) => {
     const title = ctx.project() ? (ctx.project().name || "Montagem") : "Montagem";
     return `<div class="ved-top">
       <a class="ved-back" title="Voltar" href="#" id="edBack">‹</a>
-      <div class="ved-titleblock"><span class="kick">Etapa 7 · Montagem</span><span class="ved-title" title="${esc(title)}">${esc(title)}</span></div>
+      <div class="ved-titleblock"><span class="kick">Etapa 7 · Studio de vídeo</span><span class="ved-title" title="${esc(title)}">${esc(title)}</span></div>
       <span class="ved-save" id="edSave" data-s="saved">Salvo</span>
       <button class="ved-ib" id="edUndo" title="Desfazer (Ctrl+Z)">↺</button>
       <button class="ved-ib" id="edRedo" title="Refazer (Ctrl+Shift+Z)">↻</button>
@@ -455,7 +455,7 @@ Studio.register("edit", (ctx) => {
   }
   function toggleFullscreen() { const r = root(); if (!document.fullscreenElement) r.requestFullscreen && r.requestFullscreen(); else document.exitFullscreen && document.exitFullscreen(); }
   function openGuide() {
-    ui.modal({ title: "Montagem no ritmo — aula 014", subtitle: "O que a aula ensina", html: `<div id="edGuideBody" class="guide">Carregando…</div>` });
+    ui.modal({ title: "Studio de vídeo · aula 014", subtitle: "O que a aula ensina", html: `<div id="edGuideBody" class="guide">Carregando…</div>` });
     const body = document.getElementById("edGuideBody");
     try { if (ui.renderGuide) { ui.renderGuide("edit", body); return; } } catch (e) {}
     ctx.guide(); const g = document.getElementById("guide"); if (g && body) body.innerHTML = g.innerHTML || "Veja o guia na etapa.";
@@ -997,7 +997,7 @@ Studio.register("edit", (ctx) => {
   }
   function startRender(target, opts) {
     if (!St.hasFfmpeg) return toast("ffmpeg ausente — render bloqueado");
-    save(true).then(() => ui.progressJob({ title: target === "master" ? "Renderizar master" : "Prévia (rough)", subtitle: "Montagem no ritmo (ffmpeg)", start: () => api(`${base()}/render`, { method: "POST", body: JSON.stringify({ target, ...(opts || {}) }) }), jobUrl: `${base()}/render/job`, done: (j) => { if (j.output) toast(`${j.output} pronto — assista na etapa 9`); ctx.guide(); } }).catch((err) => toast(err.message)));
+    save(true).then(() => ui.progressJob({ title: target === "master" ? "Renderizar master" : "Prévia (rough)", subtitle: "Studio de vídeo (ffmpeg)", start: () => api(`${base()}/render`, { method: "POST", body: JSON.stringify({ target, ...(opts || {}) }) }), jobUrl: `${base()}/render/job`, done: (j) => { if (j.output) toast(`${j.output} pronto — assista na etapa 9`); ctx.guide(); } }).catch((err) => toast(err.message)));
   }
 
   // ============================================================ SHORTCUTS
