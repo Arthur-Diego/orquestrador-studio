@@ -10,6 +10,7 @@ import pytest
 
 from tests.conftest import image_bytes, make_image
 from tests.test_storyboard_angles_service import SCENES
+from tests.test_storyboard_view import html_sem_area_marcada, js_sem_area_marcada
 
 
 @pytest.fixture()
@@ -345,9 +346,13 @@ def test_screen_dropped_the_paid_cli_path(client):
     adicionou o caminho pago de VÍDEO na metade IDEAÇÃO do mesmo `view.js` (coberto por
     `test_storyboard_api::test_screen_dropped_the_paid_cli_path`). Os marcadores da metade ângulos
     (controles de câmera/lente, `hfChip`, `Upscale do último escolhido`, etc.) seguem fora da tela.
+
+    Wave 9 (`[extensão]` inpaint-marcacao, ADR-004): `Gerar via CLI`/`hfChip` voltaram ao `view.js`,
+    mas dentro do painel "Área marcada" da metade IDEAÇÃO — por isso o bloco é recortado antes de
+    conferir. Nada disso entra na metade ÂNGULOS, que é o que este teste congela.
     """
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
+    html = html_sem_area_marcada(client.get("/steps/storyboard/view.html").text)
+    js = js_sem_area_marcada(client.get("/steps/storyboard/view.js").text)
     for termo in ("Gerar via CLI", "Upscale do último escolhido", "hfChip",
                   "promptCamera", "promptLens", "promptAperture", "promptRealism",
                   "shotsRatio", "shotsWarn", "btnShotsReload", "sceneText", "sh-subhead"):

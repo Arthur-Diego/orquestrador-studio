@@ -265,6 +265,7 @@ Studio.register("storyboard", (ctx) => {
          <div class="sb-photoacts">
             <button type="button" class="ghost mini sbVidPrompt" title="gerar o prompt de vídeo desta foto (Claude)">Gerar prompt</button>
             <button type="button" class="primary mini sbAnim" title="gerar a animação desta foto (Higgsfield)">Gerar animação</button>
+            <button type="button" class="ghost mini sbAnnotate" title="marcar uma área desta foto e pedir a mudança só ali [extensão]">Marcar área</button>
             <div class="sb-photo-reorder">
               <button type="button" class="ghost mini sbPhotoUp" title="subir foto"${pi === 0 ? " disabled" : ""}>↑</button>
               <button type="button" class="ghost mini sbPhotoDown" title="descer foto"${pi >= count - 1 ? " disabled" : ""}>↓</button>
@@ -592,6 +593,172 @@ Studio.register("storyboard", (ctx) => {
       catch (err) { toast(err.message); }
     }
 
+    // ====================================================================================
+    // `[extensão]` inpaint-marcacao (ADR-004) — modo "Área marcada": o usuário rabisca a região
+    // na imagem escolhida (canvas de `/static/annotate.js`), o PNG anotado vira candidato
+    // `role:"annotation"` e a geração paga manda [original, anotada] ao CLI (kind `edit_area`).
+    // Bloco ADITIVO e autocontido: ids/classes novos, nenhuma função existente reescrita.
+    // ====================================================================================
+    const ANNOTATE_SRC = "/static/annotate.js";
+    // Sem CLI o modo é impossível (o CLI não aceita máscara e é o único caminho de geração,
+    // ADR-002): a política de fallback do FDD §6 é desabilitar e apontar a UI da Higgsfield.
+    const AREA_NO_CLI = "Sem CLI: marque e gere pelo inpaint na própria interface da Higgsfield (ilimitado no plano).";
+    // Rota da marcação por extenso — quem chama é que conhece o endpoint; o `annotate.js` não (ADR-017).
+    const annotateUrl = () => `/api/projects/${ctx.pid()}/storyboard/annotate`;
+    let annotateLoad = null;                                 // Promise da injeção do <script> (uma vez)
+    let area = null;                                         // { sourceId, sourceUrl, label, ann }
+    let areaCli = { installed: false, logged_in: false };
+
+    /** Carrega o componente sob demanda: injeta o `<script>` na 1ª vez e reusa nas seguintes. */
+    function ensureAnnotate() {
+      if (window.Studio.annotate) return Promise.resolve(window.Studio.annotate);
+      if (annotateLoad) return annotateLoad;
+      annotateLoad = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = ANNOTATE_SRC;
+        s.onload = () => (window.Studio.annotate
+          ? resolve(window.Studio.annotate)
+          : reject(new Error("componente de marcação indisponível")));
+        s.onerror = () => { annotateLoad = null; reject(new Error(`falha ao carregar ${ANNOTATE_SRC}`)); };
+        document.head.appendChild(s);
+      });
+      return annotateLoad;
+    }
+
+    // Imagem ORIGINAL do modo: um candidato da galeria (id) ou a base da etapa 3 (id vazio) — o
+    // mesmo par que o backend resolve para validar o `parent` da marcação.
+    function areaSource(sourceId) {
+      if (sourceId) {
+        const c = ideas.find((x) => x.id === sourceId);
+        return c ? { id: c.id, url: ctx.files(c.file), label: c.file.split("/").pop() } : null;
+      }
+      const b = $("#sbBase").getAttribute("src");
+      return hasBase && b ? { id: "", url: b, label: "base_final.png" } : null;
+    }
+
+    function openAnnotate(sourceId) {
+      const src = areaSource(sourceId);
+      if (!src) return toast("Imagem base ausente: conclua a etapa 3 (base).");
+      ensureAnnotate()
+        .then(() => Studio.annotate.open({
+          title: "Marcar área [extensão]",
+          subtitle: `${src.label} · rabisque a região que deve mudar`,
+          sourceUrl: src.url,
+          brush: 10,
+          onSave: (blob) => saveAnnotation(src, blob),
+        }))
+        .catch((err) => toast(err.message));
+    }
+
+    // O dono do endpoint é esta tela: o canvas só devolve o Blob (ADR-017). Erro 4xx do backend
+    // sobe como exceção do `ui.upload` e o `annotate.js` o mostra em toast, sem fechar o modal.
+    async function saveAnnotation(src, blob) {
+      const f = new File([blob], "annotation.png", { type: "image/png" });
+      const r = await ui.upload(annotateUrl(), [f], "file", { source_id: src.id || "" });
+      area = { sourceId: src.id || "", sourceUrl: src.url, label: src.label, ann: r };
+      renderArea();
+      // O botão pode estar lá embaixo (linha-foto de uma cena): traz o painel para a vista.
+      $("#sbArea").scrollIntoView({ behavior: "smooth", block: "start" });
+      toast(r.deduped ? "Marcação já existia · reaproveitada" : "Marcação salva");
+    }
+
+    /** Botão da linha-foto: marca a área DESTA foto da cena (que é uma ideia escolhida). */
+    function annotatePhoto(img) {
+      const c = ideas.find((x) => x.file === img);
+      if (!c) return toast("Esta foto não está na galeria de ideias — recarregue a etapa.");
+      const sel = $("#sbAreaSource");
+      if (sel) sel.value = c.id;
+      area = null; renderArea();
+      openAnnotate(c.id);
+    }
+
+    function renderAreaSources() {
+      const sel = $("#sbAreaSource");
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = [`<option value="">imagem base (etapa 3)</option>`]
+        .concat(ideas.map((c) => `<option value="${esc(c.id)}">ideia ${esc(c.id)}${c.selected ? " · escolhida" : ""}</option>`))
+        .join("");
+      if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+    }
+
+    function renderArea() {
+      const box = $("#sbAreaBox");
+      if (!box) return;
+      box.classList.toggle("hidden", !area);
+      if (area) {
+        $("#sbAreaOrig").src = area.sourceUrl;
+        $("#sbAreaAnn").src = ctx.files(area.ann.file);
+        $("#sbAreaOrigCap").textContent = `original · ${area.label}`;
+        $("#sbAreaAnnCap").textContent = `marcada · ${area.ann.id}`;
+        ui.autosize("#sbAreaText");   // só com a caixa VISÍVEL o scrollHeight vale alguma coisa
+      }
+      areaGate();
+    }
+
+    /** Gate do modo: sem CLI (ou sem marcação salva) o botão pago fica desabilitado, com a dica. */
+    function areaGate() {
+      const ready = !!(areaCli.installed && areaCli.logged_in);
+      const gen = $("#sbAreaGen");
+      if (gen) {
+        gen.disabled = !ready || !area;
+        gen.title = ready ? "" : AREA_NO_CLI;
+      }
+      const hint = $("#sbAreaHint");
+      if (hint) { hint.hidden = ready; hint.textContent = ready ? "" : AREA_NO_CLI; }
+      const chip = $("#sbAreaCli");
+      if (chip) chip.hidden = ready;
+    }
+
+    // Fluxo pago do FDD §4 (passo 7): custo grátis → confirmação (ADR-016) → geração → polling.
+    // Cancelar no `confirmCost` NÃO dispara o generate.
+    async function runArea() {
+      if (!area) return toast("Marque a região primeiro.");
+      const text = $("#sbAreaText").value.trim();
+      if (!text) return toast("Descreva a mudança da área marcada (uma instrução por vez).");
+      const count = +$("#sbAreaCount").value || 4;
+      const body = {
+        model: $("#sbAreaModel").value, kind: "edit_area", text, count,
+        source_id: area.sourceId || null, annotation_id: area.ann.id,
+      };
+      try {
+        const ok = await ui.confirmCost(
+          () => api(url("/cost"), { method: "POST", body: JSON.stringify(body) }),
+          `Gerar ${count} imagem(ns) da área marcada`);
+        if (!ok) return;
+        await ui.progressJob({
+          title: "Gerar da área marcada [extensão]",
+          subtitle: "Higgsfield via CLI — original + marcação como referências",
+          start: () => api(url("/generate"), { method: "POST", body: JSON.stringify(body) }),
+          jobUrl: url("/job"),
+          done: async () => { await refresh(); renderAreaSources(); },
+          label: "Imagens geradas",
+        });
+      } catch (err) { toast(err.message); }
+    }
+
+    function initArea() {
+      const mark = $("#sbAreaMark");
+      if (mark) mark.onclick = () => openAnnotate($("#sbAreaSource").value || "");
+      const gen = $("#sbAreaGen");
+      if (gen) gen.onclick = runArea;
+      // Trocar a imagem original invalida a marcação: o backend recusa (422) marcação de outra foto.
+      const sel = $("#sbAreaSource");
+      if (sel) sel.onchange = () => { area = null; renderArea(); };
+    }
+
+    async function areaOnProject() {
+      if (!$("#sbAreaBox")) return;
+      area = null;
+      $("#sbAreaText").value = "";
+      $("#sbAreaModel").innerHTML = (meta.models || [])
+        .map((mm) => `<option value="${esc(mm.id)}"${mm.default ? " selected" : ""}>${esc(mm.label)}</option>`).join("");
+      renderAreaSources();
+      renderArea();
+      areaCli = await ui.hfChip($("#sbAreaCli"));
+      areaGate();
+    }
+
     return {
       init() {
         $("#sbKind").onchange = kindHint;
@@ -611,6 +778,7 @@ Studio.register("storyboard", (ctx) => {
         panelDrop = ui.drop($("#sbIdeas"), importFiles);
         if (panelDrop) panelDrop.accept = "image/*";
         $("#sbCounts").onclick = importModal;
+        initArea();   // `[extensão]` inpaint-marcacao: painel "Área marcada" (bloco próprio)
 
         $("#sbAdd").onclick = () => { scenes = collect().concat({ id: null, text: "", images: [], primary: null, photos: {} }); renderScenes(); };
         $("#sbReorder").onclick = reorderModal;
@@ -629,6 +797,7 @@ Studio.register("storyboard", (ctx) => {
           if (key && !e.target.closest("button")) return lightbox(key.dataset.img);
           if (e.target.closest(".sbVidPrompt")) return genVideoPrompt(pr, sid, img);
           if (e.target.closest(".sbAnim")) return modalAnimate(sid, img);
+          if (e.target.closest(".sbAnnotate")) return annotatePhoto(img);   // `[extensão]` inpaint-marcacao
           if (e.target.closest(".sbVidCopy")) return copyVidPrompt(pr);
           const vv = e.target.closest(".sbVidView [data-video]");
           if (vv) return window.open(ctx.files(vv.dataset.video), "_blank");
@@ -694,6 +863,7 @@ Studio.register("storyboard", (ctx) => {
         await loadStatus();
         await loadIdeas();
         await loadScenes();
+        await areaOnProject();   // `[extensão]` inpaint-marcacao: depende dos presets, das ideias e da base
       },
       destroy() {},
     };

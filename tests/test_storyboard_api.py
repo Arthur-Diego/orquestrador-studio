@@ -5,6 +5,7 @@ import threading
 import pytest
 
 from tests.conftest import image_bytes, make_image
+from tests.test_storyboard_view import html_sem_area_marcada, js_sem_area_marcada
 
 
 @pytest.fixture()
@@ -264,17 +265,23 @@ def test_screen_dropped_the_paid_cli_path(client):
 
     Wave 7 (`[extensão]`, ADR-021): a MESMA tela ganhou o caminho pago de VÍDEO por cena (contrato
     congelado wave-7.md), então `confirmCost`/`progressJob` passam a existir — mas só para o vídeo.
-    Os marcadores da geração de IMAGEM de ideação (rótulo do botão, `source_id`, `hfChip`) continuam
-    fora da tela; o único caminho pago desenhado é o de vídeo (`/video/cost` + `/video/generate`).
+
+    Wave 9 (`[extensão]` inpaint-marcacao, ADR-004): o painel "Área marcada" (`kind edit_area`) traz
+    de volta `Gerar via CLI`/`source_id`/`hfChip` — só DENTRO do bloco dele. O que a wave 4 congelou
+    é a ideação DA AULA (`sbGen4`/`sbGen1`, que continuam sem gastar crédito), então os marcadores
+    são conferidos com o bloco `[extensão]` recortado.
     """
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
+    aula_html, aula_js = html_sem_area_marcada(html), js_sem_area_marcada(js)
     for termo in ("Gerar via CLI", "usar como origem", "source_id", "hfChip"):
-        assert termo not in html and termo not in js, termo
+        assert termo not in aula_html and termo not in aula_js, termo
     # As rotas de ideação continuam publicadas para quem quiser o caminho pago.
     assert client.get("/openapi.json").json()["paths"].get("/api/projects/{pid}/storyboard/generate")
-    # O caminho pago que a tela desenha é o de VÍDEO da wave 7 (ADR-021), não o de ideação.
+    # O caminho pago que a tela desenha é o de VÍDEO da wave 7 (ADR-021), não o de ideação da aula.
     assert "confirmCost" in js and '"/video/cost"' in js and '"/video/generate"' in js
+    # …e, desde a wave 9, o modo `edit_area` — o único caminho pago de IMAGEM desenhado na tela.
+    assert '"edit_area"' in js and 'id="sbArea"' in html
 
 
 def test_cli_generate_chains_on_the_selected_idea(client, pid, base, root, monkeypatch):
@@ -302,7 +309,10 @@ def test_model_options_come_from_the_backend_with_the_extension_mark(client, pid
     assert [m["id"] for m in models] == ["nano_banana_2", "gpt_image_2"]
     assert "[extensão]" in dict((m["id"], m["label"]) for m in models)["gpt_image_2"]
     js = client.get("/steps/storyboard/view.js").text
-    assert "meta.models" not in js, "wave 4: o select de modelo saiu da tela junto com o CLI"
+    assert "meta.models" not in js_sem_area_marcada(js), \
+        "wave 4: o select de modelo saiu da tela da ideação da aula junto com o CLI"
+    # `[extensão]` wave 9: o ÚNICO seletor de modelo de imagem da tela é o do modo `edit_area`.
+    assert "sbAreaModel" in js and "meta.models" in js
 
 
 def test_two_sentence_instruction_is_accepted_over_http(client, pid, base):

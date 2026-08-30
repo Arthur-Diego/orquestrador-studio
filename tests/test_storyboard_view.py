@@ -6,6 +6,7 @@ leem `view.js`/`view.html` e verificam que os elementos e as rotas do contrato e
 é o pino que trava a regressão do frontend sem depender do backend integrado. A integração real
 (Claude/CLI) é validada no estado integrado (W5).
 """
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -117,3 +118,144 @@ def test_view_js_node_check():
         pytest.skip("node não disponível no ambiente")
     r = subprocess.run([node, "--check", str(VIEW_JS)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+# ==========================================================================================
+# `[extensão]` inpaint-marcacao (ADR-004): canvas de marcação (`studio/web/annotate.js`) + painel
+# "Área marcada" na etapa 4. Critérios 7 e 8 da seção 9 do FDD, no padrão ADR-008 (sem navegador:
+# lê o arquivo servido e afirma os tokens do contrato).
+# ==========================================================================================
+WEB_DIR = Path(__file__).resolve().parents[1] / "studio" / "web"
+ANNOTATE_JS = WEB_DIR / "annotate.js"
+
+#: Aviso fixo do modo, LITERAL (FDD §4 passo 6 / §9 critério 7) — a tela promete best-effort, não inpaint.
+AREA_WARN = ("Best-effort por prompt: a marcação vai como referência, não é inpaint com máscara; "
+             "o resultado pode variar fora da área marcada (CLI sem máscara, ADR-002)")
+
+#: Núcleo que o ADR-010 congela: o componente novo é ARQUIVO NOVO, nunca edição destes.
+CORE_FILES = ["multishot.js", "ui.js", "app.js", "index.html"]
+
+
+@pytest.fixture(scope="module")
+def annotate_js() -> str:
+    return ANNOTATE_JS.read_text(encoding="utf-8")
+
+
+def test_annotate_js_existe_e_expoe_o_componente(annotate_js):
+    """Contrato 4 do FDD §5: `Studio.annotate.open(...)` é a ÚNICA exposição global do componente."""
+    assert ANNOTATE_JS.exists(), "studio/web/annotate.js ausente (servido em /static/annotate.js)"
+    assert "Studio.annotate" in annotate_js
+    assert "function open(" in annotate_js and "{ open }" in annotate_js
+
+
+def test_annotate_js_assinatura_do_contrato(annotate_js):
+    """`open({title, subtitle, sourceUrl, brush, onSave(blob)})` — e nenhuma rota HTTP (ADR-017)."""
+    for campo in ("title", "subtitle", "sourceUrl", "brush", "onSave"):
+        assert campo in annotate_js, f"campo do contrato ausente em annotate.js: {campo}"
+    assert "/api/" not in annotate_js, "o componente não conhece rotas: quem chama faz o upload (ADR-017)"
+
+
+def test_annotate_js_css_escopado_em_ann(annotate_js):
+    """Todo seletor de classe do `<style>` inline é `.ann-*`; nada de folha de estilo global."""
+    i = annotate_js.index("const STYLE = ")
+    style = annotate_js[i:annotate_js.index("</style>", i)]
+    classes = re.findall(r"\.(-?[_a-zA-Z][\w-]*)", style)
+    assert classes, "o <style> inline do componente não declara classe alguma"
+    vazadas = sorted({c for c in classes if not c.startswith("ann-")})
+    assert not vazadas, f"classes fora do escopo `ann-` no <style> do annotate.js: {vazadas}"
+    assert "ui.css" not in annotate_js and "style.css" not in annotate_js
+
+
+def test_annotate_js_exporta_png_achatado_com_traco_vermelho(annotate_js):
+    """Export em PNG pelo canvas (`toBlob`) e a cor FIXA do traço (FDD §4, passo 3)."""
+    assert "toBlob" in annotate_js and '"image/png"' in annotate_js
+    assert "#ff2d2d" in annotate_js
+    # resolução da ORIGINAL, não a de exibição: o canvas nasce com o tamanho natural da imagem.
+    assert "naturalWidth" in annotate_js and "naturalHeight" in annotate_js
+    # pincel de 4 a 24 px, desfazer, limpar e desenho com mouse E toque (pointer events).
+    assert "MIN_BRUSH = 4" in annotate_js and "MAX_BRUSH = 24" in annotate_js
+    assert "annUndo" in annotate_js and "annClear" in annotate_js
+    assert "pointerdown" in annotate_js and "pointermove" in annotate_js and "pointerup" in annotate_js
+
+
+def test_annotate_js_node_check():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node não disponível no ambiente")
+    r = subprocess.run([node, "--check", str(ANNOTATE_JS)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_view_carrega_o_componente_sob_demanda(js):
+    """FDD §5 (contrato 4): o `view.js` injeta o `<script>` e aguarda `window.Studio.annotate`."""
+    assert '"/static/annotate.js"' in js
+    assert "Studio.annotate" in js
+    assert "createElement(\"script\")" in js and "ensureAnnotate" in js
+
+
+def test_view_liga_o_fluxo_pago_do_modo_area_marcada(js):
+    """Passos 4 e 7 do FDD §4: upload da marcação e `cost → confirmCost → generate → job`."""
+    assert '/storyboard/annotate' in js, "o painel é o dono do endpoint da marcação"
+    assert '"edit_area"' in js and "annotation_id" in js
+    assert "confirmCost" in js and "progressJob" in js
+    assert 'url("/cost")' in js and 'url("/generate")' in js and 'url("/job")' in js
+
+
+def test_view_mostra_rotulo_de_extensao_e_o_aviso_fixo(html):
+    """Critério 7 do FDD §9: rótulo `[extensão]` e o aviso best-effort, verificáveis por string."""
+    assert AREA_WARN in html, "o aviso fixo de best-effort precisa aparecer literal na tela"
+    assert "Área marcada" in html and "[extensão]" in html
+
+
+def test_view_tem_o_painel_completo_do_modo(html, js):
+    """O painel traz original + anotada lado a lado, instrução única, contagem 4|1 e modelo."""
+    for el in ("sbArea", "sbAreaSource", "sbAreaMark", "sbAreaOrig", "sbAreaAnn",
+               "sbAreaText", "sbAreaCount", "sbAreaModel", "sbAreaGen"):
+        assert f'id="{el}"' in html, f"elemento do painel ausente no view.html: #{el}"
+    assert 'value="4"' in html and 'value="1"' in html, "seletor de contagem 4 ou 1"
+    # sem CLI o modo fica desabilitado, com a dica da UI da Higgsfield (política do FDD §6).
+    assert "AREA_NO_CLI" in js and "interface da Higgsfield" in js
+    assert "gen.disabled" in js
+
+
+def test_view_html_escopa_o_modal_do_canvas_sem_tocar_ui_css(html):
+    """Mesmo padrão `.modal:has(...)` do `.sb-anim`/`.sb-reorder`: largura escopada nesta view."""
+    assert ".modal:has(.ann-wrap)" in html
+    assert ".sb-area-pair" in html and ".sb-area-warn" in html
+
+
+@pytest.mark.parametrize("nome", CORE_FILES)
+def test_componente_novo_nao_vazou_para_o_nucleo(nome):
+    """ADR-010: o canvas é ARQUIVO NOVO — nenhum arquivo do núcleo cita `annotate`."""
+    assert "annotate" not in (WEB_DIR / nome).read_text(encoding="utf-8"), \
+        f"studio/web/{nome} não pode referenciar o componente novo (núcleo intocado)"
+
+
+# ---------- fronteira do bloco `[extensão]`, para as asserções de congelamento das waves 4/7 ----------
+#: O modo `edit_area` (wave 9) trouxe de volta à TELA marcadores que a wave 4 tinha tirado da ideação
+#: da aula (`Gerar via CLI`, `source_id`, `hfChip`, `meta.models`) e a wave 7 tinha deixado só para o
+#: vídeo. Eles valem SÓ dentro do bloco novo — recortá-lo mantém `test_screen_dropped_the_paid_cli_path`
+#: (ideação e ângulos) apontando para o código da aula, que segue sem caminho pago de imagem.
+AREA_BLOCK_START = "const ANNOTATE_SRC ="
+AREA_BLOCK_END = "    return {"
+AREA_SECTION_START = '<section class="panel" id="sbArea">'
+
+
+def js_sem_area_marcada(js: str) -> str:
+    """`view.js` SEM o bloco `[extensão]` inpaint-marcacao (funções novas do painel "Área marcada")."""
+    i = js.index(AREA_BLOCK_START)
+    return js[:i] + js[js.index(AREA_BLOCK_END, i):]
+
+
+def html_sem_area_marcada(html: str) -> str:
+    """`view.html` SEM a seção `#sbArea` (mesma razão do `js_sem_area_marcada`)."""
+    i = html.index(AREA_SECTION_START)
+    fim = html.index("</section>", i) + len("</section>")
+    return html[:i] + html[fim:]
+
+
+def test_recorte_do_bloco_extensao_isola_os_marcadores_pagos(js, html):
+    """O recorte é o pino das outras suítes: fora do bloco novo, a tela da aula segue sem CLI pago."""
+    for termo in ("Gerar via CLI", "source_id", "hfChip", "meta.models"):
+        assert termo not in js_sem_area_marcada(js) + html_sem_area_marcada(html), termo
+    assert "sbAreaModel" in js and '"edit_area"' in js
