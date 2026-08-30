@@ -430,6 +430,11 @@ def prompts(pid: str, model: str | None = None) -> dict:
         "label_prompt": lp,
         "label_prompt_ready": lp is not None,
         "label_count": DEFAULT_COUNT["label"],
+        # `[extensão]` wave 9: o texto default do passo de limpeza também vem do backend (mesmo
+        # molde do rótulo). Sai genérico — o `target` é campo da tela e entra no prompt na hora de
+        # gerar, via `clean_prompt(target)` (a tela não monta texto de prompt por conta própria).
+        "clean_prompt": clean_prompt(),
+        "clean_count": DEFAULT_COUNT["clean"],
         "upscale_hint": "Upscale 2x, preset High Fidelity V2 na UI (a mesma imagem, com mais qualidade) "
                         "— ou o modelo bytedance_image_upscale via CLI.",
     }

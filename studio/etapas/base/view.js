@@ -8,13 +8,17 @@
 Studio.register("base", (ctx) => {
   const { $, api, toast } = ctx;
   const ui = Studio.ui;
-  const KINDS = { situation: "situação", label: "rótulo", upscale: "upscale" };
-  const CHAIN = [["situation", "situação"], ["label", "rótulo"], ["upscale", "upscale 2x"]];
+  // base-clean-marca [extensão] (wave 9): o passo "limpar marca" entra ENTRE situação e rótulo —
+  // é a situação que herda a marca alheia da referência, e a embalagem sai limpa para o rótulo.
+  const KINDS = { situation: "situação", clean: "limpeza de marca", label: "rótulo", upscale: "upscale" };
+  const CHAIN = [["situation", "situação"], ["clean", "limpar marca"], ["label", "rótulo"], ["upscale", "upscale 2x"]];
+  //: Espelha o `COURSE_KINDS` do backend: os três passos da aula 009 (a limpeza fica de fora).
+  const COURSE_CHAIN = CHAIN.filter(([k]) => k !== "clean");
   const SINCE_MINUTES = 120;
 
-  let cands = [], sel = null, chain = { situation: null, label: null, upscale: null };
+  let cands = [], sel = null, chain = { situation: null, clean: null, label: null, upscale: null };
   let finalRel = null;     // wave 5 · ponto 2: caminho de base/base_final.png quando já existe
-  let refs = [], labelPrompt = null, claudeOk = false;
+  let refs = [], labelPrompt = null, cleanPrompt = null, claudeOk = false;
   // base-prompt-provenance: insumos visuais da junção mood × referência (cabeçalho + chips).
   let palette = { colors: [], note: "" }, moodFiles = [], boardImgUrls = [];
   // Rótulo descritivo por linha (FDD §1) e o texto/cor de cada proveniência.
@@ -43,6 +47,7 @@ Studio.register("base", (ctx) => {
   // stepper estiver noutro passo (o card exibe o rótulo), cai no prompt salvo da referência.
   function importPrompt(kind = step) {
     if (kind === "upscale") return "";
+    if (kind === "clean") return promptText("clean");
     if (kind === "label") return promptText("label");
     const live = promptText(`p:${refId}`);
     if (live) return live;
@@ -65,7 +70,11 @@ Studio.register("base", (ctx) => {
     if (atual) edits[atual.dataset.k] = atual.value;
     const f = refs.find((r) => r.ref_id === refId) || refs[0];
     const card = (label, texto, key) => promptCard(label, key in edits ? edits[key] : texto, key);
-    if (step === "label" && labelPrompt !== null) {
+    if (step === "clean" && cleanPrompt !== null) {
+      // base-clean-marca [extensão]: o MESMO card vira a instrução de limpeza, com chave própria
+      // em `edits` (o texto editado do rótulo e o da situação não se misturam com ele).
+      el.innerHTML = card("Prompt · limpar marca · editável", cleanPrompt, "clean");
+    } else if (step === "label" && labelPrompt !== null) {
       el.innerHTML = card("Prompt · rótulo · editável", labelPrompt, "label");
     } else if (f) {
       el.innerHTML = card("Prompt · situação · editável", f.prompt, `p:${f.ref_id}`);
@@ -114,7 +123,8 @@ Studio.register("base", (ctx) => {
     const el = $("#baseJunction");
     if (!el) return;
     const f = refs.find((r) => r.ref_id === refId) || refs[0];
-    if (!f || step === "label") { el.innerHTML = ""; el.style.display = "none"; return; }
+    // A junção explica o prompt da SITUAÇÃO: nos passos de edição (rótulo e limpeza) ela sai.
+    if (!f || step === "label" || step === "clean") { el.innerHTML = ""; el.style.display = "none"; return; }
     el.style.display = "";
     const swatches = (palette.colors || []).length
       ? `<div class="swatches">${palette.colors.slice(0, 8).map((c) =>
@@ -152,7 +162,7 @@ Studio.register("base", (ctx) => {
     const el = $("#baseProvenance");
     if (!el) return;
     const f = refs.find((r) => r.ref_id === refId) || refs[0];
-    const prov = f && step !== "label" ? f.provenance : null;
+    const prov = f && step !== "label" && step !== "clean" ? f.provenance : null;
     if (!prov) { el.innerHTML = ""; el.style.display = "none"; return; }
     el.style.display = "";
     const lines = [];
@@ -201,11 +211,14 @@ Studio.register("base", (ctx) => {
   }
 
   async function loadPrompts() {
-    refs = []; labelPrompt = null;
+    refs = []; labelPrompt = null; cleanPrompt = null;
     try {
       const r = await api(url("prompts"));
       refs = r.refs;
       labelPrompt = r.label_prompt_ready ? r.label_prompt : null;
+      // base-clean-marca [extensão]: o texto do passo de limpeza também vem do backend (o `target`
+      // é campo à parte e o backend o costura no template na hora de gerar).
+      cleanPrompt = r.clean_prompt || null;
       claudeOk = !!r.claude;
       palette = r.palette || { colors: [], note: "" };
       moodFiles = r.mood_files || [];
@@ -299,6 +312,34 @@ Studio.register("base", (ctx) => {
     $("#brandName").value = b.name || ""; $("#brandDesc").value = b.description || "";
   }
 
+  // ---------- passo "limpar marca" [extensão] (wave 9) ----------
+  // A marca a remover é a marca VALIDADA da etapa 1 (ADR-020): quem a lê é o cliente, pela rota
+  // pública `GET .../refs/validated-brand` — o backend da etapa 3 nunca abre o arquivo do domínio
+  // refs. A rota é conveniência, não pré-requisito: se ela falhar, o campo fica vazio e o passo
+  // continua funcionando (o prompt genérico remove toda marca/texto).
+  async function loadValidatedBrand() {
+    const el = $("#cleanTarget");
+    if (!el) return;
+    try {
+      const r = await api(`/api/projects/${ctx.pid()}/refs/validated-brand`);
+      if (r && r.brand) el.value = r.brand;
+    } catch (err) {
+      /* sem marca validada (ou rota indisponível): o campo fica vazio e o usuário digita */
+    }
+  }
+
+  function cleanTarget() {
+    const el = $("#cleanTarget");
+    return el ? el.value.trim() : "";
+  }
+
+  // O bloco do passo só aparece quando o passo ativo é a limpeza — mesmo padrão de
+  // `#baseJunction`/`#baseGenResult` (display controlado no render, sem classe do shell).
+  function renderCleanStep() {
+    const el = $("#baseCleanStep");
+    if (el) el.style.display = step === "clean" ? "" : "none";
+  }
+
   // ---------- mood de referência [extensão] (ADR-013): campanha OU board da biblioteca ----------
   // wave 5 · ponto 1: o seletor e o mosaico do mood vivem na junção (painel 01). `loadMoodSources`
   // só carrega os dados; a pintura é a própria junção (`renderMoodSourceGallery` → `renderJunction`).
@@ -330,11 +371,14 @@ Studio.register("base", (ctx) => {
     const r = await api(url("candidates"));
     cands = r.candidates;
     finalRel = r.final || null;   // wave 5 · ponto 2: já vem do endpoint de candidatas (sem rota nova)
-    chain = { situation: null, label: null, upscale: null };
+    chain = { situation: null, clean: null, label: null, upscale: null };
     cands.filter((c) => c.selected).forEach((c) => { chain[c.kind] = c.id; });
     if (sel && !cands.some((c) => c.id === sel)) sel = null;
     if (!stepTouched) {
-      const proximo = CHAIN.find(([k]) => !chain[k]);
+      // O passo ativo default segue a cadeia da AULA (`COURSE_CHAIN`): a limpeza é `[extensão]` e
+      // opcional, então nunca é escolhida sozinha — sem isso a tela ficaria parada nela para
+      // sempre, já que ninguém é obrigado a selecionar uma clean. Chega-se nela pelo stepper.
+      const proximo = COURSE_CHAIN.find(([k]) => !chain[k]);
       const novo = proximo ? proximo[0] : "upscale";
       // O card do painel 01 LÊ `step`: mudar o passo sem repintá-lo deixava stepper e card
       // discordando ao abrir a etapa (C-BASE-33). Sem referência o painel mostra o gate da
@@ -401,6 +445,7 @@ Studio.register("base", (ctx) => {
       const t = `${escolhida} — clique para importar neste passo`;
       return `<span class="${stepClass(k)}" data-step="${ui.esc(k)}" role="button" tabindex="0" title="${ui.esc(t)}"><i>${i + 1}</i>${ui.esc(rotulo)}</span>`;
     }).join(`<span class="sep"></span>`);
+    renderCleanStep();
   }
 
   function setStep(k) {
@@ -440,7 +485,15 @@ Studio.register("base", (ctx) => {
   // `bytedance_image_upscale` — por isso o custo aparece por passo. O caminho ilimitado é a UI da
   // Higgsfield (importar aqui depois); o CLI é o pago.
   function genBody(kind = step) {
-    return { kind, ref_ids: kind === "situation" && refId ? [refId] : null, prompt: importPrompt(kind) };
+    const body = { kind, ref_ids: kind === "situation" && refId ? [refId] : null, prompt: importPrompt(kind) };
+    if (kind === "clean") {
+      // base-clean-marca [extensão]: `target` é a marca a remover (campo do passo). O texto EDITADO
+      // na tela vence o template (B4) — então, enquanto o card estiver com o texto default do
+      // backend, mandamos `prompt` vazio para o `clean_prompt(target)` do serviço citar o alvo.
+      body.target = cleanTarget();
+      if (body.prompt === cleanPrompt) body.prompt = "";
+    }
+    return body;
   }
 
   function updateCliButton() {
@@ -450,15 +503,19 @@ Studio.register("base", (ctx) => {
     if (cost) cost.textContent = "";
   }
 
-  // A imagem de ORIGEM da cadeia (situação→rótulo→upscale) para o "antes → depois". Espelha
-  // `upscale_ratio`/`_selected` do backend: upscale←(rótulo|situação), rótulo←situação,
-  // situação←referência escolhida.
+  // A imagem de ORIGEM da cadeia (situação→limpeza→rótulo→upscale) para o "antes → depois".
+  // Espelha `upscale_ratio`/`_selected` do backend: upscale←(rótulo|limpeza|situação),
+  // rótulo←(limpeza|situação), limpeza←situação, situação←referência escolhida.
   function originFor(kind = step) {
     if (kind === "upscale") {
-      const c = cands.find((x) => x.id === (chain.label || chain.situation));
+      const c = cands.find((x) => x.id === (chain.label || chain.clean || chain.situation));
       return c ? { url: ctx.files(c.file), label: KINDS[c.kind] || c.kind } : null;
     }
     if (kind === "label") {
+      const c = cands.find((x) => x.id === (chain.clean || chain.situation));
+      return c ? { url: ctx.files(c.file), label: KINDS[c.kind] || c.kind } : null;
+    }
+    if (kind === "clean") {
       const c = cands.find((x) => x.id === chain.situation);
       return c ? { url: ctx.files(c.file), label: "situação" } : null;
     }
@@ -557,6 +614,10 @@ Studio.register("base", (ctx) => {
         const s = e.target.closest("[data-step]");
         if (s && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setStep(s.dataset.step); }
       });
+      // base-clean-marca [extensão]: o atalho só NAVEGA para o passo de rótulo (o mesmo
+      // `setStep` do stepper) — não gera nada, não chama endpoint algum. "Trocar por minha marca"
+      // é o passo `label` de sempre, aplicado agora sobre a embalagem limpa.
+      $("#btnCleanToLabel").onclick = () => setStep("label");
       ui.drop($("#baseDrop"), importar);
       // painel 03: age no passo ativo do stepper. painel 01: força a situação (não toca o stepper).
       $("#btnBaseCli").onclick = () => gerarViaCli();
@@ -602,8 +663,12 @@ Studio.register("base", (ctx) => {
       // A instância da etapa sobrevive à troca de campanha: zere o estado do closure aqui, senão
       // o passo ativo e o texto editado da campanha anterior vazam para a nova.
       sel = null; stepTouched = false; boardSel = null; step = "situation";
+      cleanPrompt = null;
+      if ($("#cleanTarget")) $("#cleanTarget").value = "";   // a marca a remover é por campanha
+      renderCleanStep();
       Object.keys(edits).forEach((k) => delete edits[k]);
       loadBrand();
+      loadValidatedBrand();
       loadMoodSources();
       loadRealismPresets();
       await loadPrompts();

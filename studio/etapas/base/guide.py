@@ -24,7 +24,10 @@ WHAT = (
     "porém …”. Repita com as referências até achar uma boa e escolha a imagem base. Depois troque "
     "o rótulo pela sua marca no Nano Banana com uma instrução só (“troque o rótulo, mantenha as "
     "cores, adicione a logo …”), reescrevendo a instrução se ficar simples demais; por fim faça "
-    "upscale 2x, preset High Fidelity V2."
+    "upscale 2x, preset High Fidelity V2. "
+    "Se a embalagem escolhida vier com a marca, a logo ou o texto de outra marca, dá para limpá-la "
+    "antes do rótulo no passo opcional “limpar marca” [extensão] — é aproximação por prompt, não "
+    "inpaint com máscara: gere 3 e escolha a melhor."
 )
 
 CHECKLIST = [
@@ -33,6 +36,7 @@ CHECKLIST = [
     "Ignorei marca/texto errados na embalagem — o rótulo vem depois",
     "Tentei a “aba nova sem viés” (no bot, não na Higgsfield) quando o prompt não entregou a ideia",
     "Escolhi uma imagem base; já anotei as ideias que surgiram",
+    "Limpei a marca alheia da embalagem antes do rótulo, se ela apareceu [extensão] (passo opcional)",
     "Rótulo: uma instrução por vez, mantendo as cores; iterei a instrução se precisou",
     "Tive paciência: é normal gerar várias vezes até achar uma boa",
     "Upscale 2x, High Fidelity V2 (a mesma imagem, só com mais qualidade)",
