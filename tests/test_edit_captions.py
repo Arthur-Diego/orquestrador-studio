@@ -10,9 +10,12 @@ import importlib
 import re
 import sys
 import types
+from pathlib import Path
 
 import pytest
+from PIL import Image, ImageChops
 
+from studio.edit import burnin
 from studio.edit.captions import (
     CAPTION_MODES,
     CHUNK_OPTS,
@@ -26,8 +29,10 @@ from studio.edit.captions.audio import duration_of, extract_wav, extracted
 from studio.edit.captions.layout import (
     GAP_S,
     KARAOKE_MIN_WORDS,
+    MIN_FONT_PX,
     LayoutOpts,
     build_items,
+    karaoke_font_size,
     layout_windows,
 )
 from studio.edit.captions.transcribe import (
@@ -430,3 +435,177 @@ def test_captions_extracted_apaga_o_temporario_inclusive_em_erro(ffmpeg_or_skip,
             explodiu = wav
             raise RuntimeError("boom")
     assert not explodiu.exists() and not explodiu.parent.exists()
+
+
+# ------------------------------------------------- burn-in karaokê (Pillow, sem ffmpeg)
+
+HI = "#C8F751"
+HI_RGB = (200, 247, 81)
+BRANCO = (255, 255, 255)
+
+
+def _cap_item(palavras, *, start=0.0, end=2.0, mode="karaoke", size=64, **extra) -> dict:
+    """Item de `caption` no shape que `build_items` produz (o que o `PUT /timeline` guarda)."""
+    words = [{"w": w, "start_s": s, "end_s": e} for w, s, e in palavras]
+    item = {"id": "cap_1", "start": start, "end": end,
+            "text": " ".join(w["w"] for w in words), "mode": mode, "hi": HI, "chunk": 6,
+            "words": words,
+            "style": {"size": size, "weight": 800, "color": "#FFFFFF", "bg": "transparent",
+                      "align": "center", "lineHeight": 1.2, "shadow": True},
+            "transform": {"x": .5, "y": .82, "scaleX": 1, "scaleY": 1, "rotation": 0, "opacity": 1},
+            "anim": {"in": "fade", "out": "fade"}}
+    item.update(extra)
+    return item
+
+
+def _editor(items, ttype="caption") -> dict:
+    return {"tracks": [{"id": "t_cap", "type": ttype, "visible": True, "items": items}]}
+
+
+QUATRO = [("GELO", 0.0, 0.4), ("ZERO", 0.5, 0.9), ("GELA", 1.0, 1.4), ("TUDO", 1.5, 2.0)]
+
+
+def _caixa_da_cor(path, cor) -> tuple | None:
+    """Retângulo dos pixels EXATAMENTE nesta cor, ou `None` se a cor não aparece.
+
+    A diferença por canal (`lighter` dos três) é zero só onde a cor bate exata, então o
+    antialiasing das bordas do glifo não entra: o que sobra é o miolo chapado do texto.
+    """
+    img = Image.open(path).convert("RGB")
+    diff = ImageChops.difference(img, Image.new("RGB", img.size, cor)).split()
+    maior = ImageChops.lighter(ImageChops.lighter(diff[0], diff[1]), diff[2])
+    return maior.point(lambda v: 255 if v == 0 else 0).getbbox()
+
+
+def test_captions_burnin_karaoke_gera_um_png_por_palavra(tmp_path):
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(QUATRO)]), 1920, 1080,
+                                     tmp_path / "ov")
+
+    assert len(specs) == 4
+    for spec in specs:
+        assert Path(spec["path"]).exists()
+        assert Image.open(spec["path"]).size == (1920, 1080)
+        assert "kind" not in spec                   # abaixo do limiar é overlay puro
+
+
+def test_captions_burnin_estados_sao_contiguos_e_cobrem_o_item(tmp_path):
+    item = _cap_item(QUATRO, start=1.0, end=3.0)
+    specs = burnin.render_layer_pngs(tmp_path, _editor([item]), 1920, 1080, tmp_path / "ov")
+
+    assert specs[0]["start"] == item["start"]
+    assert specs[-1]["end"] == item["end"]
+    for a, b in zip(specs, specs[1:], strict=False):
+        assert a["end"] == b["start"]               # sem buraco: a linha não pisca na pausa
+    assert all(s["end"] - s["start"] >= 1 / 30 for s in specs)
+
+
+def test_captions_burnin_destaca_a_palavra_corrente_na_cor_hi(tmp_path):
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(QUATRO)]), 1920, 1080,
+                                     tmp_path / "ov")
+
+    destaques = []
+    for spec in specs:
+        hi = _caixa_da_cor(spec["path"], HI_RGB)
+        assert hi is not None, f"{spec['path']} sem a cor de destaque"
+        assert _caixa_da_cor(spec["path"], BRANCO) is not None, \
+            f"{spec['path']} sem as demais palavras em branco"
+        destaques.append(hi[0])
+    # o destaque anda para a direita palavra a palavra: cada PNG é um estado diferente
+    assert destaques == sorted(destaques) and len(set(destaques)) == 4
+
+
+@pytest.mark.parametrize("mode", ["linha", "bloco"])
+def test_captions_burnin_linha_e_bloco_geram_um_png_por_item(tmp_path, mode):
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(QUATRO, mode=mode)]),
+                                     1920, 1080, tmp_path / "ov")
+
+    assert len(specs) == 1
+    assert (specs[0]["start"], specs[0]["end"]) == (0.0, 2.0)
+
+
+def test_captions_burnin_legenda_sem_palavras_segue_o_caminho_de_hoje(tmp_path):
+    item = _cap_item(QUATRO)
+    item["words"] = []
+    specs = burnin.render_layer_pngs(tmp_path, _editor([item]), 1920, 1080, tmp_path / "ov")
+
+    assert len(specs) == 1 and Path(specs[0]["path"]).name == "layer_000.png"
+
+
+def test_captions_burnin_track_de_texto_com_words_nao_vira_karaoke(tmp_path):
+    """`words` num item de `text` é ruído: só a faixa de legenda tem karaokê."""
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(QUATRO)], ttype="text"),
+                                     1920, 1080, tmp_path / "ov")
+
+    assert len(specs) == 1
+
+
+def test_captions_burnin_ignora_palavra_com_centro_fora_da_janela(tmp_path):
+    fora = [*QUATRO[:3], ("SOBRA", 4.0, 4.5)]       # centro em 4.25, fora de [0, 2)
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(fora)]), 1920, 1080,
+                                     tmp_path / "ov")
+
+    assert len(specs) == 3
+    assert specs[-1]["end"] == 2.0
+
+
+def test_captions_burnin_escada_de_corpos_reduz_o_texto_ate_caber(tmp_path):
+    style = {"size": 64, "weight": 800}
+
+    assert karaoke_font_size("GELO ZERO", style, 1920, 1080) == 64
+    apertado = karaoke_font_size("GELO ZERO GELA TUDO " * 3, style, 1920, 1080)
+    assert MIN_FONT_PX <= apertado < 64
+    assert karaoke_font_size("PALAVRA " * 60, style, 1920, 1080) == MIN_FONT_PX
+
+    longo = [(f"PALAVRA{i}", i * 0.1, i * 0.1 + 0.09) for i in range(18)]
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(longo, end=1.8)]),
+                                     1920, 1080, tmp_path / "ov")
+    assert len(specs) == 18                          # não levanta nem perde palavra
+
+
+def test_captions_burnin_timeline_sem_legenda_nao_muda(tmp_path):
+    """Retrocompat: sem faixa de legenda, os specs são os mesmos de antes desta entrega."""
+    editor = {"tracks": [{"type": "text", "visible": True, "items": [
+        {"id": "tx1", "start": 0.0, "end": 2.0, "text": "GELO ZERO",
+         "style": {"size": 64, "weight": 800, "color": "#FFFFFF"},
+         "transform": {"x": .5, "y": .5, "scaleX": 1, "opacity": 1}},
+        {"id": "tx2", "start": 2.0, "end": 4.0, "text": "SEM AÇÚCAR",
+         "style": {"size": 40, "weight": 400, "color": "#FFEE00"},
+         "transform": {"x": .5, "y": .2, "scaleX": 1, "opacity": 1}}]}]}
+    specs = burnin.render_layer_pngs(tmp_path, editor, 1920, 1080, tmp_path / "ov")
+
+    assert [(s["start"], s["end"]) for s in specs] == [(0.0, 2.0), (2.0, 4.0)]
+    assert [Path(s["path"]).name for s in specs] == ["layer_000.png", "layer_001.png"]
+
+
+def test_captions_burnin_acima_do_limiar_degrada_para_faixa_ffconcat(tmp_path, monkeypatch):
+    monkeypatch.setattr(burnin, "MAX_OVERLAY_INPUTS", 5)
+    seis = [(f"P{i}", i * 0.3, i * 0.3 + 0.25) for i in range(6)]
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(seis, end=1.8)]),
+                                     1920, 1080, tmp_path / "ov")
+
+    assert len(specs) == 1
+    spec = specs[0]
+    assert spec["kind"] == "concat" and spec["start"] == 0 and spec["end"] == 1.8
+    assert 0 < spec["y"] < 1080
+    linhas = Path(spec["path"]).read_text(encoding="utf-8").splitlines()
+    assert linhas[0] == "ffconcat version 1.0"
+    files = [ln for ln in linhas if ln.startswith("file ")]
+    assert len(files) == 7                           # 6 estados + a última entrada repetida
+    assert files[-1] == files[-2]                    # o concat ignora a duração do último
+    for i in range(6):                               # cada estado traz a sua duração
+        assert linhas[1 + 2 * i].startswith("file ")
+        assert linhas[2 + 2 * i].startswith("duration ")
+        assert Path(linhas[1 + 2 * i][6:-1]).exists()
+    faixa = Image.open(linhas[1][6:-1])
+    assert faixa.width == 1920 and faixa.height < 1080   # faixa da altura da linha, não o quadro
+
+
+def test_captions_burnin_faixa_comeca_com_quadro_vazio_quando_a_fala_atrasa(tmp_path, monkeypatch):
+    monkeypatch.setattr(burnin, "MAX_OVERLAY_INPUTS", 5)
+    seis = [(f"P{i}", 1.0 + i * 0.3, 1.0 + i * 0.3 + 0.25) for i in range(6)]
+    specs = burnin.render_layer_pngs(tmp_path, _editor([_cap_item(seis, start=1.0, end=2.8)]),
+                                     1920, 1080, tmp_path / "ov")
+
+    linhas = Path(specs[0]["path"]).read_text(encoding="utf-8").splitlines()
+    assert linhas[1].endswith("_vazio.png'") and linhas[2] == "duration 1.000"
+    assert len([ln for ln in linhas if ln.startswith("file ")]) == 8   # vazio + 6 + repetição

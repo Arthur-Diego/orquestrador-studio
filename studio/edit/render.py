@@ -237,10 +237,15 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
             args += ["-i", str(root / sfx["file"])]
             sfx_inputs.append((index, sfx))
             index += 1
-    # [extensão] camadas do editor (texto/legenda/overlay) já rasterizadas em PNG full-frame
+    # [extensão] camadas do editor (texto/legenda/overlay) já rasterizadas em PNG full-frame.
+    # `kind:"concat"` é a faixa de legenda karaokê: em vez de um `-i` por palavra, uma lista
+    # `ffconcat` (imagem + duração) num único input — mesmo resultado visual, um input só.
     overlay_inputs: list[tuple[int, dict]] = []
     for ov in overlays:
-        args += ["-i", str(ov["path"])]
+        if ov.get("kind") == "concat":
+            args += ["-f", "concat", "-safe", "0", "-i", str(ov["path"])]
+        else:
+            args += ["-i", str(ov["path"])]
         overlay_inputs.append((index, ov))
         index += 1
 
@@ -275,6 +280,14 @@ def build_filtergraph(root: Path, timeline: dict, target: str = "master",
         filters.append(f"[vcat]fade=t=out:st={_num(max(duration - fade_out, 0))}:d={_num(fade_out)}[vfade]")
         base = "vfade"
     for k, (idx, ov) in enumerate(overlay_inputs):
+        if ov.get("kind") == "concat":
+            # a faixa já vem com a duração de cada estado na lista: quem faz o gate de tempo é o
+            # próprio `concat`, não o `enable`. `eof_action=pass` + `shortest=0` impedem que o
+            # fim da legenda trunque o vídeo
+            filters.append(f"[{base}][{idx}:v]overlay=0:{int(ov.get('y', 0))}:"
+                           f"eof_action=pass:shortest=0[vov{k}]")
+            base = f"vov{k}"
+            continue
         filters.append(f"[{idx}:v]scale={WIDTH}:{HEIGHT}[ovs{k}]")
         filters.append(f"[{base}][ovs{k}]overlay=0:0:enable='between(t,{_num(ov['start'])},{_num(ov['end'])})'[vov{k}]")
         base = f"vov{k}"
