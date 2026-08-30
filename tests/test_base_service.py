@@ -236,7 +236,7 @@ def test_select_writes_final_png_and_md_and_is_exclusive_per_kind(studio_env, sv
     s2 = _up(svc, project, "situation", (40, 200, 40), "1f8e7d6c5b4a")
     r = svc.select(project, s1, note="melhor enquadramento")
     assert r == {"final": "base/base_final.png", "kind": "situation",
-                 "chain": {"situation": s1, "label": None, "upscale": None}}
+                 "chain": {"situation": s1, "clean": None, "label": None, "upscale": None}}
     final = root / "base" / "base_final.png"
     src = root / [c for c in svc.load(project) if c["id"] == s1][0]["file"]
     assert final.read_bytes() == src.read_bytes(), "cópia byte a byte da candidata escolhida"
@@ -258,11 +258,13 @@ def test_chain_advances_and_restarts_when_situation_changes(studio_env, svc, pro
     svc.select(project, s)
     svc.select(project, lbl)
     r = svc.select(project, up)
-    assert r["kind"] == "upscale" and r["chain"] == {"situation": s, "label": lbl, "upscale": up}
+    assert r["kind"] == "upscale" and r["chain"] == {"situation": s, "clean": None, "label": lbl,
+                                                    "upscale": up}
     src = root / [c for c in svc.load(project) if c["id"] == up][0]["file"]
     assert (root / "base" / "base_final.png").read_bytes() == src.read_bytes()
     r = svc.select(project, s)
-    assert r["chain"] == {"situation": s, "label": None, "upscale": None}, "trocar a situação recomeça a cadeia"
+    assert r["chain"] == {"situation": s, "clean": None, "label": None,
+                          "upscale": None}, "trocar a situação recomeça a cadeia"
     assert r["kind"] == "situation"
     with pytest.raises(FileNotFoundError):
         svc.select(project, "naoexiste")
@@ -526,3 +528,49 @@ def test_base_md_keeps_the_label_instruction_in_full(studio_env, svc, project):
     svc.select(project, [c for c in svc.load(project) if c["kind"] == "label"][-1]["id"])
     md = (root / "base" / "base.md").read_text()
     assert "### Rótulo" in md and instrucao in md, "instrução de rótulo inteira, não truncada"
+
+
+# ---------- kind "clean": limpeza de marca `[extensão]` (wave 9) ----------
+def test_clean_kind_sits_between_situation_and_label(svc):
+    """FDD §4: limpa-se DEPOIS de escolher a situação e ANTES de aplicar o rótulo próprio."""
+    assert svc.KINDS == ("situation", "clean", "label", "upscale")
+    assert svc.RANK["situation"] < svc.RANK["clean"] < svc.RANK["label"] < svc.RANK["upscale"]
+    assert svc.KIND_LABEL["clean"]
+    assert svc.DEFAULT_COUNT["clean"] == 3, "mesmo padrão do rótulo: gera 3 e escolhe a melhor"
+    assert svc.DEFAULT_MODELS["clean"] == "nano_banana_2"
+
+
+def test_clean_course_kinds_excludes_the_extension_step(svc):
+    """O progresso da etapa mede o roteiro da aula 009; a limpeza é `[extensão]` e opcional."""
+    assert svc.COURSE_KINDS == ("situation", "label", "upscale")
+    assert "clean" not in svc.COURSE_KINDS
+    assert all(k in svc.KINDS for k in svc.COURSE_KINDS)
+
+
+def test_clean_check_kind_message_lists_the_four_kinds(svc):
+    assert svc._check_kind("clean") == "clean"
+    with pytest.raises(ValueError) as e:
+        svc._check_kind("nope")
+    msg = str(e.value)
+    assert all(k in msg for k in ("situation", "clean", "label", "upscale"))
+
+
+def test_clean_prompt_is_generic_without_target(svc):
+    txt = svc.clean_prompt("")
+    assert "Remove all brand names" in txt and "identical" in txt
+    assert "(" not in txt and '"' not in txt, "sem target não há trecho entre parênteses"
+    assert "\n" not in txt, "uma única linha: o texto vai para a linha de comando do CLI"
+    assert txt == svc.clean_prompt("   ") == svc.clean_prompt()
+
+
+def test_clean_prompt_names_the_target_when_given(svc):
+    txt = svc.clean_prompt("Red Bull")
+    assert '"Red Bull"' in txt
+    assert "Remove all brand names" in txt and "identical" in txt
+    prefixo = "Remove all brand names, logos, labels and printed text from the product"
+    assert txt.startswith(prefixo) and svc.clean_prompt("").startswith(prefixo)
+
+
+def test_clean_prompt_is_deterministic(svc):
+    assert svc.clean_prompt("Red Bull") == svc.clean_prompt("Red Bull")
+    assert svc.clean_prompt("") == svc.clean_prompt("")

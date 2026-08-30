@@ -35,9 +35,17 @@ from ..refs.service import project_dir
 log = logging.getLogger("studio.base")
 
 STEP = "base"
-KINDS = ("situation", "label", "upscale")
-RANK = {"situation": 0, "label": 1, "upscale": 2}
-KIND_LABEL = {"situation": "situação", "label": "rótulo", "upscale": "upscale 2x"}
+#: `clean` é `[extensão]` da wave 9: entra ENTRE `situation` e `label` (FDD base-clean-marca §4).
+#: A limpeza acontece depois de escolhida a situação (é ela que herda a marca alheia da
+#: referência) e antes do rótulo (limpa-se a embalagem para então aplicar a marca do usuário).
+KINDS = ("situation", "clean", "label", "upscale")
+RANK = {"situation": 0, "clean": 1, "label": 2, "upscale": 3}
+KIND_LABEL = {"situation": "situação", "clean": "limpeza de marca", "label": "rótulo",
+              "upscale": "upscale 2x"}
+#: Os três passos que a aula 009 ensina. `clean` fica de fora de propósito: é `[extensão]` e
+#: opcional, então não conta no progresso da etapa (senão o chip do guia viraria "cadeia 4/3").
+#: Use `KINDS` para validação/iteração e `COURSE_KINDS` só onde se mede o roteiro do curso.
+COURSE_KINDS = ("situation", "label", "upscale")
 FINAL_REL = "base/base_final.png"
 
 # IDs sugeridos pelo plano-higgsfield; o catálogo vivo ainda não pôde ser conferido (CLI sem
@@ -45,7 +53,8 @@ FINAL_REL = "base/base_final.png"
 DEFAULT_MODEL = "nano_banana_2"
 DEFAULT_MODEL_LABEL = "nano_banana_2"
 DEFAULT_MODEL_UPSCALE = "bytedance_image_upscale"
-DEFAULT_MODELS = {"situation": DEFAULT_MODEL, "label": DEFAULT_MODEL_LABEL, "upscale": DEFAULT_MODEL_UPSCALE}
+DEFAULT_MODELS = {"situation": DEFAULT_MODEL, "clean": DEFAULT_MODEL, "label": DEFAULT_MODEL_LABEL,
+                  "upscale": DEFAULT_MODEL_UPSCALE}
 
 MOOD_REFS_MAX = 3          # a aula anexa a referência + algumas imagens do mood, não o mood inteiro
 #: B11 (wave 2): a aula 009 põe "no people" no MOOD, não na base (ela até imagina "um mini ser
@@ -55,8 +64,9 @@ NO_PEOPLE = "No people unless they appear in the reference image."
 #: Modos do bot de prompts, os mesmos da etapa 2 (aula 007: modo simplificado × guiado).
 PROMPT_MODES = ("images", "brief", "template")
 PROMPT_IMAGES_MAX = 4      # o prompter corta em 4: a referência + até 3 imagens do mood
-#: B4 (wave 2): a aula reescreve a instrução do rótulo e gera 3 variações.
-DEFAULT_COUNT = {"situation": 1, "label": 3, "upscale": 1}
+#: B4 (wave 2): a aula reescreve a instrução do rótulo e gera 3 variações. A limpeza de marca
+#: (`[extensão]`, wave 9) segue o mesmo padrão de edição do Nano Banana: gera 3, escolhe a melhor.
+DEFAULT_COUNT = {"situation": 1, "clean": 3, "label": 3, "upscale": 1}
 #: G3 (wave 2): o formato vem do projeto (aula 007 manda escolher pelo destino).
 ASPECT_RATIOS = ("16:9", "9:16", "1:1")
 ASPECT_DEFAULT = "16:9"
@@ -363,6 +373,21 @@ def label_prompt(brand: dict) -> str | None:
             + ". Keep the product colors and everything else identical, realistic.")
 
 
+def clean_prompt(target: str = "") -> str:
+    """Instrução de limpeza de marca `[extensão]` (wave 9), em inglês e determinística.
+
+    É instrução fixa, como `label_prompt`: não passa pelo Claude e não lê nada do disco. `target`
+    nomeia a marca a remover (a tela pré-preenche com a marca validada da etapa 1); vazio, o texto
+    fica genérico e ainda vale. A limpeza é **best-effort por prompt**: o CLI da Higgsfield não
+    tem máscara nem inpaint (ADR-002), por isso o texto fixa "keep everything else identical".
+    """
+    alvo = target.strip()
+    return ("Remove all brand names, logos, labels and printed text from the product"
+            + (f' (the "{alvo}" branding in particular)' if alvo else "")
+            + ". Leave the label area blank and clean."
+            + " Keep the product shape, colors, materials, lighting and background identical, realistic.")
+
+
 def prompts(pid: str, model: str | None = None) -> dict:
     """O que a tela da etapa 3 precisa mostrar: por referência escolhida, a **instrução para o bot**
     (sessão nova, sem viés) e o **prompt para gerar** — o último que o bot escreveu para aquela
@@ -499,7 +524,7 @@ def _default_model(pid: str, kind: str) -> str:
 
 def _check_kind(kind: str) -> str:
     if kind not in KINDS:
-        raise ValueError(f"kind inválido: {kind} (use situation, label ou upscale)")
+        raise ValueError(f"kind inválido: {kind} (use situation, clean, label ou upscale)")
     return kind
 
 

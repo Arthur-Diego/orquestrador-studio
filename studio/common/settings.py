@@ -34,6 +34,9 @@ ACTIONS: list[dict] = [
      "label": "Gerar a imagem base"},
     {"key": "base.upscale", "screen": "Etapa 3 — Imagem base", "kind": "upscale",
      "label": "Upscale 2x da base"},
+    # `[extensão]` wave 9: limpeza de marca/logo/texto alheios antes de aplicar o rótulo próprio.
+    {"key": "base.clean", "screen": "Etapa 3 — Imagem base", "kind": "image",
+     "label": "Limpar marca/logo/texto da base [extensão]"},
     {"key": "mood.grid", "screen": "Etapa 2 — Mood board", "kind": "image",
      "label": "Gerar o grid de vibe"},
     {"key": "mood.multishot", "screen": "Etapa 2 — Mood board", "kind": "image",
@@ -65,6 +68,8 @@ ACTION_KEYS = {a["key"] for a in ACTIONS}
 DEFAULTS: dict[str, dict] = {
     "base.image": {"model": "nano_banana_2", "variant": "2k"},
     "base.upscale": {"model": "bytedance_image_upscale", "variant": None},
+    # `[extensão]` wave 9: mesma edição de imagem das outras da etapa (nano_banana_2 em 2k).
+    "base.clean": {"model": "nano_banana_2", "variant": "2k"},
     "mood.grid": {"model": "nano_banana_2", "variant": "2k"},
     "mood.multishot": {"model": "nano_banana_2", "variant": "2k"},
     "storyboard.scene": {"model": "nano_banana_2", "variant": "2k"},
