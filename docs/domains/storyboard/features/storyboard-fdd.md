@@ -69,6 +69,18 @@ Suposições e restrições explícitas:
 - Ângulos por cena, upscale por cena (etapa 5); vídeo (etapa 6).
 - Alterações em `studio/higgsfield.py`, `studio/common/*`, `tests/conftest.py`, `tests/test_steps_and_config.py`, `requirements*.txt`.
 
+> **Nota aditiva (2026-08-30, Wave 9 · feature `inpaint-marcacao` `[extensão]`).** As duas
+> exclusões acima — "desenho/sketch dentro do Studio" e "inpaint por CLI" — descrevem o escopo
+> **do curso** (aula 010) e continuam válidas nesse recorte. O dono aprovou no gate em lote da
+> Wave 9 (`docs/domains/studio/waves/wave-9.md`, pendências P2/P3 do FDD de inpaint) uma
+> `[extensão]` que as supera de forma aditiva: o Studio ganha um canvas de marcação
+> (`studio/web/annotate.js`) e o kind novo `edit_area`, que manda a imagem anotada como
+> referência EXTRA ao `hf.generate` (original sempre primeira) com instrução fixa em inglês.
+> Não é inpaint real — o CLI não aceita máscara (ADR-002) — e a UI declara isso. Nada deste FDD
+> muda: os kinds `draw_to_edit`/`edit`/`multishot`, o preset "Inpaint: corda proporcional" e as
+> rotas/mensagens existentes seguem byte a byte. Comportamento completo em
+> `docs/domains/storyboard/features/inpaint-marcacao-fdd.md`.
+
 ---
 
 ### 4. Fluxos detalhados e diagramas
