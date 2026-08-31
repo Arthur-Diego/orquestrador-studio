@@ -1,5 +1,6 @@
 """Contrato HTTP da etapa 4 — Storyboard (FastAPI TestClient), sem rede, sem CLI, sem navegador."""
 import json
+import logging
 import threading
 
 import pytest
@@ -605,12 +606,15 @@ def test_video_prompt_route_rejects_an_unknown_realism_preset(client, pid, monke
 
 # ---------- `[extensão]` wave 9 (ADR-025): roteiro por LLM (Claude fake, sem rede) ----------
 def _script_fake(calls, notes="Arco fechado com o produto em primeiro plano.", short_by=0,
-                 scene_text=None, broken=False):
+                 scene_text=None, broken=False, sem_rig=()):
     """Fake do Claude CLI para o roteiro: um bot OBEDIENTE.
 
     Lê do próprio prompt quantas cenas foram pedidas e qual rig foi exigido, e devolve esse rig
     literalmente dentro de cada `image_prompt` — é assim que o teste do critério 3a mede o
     SERVIÇO: se o preset não chegar ao prompter, o rig não aparece no roteiro gravado.
+
+    `sem_rig` é a lista de cenas em que o bot DESOBEDECE (devolve `image_prompt` sem o rig pedido):
+    é o cenário que a validação do serviço tem de barrar.
     """
     import json as _json
     import re as _re
@@ -626,7 +630,9 @@ def _script_fake(calls, notes="Arco fechado com o produto em primeiro plano.", s
         rig_text = rig.group(1) if rig else "no fixed rig"
         cenas = [{"n": i, "arc": "ignorado-pelo-modelo",
                   "text": scene_text or f"Cena {i}: o personagem age e o produto aparece.",
-                  "image_prompt": f"A cinematic photograph of scene {i}. Shot on {rig_text}.",
+                  "image_prompt": (f"A cinematic photograph of scene {i}. Shot on a nice camera."
+                                   if i in sem_rig else
+                                   f"A cinematic photograph of scene {i}. Shot on {rig_text}."),
                   "negative": "plastic skin, HDR glow"}
                  for i in range(1, pedidas + 1 - short_by)]
         body = _json.dumps({"scenes": cenas, "notes_pt": notes}, ensure_ascii=False)
@@ -819,6 +825,67 @@ def test_script_incomplete_answer_keeps_the_previous_file(client, pid, base, roo
     monkeypatch.setattr(prompter.subprocess, "run", _script_fake([], short_by=2))
     job = _run_script_job(client, pid, {"count": 5})
     assert job["state"] == "error" and "5 cenas pedidas, 3 recebidas" in job["error"]
+    assert (root / "storyboard" / "script.json").read_bytes() == antes
+
+
+def test_script_scene_without_the_preset_rig_is_an_error(client, pid, base, root, monkeypatch, claude):
+    """Review 001 · issue_002 (critério 3 `[cross-feature]`, §6): o SERVIÇO cobra o rig de cada cena.
+
+    O bot desobediente devolve a cena 2 sem corpo/lente/formato do preset. Leitura estrita do FDD:
+    resposta inválida → job em `error`, mensagem dizendo QUAL cena e QUAL parte do rig faltou, e o
+    `script.json` anterior byte a byte igual (nada de completar com conteúdo inventado).
+    """
+    from studio.common import prompter
+    assert _run_script_job(client, pid, {"count": 3, "preset": "documentary-street"})["state"] == "done"
+    antes = (root / "storyboard" / "script.json").read_bytes()
+    monkeypatch.setattr(prompter.subprocess, "run", _script_fake([], sem_rig=(2,)))
+    job = _run_script_job(client, pid, {"count": 3, "preset": "documentary-street"})
+    rig = prompter.REALISM_PRESETS["documentary-street"]["rig"]
+    assert job["state"] == "error"
+    assert "cena 2 sem" in job["error"] and "documentary-street" in job["error"]
+    for chave in ("camera", "lens", "format"):
+        assert f'{chave} ("{rig[chave]}")' in job["error"], chave
+    assert "cena 1 sem" not in job["error"] and "cena 3 sem" not in job["error"]
+    assert any("roteiro falhou" in linha for linha in job["log"])
+    assert (root / "storyboard" / "script.json").read_bytes() == antes
+
+
+def test_script_without_preset_does_not_demand_any_rig(client, pid, base, root, monkeypatch, claude):
+    """Review 001 · issue_002: `preset: null` é "sem rig" — a cobrança não pode disparar aí."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter.subprocess, "run", _script_fake([], sem_rig=(1, 2)))
+    job = _run_script_job(client, pid, {"count": 2, "preset": None})
+    assert job["state"] == "done" and job["error"] is None
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["preset"] is None and data["count"] == 2
+
+
+def test_script_write_failure_logs_the_error_event_and_keeps_the_file(
+        client, pid, base, root, studio_env, monkeypatch, claude, caplog):
+    """Review 001 · issue_003 (§7 do FDD, task_02 R15): falha DEPOIS do prompter também é observável.
+
+    Com `write_json_atomic` levantando `OSError`, o job vai a `error`, a linha `script_job` de erro
+    sai UMA vez no logger `studio.storyboard` com `{pid, state, scenes, seconds, source}`, o detalhe
+    aparece no `log` do job (que é o que o `progressJob` mostra) e o roteiro anterior fica intacto.
+    """
+    sb = studio_env["svc"]("storyboard")
+    assert _run_script_job(client, pid, {"count": 2})["state"] == "done"
+    antes = (root / "storyboard" / "script.json").read_bytes()
+
+    def explode(*a, **kw):
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(sb, "write_json_atomic", explode)
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        job = _run_script_job(client, pid, {"count": 2})
+    assert job["state"] == "error" and "disco cheio" in job["error"]
+    assert any("roteiro falhou: disco cheio" in linha for linha in job["log"])
+    eventos = [r.getMessage() for r in caplog.records if r.getMessage().startswith("script_job ")]
+    erros = [e for e in eventos if "'state': 'error'" in e]
+    assert len(erros) == 1, eventos
+    for campo in ("'pid'", "'state'", "'scenes'", "'seconds'", "'source'"):
+        assert campo in erros[0], campo
+    assert not [e for e in eventos if "'state': 'done'" in e], "não há evento de fim `done` aqui"
     assert (root / "storyboard" / "script.json").read_bytes() == antes
 
 

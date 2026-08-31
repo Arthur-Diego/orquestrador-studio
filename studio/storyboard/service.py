@@ -1206,13 +1206,41 @@ def _script_brief(root: Path, aspect: str, count: int, instruction: str) -> dict
     return {k: v for k, v in brief.items() if v}
 
 
+def _require_preset_rig(scenes: list[dict], preset: str | None) -> None:
+    """Critério 3 `[cross-feature]`: com preset, o rig TEM de vir literal no `image_prompt` de CADA cena.
+
+    O prompter manda o bloco `MANDATORY RIG` (metade de cima do critério); esta é a metade de baixo,
+    que é do SERVIÇO — sem ela a garantia dependeria da obediência do modelo. Leitura estrita da §6
+    do FDD ("resposta inválida → job em `error`, nunca completar com conteúdo inventado"): corpo,
+    lente ou formato ausentes em qualquer cena invalidam a resposta inteira, o job morre em `error`
+    e o `script.json` anterior fica intacto (a escrita só acontece depois daqui). Regerar não custa
+    crédito — o Claude CLI é assinatura local (ADR-025). Sem preset (`None`) não há rig a cobrar.
+    """
+    if not preset:
+        return
+    rig = prompter.REALISM_PRESETS[preset]["rig"]
+    faltas = []
+    for s in scenes:
+        prompt = s.get("image_prompt") or ""
+        ausentes = [f'{k} ("{rig[k]}")' for k in ("camera", "lens", "format") if rig[k] not in prompt]
+        if ausentes:
+            faltas.append(f"cena {s['n']} sem {', '.join(ausentes)}")
+    if faltas:
+        raise RuntimeError(f"roteiro fora do rig do preset {preset}: {'; '.join(faltas)} — "
+                           "nada foi gravado, gere de novo")
+
+
 def _script_payload(res: dict, preset: str | None, model_target: str, aspect: str) -> tuple[dict, list[int]]:
     """Resposta do prompter → schema de `script.json` (FDD §5.3), com `text` truncado em 500.
 
     O truncamento é do SERVIÇO (o prompter não trunca): 500 é `MAX_SCENE_TEXT`, o mesmo teto que
     `save_scenes` cobra — sugestão maior que isso não poderia ser aplicada à cena. Devolve também
     o número das cenas truncadas, para o `log` do job registrar.
+
+    A conferência do rig do preset é a PRIMEIRA coisa aqui de propósito: este é o funil único por
+    onde a resposta do prompter vira arquivo, então nenhum payload chega ao disco sem passar por ela.
     """
+    _require_preset_rig(res["scenes"], preset)
     truncated: list[int] = []
     scenes = []
     for s in res["scenes"]:
@@ -1264,19 +1292,22 @@ def script_generate(pid: str, preset: settings.PresetArg = settings.PRESET_UNSET
         log.info("script_generate %s", {"pid": pid, "preset": preset, "count": count,
                                         "model_target": model_target, "aspect_ratio": aspect,
                                         "images": len(images)})
+        # O `try` cobre o CORPO INTEIRO (prompter + validação + montagem + escrita): qualquer falha
+        # depois do prompter — `OSError` do `mkdir`/`write_json_atomic`, rig fora do preset — também
+        # precisa do evento de fim `script_job` (§7 do FDD) e da linha no `log` que a tela mostra.
         try:
             res = prompter.script(images, brief, preset=preset, count=count, arcs=arcs,
                                   model_target=model_target)
+            payload, truncated = _script_payload(res, preset, model_target, aspect)
+            for n in truncated:
+                job["log"].append(f"cena {n}: texto acima de {MAX_SCENE_TEXT} caracteres, truncado")
+            (root / STEP).mkdir(parents=True, exist_ok=True)
+            write_json_atomic(root / SCRIPT_FILE, payload, ensure_ascii=False, indent=1)
         except Exception as e:  # noqa: BLE001 — o job morre em `error`; o roteiro anterior fica
             log.info("script_job %s", {"pid": pid, "state": "error", "scenes": 0,
                                        "seconds": None, "source": "claude"})
             job["log"].append(f"roteiro falhou: {e}")
             raise
-        payload, truncated = _script_payload(res, preset, model_target, aspect)
-        for n in truncated:
-            job["log"].append(f"cena {n}: texto acima de {MAX_SCENE_TEXT} caracteres, truncado")
-        (root / STEP).mkdir(parents=True, exist_ok=True)
-        write_json_atomic(root / SCRIPT_FILE, payload, ensure_ascii=False, indent=1)
         job["done"] = 1
         job["log"].append(f"roteiro gerado: {payload['count']} cenas "
                           f"(preset {preset or 'nenhum'}, {payload['seconds']}s)")

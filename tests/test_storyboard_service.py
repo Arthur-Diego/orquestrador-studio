@@ -919,13 +919,20 @@ def test_video_prompt_does_not_touch_the_scenes_schema(sb, project, root, monkey
 
 
 # ---------- `[extensão]` wave 9 (ADR-025): roteiro por LLM no serviço (Claude sempre fake) ----------
-def _script_result(count: int, text: str = "Cena curta.", images=None) -> dict:
-    """Resposta no formato que `prompter.script` publica (contrato da task_01)."""
+def _script_result(count: int, text: str = "Cena curta.", images=None, rig=None,
+                   preset=None) -> dict:
+    """Resposta no formato que `prompter.script` publica (contrato da task_01).
+
+    Bot OBEDIENTE: com `rig`, corpo/lente/formato entram LITERALMENTE em cada `image_prompt` — é o
+    que o serviço passou a exigir quando há preset (review 001 · issue_002).
+    """
+    rig_text = (f" Shot on camera body {rig['camera']}, lens {rig['lens']}, "
+                f"format {rig['format']}." if rig else "")
     return {"scenes": [{"n": i, "arc": "acao", "text": text,
-                        "image_prompt": f"A cinematic photograph, scene {i}.",
+                        "image_prompt": f"A cinematic photograph, scene {i}.{rig_text}",
                         "negative": "plastic skin"} for i in range(1, count + 1)],
             "notes_pt": "Arco fechado.", "source": "claude", "seconds": 12.5,
-            "preset": None, "model_target": "nano_banana_2", "count": count,
+            "preset": preset, "model_target": "nano_banana_2", "count": count,
             "images": images or []}
 
 
@@ -933,7 +940,8 @@ def _fake_prompter_script(sb, monkeypatch, calls, count=5, text="Cena curta."):
     """Substitui `prompter.script` (ADR-008: nada de processo real) e registra a chamada."""
     def fake(images, brief, preset=None, **kw):
         calls.append({"images": list(images), "brief": brief, "preset": preset, **kw})
-        return _script_result(kw.get("count", count), text)
+        rig = sb.prompter.REALISM_PRESETS[preset]["rig"] if preset else None
+        return _script_result(kw.get("count", count), text, rig=rig, preset=preset)
     monkeypatch.setattr(sb.prompter, "available", lambda: True)
     monkeypatch.setattr(sb.prompter, "script", fake)
     return calls
