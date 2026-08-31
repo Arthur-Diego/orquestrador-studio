@@ -90,6 +90,10 @@ Studio.register("storyboard", (ctx) => {
       scriptCli = !!st.script_cli;
       scriptPresetDefault = st.script_preset_default || "";
       scriptModels = st.script_models || [];
+      // `[extensão]` costura galeria→roteiro (ADR-028): quantas ideias escolhidas o roteiro lê como
+      // contexto visual (o SERVIÇO decide o teto real em `_script_images`; aqui é só o retrato).
+      scriptSelectedIdeas = +st.selected || 0;
+      renderScriptIdeas();
       scriptGate();
     }
 
@@ -659,6 +663,8 @@ Studio.register("storyboard", (ctx) => {
     const SCRIPT_COUNT_DEFAULT = 5, SCRIPT_COUNT_MAX = 10;   // espelho de DEFAULT_SCENES/MAX_SCENES do serviço
     let script = null;                            // última sugestão (`GET .../script`) ou `null`
     let scriptCli = false, scriptPresetDefault = "", scriptModels = [];
+    const SCRIPT_IDEA_IMAGES = 3;                  // espelho de `SCRIPT_IDEA_IMAGES` do serviço (só leitura)
+    let scriptSelectedIdeas = 0;                  // ideias escolhidas na galeria (ADR-028), do status
 
     /** Preset pré-selecionado DO ROTEIRO: o default que o servidor resolveu para a ação
      *  `storyboard.script` (campo do status), com o mapa `defaults` do MESMO catálogo como segunda
@@ -684,6 +690,18 @@ Studio.register("storyboard", (ctx) => {
       if (hint) { hint.hidden = scriptCli; hint.textContent = scriptCli ? "" : SCRIPT_NO_CLI; }
     }
 
+    /** `[extensão]` costura galeria→roteiro (ADR-028): retrato de quantas ideias escolhidas da
+     *  galeria o roteiro leva como contexto (base + até 3 + mood, teto do serviço). 0 = só a base
+     *  (+ mood): o hint diz para escolher fotos, sem virar bloqueio — o roteiro roda sem galeria. */
+    function renderScriptIdeas() {
+      const el = $("#sbScriptIdeas");
+      if (!el) return;
+      const usadas = Math.min(scriptSelectedIdeas, SCRIPT_IDEA_IMAGES);
+      el.textContent = scriptSelectedIdeas
+        ? `${usadas}${scriptSelectedIdeas > usadas ? ` de ${scriptSelectedIdeas}` : ""}`
+        : "nenhuma — escolha na galeria";
+    }
+
     /** Controles do bloco: o seletor de preset é o MESMO da provedora (`realismPresetField`, que
      *  já lista o catálogo de `GET /api/prompter/presets`); proporção e alvo são LEITURA. */
     function renderScriptControls() {
@@ -694,6 +712,7 @@ Studio.register("storyboard", (ctx) => {
       if (ar) ar.textContent = (ctx.project() || {}).aspect_ratio || "16:9";
       const mt = $("#sbScriptModel");
       if (mt) mt.textContent = scriptModelLabel();
+      renderScriptIdeas();
       scriptGate();
     }
 

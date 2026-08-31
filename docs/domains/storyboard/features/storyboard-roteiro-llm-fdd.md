@@ -145,12 +145,17 @@ Suposições e restrições:
 3. Serviço valida (base presente, Claude CLI presente, sem job em andamento, parâmetros) e
    inicia job em thread (`JobRegistry` próprio, `_script_registry`).
 4. Dentro do job: monta o brief (produto, vibe, aspect ratio, arco por cena via
-   `scene_arc`), resolve as imagens (`base/base_final.png` + até 3 de `mood/selected/`,
-   teto `prompter.MAX_IMAGES = 4`) e chama `prompter.script(...)` com o preset. O Claude lê
-   as imagens (`--allowedTools Read`) e devolve JSON com as N cenas.
-   [auto-aceito: imagens de contexto = base final + até 3 imagens do mood selecionado, na
-   ordem de arquivo, porque o teto de 4 imagens é contrato vigente do prompter e a base é a
-   imagem obrigatória da etapa]
+   `scene_arc`), resolve as imagens (`base/base_final.png` + até 3 ideias ESCOLHIDAS da galeria
+   em `storyboard/ideas/` + até 3 de `mood/selected/`, teto `prompter.MAX_IMAGES = 4`) e chama
+   `prompter.script(...)` com o preset. O Claude lê as imagens (`--allowedTools Read`) e devolve
+   JSON com as N cenas.
+   [auto-aceito: imagens de contexto = base final + até 3 ideias escolhidas na galeria + até 3
+   do mood selecionado, nessa ORDEM de prioridade (a base nunca sai; ideias antes do mood), na
+   ordem de arquivo dentro de cada grupo, porque o teto de 4 imagens é contrato vigente do
+   prompter e a base é a imagem obrigatória da etapa]
+   [ADR-028: as ideias escolhidas são a costura galeria→roteiro do Card `xhtT5B24` (fotos que o
+   multishot da base gerou e o usuário selecionou); marcações (inpaint, `role:"annotation"`)
+   nunca entram — mesmo invariante da galeria pública (FDD §6 do inpaint-marcação)]
 5. Serviço valida/normaliza a resposta (N cenas, `text` pt-BR truncado em 500, prompt de
    imagem não vazio contendo o rig do preset), grava `storyboard/script.json` (escrita
    atômica, `common/atomic.write_json_atomic`) e encerra o job (`state: done`).
@@ -179,6 +184,8 @@ Suposições e restrições:
 - Regeração: novo `script/generate` com job idle substitui `script.json` inteiro (o anterior
   não é versionado). A sugestão nunca toca `scenes.json`, então nada do usuário se perde.
 - Sem mood selecionado: o job segue só com a base + brief (vibe textual do projeto).
+- Sem ideias escolhidas na galeria (ADR-028): o contexto é o de antes (base + mood) — a costura
+  galeria→roteiro é aditiva e nunca vira pré-requisito.
 
 **Diagrama (sequência resumida)**
 

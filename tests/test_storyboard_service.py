@@ -1049,6 +1049,55 @@ def test_script_runs_with_the_base_alone_when_there_is_no_mood(sb, project, base
     assert calls[0]["images"] == [root / sb.BASE_IMAGE]
 
 
+# ---------- costura galeria→roteiro (ADR-028, [extensão]) ----------
+def test_script_context_includes_selected_gallery_ideas_after_base_before_mood(
+        sb, project, base, root, monkeypatch):
+    """ADR-028 (Card `xhtT5B24`): as ideias ESCOLHIDAS na galeria (fotos do multishot da base) entram
+    no contexto do roteiro — depois da base e antes do mood, no teto de 4 imagens do prompter."""
+    a, b = _two_ideas(sb, project)                       # (ideas/<hash>.png, ideas/<hash>.png), na ordem da galeria
+    make_image(root / "mood" / "selected" / "m0.png")
+    calls = _fake_prompter_script(sb, monkeypatch, [])
+    sb.script_generate(project, count=2)
+    assert _wait_script(sb, project)["state"] == "done"
+    enviadas = calls[0]["images"]
+    assert enviadas[0] == root / sb.BASE_IMAGE, "a base é sempre a 1ª"
+    esperadas_ideias = [Path(a).name, Path(b).name]
+    assert [p.name for p in enviadas[1:3]] == esperadas_ideias, "as ideias escolhidas vêm logo após a base, na ordem da galeria"
+    assert enviadas[1].parent.name == "ideas" and enviadas[2].parent.name == "ideas"
+    assert enviadas[3].name == "m0.png", "o mood preenche o resto, depois das ideias"
+    assert len(enviadas) == sb.prompter.MAX_IMAGES == 4
+    assert all(p.is_file() for p in enviadas)
+
+
+def test_script_caps_gallery_ideas_and_never_drops_the_base(sb, project, base, root, monkeypatch):
+    """ADR-028: muitas ideias escolhidas não empurram a base para fora — o teto `SCRIPT_IDEA_IMAGES`
+    protege a vaga da base, e o mood cede lugar quando as ideias já enchem as 4 imagens."""
+    sb.import_upload(project, [(f"g{i}.png", image_bytes(color=(i, i, i))) for i in range(5)])
+    sb.select_ideas(project, [i["id"] for i in sb.list_ideas(project)["ideas"]])
+    make_image(root / "mood" / "selected" / "m0.png")
+    calls = _fake_prompter_script(sb, monkeypatch, [])
+    sb.script_generate(project, count=2)
+    assert _wait_script(sb, project)["state"] == "done"
+    enviadas = calls[0]["images"]
+    assert enviadas[0] == root / sb.BASE_IMAGE, "a base nunca é empurrada para fora"
+    assert len(enviadas) == sb.prompter.MAX_IMAGES == 4
+    ideias = [p for p in enviadas if p.parent.name == "ideas"]
+    assert len(ideias) == sb.SCRIPT_IDEA_IMAGES == 3, "no máximo 3 ideias entram (teto próprio)"
+    assert "m0.png" not in [p.name for p in enviadas], "sem vaga, o mood fica de fora — ideia tem prioridade"
+
+
+def test_script_context_ignores_unselected_ideas_and_annotations(sb, project, base, root, monkeypatch):
+    """ADR-028: só ideia ESCOLHIDA conta — candidato não selecionado e marcação (inpaint) ficam de
+    fora do contexto (a marcação nunca vira ideia, invariante do FDD §6)."""
+    sb.import_upload(project, [("a.png", image_bytes(color=(1, 2, 3)))])
+    idea = sb.list_ideas(project)["ideas"][0]
+    _annotate(sb, project, (7, 7, 7), idea["id"])                   # marcação (role:"annotation")
+    calls = _fake_prompter_script(sb, monkeypatch, [])
+    sb.script_generate(project, count=1)                            # nada selecionado ainda
+    assert _wait_script(sb, project)["state"] == "done"
+    assert calls[0]["images"] == [root / sb.BASE_IMAGE], "sem seleção, o roteiro segue só com a base"
+
+
 def test_script_registry_is_the_one_the_step_reset_discovers(sb, project, base, studio_env):
     """T2.23 (R5): o registro do roteiro mora no único slot que `reset._registries` conhece."""
     from studio.common import reset
