@@ -622,9 +622,9 @@ def script(images: list[Path], brief: dict, preset: str | None = None, count: in
         parts.append(script_preset_block(preset))
     if images:
         paths = "\n".join(f"- {p}" for p in images)
-        parts.append("First, read these brand image files with the Read tool (the base image comes first, then the "
-                     "mood frames) and keep the product, palette, light and atmosphere of the script faithful to "
-                     f"them:\n{paths}")
+        parts.append("First, read these brand reference image files with the Read tool (the base image comes first, "
+                     "then any chosen storyboard shots, then mood frames) and keep the product, palette, light and "
+                     f"atmosphere of the script faithful to them:\n{paths}")
     parts.append(f"Write EXACTLY {count} scenes. Arc of each scene (decided by the server, keep it as given):\n{plan}")
     parts.append(f"Brief:\n{_brief_text(brief)}")
     parts.append(SCRIPT_MODEL_HINTS.get(model_target, _SCRIPT_MODEL_HINT_FALLBACK))

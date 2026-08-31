@@ -1146,6 +1146,11 @@ SCRIPT_FILE = f"{STEP}/script.json"       # a sugestão vive aqui, fora do scene
 SCRIPT_ACTION = "storyboard.script"       # chave de preset default por ação (ADR-016, gate W3 P2)
 SCRIPT_PRESET_DEFAULT = "documentary-street"
 SCRIPT_MOOD_IMAGES = 3                    # frames do mood que acompanham a base (teto 4 do prompter)
+#: `[extensão]` costura galeria→roteiro (ADR-028): ideias ESCOLHIDAS na galeria do painel 01 (as
+#: fotos que o multishot da base gerou e o usuário selecionou) entram no contexto visual do roteiro,
+#: DEPOIS da base e ANTES do mood. Teto próprio para nunca sozinhas comerem as 4 imagens do prompter
+#: (`MAX_IMAGES`) — sempre sobra espaço para a base; o mood preenche o resto quando cabe.
+SCRIPT_IDEA_IMAGES = 3
 
 #: Modelo alvo do PROMPT DE IMAGEM que o roteiro escreve — v1 só Nano Banana Pro (gate W3, P3).
 #: Fonte única dos ids aceitos e do default; `MODELS` (que tem `gpt_image_2`) continua servindo
@@ -1202,15 +1207,42 @@ def _valid_script_preset(preset: str | None) -> str | None:
         raise Invalid(str(e)) from e
 
 
+def _selected_idea_paths(root: Path) -> list[Path]:
+    """`[extensão]` costura galeria→roteiro (ADR-028): caminhos das ideias ESCOLHIDAS na galeria.
+
+    São as fotos que o multishot da base gerou e o usuário marcou como cena (Card `xhtT5B24`): elas
+    vivem em `storyboard/ideas/` (decisão 7 do lote — só as escolhidas descem para lá). Anotações
+    (`role:"annotation"`, inpaint-marcação) NÃO contam — nunca viram ideia (invariante do FDD §6,
+    igual à galeria pública em `list_ideas`). Ordem fiel ao `candidates.json` para casar com a tela.
+    """
+    idir = root / IDEAS_DIR
+    paths = []
+    for c in _visible(_candidates(root)):
+        if not c.get("selected"):
+            continue
+        p = idir / c["file"]
+        if p.is_file():
+            paths.append(p)
+    return paths
+
+
 def _script_images(root: Path, pid: str) -> list[Path]:
-    """Contexto visual do roteiro: a base da etapa 3 primeiro, depois até 3 frames do mood aplicado.
+    """Contexto visual do roteiro: a base da etapa 3 primeiro, depois as ideias ESCOLHIDAS na
+    galeria do painel 01 e, por fim, até 3 frames do mood aplicado.
+
+    `[extensão]` costura galeria→roteiro (ADR-028): as fotos que o multishot da base gerou e o
+    usuário selecionou (`storyboard/ideas/`) entram DEPOIS da base e ANTES do mood — é o "criar
+    roteiro a partir dessas fotos" do Card `xhtT5B24`. Sem ideias escolhidas o comportamento é o de
+    antes (base + mood), então nada regride para quem não usa a galeria.
 
     O mood selecionado é lido pela função que já é dona dele (`studio/mood/service.py::current`,
     leitura pura de `mood/selected/` ordenada por arquivo) — nada de segunda convenção de caminho
-    aqui. Sem mood selecionado, o roteiro segue só com a base. Teto final: `prompter.MAX_IMAGES`.
+    aqui. A base é sempre a 1ª e o teto final é `prompter.MAX_IMAGES`: por ele a base nunca é
+    empurrada para fora, e ideias/mood disputam as vagas restantes nessa ordem de prioridade.
     """
     from ..mood import service as mood  # import local: evita ciclo entre as etapas
     paths = [root / BASE_IMAGE]
+    paths.extend(_selected_idea_paths(root)[:SCRIPT_IDEA_IMAGES])
     for item in (mood.current(pid).get("selected") or [])[:SCRIPT_MOOD_IMAGES]:
         p = root / "mood" / "selected" / item["file"]
         if p.is_file():
