@@ -31,8 +31,13 @@ Studio.register("mood", (ctx) => {
     $("#mbGrid").innerHTML = boards.length ? boards.map(b => {
       const disabled = !b.count;
       const legenda = `${b.name} · ${b.count} img${b.vibe ? " · " + b.vibe : ""}`;
+      // Mesma galeria da biblioteca global (`ui.moodMosaic`): mostra até 4 fotos do board em
+      // mosaico (curadas, fallback candidatas) em vez de só a capa. `thumbs`/`cover` vêm de
+      // `list_boards` como caminhos relativos sob `/mbfiles/<mbid>/`.
+      const rels = (b.thumbs && b.thumbs.length) ? b.thumbs : (b.cover ? [b.cover] : []);
+      const thumbs = rels.map(rel => `/mbfiles/${encodeURIComponent(b.id)}/${rel}`);
       return `<div class="card ${pick === b.id ? "sel" : ""}${disabled ? " is-empty" : ""}" data-mb="${ui.esc(b.id)}"${disabled ? "" : ' tabindex="0"'} title="${ui.esc(b.name)}">
-        ${b.cover ? `<img loading="lazy" src="/mbfiles/${encodeURIComponent(b.id)}/${ui.esc(b.cover)}" alt="">` : `<span class="mb-nocover">sem imagens</span>`}
+        ${thumbs.length ? ui.moodMosaic(thumbs, {}) : `<span class="mb-nocover">sem imagens</span>`}
         <span class="term">${ui.esc(legenda)}</span></div>`;
     }).join("")
       : `<div class="empty">Nenhum mood board ainda — crie um na biblioteca global. <button type="button" class="link" id="btnGoLibEmpty">Ir para a biblioteca →</button></div>`;

@@ -73,6 +73,16 @@ def test_view_picks_a_board_and_applies_it(client):
     assert "crie um na biblioteca" in js.lower() or "Ir para a biblioteca" in js
 
 
+def test_board_grid_reuses_the_library_photo_mosaic(client):
+    """Painel 01: cada board mostra TODAS as fotos (até 4) no MESMO mosaico da biblioteca
+    global (`ui.moodMosaic` sobre `b.thumbs`), não só a capa — pedido do dono (31/08/2026)."""
+    js = _view(client, "view.js")
+    assert "ui.moodMosaic(" in js, "a grade dos boards reusa o mosaico da biblioteca"
+    assert "b.thumbs" in js, "usa as fotos do board (thumbs), não apenas a capa"
+    # segue mostrando 'sem imagens' quando o board está vazio
+    assert "sem imagens" in js.lower()
+
+
 def test_view_shows_the_current_mood_panel(client):
     """Painel 02: mood atual da campanha (galeria de mood/selected + paleta + vibe)."""
     html = _view(client, "view.html")
