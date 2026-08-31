@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import higgsfield as hf
-from ..common import atomic
+from ..common import atomic, settings
 from ..common import ffmpeg as ff
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
@@ -528,7 +528,11 @@ def start_reframe(pid: str, aspect_ratio: str) -> dict:
     edir = _export_dir(root)
 
     def run(job: dict) -> None:
-        res = hf.generate(REFRAME_MODEL, {"video": str(master), "aspect_ratio": aspect_ratio}, timeout_s=TIMEOUT_S)
+        params = {"video": str(master), "aspect_ratio": aspect_ratio}
+        res = hf.generate(REFRAME_MODEL, params, timeout_s=TIMEOUT_S)
+        # Livro-caixa (ADR-016): o reframe pago gasta crédito real — registra após o sucesso.
+        settings.record_generation(action="export.reframe", model=REFRAME_MODEL, params=params,
+                                   count=1, pid=pid, step="export", job_id=res.get("id"))
         if res.get("raw") is not None:
             (root / "jobs").mkdir(parents=True, exist_ok=True)
             (root / "jobs" / f"export_{res.get('id') or fmt}.json").write_text(

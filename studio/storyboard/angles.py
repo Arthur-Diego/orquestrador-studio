@@ -30,7 +30,7 @@ from pathlib import Path
 from PIL import Image
 
 from .. import higgsfield as hf
-from ..common import atomic, ingest
+from ..common import atomic, ingest, settings
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -472,6 +472,9 @@ def start_generate(pid: str, scene: str, model: str = DEFAULT_MODEL, prompts: li
                 params = {"prompt": prompt, "aspect_ratio": ratio,
                           "image_references": refs, **({"resolution": resolution} if resolution else {})}
                 res = hf.generate(model, params)
+                # Livro-caixa (ADR-016): esta chamada gastou crédito real — registra APÓS o sucesso.
+                settings.record_generation(action="storyboard.angles", model=model, params=params,
+                                           count=1, pid=pid, step="storyboard", job_id=res.get("id"))
                 _save_raw(root, res, f"{pi}_{k}")
                 urls = res.get("urls") or []
                 if not urls:
@@ -500,7 +503,11 @@ def start_upscale(pid: str, scene: str, cand_id: str, model: str = UPSCALE_MODEL
     src_path = root / step / "candidates" / src["file"]
 
     def run(job: dict) -> None:
-        res = hf.generate(model, {"image_references": [str(src_path)]})
+        params = {"image_references": [str(src_path)]}
+        res = hf.generate(model, params)
+        # Livro-caixa (ADR-016): upscale 2x High Fidelity gasta crédito — registra após o sucesso.
+        settings.record_generation(action="storyboard.upscale", model=model, params=params,
+                                   count=1, pid=pid, step="storyboard", job_id=res.get("id"))
         _save_raw(root, res, f"upscale_{cand_id}")
         urls = res.get("urls") or []
         if not urls:

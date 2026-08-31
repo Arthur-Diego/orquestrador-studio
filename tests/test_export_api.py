@@ -175,6 +175,22 @@ def test_reframe_job_replaces_the_format_file(client, svc, studio_env, pid, monk
     assert (studio_env["refs"].project_dir(pid) / "export" / "9x16.mp4").exists()
 
 
+def test_reframe_records_the_spend_in_the_ledger(client, svc, studio_env, pid, monkeypatch):
+    """Livro-caixa (ADR-016): o reframe pago escreve uma linha `export.reframe` no ledger."""
+    from studio.common import settings
+    _need_ffmpeg(svc)
+    master = _master(studio_env, pid)
+    monkeypatch.setattr(svc.hf, "available", lambda: True)
+    monkeypatch.setattr(svc.hf, "status", lambda: {"installed": True, "logged_in": True})
+    monkeypatch.setattr(svc.hf, "generate", lambda model, params, timeout_s=600: {
+        "raw": {"model": model}, "urls": ["https://cdn.example/reframed.mp4"], "id": "job-9"})
+    monkeypatch.setattr(svc.hf, "download", lambda url, dest: shutil.copy(master, dest))
+    assert client.post(f"/api/projects/{pid}/export/reframe", json={"aspect_ratio": "9:16"}).status_code == 200
+    assert _wait(client, pid)["state"] == "done"
+    rows = [r for r in settings.history(pid) if r["action"] == "export.reframe"]
+    assert len(rows) == 1 and rows[0]["step"] == "export"
+
+
 def test_unknown_project_is_404_on_every_export_route(client, svc):
     for method, path, kw in [
         ("get", "/api/projects/nope/export/status", {}),

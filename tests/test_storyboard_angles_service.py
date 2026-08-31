@@ -347,6 +347,32 @@ def test_generate_downloads_and_registers_candidates(shots, studio_env, project,
     assert any("prompt 1/1 imagem 4/4" in line for line in job["log"])
 
 
+def test_generate_records_the_spend_in_the_ledger(shots, studio_env, project, monkeypatch):
+    """Livro-caixa (ADR-016): cada geração paga de ângulo escreve uma linha `storyboard.angles`."""
+    from studio.common import settings
+    shots.prepare_base(project, "cena01")
+    _fake_cli(monkeypatch, shots)
+    shots.start_generate(project, "cena01", "nano_banana_2", ["Bring me another point of view."], count=3)
+    assert _wait(shots, project)["state"] == "done"
+    rows = [r for r in settings.history(project) if r["action"] == "storyboard.angles"]
+    assert len(rows) == 3
+    assert all(r["step"] == "storyboard" and r["model"] == "nano_banana_2" for r in rows)
+
+
+def test_upscale_records_the_spend_in_the_ledger(shots, studio_env, project, monkeypatch):
+    """Livro-caixa (ADR-016): o upscale 2x High Fidelity registra `storyboard.upscale`."""
+    from studio.common import settings
+    shots.prepare_base(project, "cena01")
+    _fake_cli(monkeypatch, shots)
+    shots.start_generate(project, "cena01", "nano_banana_2", ["p"], count=1)
+    assert _wait(shots, project)["state"] == "done"
+    cid = shots.list_candidates(project, "cena01")["candidates"][0]["id"]
+    shots.start_upscale(project, "cena01", cid)
+    assert _wait(shots, project)["state"] == "done"
+    rows = [r for r in settings.history(project) if r["action"] == "storyboard.upscale"]
+    assert len(rows) == 1 and rows[0]["step"] == "storyboard"
+
+
 def test_generate_reports_cli_failure_without_losing_progress(shots, project, monkeypatch):
     shots.prepare_base(project, "cena01")
 
