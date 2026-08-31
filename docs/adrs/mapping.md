@@ -770,6 +770,15 @@ painel 02 intocados), ADR-010 (núcleo intocado) e ADR-018 (galeria de ideias po
 
 ---
 
+**ADR nova: ADR-029** (STORYBOARD) — seletor de histórico Higgsfield no painel de fotos do
+storyboard `[extensão]`. O botão "Importar do histórico Higgsfield" da etapa 4 deixa de importar
+tudo às cegas: `GET .../storyboard/history/preview` lista as mídias do CLI (`higgsfield generate
+list`) com uma `key` estável por URL, o modal-seletor mostra a grade com miniaturas/checkbox e
+`POST .../import/history` ganha o campo `keys` (baixa só as escolhidas). A lógica de preview +
+import seletivo mora em `common/ingest.py` (reaproveitável). Relaciona ADR-002 (só via CLI oficial,
+sem scraping), ADR-004 (não toca em prompts/preset), ADR-010 (só plugin+serviço+ingestão comum) e
+ADR-016 (import não gera crédito; livro-caixa inalterado).
+
 **ADR nova: ADR-028** (HIGGSFIELD) — gate único de login do CLI por `hf.require_cli`. Unifica as
 cinco cópias locais divergentes do gate (`music`/`storyboard`/`animate`/`export`) num só helper que
 levanta `hf.CliUnavailable` (com `installed`) quando o CLI está ausente OU deslogado, traduzido para

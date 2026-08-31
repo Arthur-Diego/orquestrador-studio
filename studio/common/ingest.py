@@ -133,14 +133,43 @@ def import_downloads(root: Path, step: str, folder: str | None = None, since_min
     return {"added": added, "scanned": len(files), "folder": str(folder_p)}
 
 
-def import_history(root: Path, step: str, kind: str = "image", size: int = 50, prompt_filter: str | None = None) -> dict:
-    """Importa mídias do histórico de jobs do CLI (`higgsfield generate list --<kind>`)."""
+def _media_key(url: str) -> str:
+    """Chave estável de uma mídia do histórico — SHA-1 curto da URL sem query (o link assinado
+    muda a cada listagem, mas o caminho do arquivo não). Serve para casar a escolha do usuário
+    no seletor com a URL a baixar, sem depender de índice de posição."""
+    return hashlib.sha1(url.split("?")[0].encode()).hexdigest()[:12]
+
+
+def history_preview(kind: str = "image", size: int = 50, prompt_filter: str | None = None) -> dict:
+    """Lista o histórico de jobs do CLI SEM baixar nada — cada mídia ganha uma `key` estável para
+    o seletor da UI. É o passo de "visualizar e escolher" antes de `import_history_selected`.
+    ADR-002: tudo pela CLI oficial (`higgsfield generate list`), nunca scraping da UI."""
     jobs = hf.history_media(kind, size)
+    items = []
+    for j in jobs:
+        if prompt_filter and prompt_filter.lower() not in (j.get("prompt") or "").lower():
+            continue
+        for url in j["urls"]:
+            items.append({"key": _media_key(url), "url": url, "prompt": j.get("prompt", ""),
+                          "model": j.get("model", ""), "created": j.get("created", ""), "job_id": j.get("id")})
+    return {"items": items, "jobs": len(jobs)}
+
+
+def import_history(root: Path, step: str, kind: str = "image", size: int = 50,
+                   prompt_filter: str | None = None, keys: list[str] | None = None) -> dict:
+    """Importa mídias do histórico de jobs do CLI (`higgsfield generate list --<kind>`).
+
+    `keys` vazio/None mantém o comportamento antigo (importa tudo que casa o filtro). Com `keys`,
+    importa só as mídias escolhidas no seletor (as `key` de `history_preview`)."""
+    jobs = hf.history_media(kind, size)
+    wanted = set(keys) if keys else None
     added = 0
     for j in jobs:
         if prompt_filter and prompt_filter.lower() not in (j.get("prompt") or "").lower():
             continue
         for url in j["urls"]:
+            if wanted is not None and _media_key(url) not in wanted:
+                continue
             try:
                 data = urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=60).read()
             except Exception:

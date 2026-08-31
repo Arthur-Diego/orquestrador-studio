@@ -190,13 +190,59 @@ Studio.register("storyboard", (ctx) => {
           toast(`${r.added} novas de ${r.scanned} imagens recentes`); await refresh();
         } catch (err) { toast(err.message); }
       };
-      m.el.querySelector("#sbBtnHistory").onclick = async () => {
-        m.close();
-        try {
-          const r = await api(url("/import/history"), { method: "POST", body: JSON.stringify({ size: 50 }) });
-          toast(`${r.added} imagens de ${r.jobs} jobs`); await refresh();
-        } catch (err) { toast(err.message); }
+      m.el.querySelector("#sbBtnHistory").onclick = () => { m.close(); historyModal(); };
+    }
+
+    // `[extensão]` seletor de histórico: em vez de importar TODO o histórico às cegas, lista as
+    // gerações da Higgsfield (via CLI, ADR-002) e deixa o usuário escolher quais trazer.
+    async function historyModal() {
+      let preview;
+      try {
+        preview = await api(url("/history/preview?size=50"));
+      } catch (err) { toast(err.message); return; }
+      const items = preview.items || [];
+      const picked = new Set();
+      const gal = items.length
+        ? items.map((it) =>
+            `<div class="card" data-key="${esc(it.key)}" tabindex="0" title="${esc(it.prompt || "")}">
+               <img loading="lazy" src="${esc(it.url)}" alt="">
+               ${it.prompt ? `<span class="term">${esc(it.prompt.slice(0, 60))}</span>` : ""}</div>`).join("")
+        : `<div class="empty">Nenhuma geração no histórico Higgsfield (gere na UI e volte aqui).</div>`;
+      const m = ui.modal({
+        title: "Histórico Higgsfield — escolher o que importar",
+        subtitle: `${items.length} mídias de ${preview.jobs} jobs. Clique para marcar/desmarcar; só as marcadas entram no storyboard.`,
+        html: `<div class="import-row" style="margin-bottom:8px">
+            <button type="button" id="sbHistAll" class="ghost">Selecionar tudo</button>
+            <span class="fine" id="sbHistCount">0 escolhidas</span>
+          </div>
+          <div id="sbHistGrid" class="gallery sm">${gal}</div>`,
+        actions: [
+          { label: "Importar escolhidas", kind: "primary", onClick: (mm) => importHistorySelected(picked, mm) },
+        ],
+      });
+      const count = () => { m.el.querySelector("#sbHistCount").textContent = `${picked.size} escolhidas`; };
+      m.el.querySelector("#sbHistGrid").addEventListener("click", (e) => {
+        const card = e.target.closest(".card[data-key]"); if (!card) return;
+        const k = card.dataset.key;
+        picked.has(k) ? picked.delete(k) : picked.add(k);
+        card.classList.toggle("sel"); count();
+      });
+      m.el.querySelector("#sbHistAll").onclick = () => {
+        const cards = [...m.el.querySelectorAll(".card[data-key]")];
+        const all = picked.size === cards.length;
+        picked.clear();
+        cards.forEach((c) => { c.classList.toggle("sel", !all); if (!all) picked.add(c.dataset.key); });
+        count();
       };
+    }
+
+    async function importHistorySelected(picked, m) {
+      if (!picked.size) { toast("Marque ao menos uma mídia."); return; }
+      try {
+        const r = await api(url("/import/history"), { method: "POST", body: JSON.stringify({ size: 50, keys: [...picked] }) });
+        m.close();
+        toast(`${r.added} imagens importadas`); await refresh();
+      } catch (err) { toast(err.message); }
     }
 
     async function loadIdeas() {

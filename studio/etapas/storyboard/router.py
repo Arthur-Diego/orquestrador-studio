@@ -37,6 +37,9 @@ class DownloadsReq(BaseModel):
 class HistoryReq(BaseModel):
     size: int = 50
     prompt_filter: str | None = None
+    #: `[extensão]` seletor de histórico: quando presente, importa só as mídias escolhidas (as
+    #: `key` devolvidas por `GET .../history/preview`). Vazio/ausente = comportamento antigo (tudo).
+    keys: list[str] | None = None
 
 
 class SelectReq(BaseModel):
@@ -186,6 +189,22 @@ def storyboard_downloads(pid: str, req: DownloadsReq):
     return _guard(sb.import_downloads, pid, req.folder, req.since_minutes, req.prompt)
 
 
+@router.get("/api/projects/{pid}/storyboard/history/preview")
+def storyboard_history_preview(pid: str, size: int = 50, prompt_filter: str | None = None):
+    """Lista o histórico Higgsfield (via CLI) para o seletor da UI, sem baixar nada. O usuário
+    marca quais mídias quer e chama `import/history` com as `key` escolhidas.
+
+    Caminho SUAVE (ADR-028): só exige o binário instalado; o gate duro de login vive na geração
+    paga, não no histórico (o histórico é o próprio escape "gere na UI e importe aqui")."""
+    refs.project_dir(pid)
+    if not hf.available():
+        raise HTTPException(409, hf.NO_CLI_MSG)
+    try:
+        return sb.preview_history(pid, size, prompt_filter)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
+
+
 @router.post("/api/projects/{pid}/storyboard/import/history")
 def storyboard_history(pid: str, req: HistoryReq | None = None):
     refs.project_dir(pid)
@@ -193,7 +212,7 @@ def storyboard_history(pid: str, req: HistoryReq | None = None):
     if not hf.available():   # histórico é caminho SUAVE: só exige o binário (o gate duro é no generate)
         raise HTTPException(409, hf.NO_CLI_MSG)
     try:
-        return sb.import_history(pid, req.size, req.prompt_filter)
+        return sb.import_history(pid, req.size, req.prompt_filter, req.keys)
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from e
 
