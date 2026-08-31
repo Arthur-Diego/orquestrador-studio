@@ -251,18 +251,7 @@ def test_upscale_route_404_for_unknown_candidate(client, project, with_cli):
     assert client.post(f"{scene}/upscale", json={"id": "naoexiste"}).status_code == 404
 
 
-# ---------- wave 2: guia na tela e correções da auditoria (5.1–5.8) ----------
-def test_view_follows_the_wave2_screen_contract(client):
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    assert '<section id="guide" class="guide"></section>' in html
-    assert "Etapa 4 · aulas 010 + 011" in html
-    assert 'Studio.register("storyboard"' in js
-    assert 'renderGuide("storyboard")' in js
-    # A etapa 4 não gera/upscala pelo CLI pela tela — não há poll, `destroy()` continua.
-    assert "destroy()" in js and "ui.poll(" not in js
-
-
+# ---------- ângulos por cena: correções da auditoria (API preservada, ADR-018) ----------
 def test_promote_candidate_to_scene_base_over_http(client, project):
     """5.2: POST .../base {source:"candidate", id} promove o resultado a base da cena."""
     scene = f"/api/projects/{project}/storyboard/angles/scenes/cena01"
@@ -273,8 +262,6 @@ def test_promote_candidate_to_scene_base_over_http(client, project):
     assert r.status_code == 200 and r.json()["source"] == "candidate" and r.json()["candidate"] == cid
     assert client.post(f"{scene}/base", json={"source": "candidate"}).status_code == 422
     assert client.post(f"{scene}/base", json={"source": "candidate", "id": "zzz"}).status_code == 404
-    assert "Usar como base da cena" in client.get("/steps/storyboard/view.html").text \
-        or "Usar como base da cena" in client.get("/steps/storyboard/view.js").text
 
 
 def test_prompt_route_accepts_a_camera_preset(client, project):
@@ -310,73 +297,24 @@ def test_select_route_returns_the_upscale_warning_and_the_document(client, proje
     assert ok["warning"] is None
 
 
-def test_screen_shows_the_lesson_focus_examples_and_the_base_order(client, project):
-    """5.5 e 5.2: exemplos de enquadramento (agora no `title`) e a ordem "base primeiro"."""
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    assert "close no rosto" in html
-    assert "Usar como base da cena" in js
+def test_prompts_route_exposes_the_lesson_focus_examples(client, project):
+    """A rota de prompts dos ângulos publica os exemplos de enquadramento da aula 011 (foco)."""
     body = client.get(f"/api/projects/{project}/storyboard/angles/scenes/cena01/prompts").json()
     assert any("rosto" in e for e in body["focus_examples"])
 
 
-# ---------- wave 3: redesign da tela (ADH-OS-20260826-05) ----------
-def test_view_uses_the_shell_catalog_after_the_redesign(client):
-    """Wave 4: DOIS painéis (01 cenas, 02 cena aberta), sem `details.lesson`, sem painel do produto."""
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    for n in ("01", "02", "03", "04"):
-        assert f'<span class="pn">{n}</span>' in html, n
-    assert html.count('<span class="pn">') == 4, "ideação (01/02) + ângulos (03/04) na etapa fundida"
-    assert '<details class="lesson">' not in html, "regra 4 da wave 4: `details` de aula só na etapa 1"
-    assert 'id="shotsPalette" class="palette sm' in html
-    assert '<div id="shotsGallery" class="gallery sm">' in html
-    assert '<p class="note">' in html
-    assert "CARD_BTN" not in js, "o botão do tile é posicionado por CSS escopado, não por style inline"
-    # A cena do produto (aula 013) virou um card do grid do painel 01, sem galeria própria.
-    assert "prodGallery" not in html and "prodGallery" not in js
-    assert '"produto"' in js and 'id="prodStatus"' not in html
-
-
-def test_screen_dropped_the_paid_cli_path(client):
-    """Wave 4 (5.22/5.28/5.32): CLI e controles de câmera saem da TELA; as rotas ficam."""
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    for termo in ("Gerar via CLI", "Upscale do último escolhido", "confirmCost", "hfChip",
-                  "promptCamera", "promptLens", "promptAperture", "promptRealism",
-                  "shotsRatio", "shotsWarn", "btnShotsReload", "sceneText", "sh-subhead"):
-        assert termo not in html and termo not in js, termo
+def test_upscale_route_is_preserved_for_the_new_view(client):
+    """O motor de ângulos (upscale) continua exposto — a tela nova o reusa (ADR-018)."""
     paths = client.get("/openapi.json").json()["paths"]
     assert paths.get("/api/projects/{pid}/storyboard/angles/scenes/{scene}/upscale")
 
 
-def test_prototype_shapes_of_the_wave4_screen(client):
-    """Wave 4: paleta no cabeçalho, chip/checkbox/Salvar no `.panel-head`, builder de uma linha."""
+def test_new_view_registers_the_prescript_flow(client):
+    """A tela nova (ADR-018) registra a etapa e dirige o fluxo por pré-roteiro."""
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    head = html.split('<span class="pn">04</span>', 1)[1].split("</div>\n  </div>", 1)[0]
-    for ident in ("shotsCounts", "shotsUpscaled", "btnShotsSave"):
-        assert ident in head, ident
-    assert '<div class="row wrap sh-builder" id="shotsBuilder">' in html
-    assert '<div id="shotsPrompts" class="prompts one hidden">' in html, "o prompt só aparece após o clique"
-    assert '<div class="prompt sm">' in js and '<p class="txt"' in js
-    assert 'class="upcount' in js and 'chip sm' not in js, "o contador de upscale é texto puro (5.16)"
-    assert '<span class="src">' not in js, "o selo de origem saiu dos tiles (5.37)"
-    assert "Studio.ui.modal" in js.replace("ui.modal", "Studio.ui.modal")
-
-
-def test_scene_cards_and_tiles_follow_the_prototype(client):
-    """Wave 3: cenas como `.rowcard`, tiles com `data-ord` e selo `span.up`."""
-    js = client.get("/steps/storyboard/view.js").text
-    assert 'class="rowcard col pick' in js, "card de cena usa o `.rowcard.col`/.pick do shell"
-    assert 'data-ord=' in js, "o check do tile escolhido vira o número da ordem"
-    assert '<span class="up' in js
-    assert 'class="lbl">paleta do mood' in js
-
-
-def test_scene_title_keeps_the_panel_number_outside(client):
-    """`#sceneTitle` é reescrito por textContent: o `.pn` fica fora dele."""
-    html = client.get("/steps/storyboard/view.html").text
-    assert '<span class="pn">04</span><span id="sceneTitle">' in html
-    # Wave 4 (5.23): o texto da cena virou `title` do card, não uma linha abaixo do título.
-    assert 'id="sceneText"' not in html
+    assert '<section id="guide" class="guide"></section>' in html
+    assert 'Studio.register("storyboard"' in js
+    assert 'renderGuide' in js or 'ctx.guide()' in js
+    # o fluxo novo tem os painéis de sementes/pré-roteiro/cenas
+    assert 'id="sbSeeds"' in html and 'id="sbPrescript"' in html and 'id="sbScenes"' in html

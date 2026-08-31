@@ -14,8 +14,8 @@ SOON = [
     {"id": "base",      "n": 3,  "title": "Imagem base",       "aula": "009",
      "desc": "Produto na situação da referência, rótulo próprio, upscale."},
     {"id": "storyboard", "n": 4, "title": "Storyboard",        "aula": "010+011",
-     "desc": "Cenas em texto + vários ângulos por cena: ideias a partir da base, várias imagens por "
-             "cena (upload, prompt de ângulo, escolher/ordenar) e a cena do produto."},
+     "desc": "Guiado por pré-roteiro: fotos-semente + lista de cenas (Claude), e por cena "
+             "semente → prompt realista → foto → multishot → frames ordenados (ADR-018)."},
     {"id": "animate",   "n": 5,  "title": "Animação",          "aula": "012",
      "desc": "Image-to-video por take, start/end frame, troca de modelo após falhas."},
     {"id": "music",     "n": 6,  "title": "Trilha",            "aula": "013",

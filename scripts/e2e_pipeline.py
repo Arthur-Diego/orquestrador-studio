@@ -128,21 +128,16 @@ def run(client, projects_dir: Path, do_reset: bool = True) -> tuple[list[str], l
         api("post", f"/api/projects/{pid}/base/select", json={"id": bc[-1]["id"]})
     check("etapa 3 (base): base_final.png gerado", (root / "base" / "base_final.png").exists())
 
-    # ---- Etapa 4 · storyboard (5 cenas) ----
-    api("post", f"/api/projects/{pid}/storyboard/import/upload",
-        files=[("files", ("idea.png", png((200, 40, 40)), "image/png"))])
-    ideas = api("get", f"/api/projects/{pid}/storyboard/candidates").json()
-    iid = ideas[0]["id"] if isinstance(ideas, list) and ideas else None
-    if iid:
-        api("post", f"/api/projects/{pid}/storyboard/candidates/select", json={"ids": [iid]})
-    scenes = [{"id": f"cena{i:02d}", "n": i, "text": t, "image": None} for i, t in enumerate(
-        ["Close no produto na nevasca", "A lata gigante aparece", "A corda no chão",
-         "Puxa a corda", "A lata cai e inunda"], 1)]
-    api("put", f"/api/projects/{pid}/storyboard/scenes", json={"scenes": scenes})
-    api("post", f"/api/projects/{pid}/storyboard/render", expect=(200, 201, 422))
+    # ---- Etapa 4 · storyboard guiado por pré-roteiro (ADR-018) ----
+    # Sem Claude/rede: grava o pré-roteiro direto pela API de edição (PUT) em vez de gerar por LLM.
+    # (a geração por Claude e as fotos-semente/foto por CLI são cobertas em test_storyboard_flow.py.)
+    scenes = [{"title": t.split()[0], "text": t, "arc": a} for t, a in [
+        ("Close no produto na nevasca", "comeco"), ("A lata gigante aparece", "descoberta"),
+        ("A corda no chão", "descoberta"), ("Puxa a corda", "acao"), ("A lata cai e inunda", "desfecho")]]
+    api("put", f"/api/projects/{pid}/storyboard/prescript", json={"scenes": scenes}, expect=(200, 201))
     scenes_ok = (root / "storyboard" / "scenes.json").exists() and len(
         json.loads((root / "storyboard" / "scenes.json").read_text())["scenes"]) == 5
-    check("etapa 4 (storyboard): scenes.json com 5 cenas", scenes_ok)
+    check("etapa 4 (storyboard): pré-roteiro com 5 cenas", scenes_ok)
 
     # ---- Etapa 4 · ângulos por cena (aula 011, absorvida na etapa 4 — ADR-015) ----
     r = api("get", f"/api/projects/{pid}/storyboard/angles/scenes")

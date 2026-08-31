@@ -21,144 +21,172 @@ router = APIRouter(tags=["storyboard"])
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
-class InstructionReq(BaseModel):
-    kind: str = "edit"
-    text: str
+# ==========================================================================================
+# Fluxo NOVO guiado por pré-roteiro (ADR-018): base → sementes + pré-roteiro → por cena
+# (semente → prompt realista → foto → frames → ordenar). Reaproveita o motor de ângulos
+# (`angles.py`) para os frames e o contrato de saída.
+# ==========================================================================================
+class SeedsReq(BaseModel):
     count: int = 4
 
 
-class DownloadsReq(BaseModel):
-    folder: str | None = None
-    since_minutes: int = 120
-    prompt: str = ""
+class PrescriptGenReq(BaseModel):
+    n_scenes: int = 4
 
 
-class HistoryReq(BaseModel):
-    size: int = 50
-    prompt_filter: str | None = None
-
-
-class SelectReq(BaseModel):
-    ids: list[str]
-
-
-class SceneIn(BaseModel):
+class SceneEdit(BaseModel):
+    title: str | None = None
     text: str = ""
-    image: str | None = None
+    arc: str | None = None
 
 
-class ScenesReq(BaseModel):
-    scenes: list[SceneIn]
+class PrescriptSaveReq(BaseModel):
+    scenes: list[SceneEdit]
 
 
-class GenerateReq(BaseModel):
-    model: str = "nano_banana_2"
-    kind: str = "edit"
-    text: str
+class SeedChoiceReq(BaseModel):
+    seed_id: str | None = None
+
+
+class PromptSaveReq(BaseModel):
+    prompt: str
+    negative: str = ""
+
+
+class FramesReq(BaseModel):
     count: int = 4
-    source_id: str | None = None
+
+
+class OrderReq(BaseModel):
+    shots: list[dict] = []
 
 
 def _guard(fn, *args, **kwargs):
-    """Traduz o vocabulário de erros do serviço para HTTP (422 pedido inválido, 409 pré-requisito)."""
+    """Matriz de erros do fluxo novo: Invalid/ValueError→422, LookupError→404, Precondition/RuntimeError→409."""
     try:
         return fn(*args, **kwargs)
-    except sb.Invalid as e:
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except (sb.Invalid, ValueError) as e:
         raise HTTPException(422, str(e)) from e
-    except sb.Precondition as e:
+    except (sb.Precondition, RuntimeError) as e:
         raise HTTPException(409, str(e)) from e
 
 
-# ---------- estado e instruções ----------
+# ---------- estado ----------
 @router.get("/api/projects/{pid}/storyboard")
 def storyboard_status(pid: str):
+    refs.project_dir(pid)
     return sb.status(pid)
 
 
-@router.get("/api/projects/{pid}/storyboard/instructions")
-def storyboard_presets(pid: str):
+@router.get("/api/projects/{pid}/storyboard/overview")
+def storyboard_overview(pid: str):
     refs.project_dir(pid)
-    return sb.presets()
-
-
-@router.post("/api/projects/{pid}/storyboard/instructions")
-def storyboard_instruction(pid: str, req: InstructionReq):
-    return _guard(sb.build_instruction, pid, req.kind, req.text, req.count)
-
-
-# ---------- importação das ideias geradas na UI ----------
-@router.post("/api/projects/{pid}/storyboard/import/upload")
-async def storyboard_upload(pid: str, files: list[UploadFile] = File(...), prompt: str = Form("")):  # noqa: B008
-    refs.project_dir(pid)
-    payload = []
-    for f in files:
-        data = await f.read()
-        if len(data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, f"{f.filename}: arquivo acima de 25 MB")
-        payload.append((f.filename or "upload.png", data))
-    return sb.import_upload(pid, payload, prompt)
-
-
-@router.post("/api/projects/{pid}/storyboard/import/downloads")
-def storyboard_downloads(pid: str, req: DownloadsReq):
-    return _guard(sb.import_downloads, pid, req.folder, req.since_minutes, req.prompt)
-
-
-@router.post("/api/projects/{pid}/storyboard/import/history")
-def storyboard_history(pid: str, req: HistoryReq | None = None):
-    refs.project_dir(pid)
-    req = req or HistoryReq()
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
-    if not hf.status().get("logged_in"):
-        raise HTTPException(409, "CLI da Higgsfield sem login (higgsfield auth login)")
-    try:
-        return sb.import_history(pid, req.size, req.prompt_filter)
-    except RuntimeError as e:
-        raise HTTPException(502, str(e)) from e
-
-
-@router.get("/api/projects/{pid}/storyboard/candidates")
-def storyboard_candidates(pid: str):
-    return sb.list_ideas(pid)
-
-
-@router.post("/api/projects/{pid}/storyboard/candidates/select")
-def storyboard_select(pid: str, req: SelectReq):
-    return _guard(sb.select_ideas, pid, req.ids)
-
-
-# ---------- cenas e storyboard.md ----------
-@router.get("/api/projects/{pid}/storyboard/scenes")
-def storyboard_scenes(pid: str):
-    return sb.load_scenes(pid)
-
-
-@router.put("/api/projects/{pid}/storyboard/scenes")
-def storyboard_save_scenes(pid: str, req: ScenesReq):
-    return _guard(sb.save_scenes, pid, [s.model_dump() for s in req.scenes])
-
-
-@router.post("/api/projects/{pid}/storyboard/render")
-def storyboard_render(pid: str):
-    return _guard(sb.render, pid)
-
-
-# ---------- alternativa paga pelo CLI (ideação) ----------
-@router.post("/api/projects/{pid}/storyboard/cost")
-def storyboard_cost(pid: str, req: GenerateReq):
-    return _guard(sb.cost, pid, req.model, req.kind, req.text, req.count, req.source_id)
-
-
-@router.post("/api/projects/{pid}/storyboard/generate")
-def storyboard_generate(pid: str, req: GenerateReq):
-    return _guard(sb.start_generate, pid, req.model, req.kind, req.text, req.count, req.source_id)
+    return sb.scenes_overview(pid)
 
 
 @router.get("/api/projects/{pid}/storyboard/job")
 def storyboard_job(pid: str):
     refs.project_dir(pid)
     return sb.job_status(pid)
+
+
+# ---------- (b) fotos-semente: 1º multishot da base ----------
+@router.get("/api/projects/{pid}/storyboard/seeds")
+def storyboard_seeds(pid: str):
+    refs.project_dir(pid)
+    return sb.seeds_list(pid)
+
+
+@router.post("/api/projects/{pid}/storyboard/seeds/cost")
+def storyboard_seeds_cost(pid: str, req: SeedsReq | None = None):
+    return _guard(sb.seeds_cost, pid, (req or SeedsReq()).count)
+
+
+@router.post("/api/projects/{pid}/storyboard/seeds/generate")
+def storyboard_seeds_generate(pid: str, req: SeedsReq | None = None):
+    _cli_ready()
+    return _guard(sb.seeds_generate, pid, (req or SeedsReq()).count)
+
+
+# ---------- (b) pré-roteiro ----------
+@router.get("/api/projects/{pid}/storyboard/prescript")
+def storyboard_prescript(pid: str):
+    refs.project_dir(pid)
+    return sb.get_prescript(pid)
+
+
+@router.post("/api/projects/{pid}/storyboard/prescript/generate")
+def storyboard_prescript_generate(pid: str, req: PrescriptGenReq | None = None):
+    return _guard(sb.generate_prescript, pid, (req or PrescriptGenReq()).n_scenes)
+
+
+@router.put("/api/projects/{pid}/storyboard/prescript")
+def storyboard_prescript_save(pid: str, req: PrescriptSaveReq):
+    return _guard(sb.save_prescript, pid, [s.model_dump() for s in req.scenes])
+
+
+# ---------- (c) semente da cena ----------
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/seed")
+def scene_seed(pid: str, scene: str, req: SeedChoiceReq):
+    return _guard(sb.set_scene_seed, pid, scene, req.seed_id)
+
+
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/seed/upload")
+async def scene_seed_upload(pid: str, scene: str, file: UploadFile = File(...)):  # noqa: B008
+    (name, data), = await _payload([file])
+    return _guard(sb.set_scene_seed, pid, scene, None, (name, data))
+
+
+# ---------- (d) prompt realista da cena ----------
+@router.get("/api/projects/{pid}/storyboard/scenes/{scene}/prompt")
+def scene_prompt_get(pid: str, scene: str):
+    return _guard(sb.scene_prompt, pid, scene, False)
+
+
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/prompt")
+def scene_prompt_generate(pid: str, scene: str):
+    return _guard(sb.scene_prompt, pid, scene, True)
+
+
+@router.put("/api/projects/{pid}/storyboard/scenes/{scene}/prompt")
+def scene_prompt_save(pid: str, scene: str, req: PromptSaveReq):
+    return _guard(sb.save_scene_prompt, pid, scene, req.prompt, req.negative)
+
+
+# ---------- (e) foto da cena ----------
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/photo/cost")
+def scene_photo_cost(pid: str, scene: str):
+    return _guard(sb.scene_photo_cost, pid, scene)
+
+
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/photo/generate")
+def scene_photo_generate(pid: str, scene: str):
+    _cli_ready()
+    return _guard(sb.scene_photo_generate, pid, scene)
+
+
+# ---------- (f)/(g) frames da cena e ordenação ----------
+@router.get("/api/projects/{pid}/storyboard/scenes/{scene}/candidates")
+def scene_candidates(pid: str, scene: str):
+    return _guard(sb.scene_candidates, pid, scene)
+
+
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/frames/cost")
+def scene_frames_cost(pid: str, scene: str, req: FramesReq | None = None):
+    return _guard(sb.frames_cost, pid, scene, (req or FramesReq()).count)
+
+
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/frames/generate")
+def scene_frames_generate(pid: str, scene: str, req: FramesReq | None = None):
+    _cli_ready()
+    return _guard(sb.frames_generate, pid, scene, (req or FramesReq()).count)
+
+
+@router.post("/api/projects/{pid}/storyboard/scenes/{scene}/order")
+def scene_order(pid: str, scene: str, req: OrderReq):
+    return _guard(sb.order_frames, pid, scene, req.shots)
 
 
 # ==========================================================================================

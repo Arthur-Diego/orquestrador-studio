@@ -88,9 +88,12 @@ def test_confirm_cost_still_precedes_paid_generations(client):
         assert js.index("confirmCost(") < js.index("progressJob("), step
 
 
-def test_deterministic_generators_do_not_open_a_modal(client):
-    """Storyboard: "Montar instrução" e "Gerar prompt" (ângulos) são determinísticos: sem modal."""
-    for step in ("storyboard",):
-        js = _view(client, step)
-        assert "ui.progress(" not in js, f"{step} não chama o bot — não deve abrir o modal de fases"
-        assert "progressJob(" not in js, f"{step} não roda job desta etapa pelo CLI"
+def test_storyboard_uses_progress_for_the_bot_and_confirmcost_before_paid_jobs(client):
+    """Storyboard novo (ADR-018): o pré-roteiro e o prompt realista chamam o Claude → `ui.progress`;
+    as gerações pagas (sementes, foto, frames) passam por `confirmCost` antes do `progressJob`."""
+    js = _view(client, "storyboard")
+    # o bot (Claude) usa o modal de fases honesto
+    assert "ui.progress(" in js, "o pré-roteiro/prompt chamam o Claude e devem abrir o modal de fases"
+    # toda geração paga confirma o custo ANTES de rodar o job
+    assert "ui.confirmCost(" in js and "progressJob(" in js
+    assert js.index("confirmCost(") < js.index("progressJob("), "confirmCost vem antes do progressJob"

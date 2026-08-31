@@ -1,499 +1,436 @@
-"""Etapa 4 — Storyboard (aula 010), em "modo UI":
+"""Etapa 4 — Storyboard guiado por PRÉ-ROTEIRO (aulas 010/011), reescrita `[extensão]` (ADR-018).
 
-1. a imagem base da etapa 3 vira matéria-prima de ideação: Draw to Edit (o usuário desenha na
-   interface da Higgsfield), edições **uma instrução por vez** e Multi Shot para outros ângulos;
-2. o Studio monta a instrução (em inglês, aula 007) e diz onde colar; o usuário gera na UI
-   (ilimitado) — 4 gerações quando está incerto, 1 quando é só um tweak;
-3. os resultados são importados (upload, pasta Downloads, histórico do CLI) como candidatos e as
-   ideias escolhidas são copiadas para `storyboard/ideas/`;
-4. a história vira ~5 cenas em texto (`storyboard/scenes.json`) e um `storyboard/storyboard.md`
-   com as cenas em ordem — o substituto local do documento que o instrutor escreve na aula.
+Substitui totalmente o storyboard antigo (ideação por Draw-to-Edit + cenas em texto à mão). O
+fluxo novo, repetido até todas as cenas ficarem cheias:
 
-O que a aula não ensina fica de fora: nada de roteiro por LLM, shotlist ou ângulos por cena
-nesta mesma etapa (ver `angles.py`, ADR-015). Desenhar continua sendo do usuário, na interface
-da Higgsfield (ADR-002).
+  a. imagem-base (etapa 3) — matéria-prima;
+  b. 1º multishot da base (fotos-semente) e, no mesmo momento, o Claude lê a base + as sementes e
+     propõe a lista ordenada de cenas em texto (arco começo→descoberta→ação→desfecho; editável);
+  c. escolher a semente de cada cena — sugerida pelo pré-roteiro ou manualmente;
+  d. prompt realista via skill (`/generate_realistic_prompt_images`, escolhas fixadas), grátis;
+  e. gerar a foto da cena no Higgsfield a partir desse prompt + a semente (≈2 créditos);
+  f. novo multishot da foto gerada → esses frames compõem a cena;
+  g. ordenar os frames arrastando; sem limite de fotos por cena.
+
+Entre cenas = ordem do pré-roteiro; dentro da cena = drag-and-drop. O CONTRATO DE SAÍDA
+(`storyboard/storyboard.json`) que a etapa de animação consome é mantido intacto — os frames
+ordenados por cena continuam vindo de `angles.select_shots`/`angles.write_storyboard`.
+
+Reuso: as fotos-semente e os frames da cena usam o componente `common/multishot` (ADR-017); a
+base de cada cena (`storyboard/<cena>/base.png`) é a FOTO GERADA no passo (e), e os passos (f)/(g)
+reaproveitam o motor de ângulos (`angles.py`, ADR-015). O pré-roteiro e o prompt realista usam o
+Claude (`common/prescript`, ADR-018), sempre com fallback determinístico.
 """
 from __future__ import annotations
 
 import json
 import logging
-import re
-import shutil
 from datetime import datetime
 from pathlib import Path
 
 from .. import higgsfield as hf
-from ..common import ingest
-from ..common.jobs import JobRegistry
+from ..common import ingest, multishot, prescript, settings
 from ..refs.service import project_dir
-from .angles import registry  # noqa: F401
-
-# Re-export do registry de jobs dos ângulos (ADR-015): o serviço de ideação e o de ângulos são a
-# mesma etapa 4. O reset (`studio/common/reset.py._registries`) descobre os registros da etapa
-# procurando `_registry`/`registry` neste módulo, então o registry dos ângulos (`registry`, importado
-# acima) precisa aparecer aqui.
+from . import angles
+from .angles import registry  # noqa: F401  (reexport p/ o reset — ADR-015)
 
 log = logging.getLogger("studio.storyboard")
 
 STEP = "storyboard"
 BASE_IMAGE = "base/base_final.png"
-IDEAS_DIR = f"{STEP}/ideas"
-MD_FILE = f"{STEP}/storyboard.md"
+SEEDS_STEP = f"{STEP}/seeds"
+PRESCRIPT_FILE = f"{STEP}/prescript.json"
+SCENES_FILE = f"{STEP}/scenes.json"
 
-DEFAULT_SCENES = 5
-MAX_SCENES = 10
-MAX_TEXT = 300          # instrução de geração
-MAX_SCENE_TEXT = 500    # texto de uma cena
-COUNTS = {"uncertain": 4, "tweak": 1}
-SUFFIX = "Keep everything else identical, realistic."
+DEFAULT_SEEDS = 4
+DEFAULT_SCENES = prescript.DEFAULT_SCENES
+ARC = prescript.ARC
+MAX_SCENES = prescript.MAX_SCENES
 
-# A aula 010 termina em "selecionar, fazer upscale, corrigir elementos"; no Studio o upscale mora
-# na seção de ângulos desta mesma etapa (aula 011, ADR-015) — feito depois de escolher os frames.
-UPSCALE_NOTE = "O upscale acontece na seção de ângulos (aula 011) desta etapa, depois de escolher os frames."
-
-# Modelos do caminho pago (CLI). A aula e o plano só citam o Nano Banana; o GPT Image 2 é
-# alternativa aprovada na wave 2 e entra marcada `[extensão]` (auditoria 4.4), nunca como padrão.
-MODELS = [
-    {"id": "nano_banana_2", "label": "Nano Banana Pro", "default": True},
-    {"id": "gpt_image_2", "label": "GPT Image 2 [extensão]", "default": False},
-]
-
-# Aula 010: a história é organizada em "começo, descoberta, ação e desfecho". Com ~5 cenas a ação
-# ocupa o miolo; o Studio só sugere o momento de cada cena (o texto continua sendo do usuário).
-SCENE_ARC = [
-    {"id": "comeco", "label": "começo",
-     "hint": "onde a história começa: o cenário e o produto em cena"},
-    {"id": "descoberta", "label": "descoberta",
-     "hint": "o personagem descobre o produto (ou o problema que ele resolve)"},
-    {"id": "acao", "label": "ação",
-     "hint": "o que acontece de fato: o movimento, o esforço, o clímax da cena"},
-    {"id": "desfecho", "label": "desfecho",
-     "hint": "como a história fecha: o produto entregue, a recompensa"},
-]
-
-# Os três modos de ideação da aula 010. `cli` marca os que têm equivalente no CLI da Higgsfield:
-# Draw to Edit depende do desenho feito na interface, então não tem (plano-higgsfield §2).
-KINDS = [
-    {"kind": "draw_to_edit", "label": "Draw to Edit", "cli": False,
-     "ui_hint": "Na Higgsfield, abra a imagem base, desenhe a ideia e cole a instrução."},
-    {"kind": "edit", "label": "Edição (uma instrução)", "cli": True,
-     "ui_hint": "Use a última imagem como referência e cole uma única instrução."},
-    {"kind": "multishot", "label": "Multi Shot", "cli": True,
-     "ui_hint": "Selecione a imagem e peça outro ponto de vista."},
-]
-KIND_IDS = {k["kind"] for k in KINDS}
-CLI_KINDS = {k["kind"] for k in KINDS if k["cli"]}
-
-# Fórmulas literais da aula 010, em inglês (aula 007); o pt-BR fica no label.
-PRESETS = [
-    {"kind": "edit", "label": "Menor e mais realista", "text": "Make the climber even smaller and more realistic"},
-    {"kind": "edit", "label": "Eliminar personagem da direita", "text": "Remove the small character on the right side"},
-    {"kind": "edit", "label": "Inpaint: corda proporcional",
-     "text": "There is a rope hanging from the top of the can down to the ground; make it thinner, proportional to the character and realistic"},
-    {"kind": "multishot", "label": "Close no personagem", "text": "a close-up on the character"},
-]
-
-_registry = JobRegistry()
-_NUMBERED = re.compile(r"\b\d+[.)]\s")
-
-# Verbos que abrem uma edição na aula 010 ("make it smaller", "remove the character", "add a rope").
-# Servem à HEURÍSTICA de "uma instrução por vez": duas frases começando com um deles são dois
-# pedidos; "Make him smaller. Realistic." é um pedido só (auditoria 4.6).
-IMPERATIVES = {
-    "add", "adjust", "blur", "brighten", "bring", "change", "convert", "crop", "darken", "delete",
-    "draw", "duplicate", "eliminate", "enlarge", "erase", "expand", "extend", "fill", "fix",
-    "flip", "follow", "generate", "give", "hide", "increase", "inpaint", "keep", "lower", "make",
-    "move", "paint", "place", "put", "raise", "reduce", "remove", "render", "replace", "reposition",
-    "resize", "rotate", "set", "shift", "show", "shrink", "swap", "transform", "turn", "zoom",
-}
+#: Nota de upscale reaproveitada pelo guia (aula 011).
+UPSCALE_NOTE = ("Aula 011: faça upscale de cada frame antes de virar vídeo (etapa 5).")
 
 
 class Invalid(ValueError):
-    """Pedido inválido — vira 422 no router."""
+    """422 — entrada inválida."""
 
 
 class Precondition(RuntimeError):
-    """Pré-requisito ausente (imagem base, CLI, job em andamento) — vira 409 no router."""
+    """409 — falta um passo anterior (base, semente, prompt, foto)."""
 
 
-# ---------- utilidades ----------
-def _read_json(path: Path, default):
-    """JSON corrompido nunca vira 500: loga e trata como ausente (o chamador recria o padrão)."""
-    try:
-        return json.loads(path.read_text())
-    except FileNotFoundError:
-        return default
-    except Exception:  # noqa: BLE001
-        log.warning("json inválido, tratado como ausente: %s", path.name)
-        return default
+# ---------- helpers ----------
+def _meta(root: Path) -> dict:
+    f = root / "project.json"
+    return json.loads(f.read_text()) if f.exists() else {}
 
 
-def _candidates(root: Path) -> list[dict]:
-    if not (root / STEP / "candidates.json").exists():
-        return []
-    cands = _read_json(root / STEP / "candidates.json", [])
-    return cands if isinstance(cands, list) else []
+def _product(root: Path) -> str:
+    m = _meta(root)
+    return (m.get("product") or m.get("name") or "").strip()
+
+
+def _aspect(root: Path) -> str:
+    v = (_meta(root).get("aspect_ratio") or "").strip()
+    return v if v in ("16:9", "9:16", "1:1") else "16:9"
 
 
 def base_rel(root: Path) -> str | None:
-    """Caminho relativo da imagem base da etapa 3, ou None se a etapa 3 não terminou."""
     return BASE_IMAGE if (root / BASE_IMAGE).exists() else None
 
 
-def _require_base(root: Path) -> str:
-    rel = base_rel(root)
-    if not rel:
-        raise Precondition("Imagem base ausente: conclua a etapa 3 (base)")
-    return rel
+def _require_base(root: Path) -> Path:
+    p = root / BASE_IMAGE
+    if not p.exists():
+        raise Precondition("Gere e escolha a imagem base na etapa 3 antes do storyboard.")
+    return p
 
 
-# ---------- status ----------
-def status(pid: str) -> dict:
-    root = project_dir(pid)
-    cands = _candidates(root)
-    scenes = _read_scenes(root)
-    rel = base_rel(root)
-    return {
-        "base_image": rel, "has_base": rel is not None,
-        "ideas": len(cands), "selected": sum(1 for c in cands if c.get("selected")),
-        "scenes": len(scenes), "scenes_with_text": sum(1 for s in scenes if s["text"].strip()),
-        "storyboard_md": MD_FILE if (root / MD_FILE).exists() else None,
-    }
+def _scene_dir(root: Path, scene: str) -> Path:
+    return root / STEP / scene
 
 
-# ---------- instruções (o que o usuário cola na Higgsfield) ----------
-def scene_arc(n: int, total: int) -> dict:
-    """Momento da estrutura da aula 010 que a cena `n` (1-based) ocupa em um storyboard de `total`."""
-    comeco, descoberta, acao, desfecho = SCENE_ARC
-    if n <= 1:
-        return comeco
-    if n >= total:
-        return desfecho
-    return descoberta if n == 2 else acao
-
-
-def presets() -> dict:
-    return {"kinds": [{k: v for k, v in kind.items() if k != "cli"} for kind in KINDS],
-            "presets": PRESETS, "suffix": SUFFIX, "counts": dict(COUNTS),
-            "models": MODELS, "arc": SCENE_ARC, "upscale_note": UPSCALE_NOTE}
-
-
-def _sentences(text: str) -> list[str]:
-    """Frases da instrução. O ponto separa instruções; o ponto-e-vírgula NÃO — ele liga
-    oração de contexto e pedido dentro de uma única instrução, como no preset de inpaint da
-    aula 010 ("há uma corda pendurada...; deixe ela mais fina")."""
-    return [s.strip(" .") for s in re.split(r"\.", _NUMBERED.sub(".", text)) if s.strip(" .")]
-
-
-def _first_instruction(text: str) -> str:
-    """A primeira instrução de um texto que trouxe várias — vira sugestão na mensagem de erro."""
-    parts = _sentences(text)
-    return parts[0] if parts else text.strip()
-
-
-def _imperatives(text: str) -> list[str]:
-    """Frases que começam com verbo de edição — os "pedidos" dentro do texto."""
-    out = []
-    for s in _sentences(text):
-        head = re.split(r"[^A-Za-z']+", s.strip(), maxsplit=1)[0].lower()
-        if head in IMPERATIVES:
-            out.append(s)
-    return out
-
-
-def _refuse(reason: str, first: str) -> None:
-    raise Invalid(
-        f"Uma instrução por vez (aula 010): {reason} — envie apenas '{first}'. "
-        "Isto é uma heurística (lista numerada ou duas frases no imperativo); se for mesmo um "
-        "pedido só, junte as frases com 'and' ou com ponto-e-vírgula.")
-
-
-def _check_single_instruction(text: str) -> None:
-    """Aula 010: uma instrução por vez — mas a regra é sobre *edições*, não sobre pontuação.
-
-    Recusa só o que é claramente mais de um pedido: lista numerada com 2+ itens ou 2+ frases
-    começando com verbo no imperativo. "Make him smaller. Realistic." passa (auditoria 4.6)."""
-    if len(_NUMBERED.findall(text)) >= 2:
-        _refuse("isto é uma lista numerada com 2 ou mais itens", _first_instruction(text))
-    imp = _imperatives(text)
-    if len(imp) >= 2:
-        _refuse(f"parecem {len(imp)} pedidos diferentes", imp[0])
-
-
-def build_instruction(pid: str, kind: str, text: str, count: int = 4) -> dict:
-    """Monta a instrução em inglês do jeito da aula e devolve a dica de onde colar."""
-    root = project_dir(pid)
-    rel = _require_base(root)
-    if kind not in KIND_IDS:
-        raise Invalid(f"tipo de ideação desconhecido: {kind}")
-    body = (text or "").strip()
-    if not body:
-        raise Invalid("Escreva a instrução (em inglês, aula 007).")
-    if len(body) > MAX_TEXT:
-        raise Invalid(f"Instrução acima de {MAX_TEXT} caracteres.")
-    if count not in COUNTS.values():
-        raise Invalid("Gere 4 (quando está incerto) ou 1 (quando é só um tweak) — aula 010.")
-    _check_single_instruction(body)
-
-    core = body.rstrip(" .;")
-    if kind == "draw_to_edit":
-        instruction = f"Follow the sketch: {core}. {SUFFIX}"
-    elif kind == "edit":
-        instruction = f"{core}. {SUFFIX}"
-    else:
-        instruction = f"Another point of view of this exact scene: {core}. Same subject, same lighting, realistic."
-    hint = next(k["ui_hint"] for k in KINDS if k["kind"] == kind)
-    hint += (" Na Higgsfield, gere 4 variações (você está incerto)." if count == COUNTS["uncertain"]
-             else " Na Higgsfield, gere 1 variação (é só um tweak).")
-    log.info("instruction_built %s", {"pid": pid, "kind": kind, "count": count})
-    return {"kind": kind, "count": count, "instruction": instruction, "ui_hint": hint, "base_image": rel}
-
-
-# ---------- importação das ideias (delegada a studio/common/ingest.py) ----------
-def import_upload(pid: str, files: list[tuple[str, bytes]], prompt: str = "") -> dict:
-    root = project_dir(pid)
-    added = ingest.import_upload(root, STEP, files, prompt)["added"]
-    log.info("import %s", {"pid": pid, "source": "upload", "added": added, "skipped": len(files) - added})
-    return {"added": added, "skipped": len(files) - added}
-
-
-def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 120, prompt: str = "") -> dict:
-    root = project_dir(pid)
+def _read_json(root: Path, rel: str, default):
+    p = root / rel
+    if not p.is_file():
+        return default
     try:
-        r = ingest.import_downloads(root, STEP, folder, since_minutes, 40, "image", prompt)
-    except FileNotFoundError as e:
-        raise Invalid(str(e)) from e
-    log.info("import %s", {"pid": pid, "source": "downloads", "added": r["added"], "scanned": r["scanned"]})
-    return r
+        return json.loads(p.read_text())
+    except (OSError, json.JSONDecodeError):
+        return default
 
 
-def import_history(pid: str, size: int = 50, prompt_filter: str | None = None) -> dict:
+# ---------- fotos-semente (1º multishot da base) ----------
+def seeds_list(pid: str) -> dict:
+    """Galeria das fotos-semente (multishot da base) + a base."""
     root = project_dir(pid)
-    r = ingest.import_history(root, STEP, "image", size, prompt_filter)
-    log.info("import %s", {"pid": pid, "source": "higgsfield", "added": r["added"], "jobs": r["jobs"]})
-    return r
+    seeds = multishot.list_candidates(root, SEEDS_STEP)
+    return {"base_final": base_rel(root),
+            "seeds": [{**c, "url": f"{SEEDS_STEP}/candidates/{c['file']}"} for c in seeds],
+            "count": len(seeds)}
 
 
-# ---------- galeria e seleção ----------
-def _idea_row(c: dict) -> dict:
-    """Projeção pública de um candidato. `file` aponta para ideas/ quando selecionado (decisão 7
-    do lote: ideas/ guarda só as escolhidas; o resto fica em candidates/)."""
-    where = IDEAS_DIR if c.get("selected") else f"{STEP}/candidates"
-    return {"id": c["id"], "file": f"{where}/{c['file']}", "thumb": f"{STEP}/candidates/{c['thumb']}" if c.get("thumb") else None,
-            "prompt": c.get("prompt", ""), "selected": bool(c.get("selected")),
-            "source": c.get("source", ""), "imported": c.get("imported", "")}
+def _seed_model() -> tuple[str, str | None]:
+    d = settings.default_for("storyboard.multishot", None)
+    return d["model"], d["variant"]
 
 
-def list_ideas(pid: str) -> dict:
-    return {"ideas": [_idea_row(c) for c in _candidates(project_dir(pid))]}
-
-
-def _write_ideas_json(root: Path, cands: list[dict]) -> None:
-    d = root / IDEAS_DIR
-    d.mkdir(parents=True, exist_ok=True)
-    rows = [{k: v for k, v in _idea_row(c).items() if k in ("id", "file", "thumb", "prompt", "selected")} for c in cands]
-    (d / "ideas.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1))
-
-
-def select_ideas(pid: str, ids: list[str]) -> dict:
-    """Marca as ideias que entram no storyboard, copia para ideas/ e desanexa das cenas o que saiu."""
+def seeds_cost(pid: str, count: int = DEFAULT_SEEDS) -> dict:
     root = project_dir(pid)
-    cands = _candidates(root)
-    known = {c["id"] for c in cands}
-    unknown = [i for i in ids if i not in known]
-    if unknown:
-        raise Invalid(f"ideia inexistente: {', '.join(unknown)}")
-    chosen = set(ids)
-    idir = root / IDEAS_DIR
-    idir.mkdir(parents=True, exist_ok=True)
-    dropped: set[str] = set()
-    for c in cands:
-        c["selected"] = c["id"] in chosen
-        dst = idir / c["file"]
-        if c["selected"]:
-            shutil.copy2(root / STEP / "candidates" / c["file"], dst)
-        else:
-            if dst.exists():
-                dst.unlink()
-            dropped.add(f"{IDEAS_DIR}/{c['file']}")
-
-    scenes = _read_scenes(root)
-    detached = [s["id"] for s in scenes if s["image"] in dropped]
-    for s in scenes:
-        if s["image"] in dropped:
-            s["image"] = None
-    ingest.save_candidates(root, STEP, cands)
-    _write_ideas_json(root, cands)
-    _write_scenes(root, scenes)
-    _write_md(root, scenes)
-    log.info("select %s", {"pid": pid, "selected": len(chosen), "detached": len(detached)})
-    return {"selected": len(chosen), "detached": detached}
+    src = _require_base(root)
+    model, variant = _seed_model()
+    return multishot.cost(model, count, resolution=variant, subject=_product(root) or "the product",
+                          source_path=src)
 
 
-# ---------- cenas ----------
-def _scenes_file(root: Path) -> Path:
-    return root / STEP / "scenes.json"
-
-
-def _blank_scenes(n: int = DEFAULT_SCENES) -> list[dict]:
-    return [{"id": f"cena{i:02d}", "n": i, "text": "", "image": None} for i in range(1, n + 1)]
-
-
-def _normalize(scenes: list[dict]) -> list[dict]:
-    """`id` e `n` são sempre recalculados pela ordem recebida — cliente não decide numeração."""
-    return [{"id": f"cena{i:02d}", "n": i, "text": (s.get("text") or "").strip(), "image": s.get("image") or None}
-            for i, s in enumerate(scenes, 1)]
-
-
-def _read_scenes(root: Path) -> list[dict]:
-    data = _read_json(_scenes_file(root), None)
-    raw = data.get("scenes") if isinstance(data, dict) else None
-    return _normalize(raw) if isinstance(raw, list) and raw else _blank_scenes()
-
-
-def _write_scenes(root: Path, scenes: list[dict]) -> None:
-    f = _scenes_file(root)
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps({"scenes": scenes}, ensure_ascii=False, indent=1))
-
-
-def load_scenes(pid: str) -> dict:
-    """Lê as cenas; na primeira vez cria e persiste as 5 cenas vazias da aula."""
+def seeds_generate(pid: str, count: int = DEFAULT_SEEDS) -> dict:
+    """Gera as fotos-semente (multishot da base) no pool `storyboard/seeds/`."""
     root = project_dir(pid)
-    scenes = _read_scenes(root)
-    if not _scenes_file(root).exists():
-        _write_scenes(root, scenes)
-    return {"scenes": scenes}
-
-
-def _check_image(root: Path, image: str | None) -> str | None:
-    """Cena só aponta para ideia selecionada em storyboard/ideas/ (sem path traversal)."""
-    if not image:
-        return None
-    idir = (root / IDEAS_DIR).resolve()
-    p = (root / image).resolve()
-    if not p.is_relative_to(idir) or not p.exists() or p.name == "ideas.json":
-        raise Invalid(f"imagem fora de {IDEAS_DIR}/ ou inexistente: {image}")
-    return f"{IDEAS_DIR}/{p.name}"
-
-
-def save_scenes(pid: str, scenes: list[dict]) -> dict:
-    """Grava scenes.json e regrava storyboard.md na mesma chamada (nunca um sem o outro)."""
-    root = project_dir(pid)
-    if not 1 <= len(scenes) <= MAX_SCENES:
-        raise Invalid(f"O storyboard tem de 1 a {MAX_SCENES} cenas (a aula 010 usa ~5).")
-    norm = _normalize(scenes)
-    for s in norm:
-        if len(s["text"]) > MAX_SCENE_TEXT:
-            raise Invalid(f"{s['id']}: texto acima de {MAX_SCENE_TEXT} caracteres.")
-        s["image"] = _check_image(root, s["image"])
-    _write_scenes(root, norm)
-    md = _write_md(root, norm)
-    log.info("scenes_saved %s", {"pid": pid, "scenes": len(norm), "with_image": sum(1 for s in norm if s["image"])})
-    return {"scenes": norm, "storyboard_md": md}
-
-
-def _write_md(root: Path, scenes: list[dict]) -> str:
-    meta = _read_json(root / "project.json", {}) or {}
-    lines = [f"# Storyboard: {meta.get('name') or root.name}", "",
-             f"Produto: {meta.get('product') or '—'} · Vibe: {meta.get('vibe') or '—'}", ""]
-    total = len(scenes)
-    for s in scenes:
-        # A estrutura da aula 010 (começo → descoberta → ação → desfecho) fica visível no documento.
-        lines += [f"## Cena {s['n']} — {scene_arc(s['n'], total)['label']}", ""]
-        lines += [s["text"] or "_(sem texto)_", ""]
-        if s["image"]:
-            lines += [f"![{s['id']}](ideas/{Path(s['image']).name})", ""]
-    lines += ["---", "", f"Gerado em {datetime.now():%Y-%m-%d %H:%M}.",
-              f"Imagem base: {base_rel(root) or 'ausente (etapa 3)'}", UPSCALE_NOTE]
-    f = root / MD_FILE
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text("\n".join(lines) + "\n")
-    return MD_FILE
-
-
-def render(pid: str) -> dict:
-    """Regera o storyboard.md sob demanda — só faz sentido com alguma cena escrita."""
-    root = project_dir(pid)
-    scenes = _read_scenes(root)
-    if not any(s["text"].strip() for s in scenes):
-        raise Invalid("Escreva pelo menos uma cena antes de gerar o storyboard.md (aula 010: ~5 cenas).")
-    md = _write_md(root, scenes)
-    log.info("render %s", {"pid": pid, "file": md})
-    return {"storyboard_md": md, "scenes": scenes}
-
-
-# ---------- alternativa paga: geração pelo CLI ----------
-def _cli_ready() -> None:
-    if not hf.available():
-        raise Precondition("CLI da Higgsfield não instalado")
-    if not hf.status().get("logged_in"):
-        raise Precondition("CLI da Higgsfield sem login (higgsfield auth login)")
-
-
-def _cli_request(pid: str, kind: str, text: str, count: int, source_id: str | None) -> tuple[dict, str]:
-    """Valida o pedido pago e resolve a imagem de referência (candidato escolhido ou a base)."""
-    if kind not in CLI_KINDS:
-        raise Invalid("Draw to Edit depende do desenho na interface da Higgsfield: use o modo UI (aula 010).")
-    built = build_instruction(pid, kind, text, count)
-    root = project_dir(pid)
-    if source_id:
-        c = next((c for c in _candidates(root) if c["id"] == source_id), None)
-        if not c:
-            raise Invalid(f"ideia inexistente: {source_id}")
-        src = root / STEP / "candidates" / c["file"]
-    else:
-        src = root / BASE_IMAGE
-    return built, str(src)
-
-
-def cost(pid: str, model: str, kind: str, text: str, count: int = 4, source_id: str | None = None) -> dict:
-    _cli_ready()
-    built, src = _cli_request(pid, kind, text, count, source_id)
-    c = hf.cost(model, {"prompt": built["instruction"], "image_references": [src]})
-    credits = c.get("credits")
-    per = credits if isinstance(credits, (int, float)) else None
-    return {"per_image": per, "total": per * count if per is not None else None}
-
-
-def start_generate(pid: str, model: str, kind: str, text: str, count: int = 4, source_id: str | None = None) -> dict:
-    """Gera pelo CLI (gasta créditos) e importa cada resultado como candidato `source: "cli"`."""
-    _cli_ready()
-    built, src = _cli_request(pid, kind, text, count, source_id)
-    root = project_dir(pid)
-    instruction = built["instruction"]
-    started = datetime.now()
-
-    def run(job: dict):
-        tmp = root / STEP / ".tmp"
-        for i in range(count):
-            res = hf.generate(model, {"prompt": instruction, "image_references": [src]}, timeout_s=600)
-            for url in res["urls"]:
-                name = url.split("?")[0].rsplit("/", 1)[-1] or f"cli_{i}.png"
-                try:
-                    dest = hf.download(url, tmp / name)
-                    data = Path(dest).read_bytes()
-                    Path(dest).unlink(missing_ok=True)
-                except Exception as e:  # noqa: BLE001
-                    job["log"].append(f"download falhou: {e}")
-                    continue
-                if ingest.ingest_bytes(root, STEP, data, "cli", name, instruction,
-                                       {"job_id": res.get("id"), "model": model, "kind": kind}):
-                    job["added"] += 1
-            (root / "jobs").mkdir(parents=True, exist_ok=True)
-            (root / "jobs" / f"storyboard_{res.get('id') or i}.json").write_text(
-                json.dumps(res["raw"], ensure_ascii=False, indent=1))
-            job["done"] = i + 1
-            job["log"].append(f"{i + 1}/{count} gerado, {job['added']} imagens importadas")
-        log.info("cli_job %s", {"pid": pid, "model": model, "kind": kind, "count": count,
-                               "state": "done", "seconds": round((datetime.now() - started).total_seconds(), 1)})
-
+    src = _require_base(root)
+    model, variant = _seed_model()
     try:
-        return _registry.start(pid, count, run)
+        return multishot.start_generate(
+            registry, pid, root, SEEDS_STEP, src, model=model, count=count, resolution=variant,
+            aspect_ratio=_aspect(root), subject=_product(root) or "the product", parent="base",
+            spend_action="storyboard.multishot", spend_pid=pid, spend_step="storyboard",
+            spend_name=_meta(root).get("name"))
     except RuntimeError as e:
-        raise Precondition("Já existe uma geração em andamento para este projeto.") from e
+        raise Precondition("Já existe uma geração em andamento nesta campanha.") from e
 
 
 def job_status(pid: str) -> dict:
-    """Estado do job sempre no formato do contrato — o registry devolve só `state` quando idle."""
-    return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], **_registry.status(pid)}
+    return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], **registry.status(pid)}
+
+
+# ---------- pré-roteiro ----------
+def _write_scenes(root: Path, scenes: list[dict]) -> None:
+    """Persiste `storyboard/scenes.json` — a lista que o `angles.py` consome (id/n/text/image)."""
+    out = []
+    for i, s in enumerate(scenes, 1):
+        out.append({"id": f"cena{i:02d}", "n": i, "text": (s.get("text") or "").strip(),
+                    "title": (s.get("title") or f"Cena {i}").strip(), "arc": s.get("arc") or prescript.arc_for(i, len(scenes))["id"],
+                    "seed": s.get("seed"), "image": s.get("image")})
+    (root / STEP).mkdir(parents=True, exist_ok=True)
+    (root / SCENES_FILE).write_text(json.dumps({"scenes": out}, ensure_ascii=False, indent=1))
+
+
+def _scenes(root: Path) -> list[dict]:
+    return (_read_json(root, SCENES_FILE, {"scenes": []}) or {}).get("scenes", [])
+
+
+def get_prescript(pid: str) -> dict:
+    """Pré-roteiro atual (cenas em texto, editável) + estado do Claude."""
+    root = project_dir(pid)
+    pre = _read_json(root, PRESCRIPT_FILE, None)
+    scenes = _scenes(root)
+    return {"scenes": scenes, "arc": ARC, "source": (pre or {}).get("source"),
+            "available_claude": prescript.available(), "has_base": base_rel(root) is not None,
+            "seeds": len(multishot.list_candidates(root, SEEDS_STEP))}
+
+
+def generate_prescript(pid: str, n_scenes: int = DEFAULT_SCENES) -> dict:
+    """(b) Claude lê base + sementes e propõe a lista ordenada de cenas. Grátis; síncrono."""
+    root = project_dir(pid)
+    _require_base(root)
+    seeds = [root / s["url"] for s in seeds_list(pid)["seeds"]]
+    res = prescript.generate_prescript(
+        root / BASE_IMAGE, seeds, product=_product(root), vibe=_meta(root).get("vibe") or "",
+        n_scenes=n_scenes, aspect_ratio=_aspect(root))
+    scenes = res["scenes"]
+    (root / STEP).mkdir(parents=True, exist_ok=True)
+    (root / PRESCRIPT_FILE).write_text(json.dumps(
+        {**res, "created": datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False, indent=1))
+    _write_scenes(root, scenes)
+    log.info("prescript pid=%s source=%s scenes=%d", pid, res.get("source"), len(scenes))
+    return {"scenes": _scenes(root), "source": res.get("source")}
+
+
+def save_prescript(pid: str, scenes: list[dict]) -> dict:
+    """Edição do pré-roteiro (texto/ordem das cenas). Preserva a semente já escolhida por cena
+    quando o id se mantém pela posição."""
+    root = project_dir(pid)
+    if not isinstance(scenes, list) or not scenes:
+        raise Invalid("informe ao menos uma cena.")
+    if len(scenes) > MAX_SCENES:
+        raise Invalid(f"máximo de {MAX_SCENES} cenas.")
+    prev = {s["id"]: s for s in _scenes(root)}
+    merged = []
+    for i, s in enumerate(scenes, 1):
+        old = prev.get(f"cena{i:02d}", {})
+        merged.append({"title": s.get("title") or old.get("title"),
+                       "text": s.get("text") or "", "arc": s.get("arc") or old.get("arc"),
+                       "seed": old.get("seed"), "image": old.get("image")})
+    _write_scenes(root, merged)
+    return {"scenes": _scenes(root)}
+
+
+# ---------- por cena: semente → prompt → foto → frames ----------
+def _scene(root: Path, scene: str) -> dict:
+    s = next((x for x in _scenes(root) if x.get("id") == scene), None)
+    if s is None:
+        raise LookupError(f"cena desconhecida: {scene}")
+    return s
+
+
+def scenes_overview(pid: str) -> dict:
+    """Estado de cada cena para a tela: semente, prompt, foto e frames prontos."""
+    root = project_dir(pid)
+    out = []
+    for s in _scenes(root):
+        sid = s["id"]
+        sdir = _scene_dir(root, sid)
+        sel = angles._selection(root, sid) if (sdir / "selection.json").exists() else []
+        out.append({
+            "id": sid, "n": s.get("n"), "title": s.get("title") or "", "text": s.get("text") or "",
+            "arc": s.get("arc"), "seed": s.get("seed"),
+            "seed_ready": (sdir / "seed.png").exists(),
+            "prompt_ready": (sdir / "prompt.json").exists(),
+            "photo_ready": (sdir / "base.png").exists(),
+            "candidates": len(ingest.load_candidates(root, f"{STEP}/{sid}")),
+            "frames": len(sel), "upscaled": sum(1 for sh in sel if sh.get("upscaled")),
+        })
+    return {"scenes": out, "aspect_ratio": _aspect(root), "base_final": base_rel(root),
+            "arc": ARC, "product_note": angles.PRODUCT_NOTE,
+            "product_scene": {"ref_ready": (root / STEP / "product" / "ref.png").exists(),
+                              "selected": (root / STEP / "product" / "product_final.png").exists()}}
+
+
+def _write_png(data: bytes, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+
+
+def set_scene_seed(pid: str, scene: str, seed_id: str | None = None,
+                   upload: tuple[str, bytes] | None = None) -> dict:
+    """(c) Escolhe a semente da cena: uma foto-semente do pool (`seed_id`) ou um upload manual.
+
+    Copia a imagem para `storyboard/<cena>/seed.png` e registra a escolha no pré-roteiro."""
+    root = project_dir(pid)
+    s = _scene(root, scene)
+    sdir = _scene_dir(root, scene)
+    dest = sdir / "seed.png"
+    if upload is not None:
+        _write_png(upload[1], dest)
+        s["seed"] = {"source": "upload", "name": upload[0]}
+    elif seed_id is not None:
+        seeds = {c["id"]: c for c in multishot.list_candidates(root, SEEDS_STEP)}
+        if seed_id not in seeds:
+            raise Invalid(f"foto-semente inexistente: {seed_id}")
+        src = root / SEEDS_STEP / "candidates" / seeds[seed_id]["file"]
+        _write_png(src.read_bytes(), dest)
+        s["seed"] = {"source": "seed", "id": seed_id}
+    else:
+        raise Invalid("informe uma foto-semente (seed_id) ou um upload.")
+    _persist_scene(root, s)
+    return {"scene": scene, "seed": s["seed"], "seed_image": f"{STEP}/{scene}/seed.png"}
+
+
+def _persist_scene(root: Path, scene_obj: dict) -> None:
+    scenes = _scenes(root)
+    for i, s in enumerate(scenes):
+        if s.get("id") == scene_obj.get("id"):
+            scenes[i] = scene_obj
+    (root / SCENES_FILE).write_text(json.dumps({"scenes": scenes}, ensure_ascii=False, indent=1))
+
+
+def _seed_path(root: Path, scene: str) -> Path:
+    p = _scene_dir(root, scene) / "seed.png"
+    if not p.exists():
+        raise Precondition("Escolha a foto-semente da cena antes deste passo.")
+    return p
+
+
+def scene_prompt(pid: str, scene: str, regenerate: bool = False) -> dict:
+    """(d) Prompt realista da cena via skill (grátis). Cacheia em `storyboard/<cena>/prompt.json`."""
+    root = project_dir(pid)
+    s = _scene(root, scene)
+    sdir = _scene_dir(root, scene)
+    pfile = sdir / "prompt.json"
+    if pfile.exists() and not regenerate:
+        return {**json.loads(pfile.read_text()), "cached": True}
+    seed = _seed_path(root, scene)
+    res = prescript.realistic_prompt(s.get("text") or s.get("title") or "", seed,
+                                     aspect_ratio=_aspect(root), product=_product(root))
+    entry = {"prompt": res.get("prompt", ""), "negative": res.get("negative", ""),
+             "source": res.get("source"), "created": datetime.now().isoformat(timespec="seconds")}
+    sdir.mkdir(parents=True, exist_ok=True)
+    pfile.write_text(json.dumps(entry, ensure_ascii=False, indent=1))
+    return {**entry, "cached": False}
+
+
+def save_scene_prompt(pid: str, scene: str, prompt: str, negative: str = "") -> dict:
+    """Edição manual do prompt realista da cena."""
+    root = project_dir(pid)
+    _scene(root, scene)
+    prompt = (prompt or "").strip()
+    if not prompt:
+        raise Invalid("o prompt não pode ficar vazio.")
+    sdir = _scene_dir(root, scene)
+    sdir.mkdir(parents=True, exist_ok=True)
+    entry = {"prompt": prompt, "negative": (negative or "").strip(), "source": "edited",
+             "created": datetime.now().isoformat(timespec="seconds")}
+    (sdir / "prompt.json").write_text(json.dumps(entry, ensure_ascii=False, indent=1))
+    return entry
+
+
+def _scene_model() -> tuple[str, str | None]:
+    d = settings.default_for("storyboard.scene", None)
+    return d["model"], d["variant"]
+
+
+def _prompt_of(root: Path, scene: str) -> str:
+    p = _scene_dir(root, scene) / "prompt.json"
+    if not p.exists():
+        raise Precondition("Gere (ou escreva) o prompt realista da cena antes de gerar a foto.")
+    return (json.loads(p.read_text()).get("prompt") or "").strip()
+
+
+def scene_photo_cost(pid: str, scene: str) -> dict:
+    root = project_dir(pid)
+    _scene(root, scene)
+    model, variant = _scene_model()
+    est = settings.pricing.estimate(model, {"resolution": variant} if variant else None)
+    return {"model": model, "variant": variant, "per_image": est.get("credits"),
+            "total": est.get("credits"), "count": 1, "source": est.get("source")}
+
+
+def scene_photo_generate(pid: str, scene: str) -> dict:
+    """(e) Gera a foto realista da cena (Higgsfield ≈2 créditos) a partir do prompt + a semente.
+
+    A foto vira `storyboard/<cena>/base.png` — a âncora de onde o multishot (f) tira os frames."""
+    root = project_dir(pid)
+    _scene(root, scene)
+    prompt = _prompt_of(root, scene)
+    seed = _seed_path(root, scene)
+    model, variant = _scene_model()
+    aspect = _aspect(root)
+    name = _meta(root).get("name")
+    params = {"prompt": prompt, "aspect_ratio": aspect, "count": 1,
+              "image_references": [str(seed)]}
+    if variant:
+        params["resolution"] = variant
+
+    def run(job: dict) -> None:
+        res = hf.generate(model, params)
+        settings.record_generation(action="storyboard.scene", model=model, params=params, count=1,
+                                   pid=pid, step="storyboard", job_id=res.get("id"), project_name=name)
+        urls = res.get("urls") or []
+        (root / "jobs").mkdir(parents=True, exist_ok=True)
+        (root / "jobs" / f"storyboard_scene_{res.get('id') or scene}.json").write_text(
+            json.dumps(res.get("raw"), ensure_ascii=False, indent=1))
+        if not urls:
+            raise RuntimeError("o CLI não devolveu imagem da cena (JSON do job em jobs/).")
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            fname = urls[0].split("?")[0].rsplit("/", 1)[-1] or "scene.png"
+            data = hf.download(urls[0], Path(td) / fname).read_bytes()
+        _write_png(data, _scene_dir(root, scene) / "base.png")
+        job["added"] += 1
+        job["done"] = 1
+
+    try:
+        return registry.start(pid, 1, run, scene=scene, op="scene_photo", model=model)
+    except RuntimeError as e:
+        raise Precondition("Já existe uma geração em andamento nesta campanha.") from e
+
+
+# ---------- frames (multishot da foto da cena) — reaproveita o motor de ângulos ----------
+def _require_photo(root: Path, scene: str) -> Path:
+    p = _scene_dir(root, scene) / "base.png"
+    if not p.exists():
+        raise Precondition("Gere a foto da cena antes de gerar os frames.")
+    return p
+
+
+def frames_cost(pid: str, scene: str, count: int = multishot.DEFAULT_COUNT) -> dict:
+    root = project_dir(pid)
+    _require_photo(root, scene)
+    model, variant = _seed_model()   # frames usam o mesmo default de multishot
+    return multishot.cost(model, count, resolution=variant, subject=_product(root) or "the product",
+                          source_path=_scene_dir(root, scene) / "base.png")
+
+
+def frames_generate(pid: str, scene: str, count: int = multishot.DEFAULT_COUNT) -> dict:
+    """(f) Novo multishot a partir da foto gerada da cena → candidatos (frames) da cena."""
+    root = project_dir(pid)
+    photo = _require_photo(root, scene)
+    _scene(root, scene)
+    model, variant = _seed_model()
+    try:
+        return multishot.start_generate(
+            registry, pid, root, f"{STEP}/{scene}", photo, model=model, count=count,
+            resolution=variant, aspect_ratio=_aspect(root),
+            subject=_product(root) or "the product", parent=f"{scene}:photo",
+            spend_action="storyboard.multishot", spend_pid=pid, spend_step="storyboard",
+            spend_name=_meta(root).get("name"))
+    except RuntimeError as e:
+        raise Precondition("Já existe uma geração em andamento nesta campanha.") from e
+
+
+def scene_candidates(pid: str, scene: str) -> dict:
+    """Frames candidatos da cena (para a galeria de ordenação)."""
+    root = project_dir(pid)
+    _scene(root, scene)
+    cands = ingest.load_candidates(root, f"{STEP}/{scene}")
+    return {"scene": scene, "photo": f"{STEP}/{scene}/base.png",
+            "candidates": [{**c, "url": f"{STEP}/{scene}/candidates/{c['file']}"} for c in cands],
+            "selected": angles._selection(root, scene)}
+
+
+def order_frames(pid: str, scene: str, shots: list[dict]) -> dict:
+    """(g) Ordena os frames da cena (drag-and-drop = ordem da lista). Reaproveita `angles.select_shots`,
+    mantendo o contrato de saída que a animação consome."""
+    return angles.select_shots(pid, scene, shots)
+
+
+# ---------- status geral ----------
+def status(pid: str) -> dict:
+    root = project_dir(pid)
+    scenes = _scenes(root)
+    with_photo = sum(1 for s in scenes if (_scene_dir(root, s["id"]) / "base.png").exists())
+    with_frames = sum(1 for s in scenes if angles._selection(root, s["id"]))
+    return {"has_base": base_rel(root) is not None,
+            "seeds": len(multishot.list_candidates(root, SEEDS_STEP)),
+            "prescript": len(scenes), "scenes_with_photo": with_photo,
+            "scenes_with_frames": with_frames,
+            "storyboard_json": f"{STEP}/storyboard.json" if (root / STEP / "storyboard.json").exists() else None}

@@ -533,3 +533,18 @@ Extração da técnica de multishot (aula 011) para um componente reutilizável,
 
 **ADR nova: ADR-017** (STUDIO) — componente reutilizável de multishot; `angles.py` da etapa 4 só
 migra para o núcleo na reescrita do storyboard (ADR-018), até lá as duas implementações coexistem.
+
+## Atualização 2026-08-28 (frente ADH-OS-20260827-13 — storyboard por pré-roteiro)
+
+Reescrita da etapa 4 (storyboard), guiada por pré-roteiro, mantendo o contrato de saída da animação:
+
+- **STORYBOARD** reescrito (`studio/storyboard/service.py`): fluxo base → fotos-semente + pré-roteiro
+  (Claude, `common/prescript.py`, com fallback) → por cena (semente → prompt realista via skill →
+  foto no Higgsfield → multishot da foto → ordenar frames arrastando). Reusa o componente de
+  multishot (ADR-017) e o motor de ângulos (`angles.py`) para os frames/contrato; lê modelo default
+  e registra gasto via ADR-016. Tela nova (`view.html`/`view.js`); rotas de ideação antigas removidas,
+  rotas de ângulos/produto preservadas. O contrato `storyboard/storyboard.json` que a animação lê é
+  inalterado (coberto por `tests/test_storyboard_flow.py`).
+
+**ADRs novas:** **ADR-018** (STORYBOARD) — storyboard guiado por pré-roteiro; **ADR-019** (STUDIO,
+*Proposto*) — animação por cena a partir do pré-roteiro (registrada, ainda não implementada).
