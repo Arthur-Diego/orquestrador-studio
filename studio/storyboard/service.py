@@ -12,6 +12,12 @@
 O que a aula não ensina fica de fora: nada de roteiro por LLM, shotlist ou ângulos por cena
 nesta mesma etapa (ver `angles.py`, ADR-015). Desenhar continua sendo do usuário, na interface
 da Higgsfield (ADR-002).
+
+Ressalva `[extensão]` (ADR-025, aprovada no gate W3 da Wave 9): o parágrafo acima continua sendo
+o registro do que a AULA ensina — e o caminho padrão da etapa — mas o roteiro por LLM passou a
+existir ao lado dele, opt-in. `script_generate` sugere as cenas em `storyboard/script.json`
+(arquivo próprio); quem aplica a sugestão às cenas é o usuário, pelo `PUT .../storyboard/scenes`
+de sempre. Nenhum caminho do servidor escreve `scenes.json` por conta dessa sugestão.
 """
 from __future__ import annotations
 
@@ -28,6 +34,7 @@ from PIL import Image
 
 from .. import higgsfield as hf
 from ..common import ingest, pricing, prompter, settings
+from ..common.atomic import write_json_atomic
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 from .angles import registry  # noqa: F401
@@ -194,6 +201,13 @@ def status(pid: str) -> dict:
         "video_models": _video_model_ids(),
         "video_model_defaults": {"single": video_model(pid, "single"),
                                  "start_end": video_model(pid, "start_end")},
+        # `[extensão]` roteiro por LLM (ADR-025): campos ADITIVOS — a existência da última sugestão,
+        # o preset default resolvido da ação `storyboard.script`, os alvos aceitos e a presença do
+        # Claude CLI (a tela desabilita o botão sem ele, em vez de descobrir pelo 409).
+        "script": script_state(pid),
+        "script_preset_default": settings.preset_default_for(SCRIPT_ACTION, pid)["preset"],
+        "script_models": [dict(m) for m in SCRIPT_MODELS],
+        "script_cli": prompter.available(),
     }
 
 
@@ -1087,3 +1101,209 @@ def video_job_status(pid: str, scene_id: str, photo: str | None = None) -> dict:
     _valid_scene_id(scene_id)
     return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], "video": None,
             **_video_registry.status(_video_key(pid, scene_id, photo))}
+
+
+# ==========================================================================================
+# `[extensão]` wave 9 (ADR-025) — ROTEIRO por LLM: sugestão de cenas (texto pt-BR + prompt de
+# imagem em inglês) gerada pelo Claude CLI, com o rig de um preset de realismo da provedora
+# `prompter-presets-realismo`. Caminho INDEPENDENTE do resto da etapa e estritamente aditivo:
+# o job escreve SÓ `storyboard/script.json` — nunca `scenes.json` (a aplicação às cenas é do
+# usuário, pelo `PUT .../storyboard/scenes` de sempre). Zero crédito Higgsfield: o Claude CLI é
+# assinatura local do usuário, então nada aqui chama `hf.*` nem `settings.record_generation`.
+# ==========================================================================================
+SCRIPT_FILE = f"{STEP}/script.json"       # a sugestão vive aqui, fora do scenes.json
+SCRIPT_ACTION = "storyboard.script"       # chave de preset default por ação (ADR-016, gate W3 P2)
+SCRIPT_PRESET_DEFAULT = "documentary-street"
+SCRIPT_MOOD_IMAGES = 3                    # frames do mood que acompanham a base (teto 4 do prompter)
+
+#: Modelo alvo do PROMPT DE IMAGEM que o roteiro escreve — v1 só Nano Banana Pro (gate W3, P3).
+#: Fonte única dos ids aceitos e do default; `MODELS` (que tem `gpt_image_2`) continua servindo
+#: apenas ao caminho pago de ideação e não é reaproveitado aqui.
+SCRIPT_MODELS = [{"id": "nano_banana_2", "label": "Nano Banana Pro", "default": True}]
+
+# Registro da ação no mapa ABERTO da provedora (amenda A2 do FDD): feito em import time, sem
+# editar `studio/common/settings.py`. Com ele, `GET /api/prompter/presets` passa a exibir a chave
+# `storyboard.script` no mapa `defaults` e o `preset-config` aceita a ação sem mudança de código lá.
+settings.PRESET_ACTIONS.setdefault(SCRIPT_ACTION, SCRIPT_PRESET_DEFAULT)
+
+#: Registro PRÓPRIO do roteiro (ADR-006), separado da ideação (`_registry`) e do vídeo
+#: (`_video_registry`). O nome é `_story_registry` porque `studio/common/reset.py::_registries`
+#: descobre os registros da etapa por uma lista FECHADA de atributos —
+#: `("_registry", "registry", "_story_registry")` — e este é o único slot livre no módulo.
+_story_registry = JobRegistry()
+
+
+def _script_model_default() -> str:
+    return next(m["id"] for m in SCRIPT_MODELS if m.get("default"))
+
+
+def _valid_script_model(model: str | None) -> str:
+    """Alvo do prompt de imagem. v1 aceita só `nano_banana_2` (gate W3 P3) — outro id é 422."""
+    model = model or _script_model_default()
+    ids = [m["id"] for m in SCRIPT_MODELS]
+    if model not in ids:
+        raise Invalid(f"modelo alvo inválido para o roteiro: {model} (válidos: {', '.join(ids)})")
+    return model
+
+
+def _valid_script_count(count) -> int:
+    try:
+        count = int(count)
+    except (TypeError, ValueError) as e:
+        raise Invalid(f"número de cenas inválido: {count}") from e
+    if not 1 <= count <= MAX_SCENES:
+        raise Invalid(f"número de cenas fora de 1..{MAX_SCENES}: {count}")
+    return count
+
+
+def _valid_script_instruction(instruction: str | None) -> str:
+    text = (instruction or "").strip()
+    if len(text) > MAX_TEXT:
+        raise Invalid(f"Instrução acima de {MAX_TEXT} caracteres.")
+    return text
+
+
+def _valid_script_preset(preset: str | None) -> str | None:
+    """Id vindo do cliente (ou o default resolvido) contra o catálogo da provedora — 422 com os ids."""
+    try:
+        return prompter.valid_preset(preset)
+    except ValueError as e:
+        raise Invalid(str(e)) from e
+
+
+def _script_images(root: Path, pid: str) -> list[Path]:
+    """Contexto visual do roteiro: a base da etapa 3 primeiro, depois até 3 frames do mood aplicado.
+
+    O mood selecionado é lido pela função que já é dona dele (`studio/mood/service.py::current`,
+    leitura pura de `mood/selected/` ordenada por arquivo) — nada de segunda convenção de caminho
+    aqui. Sem mood selecionado, o roteiro segue só com a base. Teto final: `prompter.MAX_IMAGES`.
+    """
+    from ..mood import service as mood  # import local: evita ciclo entre as etapas
+    paths = [root / BASE_IMAGE]
+    for item in (mood.current(pid).get("selected") or [])[:SCRIPT_MOOD_IMAGES]:
+        p = root / "mood" / "selected" / item["file"]
+        if p.is_file():
+            paths.append(p)
+    return paths[:prompter.MAX_IMAGES]
+
+
+def _script_brief(root: Path, aspect: str, count: int, instruction: str) -> dict:
+    """Brief do roteiro a partir do `project.json` (produto e vibe da campanha).
+
+    O aspect ratio da campanha viaja na linha `purpose`: `prompter._brief_text` renderiza um
+    conjunto FIXO de chaves (contrato congelado na task_01) e `purpose` é justamente a linha que o
+    servidor escreve. A proporção nunca vem do body — é a do projeto (`_aspect_ratio`).
+    """
+    meta = _read_json(root / "project.json", {}) or {}
+    brief = {
+        "product": (meta.get("product") or meta.get("name") or "the product").strip(),
+        "vibe": (meta.get("vibe") or "").strip(),
+        "purpose": (f"{count}-scene advertising video for this brand, every shot composed for a "
+                    f"{aspect} frame (state the {aspect} aspect ratio in the composition part of "
+                    f"each image_prompt)"),
+        "instruction": instruction,
+    }
+    return {k: v for k, v in brief.items() if v}
+
+
+def _script_payload(res: dict, preset: str | None, model_target: str, aspect: str) -> tuple[dict, list[int]]:
+    """Resposta do prompter → schema de `script.json` (FDD §5.3), com `text` truncado em 500.
+
+    O truncamento é do SERVIÇO (o prompter não trunca): 500 é `MAX_SCENE_TEXT`, o mesmo teto que
+    `save_scenes` cobra — sugestão maior que isso não poderia ser aplicada à cena. Devolve também
+    o número das cenas truncadas, para o `log` do job registrar.
+    """
+    truncated: list[int] = []
+    scenes = []
+    for s in res["scenes"]:
+        text = s["text"]
+        if len(text) > MAX_SCENE_TEXT:
+            text = text[:MAX_SCENE_TEXT]
+            truncated.append(s["n"])
+        scenes.append({"n": s["n"], "arc": s["arc"], "text": text,
+                       "image_prompt": s["image_prompt"], "negative": s.get("negative", "")})
+    payload = {"generated_at": datetime.now().isoformat(timespec="seconds"),
+               "preset": preset, "model_target": model_target, "aspect_ratio": aspect,
+               "count": len(scenes), "source": res.get("source", "claude"),
+               "seconds": res.get("seconds"), "notes_pt": res.get("notes_pt", ""),
+               "scenes": scenes}
+    return payload, truncated
+
+
+def script_generate(pid: str, preset: settings.PresetArg = settings.PRESET_UNSET,
+                    count: int = DEFAULT_SCENES, model_target: str | None = None,
+                    instruction: str = "") -> dict:
+    """`[extensão]` (ADR-025) Job que pede ao Claude um roteiro de `count` cenas para a campanha.
+
+    Tudo é validado ANTES de a thread nascer (matriz da §6 do FDD): projeto inexistente → 404 pelo
+    `project_dir`; base da etapa 3 ausente, Claude fora do PATH ou job em andamento → `Precondition`
+    (409); `count`, `preset`, `model_target` e `instruction` inválidos → `Invalid` (422). Sob
+    qualquer erro nenhum arquivo é criado e o `script.json` anterior fica intacto.
+
+    `preset` tem TRÊS estados (mesmo padrão do `video_prompt`): ausente resolve o default da ação
+    `storyboard.script` (projeto → global → código `documentary-street`), `null` desliga o rig e um
+    id usa esse. O arco de cada cena é decidido aqui (`scene_arc`), não pelo modelo, e a proporção
+    vem do projeto. Nada disto toca `scenes.json`: o job escreve só `storyboard/script.json`.
+    """
+    root = project_dir(pid)
+    preset, _explicit = settings.resolve_preset(SCRIPT_ACTION, pid, preset)
+    preset = _valid_script_preset(preset)
+    count = _valid_script_count(count)
+    model_target = _valid_script_model(model_target)
+    instruction = _valid_script_instruction(instruction)
+    _require_base(root)
+    if not prompter.available():
+        raise Precondition("Claude CLI não encontrado no PATH: escreva as cenas manualmente "
+                           "(aula 010) ou instale o Claude Code")
+    aspect = _aspect_ratio(root)
+    images = _script_images(root, pid)
+    arcs = [scene_arc(n, count)["id"] for n in range(1, count + 1)]
+    brief = _script_brief(root, aspect, count, instruction)
+
+    def run(job: dict):
+        log.info("script_generate %s", {"pid": pid, "preset": preset, "count": count,
+                                        "model_target": model_target, "aspect_ratio": aspect,
+                                        "images": len(images)})
+        try:
+            res = prompter.script(images, brief, preset=preset, count=count, arcs=arcs,
+                                  model_target=model_target)
+        except Exception as e:  # noqa: BLE001 — o job morre em `error`; o roteiro anterior fica
+            log.info("script_job %s", {"pid": pid, "state": "error", "scenes": 0,
+                                       "seconds": None, "source": "claude"})
+            job["log"].append(f"roteiro falhou: {e}")
+            raise
+        payload, truncated = _script_payload(res, preset, model_target, aspect)
+        for n in truncated:
+            job["log"].append(f"cena {n}: texto acima de {MAX_SCENE_TEXT} caracteres, truncado")
+        (root / STEP).mkdir(parents=True, exist_ok=True)
+        write_json_atomic(root / SCRIPT_FILE, payload, ensure_ascii=False, indent=1)
+        job["done"] = 1
+        job["log"].append(f"roteiro gerado: {payload['count']} cenas "
+                          f"(preset {preset or 'nenhum'}, {payload['seconds']}s)")
+        log.info("script_job %s", {"pid": pid, "state": "done", "scenes": payload["count"],
+                                   "seconds": payload["seconds"], "source": payload["source"]})
+
+    try:
+        return _story_registry.start(pid, 1, run)
+    except RuntimeError as e:
+        raise Precondition("Já existe uma geração de roteiro em andamento para este projeto.") from e
+
+
+def script_status(pid: str) -> dict:
+    """Estado do job de roteiro no formato do contrato (`idle` quando nunca rodou)."""
+    return {"done": 0, "total": 0, "error": None, "log": [], **_story_registry.status(pid)}
+
+
+def load_script(pid: str) -> dict:
+    """Última sugestão persistida — `{"script": null}` quando nunca houve geração (estado normal)."""
+    root = project_dir(pid)
+    data = _read_json(root / SCRIPT_FILE, None)
+    return {"script": data if isinstance(data, dict) else None}
+
+
+def script_state(pid: str) -> dict:
+    """Resumo do roteiro para o `status` da etapa: existe? de quando é?"""
+    data = _read_json(project_dir(pid) / SCRIPT_FILE, None)
+    if not isinstance(data, dict):
+        return {"exists": False, "generated_at": None}
+    return {"exists": True, "generated_at": data.get("generated_at")}

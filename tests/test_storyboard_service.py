@@ -277,7 +277,12 @@ def test_status_counts_ideas_scenes_and_base(sb, project, root, base):
                   # `[extensão]` vídeo por foto (ADR-022): seletor de modelo do modal "Gerar animação".
                   "video_models": sb._video_model_ids(),
                   "video_model_defaults": {"single": sb.video_model(project, "single"),
-                                           "start_end": sb.video_model(project, "start_end")}}
+                                           "start_end": sb.video_model(project, "start_end")},
+                  # `[extensão]` roteiro por LLM (ADR-025): campos aditivos da wave 9 (FDD §5.4).
+                  "script": {"exists": False, "generated_at": None},
+                  "script_preset_default": "documentary-street",
+                  "script_models": [dict(m) for m in sb.SCRIPT_MODELS],
+                  "script_cli": sb.prompter.available()}
 
 
 # ---------- alternativa paga pelo CLI ----------
@@ -911,3 +916,103 @@ def test_video_prompt_does_not_touch_the_scenes_schema(sb, project, root, monkey
                         preset="documentary-street")
     assert r["preset"] == "documentary-street"
     assert arquivo.read_bytes() == antes, "video_prompt não escreve scenes.json"
+
+
+# ---------- `[extensão]` wave 9 (ADR-025): roteiro por LLM no serviço (Claude sempre fake) ----------
+def _script_result(count: int, text: str = "Cena curta.", images=None) -> dict:
+    """Resposta no formato que `prompter.script` publica (contrato da task_01)."""
+    return {"scenes": [{"n": i, "arc": "acao", "text": text,
+                        "image_prompt": f"A cinematic photograph, scene {i}.",
+                        "negative": "plastic skin"} for i in range(1, count + 1)],
+            "notes_pt": "Arco fechado.", "source": "claude", "seconds": 12.5,
+            "preset": None, "model_target": "nano_banana_2", "count": count,
+            "images": images or []}
+
+
+def _fake_prompter_script(sb, monkeypatch, calls, count=5, text="Cena curta."):
+    """Substitui `prompter.script` (ADR-008: nada de processo real) e registra a chamada."""
+    def fake(images, brief, preset=None, **kw):
+        calls.append({"images": list(images), "brief": brief, "preset": preset, **kw})
+        return _script_result(kw.get("count", count), text)
+    monkeypatch.setattr(sb.prompter, "available", lambda: True)
+    monkeypatch.setattr(sb.prompter, "script", fake)
+    return calls
+
+
+def _wait_script(sb, project) -> dict:
+    for _ in range(100):
+        job = sb.script_status(project)
+        if job["state"] != "running":
+            return job
+        threading.Event().wait(0.05)
+    return sb.script_status(project)
+
+
+def test_script_truncates_a_long_scene_text_and_logs_it(sb, project, base, root, monkeypatch):
+    """T2.18: o teto de 500 (`MAX_SCENE_TEXT`) é do SERVIÇO — e o corte fica registrado no job."""
+    _fake_prompter_script(sb, monkeypatch, [], text="x" * 700)
+    sb.script_generate(project, count=1)
+    job = _wait_script(sb, project)
+    assert job["state"] == "done"
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert len(data["scenes"][0]["text"]) == sb.MAX_SCENE_TEXT
+    assert any("truncado" in linha for linha in job["log"]), job["log"]
+
+
+def test_script_never_touches_scenes_json(sb, project, base, root, monkeypatch):
+    """T2.19 (critério 1 / invariante suprema): o roteiro é sugestão — `scenes.json` fica intocado."""
+    sb.save_scenes(project, [{"text": "Cena 1 escrita à mão"}, {"text": ""},
+                             {"text": "Cena 3 escrita à mão"}, {"text": ""}, {"text": ""}])
+    antes = (root / "storyboard" / "scenes.json").read_bytes()
+    _fake_prompter_script(sb, monkeypatch, [])
+    sb.script_generate(project, count=5)
+    assert _wait_script(sb, project)["state"] == "done"
+    assert (root / "storyboard" / "scenes.json").read_bytes() == antes
+    assert (root / "storyboard" / "script.json").is_file()
+
+
+def test_script_spends_no_higgsfield_credit(sb, project, base, root, monkeypatch):
+    """T2.20 (critério 11 / R2): Claude é assinatura local — nada de `hf.*` nem livro-caixa."""
+    def boom(*a, **kw):  # pragma: no cover - o teste falha se for chamado
+        raise AssertionError("o roteiro não pode tocar a Higgsfield")
+    for attr in ("generate", "cost", "download"):
+        monkeypatch.setattr(sb.hf, attr, boom)
+    ledger = sb.settings.LEDGER_PATH
+    antes = ledger.read_text() if ledger.is_file() else ""
+    _fake_prompter_script(sb, monkeypatch, [])
+    sb.script_generate(project, count=2)
+    assert _wait_script(sb, project)["state"] == "done"
+    assert (ledger.read_text() if ledger.is_file() else "") == antes
+
+
+def test_script_context_images_are_base_first_then_mood(sb, project, base, root, monkeypatch):
+    """T2.22 (R8): base + até 3 frames do mood selecionado, no teto de 4 imagens do prompter."""
+    for i in range(5):
+        make_image(root / "mood" / "selected" / f"m{i}.png")
+    calls = _fake_prompter_script(sb, monkeypatch, [])
+    sb.script_generate(project, count=2)
+    assert _wait_script(sb, project)["state"] == "done"
+    enviadas = calls[0]["images"]
+    assert len(enviadas) == sb.prompter.MAX_IMAGES == 4
+    assert enviadas[0] == root / sb.BASE_IMAGE
+    assert [p.name for p in enviadas[1:]] == ["m0.png", "m1.png", "m2.png"]
+    assert all(p.is_file() for p in enviadas)
+
+
+def test_script_runs_with_the_base_alone_when_there_is_no_mood(sb, project, base, root, monkeypatch):
+    """T2.22 (segunda metade): sem mood selecionado o job segue só com a base e termina `done`."""
+    calls = _fake_prompter_script(sb, monkeypatch, [])
+    sb.script_generate(project, count=2)
+    assert _wait_script(sb, project)["state"] == "done"
+    assert calls[0]["images"] == [root / sb.BASE_IMAGE]
+
+
+def test_script_registry_is_the_one_the_step_reset_discovers(sb, project, base, studio_env):
+    """T2.23 (R5): o registro do roteiro mora no único slot que `reset._registries` conhece."""
+    from studio.common import reset
+    assert hasattr(sb, "_story_registry"), "o nome trava o reset da etapa (lista fechada em reset.py)"
+    assert sb._story_registry in reset._registries("storyboard")
+    sb._story_registry._jobs[project] = {"state": "running"}
+    with pytest.raises(reset.ResetBlocked):
+        reset.reset_step(project, "storyboard")
+    sb._story_registry.clear(project)

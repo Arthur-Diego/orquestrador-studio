@@ -48,7 +48,10 @@ def test_catalog_shape(client):
 def test_catalog_defaults_are_opt_in(client):
     """T2.2 — sem override, toda ação do prompter resolve para "sem preset" vindo do código."""
     body = client.get("/api/prompter/presets").json()
-    assert set(body["defaults"]) == {"mood", "base", "motion"}
+    # A consumidora da wave 9 (`storyboard-roteiro-llm`, ADR-025) registra `storyboard.script` em
+    # import time e é a única ação com default ATIVO (gate W3 P1) — os três papéis do prompter,
+    # que são os do curso, continuam opt-in com default `None`.
+    assert {"mood", "base", "motion"} <= set(body["defaults"])
     for kind in ("mood", "base", "motion"):
         assert body["defaults"][kind] == {"preset": None, "source": "code"}
 
