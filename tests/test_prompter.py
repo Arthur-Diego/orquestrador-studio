@@ -302,3 +302,191 @@ def test_provenance_survives_a_prompt_generated_with_preset(monkeypatch):
     assert set(parsed["sections"]) == set(prompter.SECTION_NAMES)
     assert prompter.provenance(r["prompt"]) == prompter.provenance(prompter.EXAMPLE_PROMPT)
     assert len(prompter.provenance(r["prompt"])["parts"]) == 5
+
+
+# ---------- roteiro de storyboard `[extensão]` (ADR-025; nenhuma aula ensina roteiro por LLM) ----------
+ARCOS5 = ["comeco", "descoberta", "acao", "acao", "desfecho"]
+
+
+def _scene(n: int, **over) -> dict:
+    """Cena válida do fake, no formato que `SCRIPT_OUTPUT_SPEC` pede."""
+    scene = {"n": n, "arc": "acao",
+             "text": f"Cena {n}: o personagem avança pela trilha com a lata presa à mochila.",
+             "image_prompt": (f"A cinematic photograph of scene {n}, shot on Blackmagic Pocket 6K Pro "
+                              "with a Cooke S4 lens at T2.8, Super 35."),
+             "negative": "plastic skin, HDR glow"}
+    scene.update(over)
+    return scene
+
+
+def _fake_script_claude(scenes: list, calls: list, notes: str = "Arco fechado no desfecho."):
+    """Fake do Claude CLI para o roteiro: registra `args`/`timeout` e devolve a fence ```json."""
+    body = json.dumps({"scenes": scenes, "notes_pt": notes}, ensure_ascii=False)
+
+    def run(args, capture_output, text, timeout):
+        calls.append({"args": args, "timeout": timeout})
+        return subprocess.CompletedProcess(args, 0, "Segue o roteiro.\n```json\n" + body + "\n```\n", "")
+    return run
+
+
+def _img(tmp_path, name="base_final.png"):
+    p = tmp_path / name
+    p.write_bytes(b"x")
+    return p
+
+
+def test_script_generates_the_full_screenplay(monkeypatch, tmp_path):
+    """T1.1: roteiro feliz com preset — N cenas, `source` claude, `seconds` e `n` renumerado."""
+    base = _img(tmp_path)
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 6)], calls))
+    r = prompter.script(images=[base], brief={"product": "energy drink", "vibe": "snow neon"},
+                        preset="documentary-street", count=5, arcs=ARCOS5, model_target="nano_banana_2")
+    assert len(r["scenes"]) == 5 and r["count"] == 5
+    assert r["source"] == "claude" and isinstance(r["seconds"], float)
+    assert r["preset"] == "documentary-street" and r["model_target"] == "nano_banana_2"
+    assert [s["n"] for s in r["scenes"]] == [1, 2, 3, 4, 5]
+    assert all(s["text"] and s["image_prompt"] for s in r["scenes"])
+    assert r["notes_pt"] == "Arco fechado no desfecho." and r["images"] == [str(base)]
+    assert "--allowedTools" in calls[0]["args"], "o Claude precisa da tool Read para ver as imagens"
+
+
+def test_script_prompt_carries_the_preset_rig(monkeypatch, tmp_path):
+    """T1.2 `[cross-feature]`: o rig do preset escolhido vai LITERALMENTE no pedido ao CLI."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 6)], calls))
+    prompter.script(images=[_img(tmp_path)], brief={"product": "energy drink"},
+                    preset="documentary-street", count=5, arcs=ARCOS5)
+    sent = calls[0]["args"][2]
+    p = prompter.REALISM_PRESETS["documentary-street"]
+    assert p["rig"]["camera"] in sent and p["rig"]["lens"] in sent and p["rig"]["format"] in sent
+    assert p["light"] in sent and p["grade"] in sent and p["fidelity"] in sent
+    for termo in p["negative"]:
+        assert termo in sent, termo
+
+
+def test_script_without_preset_sends_no_rig(monkeypatch, tmp_path):
+    """T1.3: `preset=None` não injeta bloco de realismo nenhum — o roteiro sai sem rig fixo."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 6)], calls))
+    r = prompter.script(images=[_img(tmp_path)], brief={"product": "energy drink"},
+                        preset=None, count=5, arcs=ARCOS5)
+    sent = calls[0]["args"][2]
+    assert "REALISM PRESET" not in sent
+    cameras = {pr["rig"]["camera"] for pr in prompter.REALISM_PRESETS.values()}
+    assert not any(c in sent for c in cameras), "nenhum rig do catálogo vaza sem preset"
+    assert len(r["scenes"]) == 5 and r["preset"] is None
+
+
+def test_script_arcs_come_from_the_server(monkeypatch, tmp_path):
+    """T1.4: o arco é decisão do servidor (`scene_arc`) — o que o modelo devolveu é descartado."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run",
+                        _fake_script_claude([_scene(i, arc="acao") for i in range(1, 6)], calls))
+    r = prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=5, arcs=ARCOS5)
+    assert [s["arc"] for s in r["scenes"]] == ARCOS5
+
+
+def test_script_refuses_to_invent_missing_scenes(monkeypatch, tmp_path):
+    """T1.5: cenas de menos é erro — jamais completar o roteiro com conteúdo determinístico."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 4)], calls))
+    with pytest.raises(RuntimeError, match="5 cenas pedidas, 3 recebidas"):
+        prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=5, arcs=ARCOS5)
+
+
+def test_script_rejects_a_response_without_json(monkeypatch, tmp_path):
+    """T1.6: texto livre sem fence vira erro claro, não `KeyError`/`IndexError` cru."""
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run",
+                        lambda args, capture_output, text, timeout:
+                        subprocess.CompletedProcess(args, 0, "Não consegui escrever o roteiro.", ""))
+    with pytest.raises(RuntimeError, match="não devolveu JSON do roteiro"):
+        prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=5, arcs=ARCOS5)
+
+
+def test_script_rejects_a_scene_without_image_prompt(monkeypatch, tmp_path):
+    """T1.7: cena sem `image_prompt` derruba o roteiro inteiro, citando qual cena."""
+    cenas = [_scene(i) for i in range(1, 6)]
+    cenas[2]["image_prompt"] = "   "
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude(cenas, calls))
+    with pytest.raises(RuntimeError, match="cena 3 do roteiro sem 'image_prompt'"):
+        prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=5, arcs=ARCOS5)
+    cenas[2]["image_prompt"] = "ok"
+    cenas[4]["text"] = ""
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude(cenas, calls))
+    with pytest.raises(RuntimeError, match="cena 5 do roteiro sem 'text'"):
+        prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=5, arcs=ARCOS5)
+
+
+def test_script_cuts_extra_scenes(monkeypatch, tmp_path):
+    """T1.8: cenas a mais são cortadas em `count`, com `n` renumerado 1..count."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 6)], calls))
+    r = prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=3,
+                        arcs=["comeco", "descoberta", "desfecho"])
+    assert [s["n"] for s in r["scenes"]] == [1, 2, 3] and r["count"] == 3
+
+
+def test_script_respects_the_image_ceiling(monkeypatch, tmp_path):
+    """T1.9: teto de `MAX_IMAGES` (4) — a 5ª e a 6ª imagem não entram no prompt nem no retorno."""
+    seis = [_img(tmp_path, f"i{i}.png") for i in range(6)]
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 6)], calls))
+    r = prompter.script(images=seis, brief={}, preset=None, count=5, arcs=ARCOS5)
+    sent = calls[0]["args"][2]
+    assert r["images"] == [str(p) for p in seis[:prompter.MAX_IMAGES]]
+    assert sum(1 for p in seis if str(p) in sent) == prompter.MAX_IMAGES
+    assert str(seis[4]) not in sent and str(seis[5]) not in sent
+
+
+def test_script_validates_that_every_image_exists(monkeypatch, tmp_path):
+    """T1.10: caminho inexistente é `FileNotFoundError` (mesmo contrato de `from_images`)."""
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    with pytest.raises(FileNotFoundError):
+        prompter.script(images=[_img(tmp_path), tmp_path / "nao.png"], brief={}, preset=None,
+                        count=5, arcs=ARCOS5)
+
+
+def test_script_uses_its_own_timeout(monkeypatch, tmp_path):
+    """T1.11: o roteiro tem teto próprio de 300 s; o prompt único continua em 180 s."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 6)], calls))
+    prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=5, arcs=ARCOS5)
+    assert prompter.SCRIPT_TIMEOUT_S == 300 and prompter.TIMEOUT_S == 180
+    assert calls[0]["timeout"] == prompter.SCRIPT_TIMEOUT_S
+
+
+def test_script_without_the_cli_is_a_runtime_error(monkeypatch, tmp_path):
+    """T1.12: sem Claude CLI o roteiro não existe (a tradução para 409 é do serviço da etapa)."""
+    monkeypatch.setattr(prompter, "BIN", None)
+    with pytest.raises(RuntimeError, match="não encontrado"):
+        prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=5, arcs=ARCOS5)
+
+
+def test_script_is_strictly_additive_to_the_single_prompt_path(monkeypatch, tmp_path):
+    """T1.13: regressão de R1 — papéis e caminho do prompt único intocados pelo roteiro."""
+    assert set(prompter.ROLES) == {"mood", "base", "motion", "script"}
+    assert "one single vibe" in prompter.ROLES["mood"] and prompter.PROMPT_FORMAT in prompter.ROLES["mood"]
+    assert prompter.PROMPT_FORMAT in prompter.ROLES["base"]
+    assert "40–90 words" in prompter.ROLES["motion"] and "Color grading:" not in prompter.ROLES["motion"]
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run",
+                        _fake_claude({"prompt": "x", "negative": "", "camera": "", "notes_pt": ""}, calls))
+    prompter.from_brief("mood", {"product": "energy drink"})
+    prompter.from_images("base", [_img(tmp_path)], "bastante neon")
+    for args in calls:
+        assert prompter.OUTPUT_SPEC in args[2] and prompter.SCRIPT_OUTPUT_SPEC not in args[2]
+        assert prompter.ROLES["script"] not in args[2]
+        assert args[args.index("--model") + 1] == prompter.MODEL
