@@ -49,6 +49,13 @@ async def _project_not_found(_request, exc: KeyError):
     return JSONResponse(status_code=404, content={"detail": f"projeto não encontrado: {exc.args[0] if exc.args else ''}"})
 
 
+@app.exception_handler(hf.CliUnavailable)
+async def _cli_unavailable(_request, exc: hf.CliUnavailable):
+    """Gate de login do Higgsfield: CLI ausente ou deslogado é sempre 409, com a mesma mensagem em
+    toda etapa (`hf.require_cli`). `installed` deixa o frontend distinguir "instale" de "faça login"."""
+    return JSONResponse(status_code=409, content={"detail": str(exc), "installed": exc.installed})
+
+
 class NewProject(BaseModel):
     name: str
     product: str = ""
