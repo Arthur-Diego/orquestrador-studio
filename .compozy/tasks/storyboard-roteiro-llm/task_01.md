@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Papel `script` e `prompter.script()` no prompter
 type: backend
 complexity: high
@@ -73,20 +73,20 @@ etapa 4 — nenhuma rota HTTP nasce aqui.
 
 ## Subtasks
 
-- [ ] 1.1 Ler `_techspec.md` inteiro, com atenção à **seção 0 (amendas)**, à seção 5.5 (contrato
+- [x] 1.1 Ler `_techspec.md` inteiro, com atenção à **seção 0 (amendas)**, à seção 5.5 (contrato
       de `prompter.script`), à seção 5.3 (schema do `script.json`, que fixa os campos por cena) e
       à seção 6 (por que não há fallback determinístico).
-- [ ] 1.2 Ler `studio/common/prompter.py` inteiro antes de editar, mapeando o que é intocável
+- [x] 1.2 Ler `studio/common/prompter.py` inteiro antes de editar, mapeando o que é intocável
       (R1) e onde o código novo entra sem se misturar ao caminho do prompt único.
-- [ ] 1.3 Acrescentar `ROLES["script"]` (R2), sem tocar nas outras chaves.
-- [ ] 1.4 Acrescentar `SCRIPT_OUTPUT_SPEC` (R4) e `SCRIPT_TIMEOUT_S` (R5).
-- [ ] 1.5 Escrever o bloco de rig do roteiro a partir de `preset_block` + rig/luz/grade/
+- [x] 1.3 Acrescentar `ROLES["script"]` (R2), sem tocar nas outras chaves.
+- [x] 1.4 Acrescentar `SCRIPT_OUTPUT_SPEC` (R4) e `SCRIPT_TIMEOUT_S` (R5).
+- [x] 1.5 Escrever o bloco de rig do roteiro a partir de `preset_block` + rig/luz/grade/
       fidelidade/negativos do catálogo (R3), sem alterar a função da provedora.
-- [ ] 1.6 Escrever `_parse_script` com todas as validações e normalizações de R6 e R8.
-- [ ] 1.7 Escrever `script(...)` montando papel + rig + brief + arcos por cena + caminhos das
+- [x] 1.6 Escrever `_parse_script` com todas as validações e normalizações de R6 e R8.
+- [x] 1.7 Escrever `script(...)` montando papel + rig + brief + arcos por cena + caminhos das
       imagens + output spec, chamando `_run` com as imagens e `SCRIPT_TIMEOUT_S` (R7, R9, R10).
-- [ ] 1.8 Escrever os testes da seção `## Tests` em `tests/test_prompter.py`, com o fake do CLI.
-- [ ] 1.9 Rodar `make verify` e conferir que os 1092 testes da baseline continuam passando.
+- [x] 1.8 Escrever os testes da seção `## Tests` em `tests/test_prompter.py`, com o fake do CLI.
+- [x] 1.9 Rodar `make verify` e conferir que os 1092 testes da baseline continuam passando.
 
 ## Implementation Details
 
@@ -145,36 +145,36 @@ Não crie módulo novo, não mova código existente, não renomeie nada.
 
 Sem `_tests.md` neste workflow. Casos concretos, todos com o Claude CLI fake:
 
-- [ ] **T1.1 — roteiro feliz com preset.** Fake devolve fence ```json com 5 cenas válidas;
+- [x] **T1.1 — roteiro feliz com preset.** Fake devolve fence ```json com 5 cenas válidas;
       chamar `script(images=[base], brief={...}, preset="documentary-street", count=5,
       arcs=["comeco","descoberta","acao","acao","desfecho"], model_target="nano_banana_2")`.
       Esperado: retorno com 5 cenas, `source == "claude"`, `seconds` numérico,
       `preset == "documentary-street"`, e `scenes[i]["n"] == i+1`.
-- [ ] **T1.2 — rig no prompt enviado ao CLI (`[cross-feature]`, metade de baixo).** Capturar o
+- [x] **T1.2 — rig no prompt enviado ao CLI (`[cross-feature]`, metade de baixo).** Capturar o
       `prompt` que o fake recebeu; esperado: contém literalmente
       `REALISM_PRESETS["documentary-street"]["rig"]["camera"]` (`Blackmagic Pocket 6K Pro`),
       `["lens"]` (`Cooke S4`) e `["format"]` (`Super 35`), mais `light` e `grade` do preset.
-- [ ] **T1.3 — sem preset.** Com `preset=None`, o prompt enviado NÃO contém
+- [x] **T1.3 — sem preset.** Com `preset=None`, o prompt enviado NÃO contém
       `"Blackmagic Pocket 6K Pro"` nem a string `REALISM PRESET`; a chamada mesmo assim devolve
       as cenas do fake.
-- [ ] **T1.4 — arcos vêm do servidor.** Fake devolve cenas com `arc` errado (ex.: todas
+- [x] **T1.4 — arcos vêm do servidor.** Fake devolve cenas com `arc` errado (ex.: todas
       `"acao"`); esperado: o retorno traz exatamente os `arcs` passados como parâmetro, na ordem.
-- [ ] **T1.5 — cenas de menos = erro.** `count=5` e fake devolve 3 cenas; esperado: exceção com
+- [x] **T1.5 — cenas de menos = erro.** `count=5` e fake devolve 3 cenas; esperado: exceção com
       mensagem citando o número esperado e o recebido; NENHUM preenchimento automático.
-- [ ] **T1.6 — JSON inválido = erro.** Fake devolve texto livre sem fence; esperado: exceção
+- [x] **T1.6 — JSON inválido = erro.** Fake devolve texto livre sem fence; esperado: exceção
       clara (não `KeyError`/`IndexError` cru).
-- [ ] **T1.7 — cena sem `image_prompt` = erro.** Fake devolve 5 cenas, uma com `image_prompt`
+- [x] **T1.7 — cena sem `image_prompt` = erro.** Fake devolve 5 cenas, uma com `image_prompt`
       vazio; esperado: exceção citando a cena.
-- [ ] **T1.8 — cenas a mais são cortadas.** `count=3` e fake devolve 5 cenas; esperado: 3 cenas,
+- [x] **T1.8 — cenas a mais são cortadas.** `count=3` e fake devolve 5 cenas; esperado: 3 cenas,
       `n` 1..3.
-- [ ] **T1.9 — teto de imagens.** Passar 6 caminhos existentes; esperado: no máximo 4 caminhos
+- [x] **T1.9 — teto de imagens.** Passar 6 caminhos existentes; esperado: no máximo 4 caminhos
       citados no prompt e passados a `_run` (`MAX_IMAGES`).
-- [ ] **T1.10 — imagem inexistente.** Um caminho que não existe → `FileNotFoundError`.
-- [ ] **T1.11 — timeout próprio.** Capturar o `timeout` recebido por `subprocess.run`; esperado:
+- [x] **T1.10 — imagem inexistente.** Um caminho que não existe → `FileNotFoundError`.
+- [x] **T1.11 — timeout próprio.** Capturar o `timeout` recebido por `subprocess.run`; esperado:
       `300` (`SCRIPT_TIMEOUT_S`), não `180`.
-- [ ] **T1.12 — sem CLI.** Com `prompter.BIN = None`, `script(...)` levanta `RuntimeError`
+- [x] **T1.12 — sem CLI.** Com `prompter.BIN = None`, `script(...)` levanta `RuntimeError`
       (a tradução para 409 é da task_02).
-- [ ] **T1.13 — regressão de R1.** `ROLES` continua tendo `mood`/`base`/`motion` com o texto de
+- [x] **T1.13 — regressão de R1.** `ROLES` continua tendo `mood`/`base`/`motion` com o texto de
       antes, e `from_brief`/`from_images` sem preset continuam produzindo o prompt de sempre
       (os testes existentes do arquivo já cobrem isso e devem passar sem edição).
 

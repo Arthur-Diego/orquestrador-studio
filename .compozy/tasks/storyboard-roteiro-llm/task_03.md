@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Bloco `[extensão]` do roteiro na tela da etapa 4
 type: frontend
 complexity: medium
@@ -75,22 +75,22 @@ visível do critério `[cross-feature]` da wave e a proteção contra sobrescrev
 
 ## Subtasks
 
-- [ ] 3.1 Ler `_techspec.md` (seção 0 amendas A4/A5/A6, seção 5 fluxo principal passos 1, 6 e 7,
+- [x] 3.1 Ler `_techspec.md` (seção 0 amendas A4/A5/A6, seção 5 fluxo principal passos 1, 6 e 7,
       critérios 3, 6, 7 e 12 da seção 9) e o `task_02.md` para conhecer rotas e campos de status.
-- [ ] 3.2 Ler `studio/etapas/storyboard/view.js` e `view.html` inteiros antes de editar, mapeando
+- [x] 3.2 Ler `studio/etapas/storyboard/view.js` e `view.html` inteiros antes de editar, mapeando
       `renderScenes()`, `collect()`, `saveScenes()`, `loadRealismPresets`, `realismPresetField`,
       `realismPresetOf`, o `init()`/`onProject()` de `makeIdeation` e os usos de `ui.progressJob`.
-- [ ] 3.3 Acrescentar o painel novo no `view.html`, no padrão da `<section class="panel"
+- [x] 3.3 Acrescentar o painel novo no `view.html`, no padrão da `<section class="panel"
       id="sbArea">` (bloco `[extensão]` aditivo), com os controles de R5 e a marca de R9.
-- [ ] 3.4 Acrescentar o CSS específico do bloco no `<style>` do próprio `view.html`, se preciso.
-- [ ] 3.5 Implementar o carregamento do bloco (status + `GET .../storyboard/script`) e o default
+- [x] 3.4 Acrescentar o CSS específico do bloco no `<style>` do próprio `view.html`, se preciso.
+- [x] 3.5 Implementar o carregamento do bloco (status + `GET .../storyboard/script`) e o default
       de preset pela chave `storyboard.script` (R3), plugando no `onProject()` existente.
-- [ ] 3.6 Implementar a geração com `progressJob` e o tratamento de indisponibilidade (R6, R7).
-- [ ] 3.7 Implementar o render da sugestão por cena com botão copiar (R8).
-- [ ] 3.8 Implementar "Aplicar às cenas vazias" e "Substituir tudo" (R1), reusando `collect()` e
+- [x] 3.6 Implementar a geração com `progressJob` e o tratamento de indisponibilidade (R6, R7).
+- [x] 3.7 Implementar o render da sugestão por cena com botão copiar (R8).
+- [x] 3.8 Implementar "Aplicar às cenas vazias" e "Substituir tudo" (R1), reusando `collect()` e
       o caminho de `saveScenes()`.
-- [ ] 3.9 Escrever os testes da seção `## Tests` em `tests/test_storyboard_view.py`.
-- [ ] 3.10 Rodar `make verify` e conferir a baseline de 1092 testes.
+- [x] 3.9 Escrever os testes da seção `## Tests` em `tests/test_storyboard_view.py`.
+- [x] 3.10 Rodar `make verify` e conferir a baseline de 1092 testes.
 
 ## Implementation Details
 
@@ -157,41 +157,41 @@ Cuidado de não-regressão: aplicar a sugestão MUST passar pelo mesmo `collect(
 Sem `_tests.md` neste workflow. Casos concretos no estilo do arquivo (leitura de texto do
 `view.js`/`view.html`, sem DOM):
 
-- [ ] **T3.1 — painel existe e está marcado `[extensão]` (critério 12).** O `view.html` contém o
+- [x] **T3.1 — painel existe e está marcado `[extensão]` (critério 12).** O `view.html` contém o
       id do painel do roteiro e um `<span class="ext">[extensão]</span>` dentro dele.
-- [ ] **T3.2 — `[cross-feature]`, metade visível (critério 3b).** O trecho do `view.js` que monta
+- [x] **T3.2 — `[cross-feature]`, metade visível (critério 3b).** O trecho do `view.js` que monta
       o bloco do roteiro usa `realismPresetField(` (o seletor populado por
       `GET /api/prompter/presets`) e lê o preset escolhido com `realismPresetOf(`. Um assert
       garante que a string `/api/prompter/presets` continua no arquivo e que o catálogo NÃO é
       buscado uma segunda vez (só uma ocorrência do fetch, em `loadRealismPresets`).
-- [ ] **T3.3 — default vem da chave certa.** O `view.js` referencia `"storyboard.script"` (ou o
+- [x] **T3.3 — default vem da chave certa.** O `view.js` referencia `"storyboard.script"` (ou o
       campo `script_preset_default` do status) ao escolher o preset pré-selecionado do roteiro, e
       o bloco do roteiro NÃO usa o default de `"motion"`.
-- [ ] **T3.4 — sem colisão de vocabulário (R2).** O `view.html` continua tendo exatamente um
+- [x] **T3.4 — sem colisão de vocabulário (R2).** O `view.html` continua tendo exatamente um
       `id="sbPreset"` (as fórmulas da aula) e o bloco novo não o referencia; todo id novo do
       roteiro casa com o prefixo acordado.
-- [ ] **T3.5 — geração sem custo (R6).** O trecho do `view.js` que dispara o roteiro usa
+- [x] **T3.5 — geração sem custo (R6).** O trecho do `view.js` que dispara o roteiro usa
       `ui.progressJob(` com `jobUrl` apontando para `/script/job` e `start` para
       `/script/generate`, e **não** contém `confirmCost` nesse trecho.
-- [ ] **T3.6 — aplicar às vazias preserva texto digitado (critério 6).** O trecho da função de
+- [x] **T3.6 — aplicar às vazias preserva texto digitado (critério 6).** O trecho da função de
       aplicar contém a checagem de texto vazio (`.trim()`) antes de atribuir e reusa `collect()`;
       um assert garante que a função NÃO atribui `text` incondicionalmente.
-- [ ] **T3.7 — substituir tudo pede confirmação (critério 7).** O trecho de "substituir tudo"
+- [x] **T3.7 — substituir tudo pede confirmação (critério 7).** O trecho de "substituir tudo"
       chama a confirmação da UI ANTES do `PUT`, e a mensagem inclui a contagem de textos que
       serão sobrescritos.
-- [ ] **T3.8 — escrita só pelo contrato existente (R1).** No `view.js`, toda escrita de cena do
+- [x] **T3.8 — escrita só pelo contrato existente (R1).** No `view.js`, toda escrita de cena do
       bloco do roteiro passa por `url("/scenes")`; o arquivo NÃO ganhou nenhum `PUT`/`POST` novo
       para escrever cenas.
-- [ ] **T3.9 — estado vazio silencioso (R8).** O trecho de boot trata `script == null` sem lançar
+- [x] **T3.9 — estado vazio silencioso (R8).** O trecho de boot trata `script == null` sem lançar
       erro (assert de que há tratamento explícito do valor nulo).
-- [ ] **T3.10 — alvo fixo (gate W3 P3).** O `view.html` mostra "Nano Banana Pro" como texto do
+- [x] **T3.10 — alvo fixo (gate W3 P3).** O `view.html` mostra "Nano Banana Pro" como texto do
       alvo do roteiro e NÃO tem `<select>` de modelo dentro do painel do roteiro; o `view.js` não
       envia `model_target` variável escolhido pelo usuário nesse bloco.
-- [ ] **T3.11 — aspect ratio é leitura.** O campo de aspect ratio do painel do roteiro não é um
+- [x] **T3.11 — aspect ratio é leitura.** O campo de aspect ratio do painel do roteiro não é um
       input editável e não entra no body do `POST /script/generate`.
-- [ ] **T3.12 — `node --check`.** O `view.js` continua sintaticamente válido (o teste já existente
+- [x] **T3.12 — `node --check`.** O `view.js` continua sintaticamente válido (o teste já existente
       cobre; garantir que passa).
-- [ ] **T3.13 — nada em `studio/web/`.** Teste (ou verificação no diff) de que `studio/web/ui.js`
+- [x] **T3.13 — nada em `studio/web/`.** Teste (ou verificação no diff) de que `studio/web/ui.js`
       e `studio/web/style.css` não mudaram.
 
 ## Success Criteria

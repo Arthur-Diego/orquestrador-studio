@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Job de roteiro, `script.json` e rotas da etapa 4
 type: backend
 complexity: high
@@ -114,27 +114,27 @@ que carrega quase todos os critérios de aceite, inclusive a metade servidor do 
 
 ## Subtasks
 
-- [ ] 2.1 Ler `_techspec.md` inteiro (seção 0 amendas, 5.1–5.4, 6, 7, 9) e o `task_01.md` para
+- [x] 2.1 Ler `_techspec.md` inteiro (seção 0 amendas, 5.1–5.4, 6, 7, 9) e o `task_01.md` para
       conhecer a assinatura de `prompter.script(...)`.
-- [ ] 2.2 Ler `studio/storyboard/service.py` e `studio/etapas/storyboard/router.py` inteiros,
+- [x] 2.2 Ler `studio/storyboard/service.py` e `studio/etapas/storyboard/router.py` inteiros,
       mapeando os padrões já usados: `_registry`/`_video_registry`, `job_status`, `Invalid`/
       `Precondition`, `_guard`, `_aspect_ratio`, `scene_arc`, `base_rel`.
-- [ ] 2.3 Registrar a ação `storyboard.script` em `settings.PRESET_ACTIONS` (R3), sem editar
+- [x] 2.3 Registrar a ação `storyboard.script` em `settings.PRESET_ACTIONS` (R3), sem editar
       `settings.py`.
-- [ ] 2.4 Acrescentar `SCRIPT_MODELS`, `SCRIPT_FILE` e as demais constantes do roteiro (R7, R11).
-- [ ] 2.5 Implementar as validações de pré-requisito e de parâmetros (R6), com as mensagens
+- [x] 2.4 Acrescentar `SCRIPT_MODELS`, `SCRIPT_FILE` e as demais constantes do roteiro (R7, R11).
+- [x] 2.5 Implementar as validações de pré-requisito e de parâmetros (R6), com as mensagens
       exatas da matriz da seção 6.
-- [ ] 2.6 Implementar `script_generate` (job em thread com `_script_registry`), incluindo brief,
+- [x] 2.6 Implementar `script_generate` (job em thread com `_script_registry`), incluindo brief,
       imagens de contexto (R8), aspect ratio (R9), arcos (R10) e chamada ao prompter.
-- [ ] 2.7 Implementar a validação/normalização da resposta, o truncamento de `text` em 500 e a
+- [x] 2.7 Implementar a validação/normalização da resposta, o truncamento de `text` em 500 e a
       gravação atômica de `script.json` (R11).
-- [ ] 2.8 Implementar `script_status` e `load_script` (R14).
-- [ ] 2.9 Acrescentar os campos aditivos ao `status` da etapa (R13).
-- [ ] 2.10 Acrescentar as três rotas ao router (R12).
-- [ ] 2.11 Acrescentar a ressalva `[extensão]` + ADR-025 na docstring do módulo (R16).
-- [ ] 2.12 Escrever os testes da seção `## Tests` em `tests/test_storyboard_service.py` e
+- [x] 2.8 Implementar `script_status` e `load_script` (R14).
+- [x] 2.9 Acrescentar os campos aditivos ao `status` da etapa (R13).
+- [x] 2.10 Acrescentar as três rotas ao router (R12).
+- [x] 2.11 Acrescentar a ressalva `[extensão]` + ADR-025 na docstring do módulo (R16).
+- [x] 2.12 Escrever os testes da seção `## Tests` em `tests/test_storyboard_service.py` e
       `tests/test_storyboard_api.py`.
-- [ ] 2.13 Rodar `make verify` e conferir a baseline de 1092 testes.
+- [x] 2.13 Rodar `make verify` e conferir a baseline de 1092 testes.
 
 ## Implementation Details
 
@@ -211,65 +211,65 @@ projeto, o job segue só com a base (R8).
 
 Sem `_tests.md` neste workflow. Casos concretos, todos com o Claude CLI fake:
 
-- [ ] **T2.1 — caminho feliz (critério 1).** Projeto com `base/base_final.png`; `POST
+- [x] **T2.1 — caminho feliz (critério 1).** Projeto com `base/base_final.png`; `POST
       script/generate` com `{"count": 5}`; esperado: 200 com estado inicial do job; depois de o
       job terminar, `GET script/job` devolve `state == "done"` e `storyboard/script.json` existe
       com 5 cenas, cada uma com `text` não vazio (≤ 500) e `image_prompt` não vazio.
-- [ ] **T2.2 — arco (critério 2).** Com `count=5`: `scenes[0].arc == "comeco"`,
+- [x] **T2.2 — arco (critério 2).** Com `count=5`: `scenes[0].arc == "comeco"`,
       `scenes[1].arc == "descoberta"`, `scenes[2].arc == "acao"`, `scenes[3].arc == "acao"`,
       `scenes[4].arc == "desfecho"`.
-- [ ] **T2.3 — `[cross-feature]` (critério 3a).** Gerar com `preset="documentary-street"`;
+- [x] **T2.3 — `[cross-feature]` (critério 3a).** Gerar com `preset="documentary-street"`;
       esperado: para CADA cena de `script.json`, o `image_prompt` contém literalmente
       `REALISM_PRESETS["documentary-street"]["rig"]["camera"]`, `["lens"]` e `["format"]`.
       O teste MUST ler os valores do catálogo, nunca strings hardcoded.
-- [ ] **T2.4 — `[cross-feature]` (handoff da chave, R3).** `GET /api/prompter/presets` devolve
+- [x] **T2.4 — `[cross-feature]` (handoff da chave, R3).** `GET /api/prompter/presets` devolve
       `defaults["storyboard.script"] == {"kind": "storyboard.script",
       "preset": "documentary-street", "source": "code"}`. E `GET /api/prompter/presets?pid=<pid>`
       idem.
-- [ ] **T2.5 — preset default (critério 4).** `POST script/generate` SEM o campo `preset`;
+- [x] **T2.5 — preset default (critério 4).** `POST script/generate` SEM o campo `preset`;
       esperado: `script.json["preset"] == "documentary-street"` e o rig desse preset no
       `image_prompt` das cenas.
-- [ ] **T2.6 — preset `null`.** Body com `"preset": null`; esperado: `script.json["preset"]` é
+- [x] **T2.6 — preset `null`.** Body com `"preset": null`; esperado: `script.json["preset"]` é
       `null` e o prompt enviado ao CLI não traz rig fixo.
-- [ ] **T2.7 — override de projeto.** Gravar override de projeto para `storyboard.script` com
+- [x] **T2.7 — override de projeto.** Gravar override de projeto para `storyboard.script` com
       `arri-natural-narrative` (via `PUT /api/projects/{pid}/prompter/preset-config`, rota da
       provedora); gerar sem `preset`; esperado: `script.json["preset"] == "arri-natural-narrative"`.
-- [ ] **T2.8 — preset desconhecido = 422 antes do CLI.** Body `{"preset": "nao-existe"}`;
+- [x] **T2.8 — preset desconhecido = 422 antes do CLI.** Body `{"preset": "nao-existe"}`;
       esperado: 422 citando os ids válidos, `subprocess.run` NUNCA chamado, nenhum arquivo criado.
-- [ ] **T2.9 — aspect ratio (critério 5).** Projeto com `aspect_ratio: "9:16"`; esperado:
+- [x] **T2.9 — aspect ratio (critério 5).** Projeto com `aspect_ratio: "9:16"`; esperado:
       `script.json["aspect_ratio"] == "9:16"` e `"9:16"` aparece no prompt enviado ao CLI. Projeto
       sem `aspect_ratio` → `"16:9"`.
-- [ ] **T2.10 — Claude ausente = 409 (critério 8).** `prompter.BIN = None`; esperado: 409 com a
+- [x] **T2.10 — Claude ausente = 409 (critério 8).** `prompter.BIN = None`; esperado: 409 com a
       mensagem da matriz, e `storyboard/script.json` NÃO é criado.
-- [ ] **T2.11 — base ausente = 409.** Projeto sem `base/base_final.png`; esperado: 409 com a
+- [x] **T2.11 — base ausente = 409.** Projeto sem `base/base_final.png`; esperado: 409 com a
       mensagem de precondição da etapa; nenhum arquivo criado.
-- [ ] **T2.12 — job concorrente = 409.** Segundo `POST script/generate` enquanto o primeiro está
+- [x] **T2.12 — job concorrente = 409.** Segundo `POST script/generate` enquanto o primeiro está
       `running`; esperado: 409.
-- [ ] **T2.13 — `count` inválido = 422.** `count=0` e `count=11`; esperado: 422 nos dois.
-- [ ] **T2.14 — `model_target` inválido = 422 (gate W3 P3).** `model_target="gpt_image_2"`;
+- [x] **T2.13 — `count` inválido = 422.** `count=0` e `count=11`; esperado: 422 nos dois.
+- [x] **T2.14 — `model_target` inválido = 422 (gate W3 P3).** `model_target="gpt_image_2"`;
       esperado: 422 (v1 aceita só `nano_banana_2`). `model_target="nano_banana_2"` passa.
-- [ ] **T2.15 — `instruction` longa = 422.** 301 caracteres; esperado: 422.
-- [ ] **T2.16 — resposta inválida = job em erro (critério 9).** Fake devolve 3 cenas com
+- [x] **T2.15 — `instruction` longa = 422.** 301 caracteres; esperado: 422.
+- [x] **T2.16 — resposta inválida = job em erro (critério 9).** Fake devolve 3 cenas com
       `count=5`; esperado: `GET script/job` com `state == "error"` e `error` preenchido; se já
       existia um `script.json` de um job anterior, ele permanece byte a byte idêntico.
-- [ ] **T2.17 — `GET /script` sem geração (critério 10).** Projeto novo; esperado: 200 com
+- [x] **T2.17 — `GET /script` sem geração (critério 10).** Projeto novo; esperado: 200 com
       `{"script": null}` (não 404). Depois de gerar: 200 com o schema da §5.3.
-- [ ] **T2.18 — texto longo é truncado.** Fake devolve uma cena com `text` de 700 caracteres;
+- [x] **T2.18 — texto longo é truncado.** Fake devolve uma cena com `text` de 700 caracteres;
       esperado: `script.json` guarda 500 e o `log` do job registra o truncamento.
-- [ ] **T2.19 — `scenes.json` intocado (critério 1 / R1).** Escrever textos nas cenas 1 e 3,
+- [x] **T2.19 — `scenes.json` intocado (critério 1 / R1).** Escrever textos nas cenas 1 e 3,
       capturar os bytes de `storyboard/scenes.json`, rodar um job completo; esperado: os bytes do
       arquivo são idênticos depois do job.
-- [ ] **T2.20 — zero crédito (critério 11 / R2).** Depois de um job completo, o livro-caixa do
+- [x] **T2.20 — zero crédito (critério 11 / R2).** Depois de um job completo, o livro-caixa do
       projeto não ganhou registro e nenhum atributo de `hf` foi chamado (monkeypatch que falha se
       `hf.generate` for tocado).
-- [ ] **T2.21 — status aditivo (§5.4).** `GET /api/projects/{pid}/storyboard` antes da geração:
+- [x] **T2.21 — status aditivo (§5.4).** `GET /api/projects/{pid}/storyboard` antes da geração:
       `script.exists is False` e `script_preset_default == "documentary-street"`; depois:
       `script.exists is True` com `generated_at` preenchido. Todos os campos anteriores do status
       continuam presentes e com o mesmo valor.
-- [ ] **T2.22 — imagens de contexto (R8).** Projeto com base + 5 imagens no mood selecionado;
+- [x] **T2.22 — imagens de contexto (R8).** Projeto com base + 5 imagens no mood selecionado;
       esperado: no máximo 4 caminhos chegam ao prompter, com a base em primeiro lugar. Projeto
       sem mood selecionado: só a base, e o job termina `done`.
-- [ ] **T2.23 — reset da etapa descobre o registry novo (R5).** `studio.common.reset._registries`
+- [x] **T2.23 — reset da etapa descobre o registry novo (R5).** `studio.common.reset._registries`
       (ou o caminho HTTP do reset da etapa) devolve o `_story_registry` do roteiro junto dos
       outros; enquanto um job de roteiro está `running`, o reset da etapa recusa com 409. Um
       assert direto sobre o nome do atributo (`hasattr(service, "_story_registry")`) trava a
@@ -285,3 +285,25 @@ Sem `_tests.md` neste workflow. Casos concretos, todos com o Claude CLI fake:
   `steps.py` nem `studio/web/`.
 - Uma busca por `save_scenes`, `_write_scenes`, `record_generation` e `hf.` no diff de produção
   não retorna nenhuma chamada nova.
+
+## Notas de execução (task_02)
+
+Duas asserções de CONJUNTO FECHADO em testes pré-existentes precisaram ser estendidas — nenhuma
+mudança de comportamento, só de expectativa, e ambas exigidas por requisitos desta task:
+
+- `tests/test_storyboard_service.py::test_status_counts_ideas_scenes_and_base` comparava o dict
+  INTEIRO do `status` da etapa; os campos aditivos de R13 (§5.4) entraram na expectativa (o mesmo
+  teste já havia sido estendido quando a ADR-022 acrescentou os campos de vídeo);
+- `tests/test_prompter_api.py::test_catalog_defaults_are_opt_in` afirmava
+  `set(defaults) == {mood, base, motion}`, invalidado pelo registro obrigatório de R3 — virou
+  superconjunto, mantendo intacta a asserção de que os três papéis do prompter seguem opt-in.
+
+Divergência de contrato resolvida (T2.4): o task file e a amenda A1 escrevem
+`defaults["storyboard.script"] == {"kind", "preset", "source"}`, mas a rota congelada da provedora
+(`studio/creditos/router.py::_preset_defaults`) devolve só `{preset, source}` — o `kind` vive em
+`settings.preset_default_for`. Como editar a provedora está fora do escopo (Success Criteria), o
+teste asserta o runtime real E o `{kind, preset, source}` completo via `preset_default_for`.
+
+Sugestão registrada, NÃO implementada (gate 2 do CLAUDE.md, R18): anunciar o roteiro no
+`guide.py` da etapa (checklist/`check`) ficaria natural, mas a §4 do `_techspec.md` não inclui o
+guia. Fica para decisão do dono.
