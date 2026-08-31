@@ -1280,6 +1280,10 @@ def script_generate(pid: str, preset: settings.PresetArg = settings.PRESET_UNSET
     model_target = _valid_script_model(model_target)
     instruction = _valid_script_instruction(instruction)
     _require_base(root)
+    # O 409 de concorrência vem ANTES do 409 de CLI ausente: o estado do job é do projeto e não
+    # depende do ambiente — sem isso, a mesma requisição muda de mensagem conforme o PATH da máquina.
+    if _story_registry.status(pid).get("state") == "running":
+        raise Precondition("Já existe uma geração de roteiro em andamento para este projeto.")
     if not prompter.available():
         raise Precondition("Claude CLI não encontrado no PATH: escreva as cenas manualmente "
                            "(aula 010) ou instale o Claude Code")

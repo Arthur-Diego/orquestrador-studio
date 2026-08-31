@@ -780,8 +780,12 @@ def test_script_without_base_image_is_409(client, pid, root, claude):
     assert claude == [] and not (root / "storyboard" / "script.json").exists()
 
 
-def test_script_job_is_one_per_project(client, pid, base, studio_env):
-    """T2.12: um job de roteiro por projeto — o segundo pedido é 409 enquanto o primeiro corre."""
+def test_script_job_is_one_per_project(client, pid, base, studio_env, claude):
+    """T2.12: um job de roteiro por projeto — o segundo pedido é 409 enquanto o primeiro corre.
+
+    Usa o fixture `claude` para o CLI parecer instalado: sem ele, num ambiente sem Claude no
+    PATH (CI), o endpoint responde 409 "CLI não encontrado" antes de chegar na guarda de
+    concorrência, e a asserção da mensagem falha."""
     sb = studio_env["svc"]("storyboard")
     sb._story_registry._jobs[pid] = {"state": "running"}
     r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={})
