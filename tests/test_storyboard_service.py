@@ -37,8 +37,14 @@ def test_instruction_keeps_course_formula_and_suffix(sb, project, base):
     assert r["count"] == 4 and r["base_image"] == "base/base_final.png"
     assert "4 variações" in r["ui_hint"], "aula 010: 4 gerações quando está incerto"
     assert sb.build_instruction(project, "draw_to_edit", "the climber climbs the can", 1)["instruction"].startswith("Follow the sketch:")
+    # multishot: pontos de vista REAIS (ADR-027) — a fórmula espelha a aula 011 (`angles`), que pede
+    # explicitamente OUTRO ângulo/enquadramento, em vez da antiga "this exact scene" que travava o
+    # Nano Banana em preservação fiel (só um tweak). O texto do usuário (preset da aula) entra literal.
     ms = sb.build_instruction(project, "multishot", "a close-up on the character", 1)["instruction"]
-    assert ms.startswith("Another point of view of this exact scene:") and "1 variação" in \
+    assert ms.startswith("Bring me another point of view of this image:")
+    assert "a close-up on the character" in ms
+    assert "different camera angle" in ms, "pede um ângulo de câmera genuinamente diferente"
+    assert "1 variação" in \
         sb.build_instruction(project, "multishot", "a close-up on the character", 1)["ui_hint"]
 
 
@@ -324,6 +330,34 @@ def test_cli_generate_imports_results_as_candidates(sb, project, base, monkeypat
     assert len(ideas) == 2 and all(i["source"] == "cli" for i in ideas)
     assert all(i["prompt"] == "Make it smaller. Keep everything else identical, realistic." for i in ideas)
     assert list((root / "jobs").glob("storyboard_*.json"))
+
+
+def test_multishot_asks_for_a_real_new_viewpoint_and_sends_aspect_ratio(sb, project, base, monkeypatch, root):
+    """ADR-027: o multishot do painel 01 gera pontos de vista REAIS, não um tweak fiel.
+
+    Duas garantias contra a regressão do bug: (1) a instrução pede explicitamente OUTRO ângulo de
+    câmera/enquadramento (fórmula da aula 011, `angles`), não "this exact scene"; (2) a chamada ao
+    CLI leva `aspect_ratio` da campanha — como o multishot dos ângulos — para o CLI não herdar a
+    moldura da entrada e reforçar a preservação. Os kinds de EDIÇÃO seguem SEM `aspect_ratio`."""
+    seen = []
+    _fake_cli(monkeypatch, sb, urls=("http://x/a.png",))
+    monkeypatch.setattr(sb.hf, "generate",
+                        lambda model, params, timeout_s=600: (seen.append(params),
+                        {"raw": {}, "urls": ["http://x/a.png"], "id": "j"})[-1])
+    # multishot: instrução de viewpoint real + aspect_ratio da campanha (16:9 default).
+    sb.start_generate(project, "nano_banana_2", "multishot", "a close-up on the character", 1)
+    assert _wait_job(sb, project)["state"] == "done"
+    ms = seen[-1]
+    assert ms["prompt"].startswith("Bring me another point of view of this image:")
+    assert "different camera angle" in ms["prompt"]
+    assert "this exact scene" not in ms["prompt"], "a fórmula antiga travava o modelo (só tweak)"
+    assert ms["aspect_ratio"] == "16:9"
+    # edição: fórmula da aula intacta e SEM aspect_ratio (mudança localizada mantém a moldura).
+    seen.clear()
+    sb.start_generate(project, "nano_banana_2", "edit", "Make it smaller", 1)
+    assert _wait_job(sb, project)["state"] == "done"
+    assert "aspect_ratio" not in seen[-1]
+    assert seen[-1]["prompt"] == "Make it smaller. Keep everything else identical, realistic."
 
 
 def test_cli_generate_refuses_concurrent_job(sb, project, base, monkeypatch):
