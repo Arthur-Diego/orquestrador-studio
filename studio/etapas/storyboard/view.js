@@ -47,7 +47,9 @@ Studio.register("storyboard", (ctx) => {
     // (outro conceito, intocado). Por isso o identificador local leva o prefixo `realism`. É CLASSE,
     // não id: o bloco se repete por foto (uma linha por foto + o modal), e id duplicado seria
     // HTML inválido — mesmo padrão de `.sbVidDesc`/`.sbVidPromptBox`.
-    let realismPresets = [], realismDefault = "";
+    // `realismDefaults` = o mapa ABERTO `defaults` do catálogo, guardado inteiro: cada bloco lê a
+    // SUA chave de ação (o vídeo lê `motion`; o roteiro `[extensão]`, `storyboard.script`).
+    let realismPresets = [], realismDefault = "", realismDefaults = {};
     const pkey = (sid, img) => `${sid}:${img}`;
     function photoMeta(sid, img) {
       const k = pkey(sid, img);
@@ -82,6 +84,13 @@ Studio.register("storyboard", (ctx) => {
       // `[extensão]` ADR-022: modelos de vídeo do modal "Gerar animação" (+ default por modo).
       videoModels = st.video_models || [];
       videoModelDefaults = st.video_model_defaults || { single: "", start_end: "" };
+      // `[extensão]` roteiro por LLM (ADR-025): campos ADITIVOS do status — presença do Claude CLI
+      // (sem ele o botão nasce desabilitado, em vez de a tela descobrir por 409), default de preset
+      // resolvido para a ação `storyboard.script` e o catálogo de alvos aceitos (v1: um só).
+      scriptCli = !!st.script_cli;
+      scriptPresetDefault = st.script_preset_default || "";
+      scriptModels = st.script_models || [];
+      scriptGate();
     }
 
     async function loadPresets() {
@@ -99,9 +108,10 @@ Studio.register("storyboard", (ctx) => {
       try {
         const r = await api(`/api/prompter/presets?pid=${encodeURIComponent(ctx.pid())}`);
         realismPresets = r.presets || [];
+        realismDefaults = r.defaults || {};
         realismDefault = ((r.defaults || {})["motion"] || {}).preset || "";
         if (!realismPresets.some((p) => p.id === realismDefault)) realismDefault = "";
-      } catch (err) { realismPresets = []; realismDefault = ""; }
+      } catch (err) { realismPresets = []; realismDefault = ""; realismDefaults = {}; }
     }
 
     // Bloco do seletor, usado na linha-foto E no modal "Gerar animação" (os dois caminhos que
@@ -636,6 +646,177 @@ Studio.register("storyboard", (ctx) => {
     }
 
     // ====================================================================================
+    // `[extensão]` roteiro por LLM (ADR-025) — bloco "Roteiro por Claude": o CLI propõe as N cenas
+    // (texto pt-BR + prompt de imagem em inglês com o rig do preset) e o usuário decide se aplica.
+    // O método da aula 010 (o ALUNO escreve a história) continua o caminho PADRÃO e intocado.
+    // Invariante: NADA aqui escreve cena sozinho — a aplicação é opt-in e passa pelo
+    // `PUT /scenes` que já existe, com o array montado pelo `collect()` da tela.
+    // Vocabulário: prefixo `sbScript` (amenda A4 — no storyboard `#sbPreset` é FÓRMULA DA AULA).
+    // ====================================================================================
+    const SCRIPT_NO_CLI = "Claude CLI não encontrado: escreva as cenas à mão no painel 02 (aula 010) ou instale o Claude Code.";
+    const SCRIPT_TARGET = "Nano Banana Pro";      // gate W3 (P3): v1 tem alvo ÚNICO, texto fixo — sem seletor
+    const SCRIPT_ACTION = "storyboard.script";    // chave da AÇÃO deste bloco no mapa aberto `defaults`
+    const SCRIPT_COUNT_DEFAULT = 5, SCRIPT_COUNT_MAX = 10;   // espelho de DEFAULT_SCENES/MAX_SCENES do serviço
+    let script = null;                            // última sugestão (`GET .../script`) ou `null`
+    let scriptCli = false, scriptPresetDefault = "", scriptModels = [];
+
+    /** Preset pré-selecionado DO ROTEIRO: o default que o servidor resolveu para a ação
+     *  `storyboard.script` (campo do status), com o mapa `defaults` do MESMO catálogo como segunda
+     *  fonte. Nunca o default do vídeo (`motion`): são ações diferentes (ADR-016). Id fora do
+     *  catálogo cai em `""` = `(sem preset)`, a rota de fuga do seletor. */
+    function scriptPreset() {
+      const def = scriptPresetDefault || ((realismDefaults[SCRIPT_ACTION] || {}).preset || "");
+      return realismPresets.some((p) => p.id === def) ? def : "";
+    }
+
+    /** Rótulo do alvo do prompt de imagem, vindo do catálogo do status (v1: um item só). */
+    function scriptModelLabel() {
+      const m = scriptModels.find((x) => x.default) || scriptModels[0];
+      return (m && m.label) || SCRIPT_TARGET;
+    }
+
+    /** Sem Claude CLI o botão fica desabilitado com o motivo VISÍVEL; o painel 02 (o fluxo manual
+     *  da aula) não muda em nada — o roteiro é atalho opcional, nunca pré-requisito. */
+    function scriptGate() {
+      const gen = $("#sbScriptGen");
+      if (gen) { gen.disabled = !scriptCli; gen.title = scriptCli ? "" : SCRIPT_NO_CLI; }
+      const hint = $("#sbScriptHint");
+      if (hint) { hint.hidden = scriptCli; hint.textContent = scriptCli ? "" : SCRIPT_NO_CLI; }
+    }
+
+    /** Controles do bloco: o seletor de preset é o MESMO da provedora (`realismPresetField`, que
+     *  já lista o catálogo de `GET /api/prompter/presets`); proporção e alvo são LEITURA. */
+    function renderScriptControls() {
+      const host = $("#sbScriptPreset");
+      if (host) host.innerHTML = realismPresetField(scriptPreset());
+      // A proporção é a do projeto (servidor) e NÃO entra no body: quem a resolve é o serviço.
+      const ar = $("#sbScriptAspect");
+      if (ar) ar.textContent = (ctx.project() || {}).aspect_ratio || "16:9";
+      const mt = $("#sbScriptModel");
+      if (mt) mt.textContent = scriptModelLabel();
+      scriptGate();
+    }
+
+    /** Boot do painel: `{"script": null}` (nunca gerou) é estado NORMAL — vazio silencioso, nunca
+     *  erro na tela. Falha de rede também cai em vazio: o painel 02 segue utilizável. */
+    async function loadScript() {
+      try {
+        const r = await api(url("/script"));
+        script = r && r.script ? r.script : null;
+      } catch (err) { script = null; }
+      renderScript();
+    }
+
+    /** Rótulo pt-BR do momento do arco a partir do id (`comeco`/`descoberta`/`acao`/`desfecho`). */
+    const arcLabelOf = (id) => (meta.arc || []).reduce((acc, a) => (a.id === id ? a.label : acc), id || "");
+
+    function renderScript() {
+      const box = $("#sbScriptBox"), list = $("#sbScriptScenes"), chip = $("#sbScriptState");
+      if (!box || !list) return;
+      const cenas = script ? (script.scenes || []) : [];
+      // `generated_at` vem ISO do servidor; na tela vale o "quando" legível (sem os segundos).
+      const quando = String((script && script.generated_at) || "").replace("T", " ").slice(0, 16);
+      if (chip) { chip.hidden = !script; chip.textContent = script ? `sugestão de ${quando || "agora"}` : ""; }
+      if (!cenas.length) { box.classList.add("hidden"); list.innerHTML = ""; return; }   // `script == null` → vazio
+      box.classList.remove("hidden");
+      $("#sbScriptMeta").textContent =
+        `${cenas.length} cenas · preset ${script.preset || "(sem preset)"} · ${script.aspect_ratio || ""} · ${scriptModelLabel()}`;
+      const notes = $("#sbScriptNotes");
+      notes.hidden = !script.notes_pt;
+      notes.textContent = script.notes_pt || "";
+      list.innerHTML = cenas.map((s, i) => `
+        <div class="sb-script-scene" data-i="${i}">
+          <span class="mom" data-mom="${esc(s.arc || "")}" title="Cena ${i + 1}">${esc(arcLabelOf(s.arc))}</span>
+          <div class="col">
+            <p class="sb-script-txt">${esc(s.text || "")}</p>
+            <div class="prompt sm">
+              <div class="row"><span class="eyebrow">prompt de imagem (inglês)</span>
+                <button type="button" class="link copy sbScriptCopy">Copiar</button><span class="ok"></span></div>
+              <p class="txt sbScriptPromptText">${esc(s.image_prompt || "")}</p>
+            </div>
+          </div>
+        </div>`).join("");
+    }
+
+    /** Geração: job assíncrono acompanhado pelo `progressJob` (ADR-006) e SEM `confirmCost` — o
+     *  Claude CLI é a assinatura local do usuário, zero crédito Higgsfield. */
+    async function runScript() {
+      if (!scriptCli) return toast(SCRIPT_NO_CLI);
+      const count = Math.min(SCRIPT_COUNT_MAX, Math.max(1, +$("#sbScriptCount").value || SCRIPT_COUNT_DEFAULT));
+      // `model_target` NÃO vai no body: v1 tem alvo único (gate W3 P3) e quem o resolve é o
+      // serviço. A proporção também não — é a do projeto, lida no servidor.
+      const body = { preset: realismPresetOf($("#sbScriptPreset")), count, instruction: $("#sbScriptInstruction").value.trim() };
+      try {
+        await ui.progressJob({
+          title: "Gerar roteiro (Claude) [extensão]",
+          subtitle: `${count} cenas · sugestão editável, nada é aplicado sem o seu clique`,
+          start: () => api(url("/script/generate"), { method: "POST", body: JSON.stringify(body) }),
+          jobUrl: url("/script/job"),
+          done: async () => { await loadScript(); },
+          label: "Roteiro pronto",
+        });
+      } catch (err) { toast(err.message); }
+    }
+
+    /** Aplicação OPT-IN da sugestão às cenas do painel 02.
+     *
+     *  `all = false` ("Aplicar às cenas vazias"): preenche SÓ as cenas cujo `text` está vazio
+     *  (após `trim`), sem diálogo — o que o usuário escreveu fica byte a byte igual.
+     *  `all = true` ("Substituir tudo"): confirmação explícita ANTES de qualquer escrita, dizendo
+     *  QUANTOS textos serão sobrescritos.
+     *
+     *  Os dois caminhos escrevem pelo `PUT /scenes` existente (`saveScenes`), com o array montado
+     *  pelo `collect()` da tela — montar um payload paralelo perderia `images`/`primary`/`photos`/
+     *  `videos` das cenas (ADR-018/022). */
+    async function applyScript(all) {
+      const cenas = script ? (script.scenes || []) : [];
+      if (!cenas.length) return toast("Gere o roteiro primeiro.");
+      const list = collect();
+      if (!list.length) return toast("Nenhuma cena no painel 02 para preencher.");
+      const alvo = Math.min(list.length, cenas.length);
+      const escritas = [];
+      for (let i = 0; i < alvo; i++) if (String(list[i].text || "").trim()) escritas.push(i + 1);
+      if (all && escritas.length &&
+          !confirm(`Substituir tudo sobrescreve ${escritas.length} texto(s) que você já escreveu (cena ${escritas.join(", ")}). Continuar?`)) return;
+      let n = 0;
+      for (let i = 0; i < alvo; i++) {
+        if (!all && String(list[i].text || "").trim()) continue;   // cena escrita pelo usuário: intacta
+        list[i].text = String(cenas[i].text || "");
+        n++;
+      }
+      if (!n) return toast("Nenhuma cena vazia para preencher — use “Substituir tudo” se quiser trocar o texto.");
+      const sobra = cenas.length - alvo;
+      try {
+        await saveScenes(list);
+        toast(`${n} cena(s) preenchida(s) pelo roteiro${sobra > 0 ? ` · ${sobra} sugestão(ões) sobraram (use “+ cena”)` : ""}`);
+      } catch (err) { toast(err.message); }
+    }
+
+    function initScript() {
+      const gen = $("#sbScriptGen");
+      if (!gen) return;
+      gen.onclick = runScript;
+      $("#sbScriptApplyEmpty").onclick = () => applyScript(false);
+      $("#sbScriptApplyAll").onclick = () => applyScript(true);
+      $("#sbScriptScenes").addEventListener("click", async (e) => {
+        const b = e.target.closest(".sbScriptCopy"); if (!b) return;
+        const linha = b.closest(".sb-script-scene"); if (!linha) return;
+        const ok = await ui.copy(linha.querySelector(".sbScriptPromptText").textContent);
+        const eco = b.parentElement.querySelector(".ok");
+        if (eco) { eco.textContent = ok ? "copiado ✓" : "copie à mão"; setTimeout(() => (eco.textContent = ""), 1500); }
+      });
+    }
+
+    async function scriptOnProject() {
+      if (!$("#sbScriptBox")) return;
+      $("#sbScriptInstruction").value = "";
+      $("#sbScriptCount").value = String(SCRIPT_COUNT_DEFAULT);
+      renderScriptControls();
+      await loadScript();
+    }
+    // ---- fim do bloco `[extensão]` roteiro por LLM ----
+
+    // ====================================================================================
     // `[extensão]` inpaint-marcacao (ADR-004) — modo "Área marcada": o usuário rabisca a região
     // na imagem escolhida (canvas de `/static/annotate.js`), o PNG anotado vira candidato
     // `role:"annotation"` e a geração paga manda [original, anotada] ao CLI (kind `edit_area`).
@@ -821,6 +1002,7 @@ Studio.register("storyboard", (ctx) => {
         if (panelDrop) panelDrop.accept = "image/*";
         $("#sbCounts").onclick = importModal;
         initArea();   // `[extensão]` inpaint-marcacao: painel "Área marcada" (bloco próprio)
+        initScript();   // `[extensão]` roteiro por LLM (ADR-025): painel "Roteiro por Claude"
 
         $("#sbAdd").onclick = () => { scenes = collect().concat({ id: null, text: "", images: [], primary: null, photos: {} }); renderScenes(); };
         $("#sbReorder").onclick = reorderModal;
@@ -906,6 +1088,7 @@ Studio.register("storyboard", (ctx) => {
         await loadStatus();
         await loadIdeas();
         await loadScenes();
+        await scriptOnProject();   // `[extensão]` roteiro por LLM: depende dos presets, do status e das cenas
         await areaOnProject();   // `[extensão]` inpaint-marcacao: depende dos presets, das ideias e da base
       },
       destroy() {},
