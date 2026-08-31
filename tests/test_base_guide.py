@@ -141,8 +141,8 @@ def test_guide_done_only_when_the_upscale_closes_the_chain(client, pid):
     g = guide_of(client, pid)
     assert g["status"] == "done" and g["progress"] == 1.0 and not g["missing"]
     assert "concluída" in g["next_action"]
-    # com marca, a cadeia da aula também exige o rótulo — a etapa volta a ficar incompleta
-    client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero", "description": "raio neon"})
+    # com a marca-imagem anexada, a cadeia da aula também exige o rótulo — volta a ficar incompleta
+    client.post(f"/api/projects/{pid}/base/brand-image", files={"file": ("m.png", png(64, 64), "image/png")})
     g = guide_of(client, pid)
     assert g["status"] == "in_progress" and checks(g)["label_applied"]["status"] == "warn"
     assert "rótulo" in g["next_action"]
@@ -179,9 +179,9 @@ def test_guide_upscale_ratio_ok_and_warn(client, pid):
 def test_guide_label_check_follows_the_brand_extension(client, pid):
     c = checks(guide_of(client, pid))
     assert c["label_applied"]["status"] == "todo", "sem marca não há o que cobrar"
-    client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero", "description": "raio neon"})
+    client.post(f"/api/projects/{pid}/base/brand-image", files={"file": ("m.png", png(64, 64), "image/png")})
     c = checks(guide_of(client, pid))
-    assert c["label_applied"]["status"] == "warn" and "Gelo Zero" in c["label_applied"]["detail"]
+    assert c["label_applied"]["status"] == "warn" and "marca anexada" in c["label_applied"]["detail"]
 
     upload(client, pid, "s.png", png(1024, 576), kind="situation", ref_id="0f8e7d6c5b4a", prompt=LONG_EN)
     client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "situation")})

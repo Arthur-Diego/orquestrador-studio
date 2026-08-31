@@ -23,6 +23,7 @@ import json
 import logging
 import shutil
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
@@ -193,26 +194,48 @@ def _require_inputs(root: Path) -> tuple[list[dict], list[str]]:
     return refs, mood
 
 
-# ---------- marca (extensão aprovada) ----------
-def brand_get(pid: str) -> dict:
-    f = project_dir(pid) / STEP / "brand.json"
-    if not f.exists():
-        return {"name": "", "description": ""}
-    data = json.loads(f.read_text())
-    return {"name": data.get("name", ""), "description": data.get("description", "")}
+# ---------- marca do rótulo como IMAGEM (extensão, supersede da marca-texto) ----------
+#: A marca do rótulo deixou de ser texto (nome + descrição) e passou a ser uma IMAGEM anexada
+#: pelo dono (criada por ele, ex.: no Higgsfield). Ela entra como `image_reference` na geração do
+#: rótulo (ADR-002: sem máscara real, aplica-se por prompt + imagem de referência). Ver ADR de
+#: supersede da marca-por-texto da wave 1.
+BRAND_IMAGE_FILE = "brand_image.png"
+#: Prompt fixo do rótulo por imagem (não passa pelo Claude, como o antigo `label_prompt`): manda o
+#: CLI aplicar a marca anexada sobre a embalagem, preservando o resto.
+LABEL_IMAGE_PROMPT = ("Apply the attached brand/logo image onto the product label. "
+                      "Keep the product colors, shape and everything else identical, realistic.")
 
 
-def brand_set(pid: str, name: str, description: str = "") -> dict:
-    name = (name or "").strip()
-    if not name:
-        raise ValueError("Informe o nome da marca para escrever o prompt de troca de rótulo (aula 009).")
+def _brand_image_path(root: Path) -> Path | None:
+    f = root / STEP / BRAND_IMAGE_FILE
+    return f if f.exists() else None
+
+
+def brand_image_get(pid: str) -> dict:
+    """Marca-imagem atual do projeto (ou vazio quando ainda não foi anexada)."""
+    return {"file": BRAND_IMAGE_FILE} if _brand_image_path(project_dir(pid)) else {}
+
+
+def brand_image_set(pid: str, data: bytes) -> dict:
+    """Salva a imagem da marca anexada pelo dono, normalizada em PNG. Valida que é imagem."""
     root = project_dir(pid)
     (root / STEP).mkdir(parents=True, exist_ok=True)
-    brand = {"name": name, "description": (description or "").strip()}
-    (root / STEP / "brand.json").write_text(json.dumps(brand, ensure_ascii=False, indent=1))
+    try:
+        with Image.open(BytesIO(data)) as im:
+            im.convert("RGB").save(root / STEP / BRAND_IMAGE_FILE, "PNG")
+    except Exception as e:  # noqa: BLE001
+        raise ValueError("Arquivo de marca inválido: envie uma imagem (PNG/JPG).") from e
     if chain(load(pid))["final"]:
-        _write_md(root)      # o base.md carrega a marca; regrava quando ela muda
-    return brand
+        _write_md(root)      # o base.md aponta se há marca anexada; regrava quando muda
+    return {"file": BRAND_IMAGE_FILE}
+
+
+def brand_image_clear(pid: str) -> dict:
+    (project_dir(pid) / STEP / BRAND_IMAGE_FILE).unlink(missing_ok=True)
+    root = project_dir(pid)
+    if chain(load(pid))["final"]:
+        _write_md(root)
+    return {}
 
 
 # ---------- prompts da aula (em inglês, aula 007) ----------
@@ -369,15 +392,6 @@ def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", i
     return entry
 
 
-def label_prompt(brand: dict) -> str | None:
-    if not brand.get("name"):
-        return None
-    desc = brand.get("description") or ""
-    return ("Replace the product label with the brand: " + brand["name"]
-            + (f", {desc}" if desc else "")
-            + ". Keep the product colors and everything else identical, realistic.")
-
-
 def clean_prompt(target: str = "") -> str:
     """Instrução de limpeza de marca `[extensão]` (wave 9), em inglês e determinística.
 
@@ -401,7 +415,7 @@ def prompts(pid: str, model: str | None = None) -> dict:
     refs, mood = _require_inputs(root)
     pal = _palette(root)
     product = _product(root)
-    lp = label_prompt(brand_get(pid))
+    brand_ready = _brand_image_path(root) is not None
     hist = _prompt_hist(root)
     ar = project_aspect(root)
     out = []
@@ -427,8 +441,10 @@ def prompts(pid: str, model: str | None = None) -> dict:
         "claude": prompter.available(),
         "modes": list(PROMPT_MODES),
         "refs": out,
-        "label_prompt": lp,
-        "label_prompt_ready": lp is not None,
+        # Marca-imagem (supersede da marca-texto): o rótulo fica pronto quando a imagem da marca
+        # foi anexada. A UI usa `brand_image` (arquivo servível) para o preview.
+        "brand_image": BRAND_IMAGE_FILE if brand_ready else None,
+        "label_ready": brand_ready,
         "label_count": DEFAULT_COUNT["label"],
         # `[extensão]` wave 9: o texto default do passo de limpeza também vem do backend (mesmo
         # molde do rótulo). Sai genérico — o `target` é campo da tela e entra no prompt na hora de
@@ -599,14 +615,11 @@ def _write_final(root: Path, cand: dict) -> None:
 def _write_md(root: Path, note: str = "") -> None:
     cands = _normalize(ingest.load_candidates(root, STEP))
     ch = chain(cands)
-    brand = json.loads((root / STEP / "brand.json").read_text()) if (root / STEP / "brand.json").exists() \
-        else {"name": "", "description": ""}
     pal = _palette(root) or {"colors": [], "note": ""}
     lines = ["# Imagem base", "", f"Etapa 3 · aula 009 · atualizado em {datetime.now():%Y-%m-%d %H:%M}.", "",
              f"**Produto:** {_product(root)}"]
-    if brand.get("name"):
-        desc = f" — {brand['description']}" if brand.get("description") else ""
-        lines.append(f"**Marca [extensão]:** {brand['name']}{desc}")
+    if _brand_image_path(root):
+        lines.append(f"**Marca [extensão]:** imagem anexada (`{BRAND_IMAGE_FILE}`)")
     lines += ["", f"**Arquivo final:** `{FINAL_REL}`" if ch["final"] else "**Arquivo final:** ainda não escolhido",
               "", "| Etapa | id | origem | referência | prompt |", "| --- | --- | --- | --- | --- |"]
     for kind in KINDS:
@@ -728,21 +741,19 @@ def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
         base = _selected(cands, "clean") or _selected(cands, "situation")
         if base is None:
             raise ValueError("Escolha primeiro a melhor imagem de situação (aula 009).")
-        text = prompt.strip() or label_prompt(_brand_from_disk(root))
-        if not text:
-            raise ValueError("Informe a marca antes de trocar o rótulo (campo 'brand').")
+        # Marca-imagem (supersede): a marca vai como 2ª `image_reference` e o CLI a aplica no rótulo
+        # (ADR-002: sem máscara, por prompt + imagem). Sem imagem anexada, não há rótulo.
+        brand_img = _brand_image_path(root)
+        if brand_img is None:
+            raise ValueError("Anexe a imagem da marca antes de trocar o rótulo.")
+        text = prompt.strip() or LABEL_IMAGE_PROMPT
         item = {"ref_id": base.get("ref_id"), "prompt": text,
-                "image_references": [str(root / base["file"])]}
+                "image_references": [str(root / base["file"]), str(brand_img)]}
         return [dict(item) for _ in range(max(1, count))], text
     src = most_advanced(cands)
     if src is None:
         raise ValueError("Escolha primeiro a imagem que será ampliada (situação ou rótulo).")
     return [{"ref_id": src.get("ref_id"), "prompt": "", "image_references": [str(root / src["file"])]}], ""
-
-
-def _brand_from_disk(root: Path) -> dict:
-    f = root / STEP / "brand.json"
-    return json.loads(f.read_text()) if f.exists() else {"name": "", "description": ""}
 
 
 def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,

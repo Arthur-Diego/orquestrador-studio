@@ -19,6 +19,10 @@ Studio.register("base", (ctx) => {
   let cands = [], sel = null, chain = { situation: null, clean: null, label: null, upscale: null };
   let finalRel = null;     // wave 5 · ponto 2: caminho de base/base_final.png quando já existe
   let refs = [], labelPrompt = null, cleanPrompt = null, claudeOk = false;
+  // Prompt fixo do rótulo por marca-imagem (espelha LABEL_IMAGE_PROMPT do backend); a marca em si
+  // vai como imagem de referência na geração.
+  const LABEL_PROMPT = "Apply the attached brand/logo image onto the product label. "
+    + "Keep the product colors, shape and everything else identical, realistic.";
   // base-prompt-provenance: insumos visuais da junção mood × referência (cabeçalho + chips).
   let palette = { colors: [], note: "" }, moodFiles = [], boardImgUrls = [];
   // Rótulo descritivo por linha (FDD §1) e o texto/cor de cada proveniência.
@@ -215,7 +219,9 @@ Studio.register("base", (ctx) => {
     try {
       const r = await api(url("prompts"));
       refs = r.refs;
-      labelPrompt = r.label_prompt_ready ? r.label_prompt : null;
+      // Marca-imagem: o rótulo libera quando a imagem da marca foi anexada. O card editável usa
+      // o prompt fixo padrão (o usuário pode ajustá-lo); a marca vai como imagem de referência.
+      labelPrompt = r.label_ready ? LABEL_PROMPT : null;
       // base-clean-marca [extensão]: o texto do passo de limpeza também vem do backend (o `target`
       // é campo à parte e o backend o costura no template na hora de gerar).
       cleanPrompt = r.clean_prompt || null;
@@ -307,9 +313,29 @@ Studio.register("base", (ctx) => {
     btn.textContent = noBias ? "Gerar sem viés" : "Gerar prompt";
   }
 
+  function renderBrand(b) {
+    const has = !!(b && b.file);
+    const img = $("#brandPreview"), clear = $("#btnBrandClear"), drop = $("#brandDrop");
+    if (has) {
+      img.src = `${ctx.files(`base/${b.file}`)}?v=${Date.now()}`;
+      img.hidden = false; clear.hidden = false; drop.classList.add("has");
+    } else {
+      img.hidden = true; clear.hidden = true; drop.classList.remove("has");
+    }
+  }
+
   async function loadBrand() {
-    const b = await api(url("brand"));
-    $("#brandName").value = b.name || ""; $("#brandDesc").value = b.description || "";
+    renderBrand(await api(url("brand-image")).catch(() => ({})));
+  }
+
+  async function uploadBrand(file) {
+    if (!file) return;
+    // Upload é multipart: o helper `api` força JSON, então vai por `fetch` direto (como a importação).
+    const fd = new FormData(); fd.append("file", file);
+    const res = await fetch(url("brand-image"), { method: "POST", body: fd });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(body.detail || res.statusText);
+    renderBrand(body); ctx.guide(); loadPrompts();
   }
 
   // ---------- passo "limpar marca" [extensão] (wave 9) ----------
@@ -602,12 +628,15 @@ Studio.register("base", (ctx) => {
         b.parentElement.querySelector(".ok").textContent = "copiado ✓";
         setTimeout(() => { b.parentElement.querySelector(".ok").textContent = ""; }, 1500);
       });
-      $("#btnBrand").onclick = async () => {
-        try {
-          await api(url("brand"), { method: "POST", body: JSON.stringify({ name: $("#brandName").value, description: $("#brandDesc").value }) });
-          descartarEdicao("label");   // a instrução de rótulo é reescrita a partir da marca nova
-          toast("Marca salva"); await loadPrompts(); ctx.guide();
-        } catch (err) { toast(err.message); }
+      $("#brandImage").addEventListener("change", (e) => {
+        const f = e.target.files && e.target.files[0];
+        e.target.value = "";       // permite re-selecionar o mesmo arquivo
+        descartarEdicao("label");  // a instrução de rótulo volta ao padrão com a marca nova
+        uploadBrand(f);
+      });
+      $("#btnBrandClear").onclick = async () => {
+        await api(url("brand-image"), { method: "DELETE" }).catch(() => {});
+        renderBrand({}); descartarEdicao("label"); await loadPrompts(); ctx.guide();
       };
       $("#baseChain").addEventListener("click", (e) => { const s = e.target.closest("[data-step]"); if (s) setStep(s.dataset.step); });
       $("#baseChain").addEventListener("keydown", (e) => {

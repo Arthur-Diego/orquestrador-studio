@@ -231,7 +231,7 @@ def _up(svc, pid, kind, color, ref_id=None):
 def test_select_writes_final_png_and_md_and_is_exclusive_per_kind(studio_env, svc, project):
     from PIL import Image
     root = prepare(studio_env, project)
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     s1 = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
     s2 = _up(svc, project, "situation", (40, 200, 40), "1f8e7d6c5b4a")
     r = svc.select(project, s1, note="melhor enquadramento")
@@ -244,7 +244,7 @@ def test_select_writes_final_png_and_md_and_is_exclusive_per_kind(studio_env, sv
         assert im.format == "PNG"
     md = (root / "base" / "base.md").read_text()
     assert "Imagem base" in md and "energetico Gelo Zero" in md and "0f8e7d6c5b4a" in md
-    assert "**Marca [extensão]:** Gelo Zero" in md and "melhor enquadramento" in md and "#0ff0ff" in md
+    assert "**Marca [extensão]:** imagem anexada" in md and "melhor enquadramento" in md and "#0ff0ff" in md
     svc.select(project, s2)
     sel = [c["id"] for c in svc.load(project) if c["selected"]]
     assert sel == [s2], "no máximo uma selecionada por kind"
@@ -289,7 +289,7 @@ def test_cost_sends_the_same_params_the_generation_will_send(studio_env, svc, pr
                           "aspect_ratio": "16:9", "resolution": "2k", "count": 2}
     s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
     svc.select(project, s)
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     svc.estimate_cost(project, "label")
     assert seen[1][0] == svc.DEFAULT_MODEL_LABEL and "aspect_ratio" not in seen[1][1]
 
@@ -391,14 +391,16 @@ def test_generate_label_requires_situation_and_brand(studio_env, svc, project, m
     svc.select(project, s)
     with pytest.raises(ValueError, match="marca"):
         svc.start_generate(project, "label")
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     j = svc.start_generate(project, "label")
     assert j["total"] == 3, "B4: a aula gera 3 variações do rótulo por vez"
     job = _wait(svc, project)
     assert job["state"] == "done" and job["added"] == 3 and len(calls) == 3
-    assert calls[0]["params"]["image_references"] == [str(studio_env["refs"].project_dir(project)
-                                                         / [c for c in svc.load(project) if c["id"] == s][0]["file"])]
-    assert "Gelo Zero" in calls[0]["params"]["prompt"] and "raio neon" in calls[0]["params"]["prompt"]
+    root = studio_env["refs"].project_dir(project)
+    base_file = str(root / [c for c in svc.load(project) if c["id"] == s][0]["file"])
+    # Marca-imagem: a base + a marca anexada vão como image_references; prompt é o fixo do rótulo.
+    assert calls[0]["params"]["image_references"] == [base_file, str(root / "base" / svc.BRAND_IMAGE_FILE)]
+    assert "Apply the attached brand" in calls[0]["params"]["prompt"]
     assert [c["kind"] for c in svc.load(project) if c["source"] == "cli"] == ["label"] * 3
 
 
@@ -457,7 +459,7 @@ def test_upscale_ratio_reads_the_selected_chain(studio_env, svc, project):
 def test_label_defaults_to_three_variations(studio_env, svc, project, monkeypatch):
     """B4: a aula reescreve a instrução do rótulo e gera 3 variações."""
     prepare(studio_env, project)
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
     svc.select(project, s)
     seen = []
@@ -481,7 +483,7 @@ def test_base_md_keeps_the_whole_prompt_and_the_bot_instruction(studio_env, svc,
     root = prepare(studio_env, project)
     _fake_claude(svc, monkeypatch, "A giant can on a snowy ridge shot on RED Komodo with a 50mm lens " * 3)
     svc.generate_prompt(project, "0f8e7d6c5b4a", "images", "a lata está gigante")
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     long_prompt = svc.prompts(project)["refs"][0]["prompt"]
     svc.import_upload(project, [("s.png", _png(1024, 576))], "situation", "0f8e7d6c5b4a", long_prompt)
     sit = [c for c in svc.load(project) if c["kind"] == "situation"][0]
@@ -519,7 +521,7 @@ def test_generate_sends_the_project_aspect_ratio_to_the_cli(studio_env, svc, pro
 def test_base_md_keeps_the_label_instruction_in_full(studio_env, svc, project):
     """§13.5: a instrução de rótulo usada aparece inteira em base.md (o dever de casa pede o prompt)."""
     root = prepare(studio_env, project)
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     instrucao = ("Replace the product label. Keep the can colors, but add a lightning bolt logo with a "
                  "neon effect, exactly like the sketch, keeping every other element identical.")
     s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
@@ -622,21 +624,21 @@ def test_clean_plan_edited_prompt_wins_over_the_template(studio_env, svc, projec
 def test_clean_label_plan_prefers_the_selected_clean(studio_env, svc, project):
     """FDD §9 critério 4: com a embalagem já limpa, o rótulo é aplicado sobre ela."""
     root, _ = _clean_ready(studio_env, svc, project)
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     cln = _up(svc, project, "clean", (40, 200, 40))
     svc.select(project, cln)
     arquivo = [c for c in svc.load(project) if c["id"] == cln][0]["file"]
     items, _text = svc._plan(root, "label", None, 1)
-    assert items[0]["image_references"] == [str(root / arquivo)]
+    assert items[0]["image_references"] == [str(root / arquivo), str(root / "base" / svc.BRAND_IMAGE_FILE)]
 
 
 def test_clean_label_plan_falls_back_to_situation_without_clean(studio_env, svc, project):
     """Fallback aditivo: clean importada mas não escolhida = comportamento de antes da wave 9."""
     root, sit = _clean_ready(studio_env, svc, project)
-    svc.brand_set(project, "Gelo Zero", "raio neon")
+    svc.brand_image_set(project, image_bytes())
     _up(svc, project, "clean", (40, 200, 40))                       # importada, não escolhida
     items, _text = svc._plan(root, "label", None, 1)
-    assert items[0]["image_references"] == [str(root / sit["file"])]
+    assert items[0]["image_references"] == [str(root / sit["file"]), str(root / "base" / svc.BRAND_IMAGE_FILE)]
 
 
 def test_clean_upscale_plan_uses_the_clean_when_it_is_the_most_advanced(studio_env, svc, project):

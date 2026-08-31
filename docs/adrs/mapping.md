@@ -733,3 +733,14 @@ preset ATIVO** de `storyboard.script` — exceção consciente à regra opt-in q
 registrado), ADR-006 (job/polling), ADR-008 (CLI sempre fake nos testes), ADR-010 (núcleo
 intocado), ADR-015 (etapa 4 fundida), ADR-016 (preset default por ação; livro-caixa não recebe o
 roteiro) e ADR-018/ADR-022 (schema de `scenes.json` preservado).
+
+---
+
+**ADR nova: ADR-026** (STUDIO) — marca do rótulo por IMAGEM anexada, supersede da marca-texto da
+wave 1 `[extensão]`. O painel 02 troca os campos `brandName`/`brandDesc` (→ `brand.json`, prompt
+`label_prompt`) por um upload de imagem (`base/brand_image.png`, rotas `.../base/brand-image`); a
+geração do rótulo passa a mandar a base + a marca-imagem como `image_references` com prompt fixo
+(`LABEL_IMAGE_PROMPT`). Não confundir com `refs/validated_brand.json` (ADR-020), a marca a REMOVER
+na limpeza. Relaciona ADR-002 (ponte só via CLI; aplica por prompt+referência, sem máscara),
+ADR-004 (segue `[extensão]` opt-in), ADR-010 (só plugin+serviço) e ADR-016 (livro-caixa do rótulo
+inalterado).
