@@ -60,3 +60,48 @@ marca do usuário no rótulo.
   existente aplica `base/brand.json` partindo da clean selecionada (fallback: situação, como hoje).
 - Fora de escopo da feature: inpaint real com máscara, limpar referências cruas da etapa 1,
   ler `refs/validated_brand.json` no backend da etapa 3.
+
+---
+
+## Contexto da Wave 9 (frente `base-clean-marca`, sub-wave 1)
+
+Este workflow SDD roda numa worktree isolada (`wt-base-clean-marca`, branch
+`feature/base-clean-marca`, base `develop@7162c41`, PORT=8767). A spec normativa é o
+`_techspec.md` (FDD aprovado no gate em lote W3). **Em qualquer divergência entre este `_prd.md`
+e o `_techspec.md`, a §5 do `_techspec.md` vence.**
+
+Resolução do gate W3 aplicável a esta frente (item 4): a fonte do "passo 4.3" foi confirmada pelo
+dono no levantamento do curso ("4.3 retirar marca (caso exista)… pedir para retirar ou modificar").
+A feature entra inteira como `[extensão]` (ADR-004).
+
+Sem dependências de outras frentes (sub-wave 1). Nada precisa ser mockado.
+
+## Decisão de contrato tomada pela frente (vale para todas as tasks)
+
+O FDD §5 (Contrato 4) determina que a resposta de `POST /base/select` passe a incluir a chave
+`clean` no mapa `chain`. O FDD §9 critério 10 pede que "nenhum teste existente seja alterado em
+asserção". As duas coisas são **incompatíveis**: três asserções de igualdade exata em
+`tests/test_base_service.py` (linhas 238-239, 261 e 265) comparam o `chain` com um dict fechado de
+três chaves. A §5 vence (é o contrato); as três asserções ganham `"clean": None` (ou o id da
+clean) e nada mais. É a única alteração permitida em teste existente, e ela é **aditiva**.
+
+## Invariantes de ambiente (Wave 9)
+
+- Só é permitido tocar: `studio/base/*`, `studio/etapas/base/*`, `studio/common/settings.py`,
+  `tests/test_base_*.py`, `tests/test_settings.py` e `docs/domains/base/**`.
+- **PROIBIDO** tocar o núcleo (ADR-010): `studio/app.py`, `studio/steps.py`, `studio/web/**`,
+  `studio/higgsfield.py`, `studio/common/pricing.py`, `studio/common/ingest.py`,
+  `tests/conftest.py`, `requirements*.txt`, `pyproject.toml`, `Makefile`.
+- **PROIBIDO** tocar arquivos de outras frentes da wave: `studio/common/prompter.py`,
+  `studio/storyboard/**`, `studio/etapas/storyboard/**`, `studio/refs/**`,
+  `studio/etapas/refs/**` (a rota `GET .../refs/validated-brand` é consumida **read-only pelo
+  cliente**, sem uma linha de código novo em `refs`).
+- **PROIBIDO** tocar artefatos compartilhados da wave: `docs/domains/studio/waves/*.md`,
+  `docs/adrs/**`, `CLAUDE.md`.
+- Testes sem rede, sem navegador e sem CLI real (ADR-008): a Higgsfield é sempre falsificada
+  por monkeypatch, no padrão já usado em `tests/test_base_service.py` e `tests/test_base_api.py`.
+- `make verify` (ruff + pytest) VERDE ao fim de cada task. **Baseline antes da frente: 976 testes
+  passando.** Nenhum teste existente pode passar a falhar.
+- Idioma: docstrings, comentários e mensagens de erro em pt-BR; identificadores em inglês;
+  prompts de geração de imagem em inglês (aula 007).
+- Commits com trailer `Task-Id: ADH-OS-20260830-44`.

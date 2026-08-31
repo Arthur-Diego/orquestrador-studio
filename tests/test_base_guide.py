@@ -244,3 +244,31 @@ def test_guide_survives_corrupted_json(client, pid, studio_env):
     g = guide_of(client, pid)
     assert g["status"] in {"blocked", "todo"} and "detail" not in g
     assert g["what"] and g["validations"]
+
+
+# ---------- kind "clean": limpeza de marca `[extensão]` (wave 9) ----------
+def test_clean_guide_chip_still_counts_three_course_steps(client, pid):
+    """O chip mede a cadeia da AULA (situação → rótulo → upscale). A limpeza é `[extensão]`:
+    aparece no detalhe da cadeia, mas não vira um quarto passo do curso."""
+    upload(client, pid, "s.png", png(2048, 1152), kind="situation", ref_id="0f8e7d6c5b4a", prompt=LONG_EN)
+    client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "situation")})
+    upload(client, pid, "c.png", png(2048, 1152, (40, 200, 40)), kind="clean", prompt="Remove all brand names")
+    client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "clean")})
+    g = guide_of(client, pid)
+    assert g["summary"] == "cadeia 1/3", "a limpeza não conta como passo da aula"
+    detalhe = next(o for o in g["outputs"] if o["id"] == "base_md")["detail"]
+    assert "limpeza de marca" in detalhe, "mas aparece no detalhe da cadeia, na ordem dos passos"
+
+
+def test_clean_guide_does_not_block_the_step(client, pid):
+    """A limpeza é opcional: escolhê-la não muda o status da etapa nem a próxima ação."""
+    upload(client, pid, "s.png", png(1024, 576), kind="situation", ref_id="0f8e7d6c5b4a", prompt=LONG_EN)
+    client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "situation")})
+    antes = guide_of(client, pid)
+    upload(client, pid, "c.png", png(1024, 576, (40, 200, 40)), kind="clean", prompt="Remove all brand names")
+    client.post(f"/api/projects/{pid}/base/select", json={"id": last_of(client, pid, "clean")})
+    depois = guide_of(client, pid)
+    assert depois["status"] == antes["status"] and depois["progress"] == antes["progress"]
+    assert depois["next_action"] == antes["next_action"] == \
+        "Fazer o upscale 2x (High Fidelity V2) e importar como “upscale”"
+    assert depois["missing"] == antes["missing"], "a limpeza não passa a bloquear a etapa"

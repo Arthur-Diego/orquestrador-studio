@@ -88,3 +88,78 @@ request de `prompts/generate` gravava a variável — agora todos gravam.
   em minúsculas e `ref_ids` omitido em `cost` considera todas as referências escolhidas. Os IDs
   `nano_banana_2` e `bytedance_image_upscale` seguem **não confirmados** no catálogo da Higgsfield
   (FDD seção 10).
+
+---
+
+# Delta **wave 9** — feature `base-clean-marca` (`kind="clean"`) `[extensão]`
+
+Gerado em 2026-08-30, worktree `wt-base-clean-marca`, branch `feature/base-clean-marca`, commit
+**`bf0d5cc`**, Task-Id `ADH-OS-20260830-44`. **Aditivo**: nada da wave 2 acima foi alterado — os itens
+1 a 10 da tabela e as seções seguintes continuam valendo.
+
+**Fontes comparadas**
+
+| Papel | Caminho / origem |
+| --- | --- |
+| Especificação | `docs/domains/base/features/base-clean-marca-fdd.md` — seção 5 (linhas 171-264), seção 6 (266-291) e seção 9 (333-361) |
+| Contrato publicado | `http://127.0.0.1:8767/openapi.json` — OpenAPI 3.1 gerado em runtime pelo FastAPI desta branch, capturado durante a execução da coleção |
+| Implementação | `studio/etapas/base/router.py`, `studio/base/service.py`, `studio/common/settings.py`, `studio/common/jobs.py` |
+
+**Cobertura de rotas.** Nenhuma rota nova: `clean` é valor novo do `kind` nos contratos que já eram
+parametrizados por ele (`cost`, `generate`, `import/{upload,downloads,history}`, `candidates`,
+`select`). O `openapi.json` desta branch lista `"clean"` no enum de `Kind` das quatro operações que o
+declaram, e nenhuma rota do FDD desta feature está faltando.
+
+## Tabela (wave 9)
+
+| # | Sev. | O que o FDD diz | O que o contrato publicado / a implementação diz | Fontes |
+| --- | --- | --- | --- | --- |
+| 11 | **MEDIA** | Contrato 2 (linha 204): "200: job iniciado `{job_id, total, ...}` (schema atual do `JobRegistry`)" | O `JobRegistry` **não tem** `job_id`: o corpo é `{state, done, total, added, error, log}` mais `kind`/`model` (`common/jobs.py:18`, `service.py` no `start_generate`). O próprio texto do contrato remete ao "schema atual", que vence a chave citada; quem integrar pelo literal `{job_id, ...}` lê `undefined`. Nenhuma chave foi criada para casar com o FDD — a decisão da frente foi manter o schema real | FDD linha 204 · `common/jobs.py:18` · request `POST generate — kind=clean, PAGO [extensao]`, que afirma a **ausência** de `job_id` |
+| 12 | BAIXA | Contrato 2 (linhas 210-216) mostra o prompt default com o alvo entre **colchetes**: `[the "Red Bull" branding in particular]` | O texto real usa **parênteses**: `(the "Red Bull" branding in particular)` (`service.py:377`). O próprio FDD já ressalva na linha 217 que o "texto final exato" é definido na implementação, e os colchetes eram notação de opcionalidade, não literal. Sem impacto em consumidor | FDD linhas 210-217 · `service.py:367-380` · execução: `GET base/prompts` → `clean_prompt` |
+| 13 | BAIXA | A seção 5 declara os cinco contratos, mas **não menciona** que `GET .../base/prompts` passou a devolver `clean_prompt` e `clean_count` | O payload ganhou os dois campos, aditivos e no molde exato de `label_prompt`/`label_count` (`service.py:422-423`). É deles que a tela tira o texto default e a contagem do passo — a tela não monta prompt por conta própria. Campos a mais, nenhum a menos; quem lê só a seção 5 não sabe que existem | FDD seção 5 · `service.py:420-423` · request `GET prompts — clean_prompt e clean_count [extensao]` |
+| 14 | BAIXA | Exemplo de resposta do contrato 1 (linha 196): `{"per_item": 2, "count": 3, "total": 6, "raw": {"credits": 2}}` | O corpo real aninha o `raw` do CLI dentro do `raw` da etapa: `{"per_item":2,"count":3,"total":6,"raw":{"credits":2,"raw":{"credits":2}}}`. É forma preexistente de `estimate_cost` (vale igual para os três kinds do curso), não algo que a wave 9 introduziu; os três campos que o FDD cobra estão corretos | FDD linha 196 · execução: `POST base/cost {"kind":"clean","target":"Red Bull"}` contra a instância 8767 |
+
+Nada mais divergiu. Em particular, foram conferidos **ao vivo** e batem com o FDD: o `count` default 3
+(linhas 253-256), a chave `clean` no `chain` do `select` com `label`/`upscale` derrubados (contrato 4,
+linhas 233-243), o 422 com a mensagem reusada do rótulo (seção 6, linha 273), o 422 de `kind` inválido
+pelo `Literal` (seção 6, linha 272) e a aceitação de `kind:"clean"` nos imports (contrato 3).
+
+## Execução da coleção (wave 9)
+
+`newman 6.x` (`/home/arthu/.local/bin/newman`) contra instância própria:
+`uvicorn studio.app:app --port 8767` com `STUDIO_PROJECTS`/`STUDIO_STATE` em diretório temporário
+semeado com os quatro fixtures do `README.md` (a porta 8765, a 8767 de trabalho e o `STUDIO_PROJECTS`
+do usuário **não** foram tocados; o temporário foi removido depois).
+
+| Execução | Resultado |
+| --- | --- |
+| Coleção inteira, guardas em `false` | **46 requests, 104 asserções, 0 falhas** (8 requests pulados pelas guardas) |
+| `--folder "4 - Limpeza de marca (kind=clean) [extensao wave 9]"` | **6 requests, 14 asserções, 0 falhas**; só o `generate` pago se pulou |
+
+O CLI da Higgsfield estava instalado nesta máquina, então `POST base/cost {"kind":"clean"}` foi
+observado **de verdade**: `200 {"per_item":2,"count":3,"total":6,...}` — o `count` default 3 do passo
+saiu do runtime, não de um teste adaptativo. O `POST base/generate` do clean continua atrás de
+`allowPaidRuns` e **não** foi executado (gastaria créditos).
+
+Para tornar o `select` da clean observável, uma candidata `kind="clean"` foi semeada **fora da
+coleção** (`POST base/import/upload -F kind=clean` com `fixtures/upscale-fora-de-2x.png`); sem ela o
+request se pula sozinho, como o `select` da pasta 2 já fazia. Corpo real do `select`:
+
+```json
+{"final": "base/base_final.png", "kind": "clean",
+ "chain": {"situation": "93a9da37bd8c", "clean": "d2720453528d", "label": null, "upscale": null}}
+```
+
+Nenhum defeito de coleção apareceu nesta wave (os dois da wave 2 continuam corrigidos).
+
+## Ambiguidades registradas (wave 9, sem request dedicado)
+
+- O `target` só chega ao prompt quando `prompt` vem **vazio** (`_plan`: `prompt.strip() or
+  clean_prompt(target)`). O contrato 2 declara a precedência do `prompt` editado (regra B4), mas não
+  diz que mandar os dois juntos faz o `target` virar decoração. Os requests do clean mandam `prompt`
+  vazio de propósito e a descrição registra a regra.
+- A seção 5 não declara o que acontece com `aspect_ratio`, `ref_ids` e `board` no `kind="clean"`; o
+  contrato 1 diz apenas que são "ignorados". A implementação de fato não os lê no branch `clean`
+  (`service.py:700-710`), mas nenhum request consegue provar ausência de efeito por HTTP.
+- A limpeza é **best-effort por prompt** (sem máscara/inpaint, ADR-002): a qualidade do resultado não
+  é asserção de contrato e a coleção não tenta medi-la.

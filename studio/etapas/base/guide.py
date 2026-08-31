@@ -24,7 +24,10 @@ WHAT = (
     "porém …”. Repita com as referências até achar uma boa e escolha a imagem base. Depois troque "
     "o rótulo pela sua marca no Nano Banana com uma instrução só (“troque o rótulo, mantenha as "
     "cores, adicione a logo …”), reescrevendo a instrução se ficar simples demais; por fim faça "
-    "upscale 2x, preset High Fidelity V2."
+    "upscale 2x, preset High Fidelity V2. "
+    "Se a embalagem escolhida vier com a marca, a logo ou o texto de outra marca, dá para limpá-la "
+    "antes do rótulo no passo opcional “limpar marca” [extensão] — é aproximação por prompt, não "
+    "inpaint com máscara: gere 3 e escolha a melhor."
 )
 
 CHECKLIST = [
@@ -33,6 +36,7 @@ CHECKLIST = [
     "Ignorei marca/texto errados na embalagem — o rótulo vem depois",
     "Tentei a “aba nova sem viés” (no bot, não na Higgsfield) quando o prompt não entregou a ideia",
     "Escolhi uma imagem base; já anotei as ideias que surgiram",
+    "Limpei a marca alheia da embalagem antes do rótulo, se ela apareceu [extensão] (passo opcional)",
     "Rótulo: uma instrução por vez, mantendo as cores; iterei a instrução se precisou",
     "Tive paciência: é normal gerar várias vezes até achar uma boa",
     "Upscale 2x, High Fidelity V2 (a mesma imagem, só com mais qualidade)",
@@ -89,6 +93,8 @@ def guide(pid: str) -> dict:
     # A cadeia da aula termina no upscale 2x; o rótulo só é exigido quando há marca (`[extensão]`).
     # Sem isso a etapa ficaria `done` já na primeira situação escolhida e o `current` do núcleo
     # pularia a etapa 3 antes do rótulo e do upscale.
+    # `feita` lista tudo que já foi escolhido, na ordem da cadeia (inclusive a limpeza de marca,
+    # que é `[extensão]`); a CONTAGEM do chip, abaixo, mede só os passos da aula (`COURSE_KINDS`).
     feita = [base.KIND_LABEL[k] for k in base.KINDS if ch[k]]
     cadeia_ok = bool(ch["situation"]) and bool(ch["upscale"]) and (bool(ch["label"]) or not brand.get("name"))
     md_ok = bool(md) and cadeia_ok and "Prompts e instruções usados" in md
@@ -166,7 +172,9 @@ def guide(pid: str) -> dict:
 
     # Chip extra da faixa do guia (wave 4): quanto da cadeia da aula já fechou. Sem nenhum passo
     # escolhido a faixa fica como no protótipo — só o status e a próxima ação, sem chip extra.
-    feitos = len(feita)
+    # A limpeza de marca não entra na conta: o chip mede a cadeia da AULA (situação → rótulo →
+    # upscale), que continua sendo de três passos com ou sem o clean `[extensão]` (wave 9).
+    feitos = sum(1 for k in base.COURSE_KINDS if ch[k])
     summary = f"cadeia {feitos}/3" if feitos else None
     return g.build(next_action=_next_action(refs, mood, product, ch, brand, n_sit, prompt),
                    summary=summary,

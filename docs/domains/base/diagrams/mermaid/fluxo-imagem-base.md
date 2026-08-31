@@ -38,13 +38,15 @@ sequenceDiagram
     R->>S: import_*(pid, kind, ref_id)
     S->>I: ingest_bytes (dedupe sha12, thumb)
     I->>FS: base/candidates/&lt;id&gt;.png + base/candidates.json
-    S->>FS: completa kind (situation|label|upscale) e ref_id nas novas candidatas
+    S->>FS: completa kind (situation|clean|label|upscale) e ref_id nas novas candidatas
     S-->>V: {added, warnings}  %% kind=upscale: avisa se a largura não ficou ~2x a da origem
 
     U->>V: escolhe a melhor situação
     V->>R: POST base/select {id}
     R->>S: select(pid, id)
     S->>FS: selected exclusivo no kind + base/base_final.png + base/base.md
+
+    Note over U,HF: passo OPCIONAL [extensão] wave 9: limpar a marca alheia da situação<br/>copia o prompt de limpeza, edita na UI e importa com kind=clean<br/>(caminho pago: ver "Limpeza de marca — caminho pago")
 
     U->>V: informa a marca (extensão) e copia o prompt de rótulo
     U->>HF: Nano Banana troca o rótulo (uma instrução por vez)
@@ -79,17 +81,84 @@ flowchart LR
     PROD[project.json: product, vibe, aspect_ratio] --> BOT
     BOT[bot: prompter.from_images<br/>fallback: template] --> PROMPT[base/prompts.json<br/>prompt editável]
     PROMPT --> SIT
-    SIT[situation<br/>produto na cena da referência] --> LAB[label<br/>rótulo da sua marca]
+    SIT[situation<br/>produto na cena da referência] -->|passo opcional| CLN
+    SIT -->|sem limpar| LAB
+    CLN[clean - extensão<br/>remove marca/logo/texto alheios] --> LAB[label<br/>rótulo da sua marca]
+    TGT[target: marca validada da etapa 1<br/>refs/validated-brand - só no cliente] -.-> CLN
     BRAND[brand.json - extensão] --> LAB
     LAB --> UPS[upscale 2x]
     SIT -.->|sem rótulo ainda| FINAL
+    CLN -.->|sem rótulo ainda| FINAL
     LAB -.->|sem upscale ainda| FINAL
     UPS --> FINAL[base/base_final.png<br/>+ base/base.md]
     FINAL --> SB[etapa 4 - storyboard]
+    classDef ext stroke-dasharray: 5 5
+    class CLN,TGT ext
 ```
 
-`base_final.png` é sempre a candidata selecionada mais avançada (upscale &gt; label &gt; situação).
-Escolher um passo anterior recomeça a cadeia: as seleções dos passos seguintes caem.
+`base_final.png` é sempre a candidata selecionada mais avançada
+(upscale &gt; label &gt; clean &gt; situação). Escolher um passo anterior recomeça a cadeia: as
+seleções dos passos seguintes caem.
+
+O passo `clean` `[extensão]` (wave 9, `RANK` 1) é **opcional**: projeto sem candidata `clean` roda a
+cadeia de três passos da aula exatamente como antes. Quando existe uma clean selecionada, é ela — e
+não a situação — que o `label` usa como imagem de origem; sem ela, o fallback é a situação, como
+sempre foi. "Trocar por minha marca" não é um kind híbrido: é o passo `label` de sempre, partindo da
+embalagem já limpa.
+
+## Limpeza de marca `[extensão]` — caminho pago (wave 9)
+
+FDD `docs/domains/base/features/base-clean-marca-fdd.md`, seção 4. Nenhuma rota nova: `clean` é um
+valor novo do `kind` nos contratos que já eram parametrizados por ele. No modo UI (ilimitado) o
+usuário copia o mesmo prompt da tela, edita na Higgsfield e importa com `kind=clean` — o desenho
+abaixo é só do atalho pago.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Usuário
+    participant V as view.js (SPA)
+    participant RF as router refs (/refs/validated-brand)
+    participant R as router.py (/api/projects/{pid}/base)
+    participant S as studio/base/service.py
+    participant ST as common/settings.py (ADR-016)
+    participant HF as CLI da Higgsfield (ADR-002)
+    participant FS as projects/&lt;pid&gt;/
+
+    Note over U,V: pré-condição: melhor situação JÁ escolhida<br/>senão 422 "Escolha primeiro a melhor imagem de situação (aula 009)."
+
+    V->>RF: GET refs/validated-brand (leitura SÓ no cliente, ADR-020)
+    RF-->>V: {"brand": "Red Bull"} → pré-preenche o campo target
+    V-->>U: prompt de limpeza editável + aviso "aproximação por prompt, não é inpaint"
+
+    U->>V: "Gerar via CLI"
+    V->>R: POST base/cost {kind:"clean", target}
+    R->>S: estimate_cost(..., target)
+    S->>S: _plan("clean") — origem = situação selecionada<br/>prompt = prompt editado OU clean_prompt(target)
+    S->>HF: hf.cost (não gasta crédito)
+    S-->>V: {per_item, count: 3, total}
+    V-->>U: Studio.ui.confirmCost (modal)
+    U-->>V: confirma
+
+    V->>R: POST base/generate {kind:"clean", target}
+    R->>S: start_generate(..., target)
+    S->>ST: default_for("base.clean", pid) → nano_banana_2 / 2k
+    loop count itens (default 3)
+        S->>HF: hf.generate {prompt, image_references: [arquivo da situação]}
+        HF-->>S: urls
+        S->>FS: ingest_bytes → candidata kind="clean"
+        S->>ST: record_generation(action="base.clean") → spend-ledger.jsonl
+    end
+    V->>R: GET base/job (polling 3 s) até done
+    Note over S,V: falha de um item fica no log e o job segue (regra atual)
+
+    U->>V: escolhe a melhor clean
+    V->>R: POST base/select {id}
+    R->>S: select(pid, id)
+    S->>FS: exclusiva no kind + derruba label/upscale + base_final.png + base.md
+    S-->>V: {final, kind: "clean", chain: {situation, clean, label: null, upscale: null}}
+    V-->>U: atalho "trocar pela minha marca" → navega ao passo de rótulo
+```
 
 ## O guia da etapa (`etapas/base/guide.py`, wave 2)
 
