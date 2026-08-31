@@ -171,8 +171,8 @@ def base_downloads(pid: str, req: DownloadsReq):
 
 @router.post("/api/projects/{pid}/base/import/history")
 def base_history(pid: str, req: HistoryReq):
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
+    if not hf.available():   # histórico é caminho SUAVE: só exige o binário (o gate duro é no generate)
+        raise HTTPException(409, hf.NO_CLI_MSG)
     try:
         return base.import_history(pid, req.kind, req.ref_id, req.size, req.prompt_filter)
     except RuntimeError as e:
@@ -183,9 +183,13 @@ def base_history(pid: str, req: HistoryReq):
 
 @router.post("/api/projects/{pid}/base/cost")
 def base_cost(pid: str, req: GenReq):
-    """Estimativa de créditos (sem gastar) para o mesmo pedido de /base/generate."""
+    """Estimativa de créditos (sem gastar) para o mesmo pedido de /base/generate.
+
+    O custo é um caminho SUAVE (ADR-002/ADR-016, decisão base-cli-generation §1/§2): não barra login
+    com 409 — devolve `total=null` quando o CLI não estima (ausente/deslogado), e a UI mostra o aviso
+    padrão "faça login" sem 500. O gate DURO de login mora em `/base/generate`."""
     if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
+        raise HTTPException(409, hf.NO_CLI_MSG)
     try:
         return base.estimate_cost(pid, req.kind, req.model, req.ref_ids, req.count,
                                   req.aspect_ratio, req.resolution, req.prompt, req.board, req.target)
@@ -195,10 +199,7 @@ def base_cost(pid: str, req: GenReq):
 
 @router.post("/api/projects/{pid}/base/generate")
 def base_generate(pid: str, req: GenReq):
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
-    if not hf.status().get("logged_in"):
-        raise HTTPException(409, "CLI da Higgsfield sem login (higgsfield auth login)")
+    hf.require_cli()         # gate único de login (ADR-002)
     try:
         return base.start_generate(pid, req.kind, req.model, req.ref_ids, req.count,
                                    req.aspect_ratio, req.resolution, req.prompt, req.board, req.target)

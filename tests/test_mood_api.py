@@ -140,6 +140,26 @@ def test_mood_generate_422_before_the_cli_and_preset_in_history(client, monkeypa
     assert hist[0]["preset"] == "anamorphic-film-look"
 
 
+def test_mood_generate_gates_login_like_every_step(client, monkeypatch):
+    """ADR-028 — gate único de login: /mood/generate agora barra o CLI deslogado com 409 (antes só
+    checava o binário e deixava o job estourar no subprocess). O /cost segue SUAVE: devolve estimativa
+    sem 409 de login."""
+    import studio.higgsfield as hf
+    pid = _campanha(client)
+    body = {"prompts": ["a neon can"], "count": 1}
+
+    monkeypatch.setattr(hf, "available", lambda: False)
+    assert client.post(f"/api/projects/{pid}/mood/generate", json=body).status_code == 409
+
+    # instalado mas DESLOGADO: generate barra com 409 (o buraco que o card apontou); cost não barra login
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda refresh=False: {"installed": True, "logged_in": False})
+    g = client.post(f"/api/projects/{pid}/mood/generate", json=body)
+    assert g.status_code == 409 and g.json()["installed"] is True
+    monkeypatch.setattr(hf, "cost", lambda model, params: {"credits": None, "raw": {}})
+    assert client.post(f"/api/projects/{pid}/mood/cost", json=body).status_code == 200
+
+
 def test_mood_template_only_obeys_an_explicit_preset(client):
     """T3.7 (metade do template, onde as strings do curso de fato vivem): o preset escolhido troca
     a linha `Camera:`; um default resolvido deixa o template do curso byte-idêntico."""

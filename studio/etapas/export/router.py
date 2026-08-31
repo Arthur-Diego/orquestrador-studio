@@ -32,8 +32,8 @@ def _reframe_preflight(pid: str, aspect_ratio: str) -> None:
     export.project_dir(pid)          # projeto inexistente vira 404 antes de qualquer checagem
     if aspect_ratio not in export.REFRAME_ASPECT:
         raise HTTPException(422, f"proporção inválida: use {' ou '.join(export.REFRAME_ASPECT)}")
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
+    if not hf.available():           # custo é caminho SUAVE: só o binário; o gate duro de login mora
+        raise HTTPException(409, hf.NO_CLI_MSG)   # em start_reframe (via hf.require_cli)
 
 
 def _call(fn, *args, **kwargs):

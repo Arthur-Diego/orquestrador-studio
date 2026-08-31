@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from .. import higgsfield as hf
 from . import service as mb
 
 router = APIRouter(tags=["moodboards"])
@@ -133,6 +134,8 @@ def board_downloads(mbid: str, req: DownloadsReq):
 @router.post("/api/moodboards/{mbid}/import/history")
 def board_history(mbid: str):
     mb.board_dir(mbid)
+    if not hf.available():   # histórico é caminho SUAVE: só exige o binário (o gate duro é no generate)
+        raise HTTPException(409, hf.NO_CLI_MSG)
     try:
         return mb.import_history(mbid)
     except RuntimeError as e:
@@ -165,6 +168,9 @@ def board_prompt_generate(mbid: str, req: PromptGenReq):
 # ---------- multishot da imagem de vibe `[extensão]` (ADR-017) ----------
 @router.post("/api/moodboards/{mbid}/multishot/cost")
 def board_multishot_cost(mbid: str, req: MultishotReq):
+    mb.board_dir(mbid)       # mbid inexistente é 404 ANTES de qualquer 409 de CLI
+    if not hf.available():   # custo é caminho SUAVE: não barra login (o gate duro mora no generate)
+        raise HTTPException(409, hf.NO_CLI_MSG)
     try:
         return mb.multishot_cost(mbid, req.source_id, req.count, req.model)
     except ValueError as e:
@@ -173,9 +179,8 @@ def board_multishot_cost(mbid: str, req: MultishotReq):
 
 @router.post("/api/moodboards/{mbid}/multishot/generate")
 def board_multishot_generate(mbid: str, req: MultishotReq):
-    from .. import higgsfield as hf
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield indisponível — gere na UI (ilimitado) e importe.")
+    mb.board_dir(mbid)       # mbid inexistente é 404 ANTES de qualquer 409 de CLI
+    hf.require_cli()         # gate único de login (ADR-002)
     try:
         return mb.multishot_generate(mbid, req.source_id, req.count, req.model)
     except ValueError as e:

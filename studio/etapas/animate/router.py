@@ -69,8 +69,17 @@ def _call(fn: Callable, *args, **kwargs):
 
 
 def _cli_ready() -> None:
+    """Caminho SUAVE (custo/histórico): só exige o binário. Login não barra aqui — o custo devolve
+    estimativa/None e o histórico mapeia falha do CLI para 502, sem confundir com 'deslogado'."""
     if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
+        raise HTTPException(409, hf.NO_CLI_MSG)
+
+
+def _require_login() -> None:
+    """Gate DURO de login (ADR-002), só na GERAÇÃO paga: CLI ausente OU deslogado → 409, mesma
+    mensagem de toda etapa. Fecha o buraco em que animate deslogado deixava o job estourar no
+    subprocess do CLI em vez de barrar antes de gastar o tempo do usuário."""
+    hf.require_cli()
 
 
 # ---------- plano ----------
@@ -155,7 +164,7 @@ def animate_cost(pid: str, req: CostReq):
 
 @router.post("/api/projects/{pid}/animate/generate", status_code=202)
 def animate_generate(pid: str, req: GenerateReq):
-    _cli_ready()
+    _require_login()         # gate DURO de login antes de gastar (ADR-002)
     return _call(animate.start_generate, pid, req.scene, req.shot, req.model, req.count, req.prompt, req.duration)
 
 
