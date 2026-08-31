@@ -664,10 +664,12 @@ def render(pid: str) -> dict:
 
 # ---------- alternativa paga: geração pelo CLI ----------
 def _cli_ready() -> None:
-    if not hf.available():
-        raise Precondition("CLI da Higgsfield não instalado")
-    if not hf.status().get("logged_in"):
-        raise Precondition("CLI da Higgsfield sem login (higgsfield auth login)")
+    """Gate único de login (ADR-002): delega em `hf.require_cli` e reembala como `Precondition`
+    para casar com a matriz de erros da etapa (Precondition → 409)."""
+    try:
+        hf.require_cli()
+    except hf.CliUnavailable as e:
+        raise Precondition(str(e)) from e
 
 
 def _cli_request(pid: str, kind: str, text: str, count: int, source_id: str | None,

@@ -190,10 +190,8 @@ def storyboard_downloads(pid: str, req: DownloadsReq):
 def storyboard_history(pid: str, req: HistoryReq | None = None):
     refs.project_dir(pid)
     req = req or HistoryReq()
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
-    if not hf.status().get("logged_in"):
-        raise HTTPException(409, "CLI da Higgsfield sem login (higgsfield auth login)")
+    if not hf.available():   # histórico é caminho SUAVE: só exige o binário (o gate duro é no generate)
+        raise HTTPException(409, hf.NO_CLI_MSG)
     try:
         return sb.import_history(pid, req.size, req.prompt_filter)
     except RuntimeError as e:
@@ -364,10 +362,8 @@ def _acall(fn, *args, **kwargs):
 
 
 def _cli_ready() -> None:
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
-    if not hf.status().get("logged_in"):
-        raise HTTPException(409, "CLI da Higgsfield não autenticado (higgsfield auth login)")
+    """Gate único de login (ADR-002): CLI ausente OU deslogado → 409, mesma mensagem em toda etapa."""
+    hf.require_cli()
 
 
 async def _payload(files: list[UploadFile]) -> list[tuple[str, bytes]]:

@@ -767,3 +767,15 @@ ideias (≤3) → mood (≤3), teto 4; marcações (inpaint) nunca entram (invar
 não destrutivo: sem ideias escolhidas o comportamento é o de antes (base + mood). Relaciona ADR-025
 (motor do roteiro; opt-in), ADR-027 (fonte das fotos: multishot da base), ADR-004 (`#sbPreset` e
 painel 02 intocados), ADR-010 (núcleo intocado) e ADR-018 (galeria de ideias por cena).
+
+---
+
+**ADR nova: ADR-028** (HIGGSFIELD) — gate único de login do CLI por `hf.require_cli`. Unifica as
+cinco cópias locais divergentes do gate (`music`/`storyboard`/`animate`/`export`) num só helper que
+levanta `hf.CliUnavailable` (com `installed`) quando o CLI está ausente OU deslogado, traduzido para
+409 por um exception handler global. Regra de consistência: **geração paga** sempre barra login;
+**custo** e **importar do histórico** são caminhos suaves (só o binário) — o custo devolve
+`total=null` deslogado e o histórico é o escape "gere na UI e importe aqui". Fecha o buraco de
+mood/animate/moodboards-multishot, que não checavam login e deixavam o job estourar no subprocess.
+Relaciona ADR-002 (só via CLI), ADR-004 (troca de implementação, não de processo), ADR-016 (ordem
+custo→gerar e livro-caixa intactos) e ADR-008 (CLI sempre fake nos testes).

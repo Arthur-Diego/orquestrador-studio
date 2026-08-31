@@ -166,6 +166,9 @@ def downloads_folder():
 
 @router.post("/api/projects/{pid}/mood/import/history")
 def mood_history(pid: str):
+    refs.project_dir(pid)
+    if not hf.available():   # histórico é caminho SUAVE: só exige o binário (o gate duro é no generate)
+        raise HTTPException(409, hf.NO_CLI_MSG)
     try:
         return mood.import_history(pid)
     except RuntimeError as e:
@@ -174,9 +177,12 @@ def mood_history(pid: str):
 
 @router.post("/api/projects/{pid}/mood/cost")
 def mood_cost(pid: str, req: MoodGenReq):
-    """Estimativa de créditos (sem gastar) para o mesmo pedido de /mood/generate."""
+    """Estimativa de créditos (sem gastar) para o mesmo pedido de /mood/generate.
+
+    Custo é caminho SUAVE (mesmo contrato da etapa Base): não barra login; devolve `total=null`
+    quando o CLI não estima. O gate DURO de login mora em `/mood/generate`."""
     if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
+        raise HTTPException(409, hf.NO_CLI_MSG)
     refs.project_dir(pid)
     per_prompt = [hf.cost(req.model, {"prompt": p, "aspect_ratio": req.aspect_ratio,
                                       "resolution": req.resolution, "count": req.count}) for p in req.prompts]
@@ -186,9 +192,8 @@ def mood_cost(pid: str, req: MoodGenReq):
 
 @router.post("/api/projects/{pid}/mood/generate")
 def mood_generate(pid: str, req: MoodGenReq):
-    if not hf.available():
-        raise HTTPException(409, "CLI da Higgsfield não instalado")
-    refs.project_dir(pid)
+    refs.project_dir(pid)   # projeto inexistente é 404 ANTES de qualquer 409 de CLI
+    hf.require_cli()         # gate único de login (ADR-002)
     try:
         ref_files = mood.style_reference_files(pid, req.vibe_ids, req.best_id) if req.style_refs else None
     except ValueError as e:
