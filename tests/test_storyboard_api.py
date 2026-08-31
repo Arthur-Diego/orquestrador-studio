@@ -86,15 +86,18 @@ def test_downloads_import_over_http(client, pid, studio_env):
 
 
 def test_history_import_needs_cli_and_maps_failures(client, pid, monkeypatch):
+    """Gate de login unificado (ADR-028): importar do histórico é o CAMINHO SUAVE — só exige o
+    binário, NÃO o login. É o escape do usuário deslogado ("gere na UI e importe aqui"), então não
+    barra com 409 de login como as rotas de geração paga; uma falha do CLI (inclusive deslogado)
+    vira 502."""
     import studio.higgsfield as hf
     from studio.common import ingest
     url = f"/api/projects/{pid}/storyboard/import/history"
     monkeypatch.setattr(hf, "available", lambda: False)
     assert client.post(url, json={}).status_code == 409
     monkeypatch.setattr(hf, "available", lambda: True)
+    # deslogado NÃO barra o histórico (contraste com /generate): a falha do CLI mapeia para 502
     monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": False})
-    assert client.post(url, json={}).status_code == 409
-    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
 
     def boom(kind="image", size=50):
         raise RuntimeError("cli quebrou")

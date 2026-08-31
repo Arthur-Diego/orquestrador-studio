@@ -27,6 +27,36 @@ def available() -> bool:
     return BIN is not None
 
 
+#: Mensagem única do gate de login — o texto que o usuário lê é sempre este, venha de qual rota vier.
+NO_CLI_MSG = "CLI da Higgsfield não instalado"
+NO_LOGIN_MSG = ("Faça login no Higgsfield (higgsfield auth login) para gerar via CLI e ver o custo. "
+                "Você também pode gerar na UI do Higgsfield e importar aqui.")
+
+
+class CliUnavailable(RuntimeError):
+    """CLI da Higgsfield não pode gerar/estimar custo agora: ausente ou sem login.
+
+    Um único tipo para o gate: as rotas o traduzem para HTTP 409, com a mesma mensagem em toda
+    etapa. `installed` distingue "nem instalado" de "instalado, mas deslogado" para o frontend.
+    """
+
+    def __init__(self, message: str, *, installed: bool):
+        super().__init__(message)
+        self.installed = installed
+
+
+def require_cli() -> None:
+    """Gate ÚNICO de login (ADR-002): levanta `CliUnavailable` quando o CLI não está instalado OU
+    não está logado. Deve ser chamado ANTES do custo E antes da geração em toda rota que toca
+    `hf.cost`/`hf.generate` — checar só o binário deixava o job estourar no subprocess, gastando o
+    tempo do usuário para dizer o que já dava para saber antes. Substitui as checagens locais
+    divergentes que cada etapa reimplementava (base/mood/animate/storyboard/music/export)."""
+    if not available():
+        raise CliUnavailable(NO_CLI_MSG, installed=False)
+    if not status().get("logged_in"):
+        raise CliUnavailable(NO_LOGIN_MSG, installed=True)
+
+
 def _run(args: list[str], timeout: int = 120) -> tuple[int, str, str]:
     if not BIN:
         return 127, "", "higgsfield CLI não encontrado (npm i -g @higgsfield/cli)"
