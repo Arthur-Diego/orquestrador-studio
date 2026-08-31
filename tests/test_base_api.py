@@ -660,3 +660,180 @@ def test_template_only_obeys_an_explicit_preset(client, pid):
     assert depois.status_code == 200 and depois.json()["preset"] == "documentary-street"
     assert depois.json()["prompt"] == antes.json()["prompt"], "default resolvido não mexe no template"
     assert not any(rig in depois.json()["prompt"] for rig in _RIGS)
+# ---------- kind "clean": limpeza de marca `[extensão]` (wave 9) ----------
+def _bridge(hf, monkeypatch, credits=2):
+    """Ponte falsificada disponível e logada — o 409 do router vem antes do 422 do serviço."""
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    monkeypatch.setattr(hf, "cost", lambda model, params: {"credits": credits, "model": model, "raw": {}})
+
+
+def _run_job(client, pid):
+    import threading
+    for _ in range(100):
+        if client.get(f"/api/projects/{pid}/base/job").json()["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    return client.get(f"/api/projects/{pid}/base/job").json()
+
+
+def test_clean_cost_accepts_the_new_kind(client, pid, hf, monkeypatch):
+    """FDD §5 contrato 1: `kind:"clean"` passa pelo `Literal` e cobra as 3 variações do passo."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    r = client.post(f"/api/projects/{pid}/base/cost", json={"kind": "clean", "target": "Red Bull"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["per_item"] == 2 and body["count"] == 3 and body["total"] == 6
+
+
+def test_clean_generate_accepts_the_new_kind_and_target(client, pid, hf, monkeypatch):
+    """FDD §5 contrato 2: o `target` do corpo chega ao prompt enviado ao CLI."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    calls = []
+
+    def fake_generate(model, params):
+        calls.append(params)
+        return {"urls": ["https://cdn.higgsfield/x/out.png"], "id": "job1", "raw": {}}
+
+    monkeypatch.setattr(hf, "generate", fake_generate)
+    monkeypatch.setattr(hf, "download", lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True),
+                                                           dest.write_bytes(image_bytes(color=(7, 8, 9))), dest)[-1])
+    r = client.post(f"/api/projects/{pid}/base/generate", json={"kind": "clean", "target": "Red Bull"})
+    assert r.status_code == 200
+    # schema atual do JobRegistry (o FDD §5 remete a ele): estado + total + extras do passo
+    assert r.json()["state"] == "running" and r.json()["kind"] == "clean" and r.json()["total"] == 3
+    assert _run_job(client, pid)["state"] == "done"
+    assert calls and all('"Red Bull"' in p["prompt"] for p in calls)
+    cands = client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+    assert [c for c in cands if c["kind"] == "clean"], "a geração paga entrou como candidata do passo"
+
+
+def test_clean_unknown_kind_is_rejected_by_the_literal(client, pid, hf, monkeypatch):
+    """FDD §6: kind fora dos quatro valores é 422 do Pydantic, antes de chegar ao serviço."""
+    _bridge(hf, monkeypatch)
+    assert client.post(f"/api/projects/{pid}/base/cost", json={"kind": "nope"}).status_code == 422
+    assert client.post(f"/api/projects/{pid}/base/generate", json={"kind": "nope"}).status_code == 422
+
+
+def test_clean_cost_without_selected_situation_is_422(client, pid, hf, monkeypatch):
+    """FDD §6/§9 critério 9: sem situação escolhida, a limpeza usa a mensagem existente do rótulo."""
+    _bridge(hf, monkeypatch)
+    r = client.post(f"/api/projects/{pid}/base/cost", json={"kind": "clean"})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Escolha primeiro a melhor imagem de situação (aula 009)."
+
+
+def test_clean_imports_accept_the_new_kind(client, pid, studio_env):
+    """FDD §5 contrato 3: o caminho sem custo (modo UI ilimitado) classifica candidatas `clean`."""
+    make_image(studio_env["tmp"] / "downloads" / "limpa.jpg")
+    r = client.post(f"/api/projects/{pid}/base/import/downloads", json={"since_minutes": 60, "kind": "clean"})
+    assert r.status_code == 200 and r.json()["added"] == 1
+    r = client.post(f"/api/projects/{pid}/base/import/upload",
+                    files=[("files", ("c.png", image_bytes(color=(40, 200, 40)), "image/png"))],
+                    data={"kind": "clean"})
+    assert r.status_code == 200 and r.json()["added"] == 1
+    cands = client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+    assert len([c for c in cands if c["kind"] == "clean"]) == 2
+    assert client.post(f"/api/projects/{pid}/base/import/downloads",
+                       json={"since_minutes": 60, "kind": "nope"}).status_code == 422
+
+
+def test_clean_select_response_carries_the_clean_key(client, pid):
+    """FDD §5 contrato 4: a chave `clean` entra no mapa `chain` da resposta de `select`."""
+    _seed_situation(client, pid)
+    client.post(f"/api/projects/{pid}/base/import/upload",
+                files=[("files", ("c.png", image_bytes(color=(40, 200, 40)), "image/png"))],
+                data={"kind": "clean"})
+    cid = [c for c in client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+           if c["kind"] == "clean"][-1]["id"]
+    r = client.post(f"/api/projects/{pid}/base/select", json={"id": cid})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "clean" and "clean" in body["chain"] and body["chain"]["clean"] == cid
+
+
+# ---------- tela do passo "clean" (FDD §9 critério 11) ----------
+def test_clean_step_appears_in_the_stepper_between_situation_and_label(client):
+    """FDD §4: a cadeia da tela vira situação → limpar marca → rótulo → upscale."""
+    js = client.get("/steps/base/view.js").text
+    assert 'clean: "limpeza de marca"' in js, "o rótulo do kind entra no mapa KINDS da tela"
+    assert '["clean", "limpar marca"]' in js, "e o passo entra no CHAIN do stepper"
+    chain_src = js[js.index("const CHAIN = "):js.index("const COURSE_CHAIN")]
+    assert chain_src.index('"situation"') < chain_src.index('"clean"') < chain_src.index('"label"')
+
+
+def test_clean_panel_has_target_field_and_extension_badge(client):
+    """O passo é `[extensão]` e carrega o campo `target` (a marca a remover), editável."""
+    html = client.get("/steps/base/view.html").text
+    bloco = html[html.index('id="baseCleanStep"'):html.index("</div>", html.index('id="cleanTarget"'))]
+    assert 'id="cleanTarget"' in bloco
+    assert '<span class="ext">[extensão]</span>' in bloco, "o passo é extensão, e a tela diz isso"
+    assert 'aria-label="marca a remover da imagem"' in bloco and "placeholder=" in bloco
+    # o bloco vive DENTRO do painel 03 (não é um painel novo) e nasce escondido
+    assert html.count('<section class="panel">') == 3
+    assert 'id="baseCleanStep" class="bs-clean" style="display:none"' in html
+    assert ".bs-clean{" in html, "CSS novo escopado com o prefixo .bs- (regra 6 da wave 4)"
+
+
+def test_clean_panel_warns_it_is_not_a_real_inpaint(client):
+    """FDD §10: a limpeza é best-effort por prompt (o CLI não tem máscara) — a tela avisa."""
+    html = client.get("/steps/base/view.html").text
+    assert ("A limpeza é uma aproximação por prompt (o Nano Banana não faz inpaint com máscara): "
+            "gere 3 e escolha a melhor.") in html
+
+
+def test_clean_shortcut_only_navigates_to_the_label_step(client):
+    """FDD §1: "trocar pela minha marca" NÃO é um kind híbrido — é só ir ao passo do rótulo."""
+    html = client.get("/steps/base/view.html").text
+    js = client.get("/steps/base/view.js").text
+    assert 'id="btnCleanToLabel"' in html and ">Trocar pela minha marca<" in html
+    atalho = js[js.index('$("#btnCleanToLabel")'):]
+    linha = atalho[:atalho.index("\n")]
+    assert 'setStep("label")' in linha, "o atalho reusa o setStep do stepper"
+    assert "gerarViaCli" not in linha and 'api(url("generate"' not in linha, "não gera nem paga"
+
+
+def test_clean_target_is_prefilled_from_the_validated_brand_route(client):
+    """ADR-020: a marca validada é lida por ROTA, no cliente, e a falha não pode quebrar a tela."""
+    js = client.get("/steps/base/view.js").text
+    assert "refs/validated-brand" in js
+    fn = js[js.index("async function loadValidatedBrand"):js.index("function cleanTarget")]
+    assert "try {" in fn and "} catch" in fn, "falhar em buscar a marca deixa o campo vazio"
+    assert 'refs/validated-brand' in fn and '$("#cleanTarget")' in fn
+    assert "validated_brand.json" not in js, "o arquivo do domínio refs não é lido pela etapa 3"
+
+
+def test_clean_prompt_card_has_its_own_label(client):
+    """O card único do painel 01 vira a instrução de limpeza quando o passo ativo é a limpeza."""
+    js = client.get("/steps/base/view.js").text
+    assert "Prompt · limpar marca · editável" in js
+    assert 'promptText("clean")' in js, "chave propria em `edits`, no padrao da chave do rotulo"
+    assert "cleanPrompt = r.clean_prompt" in js, "o texto default vem do backend"
+
+
+def test_clean_gen_body_sends_target(client):
+    """FDD §5 contratos 1 e 2: o corpo de cost/generate leva `target` no kind `clean`."""
+    js = client.get("/steps/base/view.js").text
+    corpo = js[js.index("function genBody"):js.index("function updateCliButton")]
+    assert 'if (kind === "clean")' in corpo and "body.target = cleanTarget()" in corpo
+    # o mesmo `genBody` alimenta cost e generate (fluxo do ADR-016, sem código de fluxo novo)
+    assert "const body = genBody(kind)" in js
+
+
+def test_clean_prompts_endpoint_exposes_the_clean_template(client, pid):
+    """O texto default do card vem do backend, no molde de `label_prompt`/`label_count`."""
+    body = client.get(f"/api/projects/{pid}/base/prompts").json()
+    assert "Remove all brand names" in body["clean_prompt"] and body["clean_count"] == 3
+    # aditivo puro: nenhuma chave existente do payload mudou
+    assert body["label_count"] == 3 and body["label_prompt"] is None
+    assert body["model"] == "nano_banana_2" and len(body["refs"]) == 2
+
+
+def test_clean_guide_text_mentions_the_optional_step(client, pid):
+    """FDD §9 critério 11: o guia da etapa cita o passo opcional, marcado `[extensão]`."""
+    g = client.get(f"/api/projects/{pid}/guide/base").json()
+    texto = g["what"] + " " + " ".join(g["checklist"])
+    assert "limpar marca" in texto or "limpei a marca" in texto.lower()
+    assert "[extensão]" in texto and "inpaint" in g["what"]

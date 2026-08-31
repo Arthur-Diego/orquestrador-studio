@@ -171,3 +171,40 @@ def test_config_without_the_new_key_still_works(studio_env, project):
     assert settings.global_config() == {"defaults": {"base.image": {"model": "gpt_image_2"}}}
     assert settings.preset_default_for("base") == {"kind": "base", "preset": None, "source": "code"}
     assert settings.preset_default_for("base", project)["source"] == "code"
+# ---------- ação `base.clean`: limpeza de marca `[extensão]` (wave 9, ADR-016) ----------
+def test_clean_action_is_registered_for_the_base_step(studio_env):
+    from studio.common import settings
+    assert "base.clean" in settings.ACTION_KEYS
+    acao = next(a for a in settings.ACTIONS if a["key"] == "base.clean")
+    assert acao["screen"] == "Etapa 3 — Imagem base"
+    assert acao["kind"] == "image"
+    assert "[extensão]" in acao["label"], "o passo é extensão do curso, e a tela precisa dizer isso"
+
+
+def test_clean_action_default_is_nano_banana_2k(studio_env):
+    from studio.common import settings
+    assert settings.DEFAULTS["base.clean"] == {"model": "nano_banana_2", "variant": "2k"}
+    d = settings.default_for("base.clean")
+    assert d["model"] == "nano_banana_2" and d["variant"] == "2k" and d["source"] == "code"
+
+
+def test_clean_action_resolves_project_over_global_over_code(studio_env, project):
+    from studio.common import settings
+    assert settings.default_for("base.clean", project)["source"] == "code"
+    settings.set_global_default("base.clean", "gpt_image_2")
+    assert settings.default_for("base.clean", project)["source"] == "global"
+    settings.set_project_default(project, "base.clean", "nano_banana_2", "4k")
+    d = settings.default_for("base.clean", project)
+    assert d["model"] == "nano_banana_2" and d["variant"] == "4k" and d["source"] == "project"
+    settings.clear_project_default(project, "base.clean")
+    assert settings.default_for("base.clean", project)["source"] == "global"
+
+
+def test_clean_action_appears_in_all_defaults(studio_env):
+    from studio.common import settings
+    linhas = [r for r in settings.all_defaults() if r["key"] == "base.clean"]
+    assert len(linhas) == 1, "uma linha da ação no painel Créditos & Custos"
+    linha = linhas[0]
+    assert linha["credits"] is not None, "custo medido do nano_banana_2 em 2k"
+    assert "[extensão]" in linha["label"]
+

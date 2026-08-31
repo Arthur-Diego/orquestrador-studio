@@ -101,12 +101,20 @@
     border:1px solid var(--line);display:block}
   .bs-final .bs-final-body{display:flex;flex-direction:column;gap:6px;min-width:0}
   .bs-final .bs-final-hint{margin:0;font-weight:600;color:var(--accent)}
+  /* base-clean-marca [extensão] (wave 9): o passo opcional "limpar marca" mora DENTRO do painel 03,
+     colado no stepper, e só aparece quando ele é o passo ativo (display controlado no render, como
+     #baseJunction/#baseGenResult). Só o que o catálogo do shell não cobre, escopado `.bs-`. */
+  .bs-clean{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px;
+    background:var(--surface-2)}
+  .bs-clean-head{gap:8px;align-items:center;margin-bottom:10px}
+  .bs-clean-row{gap:10px;align-items:center}
+  .bs-clean-warn{margin:10px 0 0;color:var(--ink-3);line-height:1.45}
 </style>
 
 <header class="stephead">
   <span class="eyebrow">Etapa 3 · aula 009</span>
   <h2>Imagem base</h2>
-  <p class="lede">O bot olha a referência e o seu mood e escreve o prompt do produto na <b>exata mesma situação</b> da referência. Cadeia: situação → rótulo → upscale 2x.</p>
+  <p class="lede">O bot olha a referência e o seu mood e escreve o prompt do produto na <b>exata mesma situação</b> da referência. Cadeia: situação → limpar marca (opcional, [extensão]) → rótulo → upscale 2x.</p>
 </header>
 
 <section id="guide" class="guide"></section>
@@ -165,6 +173,18 @@
     <button id="btnBaseSelect" class="ghost" disabled>Usar como imagem base</button>
   </div>
   <div id="baseChain" class="stepper"></div>
+  <div id="baseCleanStep" class="bs-clean" style="display:none">
+    <div class="row wrap bs-clean-head">
+      <span class="eyebrow lbl">Limpar a marca da embalagem antes do rótulo</span>
+      <span class="ext">[extensão]</span>
+    </div>
+    <div class="row wrap bs-clean-row">
+      <input id="cleanTarget" class="grow" aria-label="marca a remover da imagem"
+             placeholder="marca a remover (vem da marca validada da etapa 1 — dá para editar ou apagar)">
+      <button id="btnCleanToLabel" class="ghost" title="Ir para o passo do rótulo e aplicar a sua marca">Trocar pela minha marca</button>
+    </div>
+    <p class="fine bs-clean-warn">A limpeza é uma aproximação por prompt (o Nano Banana não faz inpaint com máscara): gere 3 e escolha a melhor.</p>
+  </div>
   <div class="row wrap stretch bs-io">
     <label class="drop" id="baseDrop">Arraste o grid gerado na UI ou <input id="baseUpload" type="file" accept="image/*" multiple hidden><u>escolha arquivos</u></label>
     <div class="col">
@@ -181,5 +201,5 @@
   <div id="baseGallery" class="gallery sm"></div>
   <div id="baseFinalCard"></div>
   <div id="baseGenResult" class="bs-result"></div>
-  <p class="note bs-note">Escolha uma imagem por passo — trocar a situação recomeça a cadeia. Ao fechar: <code>base/base_final.png</code> + <code>base.md</code>.</p>
+  <p class="note bs-note">Escolha uma imagem por passo — a limpeza de marca é um passo opcional [extensão] entre a situação e o rótulo, e trocar a situação recomeça a cadeia. Ao fechar: <code>base/base_final.png</code> + <code>base.md</code>.</p>
 </section>

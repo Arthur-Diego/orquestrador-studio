@@ -14,7 +14,7 @@ from ...refs import service as refs
 router = APIRouter(tags=["base"])
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
-Kind = Literal["situation", "label", "upscale"]
+Kind = Literal["situation", "clean", "label", "upscale"]
 
 
 class BrandReq(BaseModel):
@@ -48,6 +48,10 @@ class GenReq(BaseModel):
     resolution: str = "2k"
     prompt: str = ""          # texto editado na tela (B4); vazio = o do histórico/template
     board: str | None = None  # [extensão] ADR-013: referência de estilo vinda de um board
+    # [extensão] wave 9: marca/texto a remover, usada só pelo kind "clean". A tela a pré-preenche
+    # com a marca validada da etapa 1 (`GET .../refs/validated-brand`); a leitura é client-side,
+    # o backend da etapa 3 não abre `refs/validated_brand.json` (ADR-020).
+    target: str = ""
 
 
 class SelectReq(BaseModel):
@@ -183,7 +187,7 @@ def base_cost(pid: str, req: GenReq):
         raise HTTPException(409, "CLI da Higgsfield não instalado")
     try:
         return base.estimate_cost(pid, req.kind, req.model, req.ref_ids, req.count,
-                                  req.aspect_ratio, req.resolution, req.prompt, req.board)
+                                  req.aspect_ratio, req.resolution, req.prompt, req.board, req.target)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 
@@ -196,7 +200,7 @@ def base_generate(pid: str, req: GenReq):
         raise HTTPException(409, "CLI da Higgsfield sem login (higgsfield auth login)")
     try:
         return base.start_generate(pid, req.kind, req.model, req.ref_ids, req.count,
-                                   req.aspect_ratio, req.resolution, req.prompt, req.board)
+                                   req.aspect_ratio, req.resolution, req.prompt, req.board, req.target)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except RuntimeError as e:

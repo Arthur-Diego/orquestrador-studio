@@ -1,10 +1,12 @@
 ### HLD: base (etapa 3 — imagem base, aula 009)
 
-Versão: 1.1
-Data: 2026-08-25
-Responsável: frente `base` da Wave 1 (Task-Id OS-003); wave 2 (Task-Id OS-015)
+Versão: 1.2
+Data: 2026-08-30
+Responsável: frente `base` da Wave 1 (Task-Id OS-003); wave 2 (Task-Id OS-015); frente
+`base-clean-marca` da Wave 9 (Task-Id ADH-OS-20260830-44)
 
-Spec normativa: `docs/domains/base/features/base-fdd.md` · PRD: `docs/domains/base/prd.md`
+Specs normativas: `docs/domains/base/features/base-fdd.md` ·
+`docs/domains/base/features/base-clean-marca-fdd.md` `[extensão]` · PRD: `docs/domains/base/prd.md`
 Contratos do lote: `docs/domains/studio/waves/wave-1.md` · Diagramas: `docs/domains/base/diagrams/mermaid/`
 
 ---
@@ -48,8 +50,9 @@ Padrões adotados
   que lê a referência **e** as imagens de `mood/selected/`; o template determinístico da v1.0 é o
   fallback quando o Claude CLI não existe (wave 2, correção B1).
 - Ingestão idempotente e desacoplada (`studio/common/ingest.py`, dedupe por SHA-1 do conteúdo).
-- `kind` da etapa (`situation|label|upscale`) gravado pelo serviço logo após cada import, porque o
-  `kind` do `ingest` é o tipo de mídia (`image|video|audio`).
+- `kind` da etapa (`situation|clean|label|upscale`) gravado pelo serviço logo após cada import,
+  porque o `kind` do `ingest` é o tipo de mídia (`image|video|audio`). `clean` é `[extensão]` da
+  wave 9 e é o único passo opcional da cadeia.
 - Prompts de geração em inglês (aula 007); textos de tela em pt-BR.
 
 ---
@@ -62,9 +65,10 @@ Padrões adotados
 | `guide()` (`etapas/base/guide.py`) | guia da etapa por **leitura pura**: entradas que bloqueiam, saídas, validações da aula (upscale ≈2×, rótulo, prompt em inglês, ≥ 2048 px) e próxima ação | `common/guide.py`, `base/service.py` (só leitura) |
 | `brand_get` / `brand_set` `[extensão]` | nome e descrição do rótulo; sem eles não há prompt de troca de rótulo | `base/brand.json` |
 | `import_upload` / `import_downloads` / `import_history` | ingestão nas três fontes e marcação de `kind` + `ref_id` | `studio/common/ingest.py` |
-| `select()` | seleção exclusiva por passo, cadeia situação → rótulo → upscale, `base_final.png` e `base.md` | Pillow |
+| `select()` | seleção exclusiva por passo, cadeia situação → limpeza `[extensão]` → rótulo → upscale, `base_final.png` e `base.md` | Pillow |
+| `clean_prompt(target)` `[extensão]` | instrução de limpeza de marca em inglês, determinística (não passa pelo bot, como `label_prompt`); `target` nomeia a marca a remover e só entra no texto quando o campo do prompt vem vazio | — |
 | `estimate_cost` / `start_generate` / `job_status` | caminho pago: estimativa, job em thread (um por projeto), log por item, JSON bruto em `jobs/base_<id>.json` | `higgsfield`, `JobRegistry` |
-| `view.html` / `view.js` | quatro passos da aula na tela, painel `#guide` e bloco do CLI; usa os helpers compartilhados (`Studio.ui.drop/upload/confirmCost/poll/esc/hfChip/renderGuide`) e expõe `destroy()` | `studio/web/ui.js`, `style.css`, `Studio.register`, `GET /api/projects/{pid}/guide/base`, `GET /api/higgsfield/status` |
+| `view.html` / `view.js` | os passos da aula na tela (mais o passo opcional "limpar marca" `[extensão]`, fora do auto-avanço: `COURSE_CHAIN` continua sendo só o que a aula ensina), painel `#guide` e bloco do CLI; usa os helpers compartilhados (`Studio.ui.drop/upload/confirmCost/poll/esc/hfChip/renderGuide`) e expõe `destroy()` | `studio/web/ui.js`, `style.css`, `Studio.register`, `GET /api/projects/{pid}/guide/base`, `GET /api/higgsfield/status` |
 
 ---
 
@@ -78,10 +82,46 @@ Padrões adotados
 - Dados: referências + mood + produto → prompts (texto) → imagens → `base/candidates/<sha12>.<ext>`
   (+ `thumbs/`) → `base/candidates.json` → `base/base_final.png` + `base/base.md`.
 
+#### Limpeza de marca (`kind="clean"`) `[extensão]` — wave 9
+
+A wave 9 (`features/base-clean-marca-fdd.md`, Task-Id `ADH-OS-20260830-44`) acrescentou um quarto
+`kind` à etapa: `clean`, que remove marca/logo/texto **alheios** da imagem de situação antes de o
+passo `label` aplicar a marca do usuário. Com ele a cadeia deixou de ser uma sequência fixa de três
+passos e passou a ter **um passo opcional**: situação → *limpeza* → rótulo → upscale
+(`RANK = {situation: 0, clean: 1, label: 2, upscale: 3}`). Projeto sem candidata `clean` se comporta
+exatamente como antes — os três kinds da aula continuam byte a byte iguais, e o único efeito da
+existência do passo é que `_plan("label")` prefere a clean selecionada como imagem de origem, caindo
+na situação como fallback. `most_advanced`, `upscale_ratio` e `upscale_warnings` tratam a clean como
+origem válida da cadeia.
+
+Não há rota nova: `clean` é valor novo do `kind` nos contratos que já eram parametrizados por ele
+(`cost`, `generate`, `import/{upload,downloads,history}`, `candidates`, `select`); a resposta do
+`select` ganhou a chave `clean` no mapa `chain` (aditiva). O caminho pago tem **ação de custo
+própria**, `base.clean` (`nano_banana_2`/`2k`, ADR-016), que aparece sozinha no painel "Créditos &
+Custos" e grava `action="base.clean"` no `spend-ledger.jsonl`; a regra kind → ação vive num único
+mapa (`KIND_ACTION` em `service.py`). O modo UI ilimitado, com import `kind:"clean"`, segue sendo o
+caminho sem custo. `GET .../base/prompts` passou a expor `clean_prompt` e `clean_count`, no molde de
+`label_prompt`/`label_count`.
+
+A limpeza é **best-effort por prompt**: o CLI da Higgsfield não tem máscara nem inpaint (ADR-002),
+por isso o texto fixa "keep everything else identical", o default é de 3 variações e a tela avisa
+disso. O campo `target` nomeia a marca a remover; a **tela** o pré-preenche chamando
+`GET /api/projects/{pid}/refs/validated-brand` — o backend da etapa 3 **não** abre
+`refs/validated_brand.json`, o que mantém a ADR-020 intacta ("nenhuma etapa a jusante lê o arquivo").
+`target` só entra no prompt quando o campo de texto vem vazio: prompt editado na tela vence o
+template. "Trocar por minha marca" não é um kind híbrido — é o passo `label` de sempre, agora
+partindo da embalagem limpa (uma instrução por vez, regra da aula 009).
+
+Nenhuma ADR foi contrariada: ADR-002 (geração só por CLI), ADR-016 (custo antes, livro-caixa
+depois), ADR-020 (marca validada não vaza para o backend a jusante), ADR-010 (núcleo intocado) e
+ADR-004 continuam vigentes — e é justamente por ADR-004 que a feature inteira é `[extensão]`: o
+passo vem do levantamento do curso (passo 4.3), cuja fonte é externa ao repositório, e fica marcado
+como tal no código, na tela e aqui até confirmação.
+
 ---
 
 ### Modelo de dados (alto nível)
-- `BaseCandidate` (id sha12, kind ∈ {situation, label, upscale}, source ∈ {upload, downloads, higgsfield, cli},
+- `BaseCandidate` (id sha12, kind ∈ {situation, clean `[extensão]`, label, upscale}, source ∈ {upload, downloads, higgsfield, cli},
   name, prompt, file, thumb, width, height, ref_id, selected, imported, job_id?, model?, origin_path?).
   `file`/`thumb` são relativos à raiz do projeto (servidos por `/files/{pid}/...`).
 - `Brand` (name, description) — `[extensão]` aprovada (decisão 10 do lote da wave 1).
@@ -92,7 +132,7 @@ Padrões adotados
 - `project.aspect_ratio` (`[extensão]` do núcleo, default `16:9`) governa o formato mandado ao CLI.
 - Fonte de verdade: `base/candidates.json`. `base_final.png` e `base.md` são derivados de `select`.
 - Invariantes: no máximo 1 selecionada por `kind`; `base_final.png` existe se e somente se há alguma
-  selecionada, e é sempre a mais avançada (upscale > label > situação).
+  selecionada, e é sempre a mais avançada (upscale > label > clean > situação).
 
 ---
 
@@ -155,6 +195,9 @@ Padrões adotados
   ADR-010 (propriedade de arquivos entre frentes). Nenhum desvio novo — a etapa não motivou ADR.
   A wave 2 (OS-015) reforça o ADR-004: o prompt passa a nascer do bot, como na aula, e as regras que
   o instrutor não ensina saem do caminho padrão (`no people` virou opcional).
+  A wave 9 (`ADH-OS-20260830-44`) também não motivou ADR: o `kind="clean"` é aditivo dentro das
+  decisões vigentes (ADR-002, ADR-016, ADR-020, ADR-010) e entra inteiro como `[extensão]` por
+  ADR-004, já que a fonte do passo é o levantamento do curso, externo ao repositório.
 - Próximos passos: ajustar `ROLES["base"]` em `common/prompter.py`, que ainda pede "No people unless
   the reference has them" (pendência da integração — o arquivo é de outra frente nesta wave);
   validar os IDs de modelo com o catálogo vivo depois do login; `storyboard`

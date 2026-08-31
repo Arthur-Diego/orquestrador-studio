@@ -108,6 +108,16 @@
    "key": "allowClaudeRuns",
    "value": "false",
    "description": "Guarda: so com `true` os modos `images`/`brief` de `prompts/generate` sao enviados (eles chamam o Claude CLI local). O modo `template` roda sempre."
+  },
+  {
+   "key": "cleanTarget",
+   "value": "Red Bull",
+   "description": "Marca/texto a remover no `kind=clean` (campo `target` do `GenReq`, wave 9). Na tela vem pre-preenchida por `GET /api/projects/{pid}/refs/validated-brand` (ADR-020, leitura client-side); aqui e configuravel a mao. Vazio = prompt generico."
+  },
+  {
+   "key": "cleanId",
+   "value": "",
+   "description": "Preenchido pelo teste de `GET candidates — localiza a clean`; consumido pelo `select` da clean. Variavel de encadeamento: NAO colocar no environment."
   }
  ],
  "item": [
@@ -1515,6 +1525,470 @@
          "if (pm.response.code === 200) {",
          "    pm.test(\"corpo tem state (FDD linha 279)\", function () {",
          "        pm.expect(pm.response.json()).to.have.property(\"state\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "4 - Limpeza de marca (kind=clean) [extensao wave 9]",
+   "description": "Passo `[extensao]` da wave 9 (FDD `docs/domains/base/features/base-clean-marca-fdd.md`): remover marca/logo/texto alheios da imagem de situacao ANTES de aplicar a marca do usuario no rotulo. Nenhuma rota nova — `clean` e um valor novo do `kind` nos contratos que ja eram parametrizados por ele.\n\nA cadeia da etapa passou a ser situation -> **clean (opcional)** -> label -> upscale. Projeto sem candidata clean se comporta exatamente como antes da wave 9.\n\nA limpeza e **best-effort por prompt**: o CLI da Higgsfield nao tem mascara nem inpaint (ADR-002). Por isso `count` default 3 (escolhe-se a melhor variacao) e a tela avisa.\n\nOrdem: rode esta pasta DEPOIS da pasta 2, que deixa uma situacao selecionada em `pid` — sem situacao selecionada, `cost` e `generate` do clean respondem 422.",
+   "item": [
+    {
+     "name": "GET prompts — clean_prompt e clean_count [extensao]",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/prompts",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "prompts"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-clean-marca-fdd.md`, secao 5 (contrato 1, linhas 175-197) e secao 4 (linhas 122-124): a tela mostra o prompt de limpeza EDITAVEL e a contagem default do passo.\nO payload de `GET .../base/prompts` ganhou dois campos ADITIVOS, no molde de `label_prompt`/`label_count`: `clean_prompt` (o template generico, **sem** `target`) e `clean_count` (3, `DEFAULT_COUNT[\"clean\"]`).\nO `target` NAO entra aqui: quem o injeta e a tela, que le `GET /api/projects/{pid}/refs/validated-brand` (ADR-020, leitura client-side) e manda o valor em `cost`/`generate`. Ver `divergencias.md` (wave 9, item 3): os dois campos nao estao declarados na secao 5 do FDD."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"clean_prompt e clean_count presentes (aditivos da wave 9)\", function () {",
+         "        pm.expect(j).to.have.property(\"clean_prompt\");",
+         "        pm.expect(j).to.have.property(\"clean_count\");",
+         "    });",
+         "    pm.test(\"clean_count = 3, o default do passo (FDD linhas 253-256)\", function () {",
+         "        pm.expect(j.clean_count).to.eql(3);",
+         "    });",
+         "    pm.test(\"clean_prompt em ingles e determinístico (FDD linhas 210-216)\", function () {",
+         "        pm.expect(j.clean_prompt).to.be.a(\"string\");",
+         "        pm.expect(j.clean_prompt).to.include(\"Remove all brand names, logos, labels and printed text\");",
+         "        pm.expect(j.clean_prompt).to.include(\"Leave the label area blank and clean.\");",
+         "    });",
+         "    pm.test(\"sem target, o template vem generico (a tela injeta o alvo)\", function () {",
+         "        pm.expect(j.clean_prompt).to.not.include(\"branding in particular\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST cost — kind=clean sem count → 3 [extensao]",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/cost",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "cost"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-clean-marca-fdd.md`, secao 5, contrato 1 (linhas 175-197) e \"Contagem default\" (linhas 253-256): `DEFAULT_COUNT[\"clean\"] = 3`, o mesmo padrao do rotulo.\nSo estima, nao gasta credito. 409 quando o CLI da Higgsfield nao esta instalado (`router.py:173-174`); 422 sem situacao escolhida (mesma mensagem do rotulo, FDD linha 273).\n`target` e o campo novo do `GenReq` (`router.py:51`): nomeia a marca a remover e so tem efeito quando `prompt` vem VAZIO — `_plan` faz `prompt.strip() or clean_prompt(target)`. Mandar os dois juntos faz o `target` virar decoracao.\n`aspect_ratio`, `ref_ids` e `board` sao ignorados no clean (edicao sobre imagem existente, como no rotulo).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"clean\",\n  \"resolution\": \"2k\",\n  \"target\": \"{{cleanTarget}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 409) {",
+         "    pm.test.skip(\"CLI da Higgsfield ausente — o default de count nao pode ser observado\");",
+         "    console.log(\"409: \" + pm.response.text().slice(0, 160));",
+         "} else if (pm.response.code === 422) {",
+         "    pm.test(\"422 = sem situacao escolhida, mensagem do rotulo (FDD linha 273)\", function () {",
+         "        pm.expect(pm.response.json().detail).to.be.a(\"string\");",
+         "        pm.expect(pm.response.json().detail).to.include(\"situa\");",
+         "    });",
+         "    console.log(\"422: \" + pm.response.json().detail);",
+         "} else {",
+         "    pm.test(\"status 200 — kind=clean aceito pelo Literal do router\", function () {",
+         "        pm.response.to.have.status(200);",
+         "    });",
+         "    pm.test(\"corpo tem per_item, count e total (FDD linhas 190-196)\", function () {",
+         "        const j = pm.response.json();",
+         "        pm.expect(j).to.have.property(\"per_item\");",
+         "        pm.expect(j).to.have.property(\"count\");",
+         "        pm.expect(j).to.have.property(\"total\");",
+         "    });",
+         "    pm.test(\"count = 3 sem count no corpo (FDD linhas 253-256)\", function () {",
+         "        pm.expect(pm.response.json().count).to.eql(3);",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST generate — kind=clean, PAGO [extensao]",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/generate",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "generate"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-clean-marca-fdd.md`, secao 5, contrato 2 (linhas 198-222).\nGASTA CREDITOS: so roda com `allowPaidRuns` igual a `true`.\n200 = job do `JobRegistry` `{state:'running', done, total, added, error, log}` mais `kind`/`model`; 409 CLI ausente, sem login ou job em andamento; 422 sem situacao escolhida.\n**A resposta NAO traz `job_id`** — o contrato 2 do FDD escreve `{job_id, total, ...}` mas remete ao \"schema atual do JobRegistry\", que nao tem essa chave (`common/jobs.py:18`). Registrado em `divergencias.md` (wave 9, item 1); o teste abaixo afirma o schema real.\n`prompt` VAZIO de proposito: e assim que `target` entra no prompt (`_plan`: `prompt.strip() or clean_prompt(target)`). Cada item do job manda `image_references = [<arquivo da situation selecionada>]` e registra `record_generation(action=\"base.clean\")` no `spend-ledger.jsonl` (ADR-016).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"clean\",\n  \"target\": \"{{cleanTarget}}\",\n  \"prompt\": \"\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// Guarda de credito: este request inicia um job PAGO na Higgsfield.",
+         "// So roda quando a variavel allowPaidRuns for exatamente \"true\".",
+         "if (String(pm.variables.get(\"allowPaidRuns\")) !== \"true\") {",
+         "    console.warn(\"[base] request PAGO pulado (allowPaidRuns != true): \" + pm.info.requestName);",
+         "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 2, linha 204\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"job em running (FDD linha 204)\", function () {",
+         "        pm.expect(j.state).to.eql(\"running\");",
+         "    });",
+         "    pm.test(\"schema do JobRegistry, sem job_id (divergencias.md, wave 9, item 1)\", function () {",
+         "        pm.expect(j).to.have.property(\"total\");",
+         "        pm.expect(j).to.have.property(\"done\");",
+         "        pm.expect(j).to.have.property(\"log\");",
+         "        pm.expect(j).to.not.have.property(\"job_id\");",
+         "    });",
+         "    pm.test(\"kind do job = clean\", function () {",
+         "        pm.expect(j.kind).to.eql(\"clean\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST import/downloads — kind=clean [extensao]",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/import/downloads",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "import",
+        "downloads"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-clean-marca-fdd.md`, secao 5, contrato 3 (linhas 223-232): as tres rotas de import passam a aceitar `kind: \"clean\"`; o resto do contrato e identico ao da wave 1.\nEste e o caminho SEM custo (modo UI ilimitado): o usuario copia o prompt de limpeza da tela, edita na UI da Higgsfield e importa o resultado.\n200 `{added, scanned, folder, warnings}`; 404 pasta inexistente; 422 `kind` invalido.\nO que este request prova e que `clean` NAO cai no 422 do `Literal` (`router.py:17`) — compare com `erros/422 — kind invalido (import/downloads)`.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"folder\": null,\n  \"since_minutes\": 120,\n  \"kind\": \"clean\",\n  \"ref_id\": \"{{refId}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"kind=clean e aceito pelo Literal do router (nunca 422)\", function () {",
+         "    pm.expect(pm.response.code, \"status\").to.not.eql(422);",
+         "});",
+         "",
+         "if (pm.response.code === 404) {",
+         "    pm.test.skip(\"pasta Downloads padrao inexistente nesta maquina — import nao observavel\");",
+         "    console.log(\"404: \" + pm.response.text().slice(0, 160));",
+         "} else {",
+         "    pm.test(\"status 200 — FDD secao 5, contrato 3, linha 227\", function () {",
+         "        pm.response.to.have.status(200);",
+         "    });",
+         "    if (pm.response.code === 200) {",
+         "        const j = pm.response.json();",
+         "        pm.test(\"corpo tem added, scanned, folder e warnings\", function () {",
+         "            pm.expect(j).to.have.property(\"added\");",
+         "            pm.expect(j).to.have.property(\"scanned\");",
+         "            pm.expect(j).to.have.property(\"folder\");",
+         "            pm.expect(j.warnings).to.be.an(\"array\");",
+         "        });",
+         "        if (!j.added) {",
+         "            console.warn(\"[base] added=0: nenhuma imagem nova na pasta (o ingest deduplica por hash)\");",
+         "        }",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "GET candidates — localiza a clean [extensao]",
+     "request": {
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/candidates",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "candidates"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-clean-marca-fdd.md`, secao 5, contrato 4 (linhas 233-243): as candidatas podem vir com `\"kind\": \"clean\"`.\nGuarda o id da primeira clean em `cleanId` para o `select` seguinte — mesmo encadeamento do `candidateId` da pasta 2. `cleanId` e variavel de ENCADEAMENTO: fica so no escopo de colecao, nunca no environment (a precedencia environment > collection foi o defeito da wave 2, ver `divergencias.md`)."
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    const cleans = (j.candidates || []).filter(function (c) { return c.kind === \"clean\"; });",
+         "    if (cleans.length) {",
+         "        pm.collectionVariables.set(\"cleanId\", cleans[0].id);",
+         "        pm.test(\"candidata clean tem id e file (schema do candidates.json)\", function () {",
+         "            pm.expect(cleans[0]).to.have.property(\"id\");",
+         "            pm.expect(cleans[0]).to.have.property(\"file\");",
+         "        });",
+         "    } else {",
+         "        pm.collectionVariables.set(\"cleanId\", \"\");",
+         "        console.warn(\"[base] nenhuma candidata kind=clean: importe uma (import/downloads ou upload) antes do select\");",
+         "    }",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "POST select — clean vira o final e chain ganha a chave clean [extensao]",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pid}}/base/select",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pid}}",
+        "base",
+        "select"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-clean-marca-fdd.md`, secao 5, contrato 4 (linhas 233-243) e secao 4 (linhas 133-138).\n200 `{final, kind, chain}`; a novidade da wave 9 e a chave `clean` no mapa `chain` (chave nova em objeto JSON = aditivo; consumidores atuais leem por nome).\nSelecionar a clean derruba as selecoes de `label` e `upscale` (RANK maior, regra atual do `select`) e regrava `base_final.png` com a clean, que passa a ser a mais avancada.\nUsa `cleanId`, preenchido pelo request anterior; sem clean importada o request se pula.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"id\": \"{{cleanId}}\",\n  \"note\": \"limpeza mais fiel ao produto\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "prerequest",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "// Sem candidata clean nao ha id para selecionar: pula em vez de acusar 404 falso.",
+         "if (!pm.variables.get(\"cleanId\")) {",
+         "    console.warn(\"[base] select da clean pulado: nenhuma candidata kind=clean importada.\");",
+         "    if (pm.execution && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+         "}"
+        ]
+       }
+      },
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"status 200 — FDD secao 5, contrato 4\", function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "",
+         "if (pm.response.code === 200) {",
+         "    const j = pm.response.json();",
+         "    pm.test(\"chain traz a chave clean (contrato 4, linhas 236-239)\", function () {",
+         "        pm.expect(j.chain).to.have.property(\"clean\");",
+         "        pm.expect(j.chain.clean).to.eql(pm.variables.get(\"cleanId\"));",
+         "    });",
+         "    pm.test(\"chain mantem os tres kinds do curso\", function () {",
+         "        pm.expect(j.chain).to.have.property(\"situation\");",
+         "        pm.expect(j.chain).to.have.property(\"label\");",
+         "        pm.expect(j.chain).to.have.property(\"upscale\");",
+         "    });",
+         "    pm.test(\"clean derruba label e upscale e vira o final (RANK 1 < 2 < 3)\", function () {",
+         "        pm.expect(j.chain.label, \"label\").to.eql(null);",
+         "        pm.expect(j.chain.upscale, \"upscale\").to.eql(null);",
+         "        pm.expect(j.kind).to.eql(\"clean\");",
+         "        pm.expect(j.final).to.eql(\"base/base_final.png\");",
+         "    });",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "422 — clean sem situacao escolhida (cost) [extensao]",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{baseUrl}}/api/projects/{{pidVazio}}/base/cost",
+       "host": [
+        "{{baseUrl}}"
+       ],
+       "path": [
+        "api",
+        "projects",
+        "{{pidVazio}}",
+        "base",
+        "cost"
+       ]
+      },
+      "description": "FDD `docs/domains/base/features/base-clean-marca-fdd.md`, secao 6, linha 273: `clean` sem `situation` selecionada devolve 422 com a mensagem JA EXISTENTE do rotulo — \"Escolha primeiro a melhor imagem de situacao (aula 009).\" — porque a pre-condicao e a mesma (`service.py:700-704`). Nenhuma string nova entrou no codigo.\nUsa `pidVazio` (projeto sem refs, sem mood e sem candidata) para nao depender da ordem de execucao da pasta 2, que deixa uma situacao selecionada em `pid`.\n409 quando o CLI da Higgsfield nao esta instalado: o router checa o CLI ANTES do pre-requisito (mesma precedencia do item 4 da tabela da wave 2).",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"kind\": \"clean\",\n  \"resolution\": \"2k\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "if (pm.response.code === 409) {",
+         "    pm.test.skip(\"CLI da Higgsfield ausente: o router checa o CLI antes do pre-requisito\");",
+         "    console.log(\"409: \" + pm.response.text().slice(0, 160));",
+         "} else if (pm.response.code === 404) {",
+         "    pm.test.skip(\"projeto-fixture pidVazio ausente — 422 nao observavel\");",
+         "} else {",
+         "    pm.test(\"status 422 — FDD secao 6, linha 273\", function () {",
+         "        pm.response.to.have.status(422);",
+         "    });",
+         "    pm.test(\"mensagem reusada do rotulo, sem string nova\", function () {",
+         "        const d = pm.response.json().detail;",
+         "        pm.expect(d).to.be.a(\"string\");",
+         "        pm.expect(d).to.include(\"Escolha primeiro a melhor imagem de situa\");",
          "    });",
          "}"
         ]

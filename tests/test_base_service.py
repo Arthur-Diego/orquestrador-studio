@@ -236,7 +236,7 @@ def test_select_writes_final_png_and_md_and_is_exclusive_per_kind(studio_env, sv
     s2 = _up(svc, project, "situation", (40, 200, 40), "1f8e7d6c5b4a")
     r = svc.select(project, s1, note="melhor enquadramento")
     assert r == {"final": "base/base_final.png", "kind": "situation",
-                 "chain": {"situation": s1, "label": None, "upscale": None}}
+                 "chain": {"situation": s1, "clean": None, "label": None, "upscale": None}}
     final = root / "base" / "base_final.png"
     src = root / [c for c in svc.load(project) if c["id"] == s1][0]["file"]
     assert final.read_bytes() == src.read_bytes(), "cópia byte a byte da candidata escolhida"
@@ -258,11 +258,13 @@ def test_chain_advances_and_restarts_when_situation_changes(studio_env, svc, pro
     svc.select(project, s)
     svc.select(project, lbl)
     r = svc.select(project, up)
-    assert r["kind"] == "upscale" and r["chain"] == {"situation": s, "label": lbl, "upscale": up}
+    assert r["kind"] == "upscale" and r["chain"] == {"situation": s, "clean": None, "label": lbl,
+                                                    "upscale": up}
     src = root / [c for c in svc.load(project) if c["id"] == up][0]["file"]
     assert (root / "base" / "base_final.png").read_bytes() == src.read_bytes()
     r = svc.select(project, s)
-    assert r["chain"] == {"situation": s, "label": None, "upscale": None}, "trocar a situação recomeça a cadeia"
+    assert r["chain"] == {"situation": s, "clean": None, "label": None,
+                          "upscale": None}, "trocar a situação recomeça a cadeia"
     assert r["kind"] == "situation"
     with pytest.raises(FileNotFoundError):
         svc.select(project, "naoexiste")
@@ -526,3 +528,241 @@ def test_base_md_keeps_the_label_instruction_in_full(studio_env, svc, project):
     svc.select(project, [c for c in svc.load(project) if c["kind"] == "label"][-1]["id"])
     md = (root / "base" / "base.md").read_text()
     assert "### Rótulo" in md and instrucao in md, "instrução de rótulo inteira, não truncada"
+
+
+# ---------- kind "clean": limpeza de marca `[extensão]` (wave 9) ----------
+def test_clean_kind_sits_between_situation_and_label(svc):
+    """FDD §4: limpa-se DEPOIS de escolher a situação e ANTES de aplicar o rótulo próprio."""
+    assert svc.KINDS == ("situation", "clean", "label", "upscale")
+    assert svc.RANK["situation"] < svc.RANK["clean"] < svc.RANK["label"] < svc.RANK["upscale"]
+    assert svc.KIND_LABEL["clean"]
+    assert svc.DEFAULT_COUNT["clean"] == 3, "mesmo padrão do rótulo: gera 3 e escolhe a melhor"
+    assert svc.DEFAULT_MODELS["clean"] == "nano_banana_2"
+
+
+def test_clean_course_kinds_excludes_the_extension_step(svc):
+    """O progresso da etapa mede o roteiro da aula 009; a limpeza é `[extensão]` e opcional."""
+    assert svc.COURSE_KINDS == ("situation", "label", "upscale")
+    assert "clean" not in svc.COURSE_KINDS
+    assert all(k in svc.KINDS for k in svc.COURSE_KINDS)
+
+
+def test_clean_check_kind_message_lists_the_four_kinds(svc):
+    assert svc._check_kind("clean") == "clean"
+    with pytest.raises(ValueError) as e:
+        svc._check_kind("nope")
+    msg = str(e.value)
+    assert all(k in msg for k in ("situation", "clean", "label", "upscale"))
+
+
+def test_clean_prompt_is_generic_without_target(svc):
+    txt = svc.clean_prompt("")
+    assert "Remove all brand names" in txt and "identical" in txt
+    assert "(" not in txt and '"' not in txt, "sem target não há trecho entre parênteses"
+    assert "\n" not in txt, "uma única linha: o texto vai para a linha de comando do CLI"
+    assert txt == svc.clean_prompt("   ") == svc.clean_prompt()
+
+
+def test_clean_prompt_names_the_target_when_given(svc):
+    txt = svc.clean_prompt("Red Bull")
+    assert '"Red Bull"' in txt
+    assert "Remove all brand names" in txt and "identical" in txt
+    prefixo = "Remove all brand names, logos, labels and printed text from the product"
+    assert txt.startswith(prefixo) and svc.clean_prompt("").startswith(prefixo)
+
+
+def test_clean_prompt_is_deterministic(svc):
+    assert svc.clean_prompt("Red Bull") == svc.clean_prompt("Red Bull")
+    assert svc.clean_prompt("") == svc.clean_prompt("")
+
+
+# ---------- plano, custo e geração do kind "clean" (wave 9) ----------
+def _clean_ready(studio_env, svc, project, sit_size=(800, 450)):
+    """Projeto com a melhor `situation` já escolhida — pré-condição do passo de limpeza."""
+    root = prepare(studio_env, project)
+    svc.import_upload(project, [("s.png", _png(*sit_size))], "situation", "0f8e7d6c5b4a")
+    sit = [c for c in svc.load(project) if c["kind"] == "situation"][-1]
+    svc.select(project, sit["id"])
+    return root, sit
+
+
+def test_clean_plan_uses_the_selected_situation_as_source(studio_env, svc, project):
+    """FDD §4: uma chamada por variação, todas sobre o arquivo da situação escolhida."""
+    root, sit = _clean_ready(studio_env, svc, project)
+    items, text = svc._plan(root, "clean", None, 3)
+    assert len(items) == 3, "uma chamada ao CLI por variação (DEFAULT_COUNT['clean'])"
+    assert all(i["image_references"] == [str(root / sit["file"])] for i in items)
+    assert all(i["prompt"] == text for i in items)
+    assert "Remove all brand names" in text
+    assert all(i["ref_id"] == sit["ref_id"] for i in items)
+
+
+def test_clean_plan_requires_a_selected_situation(studio_env, svc, project):
+    """FDD §6: mesma pré-condição — e a MESMA mensagem — do rótulo."""
+    root = prepare(studio_env, project)
+    _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")   # importada, não escolhida
+    with pytest.raises(ValueError) as e:
+        svc._plan(root, "clean", None, 3)
+    assert str(e.value) == "Escolha primeiro a melhor imagem de situação (aula 009)."
+
+
+def test_clean_plan_target_reaches_the_prompt(studio_env, svc, project):
+    root, _ = _clean_ready(studio_env, svc, project)
+    items, text = svc._plan(root, "clean", None, 1, target="Red Bull")
+    assert '"Red Bull"' in text and items[0]["prompt"] == text
+
+
+def test_clean_plan_edited_prompt_wins_over_the_template(studio_env, svc, project):
+    """B4: o texto editado na tela vence o template — e o `target` deixa de importar."""
+    root, _ = _clean_ready(studio_env, svc, project)
+    items, text = svc._plan(root, "clean", None, 1, prompt="apenas isto", target="Red Bull")
+    assert text == "apenas isto" and items[0]["prompt"] == "apenas isto"
+
+
+def test_clean_label_plan_prefers_the_selected_clean(studio_env, svc, project):
+    """FDD §9 critério 4: com a embalagem já limpa, o rótulo é aplicado sobre ela."""
+    root, _ = _clean_ready(studio_env, svc, project)
+    svc.brand_set(project, "Gelo Zero", "raio neon")
+    cln = _up(svc, project, "clean", (40, 200, 40))
+    svc.select(project, cln)
+    arquivo = [c for c in svc.load(project) if c["id"] == cln][0]["file"]
+    items, _text = svc._plan(root, "label", None, 1)
+    assert items[0]["image_references"] == [str(root / arquivo)]
+
+
+def test_clean_label_plan_falls_back_to_situation_without_clean(studio_env, svc, project):
+    """Fallback aditivo: clean importada mas não escolhida = comportamento de antes da wave 9."""
+    root, sit = _clean_ready(studio_env, svc, project)
+    svc.brand_set(project, "Gelo Zero", "raio neon")
+    _up(svc, project, "clean", (40, 200, 40))                       # importada, não escolhida
+    items, _text = svc._plan(root, "label", None, 1)
+    assert items[0]["image_references"] == [str(root / sit["file"])]
+
+
+def test_clean_upscale_plan_uses_the_clean_when_it_is_the_most_advanced(studio_env, svc, project):
+    root, _ = _clean_ready(studio_env, svc, project)
+    cln = _up(svc, project, "clean", (40, 200, 40))
+    svc.select(project, cln)
+    arquivo = [c for c in svc.load(project) if c["id"] == cln][0]["file"]
+    items, _text = svc._plan(root, "upscale", None, 1)
+    assert items[0]["image_references"] == [str(root / arquivo)]
+
+
+def test_clean_upscale_ratio_reads_the_clean_as_origin(studio_env, svc, project):
+    """FDD §9 critério 6: a clean escolhida é a origem da cadeia; sem ela, volta a ser a situação."""
+    root, _ = _clean_ready(studio_env, svc, project)
+    svc.import_upload(project, [("c.png", _png(1024, 576, (10, 20, 30)))], "clean")
+    svc.import_upload(project, [("u.png", _png(2048, 1152, (40, 50, 60)))], "upscale")
+    cands = svc.load(project)
+    svc.select(project, [c for c in cands if c["kind"] == "clean"][0]["id"])
+    svc.select(project, [c for c in cands if c["kind"] == "upscale"][0]["id"])
+    assert svc.upscale_ratio(root, svc.load(project)) == (2.0, 1024, 2048)
+    sem_clean = [{**c, "selected": c["selected"] and c["kind"] != "clean"} for c in svc.load(project)]
+    assert svc.upscale_ratio(root, sem_clean) == (2.56, 800, 2048), "sem clean, a origem é a situação"
+
+
+def test_clean_upscale_warning_compares_against_the_clean(studio_env, svc, project):
+    """Larguras escolhidas de propósito: 1600px é 2x a situação, mas só 1.56x a clean."""
+    _clean_ready(studio_env, svc, project)
+    svc.import_upload(project, [("c.png", _png(1024, 576, (10, 20, 30)))], "clean")
+    svc.select(project, [c for c in svc.load(project) if c["kind"] == "clean"][0]["id"])
+    fora = svc.import_upload(project, [("u1.png", _png(1600, 900, (40, 50, 60)))], "upscale")
+    assert len(fora["warnings"]) == 1 and "1.6x" in fora["warnings"][0] and "1024px" in fora["warnings"][0]
+    dentro = svc.import_upload(project, [("u2.png", _png(2048, 1152, (60, 70, 80)))], "upscale")
+    assert dentro["warnings"] == [], "2x sobre a clean não avisa"
+
+
+def test_clean_default_model_comes_from_the_clean_action(studio_env, svc, project):
+    """ADR-016: o clean tem ação de custo dedicada — mexer nela não mexe nos outros kinds."""
+    assert svc._default_model(project, "clean") == "nano_banana_2"
+    svc.settings.set_project_default(project, "base.clean", "gpt_image_2")
+    assert svc._default_model(project, "clean") == "gpt_image_2"
+    assert svc._default_model(project, "situation") == "nano_banana_2", "ação dedicada, não a base.image"
+
+
+def test_clean_cost_uses_the_step_default_count(studio_env, svc, project, monkeypatch):
+    """FDD §9 critério 2: `count` default 3, sem chamar a ponte de geração."""
+    _clean_ready(studio_env, svc, project)
+    seen = []
+    monkeypatch.setattr(svc.hf, "cost", lambda model, params: seen.append(params) or {"credits": 2})
+    gerou = []
+    monkeypatch.setattr(svc.hf, "generate", lambda *a, **k: gerou.append(a) or {"urls": [], "id": "x", "raw": {}})
+    c = svc.estimate_cost(project, "clean")
+    assert c["count"] == 3 and c["per_item"] == 2 and c["total"] == 6
+    assert gerou == [], "estimar não gasta crédito"
+    assert "Remove all brand names" in seen[0]["prompt"]
+    assert not ({"aspect_ratio", "resolution", "count"} & set(seen[0])), "edição sobre imagem existente"
+
+
+def test_clean_generate_produces_clean_candidates_and_ledger_line(studio_env, svc, project, monkeypatch):
+    """FDD §9 critério 1: uma chamada por item sobre a situação e uma linha de livro-caixa por chamada."""
+    root, sit = _clean_ready(studio_env, svc, project)
+    calls = _fake_cli(svc, monkeypatch, [["http://x/1.png"], ["http://x/2.png"]])
+    svc.start_generate(project, "clean", count=2)
+    job = _wait(svc, project)
+    assert job["state"] == "done" and len(calls) == 2
+    assert all(c["params"]["image_references"] == [str(root / sit["file"])] for c in calls)
+    assert all("Remove all brand names" in c["params"]["prompt"] for c in calls)
+    assert [c for c in svc.load(project) if c["kind"] == "clean"], "candidatas classificadas como clean"
+    linhas = [r for r in svc.settings.history(project) if r["action"] == "base.clean"]
+    assert len(linhas) == 2 and all(r["step"] == "base" for r in linhas)
+
+
+def test_clean_generate_target_is_sent_to_the_bridge(studio_env, svc, project, monkeypatch):
+    _clean_ready(studio_env, svc, project)
+    calls = _fake_cli(svc, monkeypatch, [["http://x/1.png"]])
+    svc.start_generate(project, "clean", count=1, target="Red Bull")
+    assert _wait(svc, project)["state"] == "done"
+    assert '"Red Bull"' in calls[0]["params"]["prompt"]
+
+
+def test_clean_generate_requires_a_selected_situation(studio_env, svc, project, monkeypatch):
+    prepare(studio_env, project)
+    _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")   # importada, não escolhida
+    _fake_cli(svc, monkeypatch, [["http://x/1.png"]])
+    with pytest.raises(ValueError) as e:
+        svc.start_generate(project, "clean")
+    assert str(e.value) == "Escolha primeiro a melhor imagem de situação (aula 009)."
+
+
+# ---------- seleção, cadeia e base.md do kind "clean" (wave 9) ----------
+def test_clean_select_drops_label_and_upscale(studio_env, svc, project):
+    """FDD §9 critério 5: a limpeza é um passo ANTES do rótulo — escolhê-la recomeça a cadeia dali."""
+    root, sit = _clean_ready(studio_env, svc, project)
+    cln = _up(svc, project, "clean", (40, 200, 40))
+    lbl = _up(svc, project, "label", (40, 40, 200))
+    up = _up(svc, project, "upscale", (90, 90, 90))
+    svc.select(project, cln)
+    svc.select(project, lbl)
+    svc.select(project, up)
+    r = svc.select(project, cln)
+    assert r["kind"] == "clean" and r["chain"]["clean"] == cln
+    assert r["chain"]["label"] is None and r["chain"]["upscale"] is None, "os passos seguintes caem"
+    assert r["chain"]["situation"] == sit["id"], "a situação escolhida continua de pé"
+    src = root / [c for c in svc.load(project) if c["id"] == cln][0]["file"]
+    assert (root / "base" / "base_final.png").read_bytes() == src.read_bytes()
+
+
+def test_clean_md_records_the_cleaning_step(studio_env, svc, project):
+    """B10: o dever de casa da aula guarda o prompt de cada passo — inclusive o da limpeza."""
+    root, _ = _clean_ready(studio_env, svc, project)
+    texto = svc.clean_prompt("Red Bull")
+    svc.import_upload(project, [("c.png", _png(1024, 576, (10, 20, 30)))], "clean", None, texto)
+    svc.select(project, [c for c in svc.load(project) if c["kind"] == "clean"][-1]["id"])
+    md = (root / "base" / "base.md").read_text()
+    assert f"| {svc.KIND_LABEL['clean']} |" in md, "linha da limpeza na tabela da cadeia"
+    cabeca, prompts = md.split("## Prompts e instruções usados")
+    assert svc.KIND_LABEL["clean"].capitalize() in prompts
+    assert texto in prompts, "o prompt integral (não o truncado da tabela) fica na seção de prompts"
+    assert cabeca
+
+
+def test_clean_most_advanced_ranks_between_situation_and_label(studio_env, svc, project):
+    """FDD §9 critério 6: RANK situação < limpeza < rótulo — o `base_final` segue o mais avançado."""
+    _clean_ready(studio_env, svc, project)
+    cln = _up(svc, project, "clean", (40, 200, 40))
+    svc.select(project, cln)
+    assert svc.most_advanced(svc.load(project))["id"] == cln
+    lbl = _up(svc, project, "label", (40, 40, 200))
+    svc.select(project, lbl)
+    assert svc.most_advanced(svc.load(project))["id"] == lbl
