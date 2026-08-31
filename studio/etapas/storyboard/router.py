@@ -37,6 +37,9 @@ class DownloadsReq(BaseModel):
 class HistoryReq(BaseModel):
     size: int = 50
     prompt_filter: str | None = None
+    #: `[extensão]` seletor de histórico: quando presente, importa só as mídias escolhidas (as
+    #: `key` devolvidas por `GET .../history/preview`). Vazio/ausente = comportamento antigo (tudo).
+    keys: list[str] | None = None
 
 
 class SelectReq(BaseModel):
@@ -186,16 +189,33 @@ def storyboard_downloads(pid: str, req: DownloadsReq):
     return _guard(sb.import_downloads, pid, req.folder, req.since_minutes, req.prompt)
 
 
-@router.post("/api/projects/{pid}/storyboard/import/history")
-def storyboard_history(pid: str, req: HistoryReq | None = None):
-    refs.project_dir(pid)
-    req = req or HistoryReq()
+def _history_cli_ready() -> None:
+    """Histórico exige CLI instalado + login (é o próprio `higgsfield generate list`)."""
     if not hf.available():
         raise HTTPException(409, "CLI da Higgsfield não instalado")
     if not hf.status().get("logged_in"):
         raise HTTPException(409, "CLI da Higgsfield sem login (higgsfield auth login)")
+
+
+@router.get("/api/projects/{pid}/storyboard/history/preview")
+def storyboard_history_preview(pid: str, size: int = 50, prompt_filter: str | None = None):
+    """Lista o histórico Higgsfield (via CLI) para o seletor da UI, sem baixar nada. O usuário
+    marca quais mídias quer e chama `import/history` com as `key` escolhidas."""
+    refs.project_dir(pid)
+    _history_cli_ready()
     try:
-        return sb.import_history(pid, req.size, req.prompt_filter)
+        return sb.preview_history(pid, size, prompt_filter)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
+
+
+@router.post("/api/projects/{pid}/storyboard/import/history")
+def storyboard_history(pid: str, req: HistoryReq | None = None):
+    refs.project_dir(pid)
+    req = req or HistoryReq()
+    _history_cli_ready()
+    try:
+        return sb.import_history(pid, req.size, req.prompt_filter, req.keys)
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from e
 

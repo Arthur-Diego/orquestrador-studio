@@ -108,6 +108,50 @@ def test_history_import_needs_cli_and_maps_failures(client, pid, monkeypatch):
     assert r.status_code == 200 and r.json() == {"added": 1, "jobs": 1}
 
 
+def test_history_preview_lists_without_downloading(client, pid, monkeypatch):
+    """`[extensão]` seletor: o preview lista as mídias com uma `key` estável e NÃO baixa nada
+    (não toca em `ingest.urlopen`). Exige CLI+login, como a importação."""
+    import studio.higgsfield as hf
+    from studio.common import ingest
+    url = f"/api/projects/{pid}/storyboard/history/preview"
+    monkeypatch.setattr(hf, "available", lambda: False)
+    assert client.get(url).status_code == 409
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": False})
+    assert client.get(url).status_code == 409
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+
+    def _no_download(*a, **k):
+        raise AssertionError("preview não pode baixar mídia")
+    monkeypatch.setattr(ingest, "urlopen", _no_download)
+    monkeypatch.setattr(hf, "history_media", lambda kind="image", size=50: [
+        {"id": "j1", "prompt": "Make it smaller", "model": "nano", "created": "", "urls": ["http://x/a.png", "http://x/b.png"]},
+        {"id": "j2", "prompt": "Zoom out", "model": "nano", "created": "", "urls": ["http://x/c.png"]}])
+    body = client.get(url).json()
+    assert body["jobs"] == 2 and len(body["items"]) == 3
+    keys = [it["key"] for it in body["items"]]
+    assert len(set(keys)) == 3 and all(it["url"].startswith("http://x/") for it in body["items"])
+    # filtro por prompt reduz a lista sem baixar nada
+    assert len(client.get(url, params={"prompt_filter": "zoom"}).json()["items"]) == 1
+
+
+def test_history_import_only_selected_keys(client, pid, monkeypatch):
+    """Com `keys`, a importação baixa só as mídias escolhidas no seletor."""
+    import studio.higgsfield as hf
+    from studio.common import ingest
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    jobs = [{"id": "j1", "prompt": "a", "model": "nano", "created": "", "urls": ["http://x/a.png", "http://x/b.png"]}]
+    monkeypatch.setattr(hf, "history_media", lambda kind="image", size=50: jobs)
+    monkeypatch.setattr(ingest, "urlopen",
+                        lambda *a, **k: type("R", (), {"read": staticmethod(lambda: image_bytes())})())
+    only = ingest._media_key("http://x/b.png")
+    r = client.post(f"/api/projects/{pid}/storyboard/import/history", json={"keys": [only]})
+    assert r.status_code == 200 and r.json() == {"added": 1, "jobs": 1}
+    # só a escolhida virou candidata
+    assert len(client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"]) == 1
+
+
 def test_select_ideas_writes_ideas_json_and_detaches(client, pid, root):
     client.post(f"/api/projects/{pid}/storyboard/import/upload",
                 files=[("files", ("a.png", image_bytes(color=(1, 2, 3)), "image/png")),

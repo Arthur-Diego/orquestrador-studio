@@ -335,10 +335,19 @@ def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 1
     return r
 
 
-def import_history(pid: str, size: int = 50, prompt_filter: str | None = None) -> dict:
+def preview_history(pid: str, size: int = 50, prompt_filter: str | None = None) -> dict:
+    """Lista o histórico Higgsfield (via CLI) para o seletor da UI, sem baixar nada. O usuário
+    escolhe quais mídias importar; a importação em si é `import_history(keys=[...])`."""
+    project_dir(pid)   # 404 se o projeto não existe
+    return ingest.history_preview("image", size, prompt_filter)
+
+
+def import_history(pid: str, size: int = 50, prompt_filter: str | None = None,
+                   keys: list[str] | None = None) -> dict:
     root = project_dir(pid)
-    r = ingest.import_history(root, STEP, "image", size, prompt_filter)
-    log.info("import %s", {"pid": pid, "source": "higgsfield", "added": r["added"], "jobs": r["jobs"]})
+    r = ingest.import_history(root, STEP, "image", size, prompt_filter, keys)
+    log.info("import %s", {"pid": pid, "source": "higgsfield", "added": r["added"], "jobs": r["jobs"],
+                           "selected": len(keys) if keys else None})
     return r
 
 
