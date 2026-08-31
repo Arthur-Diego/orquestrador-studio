@@ -58,6 +58,20 @@ MAX_SCENE_TEXT = 500    # texto de uma cena
 COUNTS = {"uncertain": 4, "tweak": 1}
 SUFFIX = "Keep everything else identical, realistic."
 
+#: Instrução FIXA do kind `multishot`, montada pelo servidor. Espelha a fórmula da aula 011 que
+#: PRODUZ pontos de vista reais (`angles.build_prompts`: "Bring me another point of view of this
+#: image. …") — não a antiga "Another point of view of this exact scene: … Same subject, same
+#: lighting, realistic.", que travava o Nano Banana em preservação fiel (só um "tweak" mínimo em
+#: vez de um ângulo novo — ver ADR-027). `{core}` é o texto único do usuário (o preset da aula
+#: `#sbPreset` continua entrando literal aqui, ex.: "a close-up on the character"), sem a pontuação
+#: final. O pedido explícito de MUDAR câmera/enquadramento é o que empurra a variação real de
+#: viewpoint; "same scene, lighting and colors" preserva só a continuidade, não a composição.
+MULTISHOT_INSTRUCTION = (
+    "Bring me another point of view of this image: {core}. Reframe with a genuinely different "
+    "camera angle and composition — a real new viewpoint of the same scene, not the same shot. "
+    "Same scene, same subject, same lighting and colors, realistic."
+)
+
 #: `[extensão]` inpaint-marcacao: instrução FIXA do kind `edit_area`, montada pelo servidor (FDD §5).
 #: Não usa `SUFFIX` como os kinds antigos — é um texto próprio, que ancora a imagem 1 (original) e a
 #: imagem 2 (anotada) e proíbe renderizar a marcação no resultado. `{core}` é a instrução única do
@@ -294,7 +308,8 @@ def build_instruction(pid: str, kind: str, text: str, count: int = 4) -> dict:
         # `[extensão]` inpaint-marcacao: texto fixo do FDD §5, sem o sufixo genérico dos kinds antigos.
         instruction = EDIT_AREA_INSTRUCTION.format(core=core)
     else:
-        instruction = f"Another point of view of this exact scene: {core}. Same subject, same lighting, realistic."
+        # multishot: pontos de vista REAIS (ADR-027), não a antiga preservação fiel que virava tweak.
+        instruction = MULTISHOT_INSTRUCTION.format(core=core)
     hint = next(k["ui_hint"] for k in KINDS if k["kind"] == kind)
     hint += (" Na Higgsfield, gere 4 variações (você está incerto)." if count == COUNTS["uncertain"]
              else " Na Higgsfield, gere 1 variação (é só um tweak).")
@@ -690,11 +705,23 @@ def _cli_request(pid: str, kind: str, text: str, count: int, source_id: str | No
     return built, refs
 
 
+def _gen_params(root: Path, kind: str, instruction: str, refs: list[str]) -> dict:
+    """Params do `generate create` da ideação. `multishot` leva `aspect_ratio` da campanha — como o
+    multishot dos ângulos (aula 011, `angles.start_generate`), que gera pontos de vista REAIS: sem a
+    proporção o CLL herda o enquadramento da entrada e reforça a preservação fiel (o "tweak" do
+    ADR-027). Os kinds de EDIÇÃO (`edit`, `edit_area`) não recebem `aspect_ratio` de propósito — são
+    mudanças localizadas que devem manter a moldura da imagem original."""
+    params = {"prompt": instruction, "image_references": refs}
+    if kind == "multishot":
+        params["aspect_ratio"] = _aspect_ratio(root)
+    return params
+
+
 def cost(pid: str, model: str, kind: str, text: str, count: int = 4, source_id: str | None = None,
          annotation_id: str | None = None) -> dict:
     _cli_ready()
     built, refs = _cli_request(pid, kind, text, count, source_id, annotation_id)
-    c = hf.cost(model, {"prompt": built["instruction"], "image_references": refs})
+    c = hf.cost(model, _gen_params(project_dir(pid), kind, built["instruction"], refs))
     credits = c.get("credits")
     per = credits if isinstance(credits, (int, float)) else None
     return {"per_image": per, "total": per * count if per is not None else None}
@@ -711,10 +738,12 @@ def start_generate(pid: str, model: str, kind: str, text: str, count: int = 4, s
     # `[extensão]` inpaint-marcacao: o resultado guarda de qual marcação ele saiu (rastro do modo novo).
     meta_extra = {"annotation": annotation_id} if kind == "edit_area" else {}
 
+    params = _gen_params(root, kind, instruction, refs)
+
     def run(job: dict):
         tmp = root / STEP / ".tmp"
         for i in range(count):
-            res = hf.generate(model, {"prompt": instruction, "image_references": refs}, timeout_s=600)
+            res = hf.generate(model, params, timeout_s=600)
             if kind == "edit_area":
                 # `[extensão]` livro-caixa (ADR-016), APÓS a chamada que gastou crédito. Só o modo
                 # novo registra: retroagir aos kinds da aula é a pendência P1, fora desta feature.

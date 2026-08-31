@@ -186,7 +186,7 @@ Todas as rotas sob `/api/projects/{pid}/storyboard/...`; JSON em UTF-8; `pid` in
   "base_image": "base/base_final.png"
 }
 ```
-Regras de montagem: `draw_to_edit` → `"Follow the sketch: <text>. <suffix>"`; `edit` → `"<text>. <suffix>"`; `multishot` → `"Another point of view of this exact scene: <text>. Same subject, same lighting, realistic."`. `text` é usado como digitado (sem tradução); `[auto-aceito: sem tradução automática, não há LLM na stack]`.
+Regras de montagem: `draw_to_edit` → `"Follow the sketch: <text>. <suffix>"`; `edit` → `"<text>. <suffix>"`; `multishot` → `"Bring me another point of view of this image: <core>. Reframe with a genuinely different camera angle and composition — a real new viewpoint of the same scene, not the same shot. Same scene, same subject, same lighting and colors, realistic."` (`<core>` = `text` sem a pontuação final; pede *reframe* real de ângulo/enquadramento — ADR-027, espelha o multishot dos ângulos da aula 011 — em vez da antiga fórmula de preservação fiel que travava num "tweak"). Além disso o `multishot` (e só ele) manda `aspect_ratio` da campanha na chamada ao CLI; os kinds de edição não, para manter a moldura da original. `text` é usado como digitado (sem tradução); `[auto-aceito: sem tradução automática, não há LLM na stack]`.
 
 **Contrato 4: importar por upload**
 - Tipo: endpoint
