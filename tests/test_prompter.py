@@ -490,3 +490,59 @@ def test_script_is_strictly_additive_to_the_single_prompt_path(monkeypatch, tmp_
         assert prompter.OUTPUT_SPEC in args[2] and prompter.SCRIPT_OUTPUT_SPEC not in args[2]
         assert prompter.ROLES["script"] not in args[2]
         assert args[args.index("--model") + 1] == prompter.MODEL
+
+
+# ---------- `[extensão]` roteiro-por-cena (ADR-028): N fotos por cena INFERIDO + fotos coesas ----------
+def _scene_shots(n: int, shots: list[str], arc: str = "acao") -> dict:
+    """Cena que já traz `shots`/`shot_prompts` (o formato novo do `SCRIPT_OUTPUT_SPEC`)."""
+    return {"n": n, "arc": arc, "text": f"Cena {n}: o personagem age.",
+            "shots": len(shots), "shot_prompts": shots, "image_prompt": shots[0],
+            "negative": "plastic skin"}
+
+
+def test_script_output_spec_asks_for_inferred_shots_per_scene():
+    """T1.14 (ADR-028): o output spec pede `shots` (na faixa) e `shot_prompts` coesos por cena."""
+    spec = prompter.SCRIPT_OUTPUT_SPEC
+    assert '"shots"' in spec and '"shot_prompts"' in spec
+    assert str(prompter.SHOTS_MIN) in spec and str(prompter.SHOTS_MAX) in spec
+    assert prompter.SHOTS_MIN == 3 and prompter.SHOTS_MAX == 6
+    assert "VISUALLY COHERENT" in spec, "as fotos de uma cena têm de ser pedidas coesas entre si"
+
+
+def test_script_keeps_the_inferred_shots_of_each_scene(monkeypatch, tmp_path):
+    """T1.15: o número de fotos vem do MODELO (por cena), e cada `shot_prompt` é preservado."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    cenas = [_scene_shots(1, ["ph 1a", "ph 1b", "ph 1c"]),           # cena simples: 3 fotos
+             _scene_shots(2, ["ph 2a", "ph 2b", "ph 2c", "ph 2d", "ph 2e"])]  # cena densa: 5 fotos
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude(cenas, calls))
+    r = prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=2,
+                        arcs=["comeco", "desfecho"])
+    assert [s["shots"] for s in r["scenes"]] == [3, 5]
+    assert r["scenes"][0]["shot_prompts"] == ["ph 1a", "ph 1b", "ph 1c"]
+    assert r["scenes"][1]["shot_prompts"][-1] == "ph 2e"
+    # compat: `image_prompt` continua sendo a PRIMEIRA foto da cena.
+    assert r["scenes"][0]["image_prompt"] == "ph 1a"
+
+
+def test_script_clamps_shot_prompts_to_the_ceiling(monkeypatch, tmp_path):
+    """T1.16: mais fotos que o teto → cortadas em `SHOTS_MAX`; `shots` acompanha o que sobrou."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    demais = [f"ph {i}" for i in range(9)]                            # 9 fotos → teto 6
+    monkeypatch.setattr(prompter.subprocess, "run",
+                        _fake_script_claude([_scene_shots(1, demais)], calls))
+    r = prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=1, arcs=["comeco"])
+    assert r["scenes"][0]["shots"] == prompter.SHOTS_MAX
+    assert len(r["scenes"][0]["shot_prompts"]) == prompter.SHOTS_MAX
+
+
+def test_script_falls_back_to_one_shot_without_shot_prompts(monkeypatch, tmp_path):
+    """T1.17 (compat): roteiro sem `shot_prompts` (formato antigo) vira uma foto = `image_prompt`."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _fake_script_claude([_scene(i) for i in range(1, 3)], calls))
+    r = prompter.script(images=[_img(tmp_path)], brief={}, preset=None, count=2,
+                        arcs=["comeco", "desfecho"])
+    for s in r["scenes"]:
+        assert s["shots"] == 1 and s["shot_prompts"] == [s["image_prompt"]]

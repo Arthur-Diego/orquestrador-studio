@@ -305,6 +305,11 @@ sequenceDiagram
   + aspect ratio → fidelidade → negativos, template universal da skill); `source` sempre
   `"claude"` (não existe `source: "template"` para roteiro, ver seção 6).
 
+  **Frente B (2026-08-31, ADR-028 — ver §14):** cada cena ganha `shots` (inteiro 3–6, quantas
+  fotos a cena pede, inferido pelo modelo) e `shot_prompts` (array de `shots` briefings de DoP
+  coesos entre si). `image_prompt` passa a ser `shot_prompts[0]`; cenas sem `shot_prompts` caem
+  em `shots: 1`. Campos aditivos; o exemplo acima (uma foto) continua válido como `shots: 1`.
+
 #### 5.4 Status da etapa (campo aditivo)
 
 `GET /api/projects/{pid}/storyboard` ganha campos aditivos (sem tocar os existentes):
@@ -342,6 +347,10 @@ mudou.
 - Output spec próprio (fence ```json): `{"scenes": [{"n", "arc", "text", "image_prompt",
   "negative"}], "notes_pt"}`; parser próprio `_parse_script` (o `_parse` vigente é de prompt
   único e não muda).
+  **Frente B (2026-08-31, ADR-028 — ver §14):** o output spec passa a pedir também `shots`
+  (3–6) e `shot_prompts` (array coeso) por cena; `_parse_script` chama `_normalize_shots`
+  (fonte da verdade = `shot_prompts`, `shots` = tamanho da lista cortada no teto,
+  `image_prompt` = primeira foto). Assinatura de `script(...)` inalterada.
 - `from_brief`/`from_images` e `PROMPT_FORMAT`/`split_sections`/`provenance` ficam
   intocados (garantia para base-prompt-provenance).
 
@@ -593,3 +602,40 @@ ficam registradas as observações que a execução real produziu e que NÃO mud
    61,7 s, 5 cenas, arcos `comeco/descoberta/acao/acao/desfecho`, e o rig do preset
    `documentary-street` (`Blackmagic Pocket 6K Pro`, `Cooke S4`, `Super 35`) literalmente nas
    cinco cenas. Detalhes e números em `docs/domains/storyboard/postman/README.md`.
+
+---
+
+### 14. Reconciliação Frente B — fotos inferidas por cena + ordem do painel (2026-08-31, ADR-028)
+
+A Frente B da wave de storyboard estendeu esta feature de forma **estritamente aditiva** sobre a
+ADR-025 aqui documentada. Decisão em [ADR-028](../../../adrs/generated/STUDIO/ADR-028-roteiro-por-cena-fotos-inferidas-e-roteiro-antes-da-historia.md).
+O que muda no contrato deste FDD:
+
+1. **Cada cena passa a carregar N fotos inferidas, não uma.** O contrato de `prompter.script`
+   (5.5) e o schema de cena de `GET .../script` (5.3) ganham dois campos aditivos por cena:
+   - `shots` — inteiro na faixa **3–6** (`SHOTS_MIN`/`SHOTS_MAX`), quantas fotos a cena pede,
+     JULGADO pelo modelo a partir da descrição. O servidor só normaliza a faixa e nunca inventa
+     acima do que o modelo escreveu (`_normalize_shots`): `shots` efetivo = tamanho da lista
+     `shot_prompts` (cortada no teto), prompts vazios descartados; o piso 3 é um PEDIDO no prompt,
+     não preenchimento do servidor.
+   - `shot_prompts` — array de exatamente `shots` briefings de DoP em inglês, **visualmente coesos
+     dentro da cena** (mesmo local/produto/paleta/luz/mundo; variam só momento/enquadramento/ângulo).
+   - `image_prompt` **permanece** e passa a ser `shot_prompts[0]` (a primeira foto) — consumidor de
+     uma foto por cena não muda. Roteiro sem `shot_prompts` (formato ADR-025 puro) cai em
+     `shots = 1` com `image_prompt` como única foto.
+2. **O rig do preset (critério 3 `[cross-feature]`) é cobrado em TODAS as fotos.** `_require_preset_rig`
+   varre cada `shot_prompt`; falta de corpo/lente/formato em QUALQUER foto derruba o job em
+   `state: "error"` citando "cena N foto J". A matriz da seção 6 continua válida, agora por foto.
+3. **`scenes.json` segue intocado.** `shots`/`shot_prompts` vivem só em `script.json`, ao lado de
+   `image_prompt`. A aplicação às cenas (`PUT /scenes`, opt-in) continua preenchendo apenas `text`;
+   o **encaixe das fotos no roteiro real permanece MANUAL** por decisão explícita — nenhum caminho
+   novo escreve cena sozinho.
+4. **Ordem do painel na etapa 4.** O painel "Roteiro por Claude" passou a PRECEDER "A história em
+   cenas" no stepper (ordem física das `<section>`, sem lógica de índice): roteiro=`02`,
+   história=`03`, ângulos=`04`, cena=`05`. As referências textuais "painel NN" em
+   `studio/etapas/storyboard/view.js` e `guide.py` acompanham a renumeração. Fluxo inalterado — o
+   roteiro sempre originou as cenas por `id`, não por posição.
+5. **Asserções de conjunto fechado afrouxadas** (mesma nota do item 4 da §13, agora também): o
+   schema de cena de `script.json` nos testes ganhou `shots`/`shot_prompts`, e a contagem/ordem dos
+   badges `.pn` do `view.html` passou a `("01","02","03","04","05")` com o roteiro (02) antes da
+   história (03). Nenhum comportamento anterior mudou.

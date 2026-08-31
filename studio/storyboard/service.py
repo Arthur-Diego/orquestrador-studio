@@ -1284,10 +1284,15 @@ def _require_preset_rig(scenes: list[dict], preset: str | None) -> None:
     rig = prompter.REALISM_PRESETS[preset]["rig"]
     faltas = []
     for s in scenes:
-        prompt = s.get("image_prompt") or ""
-        ausentes = [f'{k} ("{rig[k]}")' for k in ("camera", "lens", "format") if rig[k] not in prompt]
-        if ausentes:
-            faltas.append(f"cena {s['n']} sem {', '.join(ausentes)}")
+        # ADR-028: o rig é cobrado em TODAS as fotos da cena, não só na primeira — cada `shot_prompt`
+        # vira uma foto gerada e todas precisam do mesmo corpo/lente/formato (`shot_prompts` sempre
+        # traz ao menos o `image_prompt`, então cenas de uma foto seguem cobradas igual).
+        prompts = s.get("shot_prompts") or [s.get("image_prompt") or ""]
+        for j, prompt in enumerate(prompts, start=1):
+            ausentes = [f'{k} ("{rig[k]}")' for k in ("camera", "lens", "format") if rig[k] not in prompt]
+            if ausentes:
+                onde = f"cena {s['n']}" if len(prompts) == 1 else f"cena {s['n']} foto {j}"
+                faltas.append(f"{onde} sem {', '.join(ausentes)}")
     if faltas:
         raise RuntimeError(f"roteiro fora do rig do preset {preset}: {'; '.join(faltas)} — "
                            "nada foi gravado, gere de novo")
@@ -1311,8 +1316,12 @@ def _script_payload(res: dict, preset: str | None, model_target: str, aspect: st
         if len(text) > MAX_SCENE_TEXT:
             text = text[:MAX_SCENE_TEXT]
             truncated.append(s["n"])
+        # ADR-028: `shots` (inferido) + `shot_prompts` (coeso na cena) entram no schema; `image_prompt`
+        # continua sendo a primeira foto, para o consumidor antigo (uma foto por cena) não mudar.
+        shot_prompts = s.get("shot_prompts") or [s["image_prompt"]]
         scenes.append({"n": s["n"], "arc": s["arc"], "text": text,
-                       "image_prompt": s["image_prompt"], "negative": s.get("negative", "")})
+                       "image_prompt": s["image_prompt"], "shots": s.get("shots", len(shot_prompts)),
+                       "shot_prompts": shot_prompts, "negative": s.get("negative", "")})
     payload = {"generated_at": datetime.now().isoformat(timespec="seconds"),
                "preset": preset, "model_target": model_target, "aspect_ratio": aspect,
                "count": len(scenes), "source": res.get("source", "claude"),

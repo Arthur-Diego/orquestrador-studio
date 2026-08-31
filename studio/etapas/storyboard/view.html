@@ -176,29 +176,17 @@
   </div>
 </section>
 
-<section class="panel">
-  <div class="panel-head">
-    <h3><span class="pn">02</span>A história em cenas</h3>
-    <div class="row wrap">
-      <button id="sbAdd" class="ghost">+ cena</button>
-      <button id="sbReorder" class="ghost" title="Reordenar as cenas em um modal maior">Reordenar cenas</button>
-      <button id="sbRender" class="ghost">Gerar storyboard.md</button>
-      <button id="sbSave" class="primary">Salvar cenas</button>
-    </div>
-  </div>
-  <div id="sbScenes" class="rowlist"></div>
-</section>
-
-<!-- `[extensão]` roteiro por LLM (ADR-025): a aula 010 manda o ALUNO escrever a história em ~5
-     cenas — e esse continua sendo o caminho PADRÃO do painel 02, intocado. Aqui o Claude propõe um
-     roteiro completo (texto pt-BR + prompt de imagem em inglês) para quem trava na escrita. A
-     sugestão é editável e só chega às cenas com um clique do usuário (PUT /scenes existente). -->
+<!-- `[extensão]` roteiro por LLM (ADR-025 + ADR-028): a aula 010 manda o ALUNO escrever a história
+     em ~5 cenas — e esse continua sendo o caminho PADRÃO do painel 02 (logo abaixo), intocado. Este
+     painel vem ANTES da história de propósito (card V2ROuQ23): o Claude propõe primeiro um roteiro
+     completo (texto pt-BR + fotos por cena inferidas), que ORIGINA/pré-preenche as cenas do painel
+     02. A sugestão é editável e só chega às cenas com um clique do usuário (PUT /scenes existente). -->
 <section class="panel" id="sbScript">
   <div class="panel-head">
-    <h3>Roteiro por Claude <span class="ext">[extensão]</span></h3>
+    <h3><span class="pn">02</span>Roteiro por Claude <span class="ext">[extensão]</span></h3>
     <span id="sbScriptState" class="chip mode" hidden></span>
   </div>
-  <p class="sb-script-warn">Sugestão editável, sem gastar crédito (Claude CLI local): nada é escrito nas cenas sem o seu clique. O caminho da aula 010 — escrever a história à mão no painel 02 — continua valendo.</p>
+  <p class="sb-script-warn">Sugestão editável, sem gastar crédito (Claude CLI local): nada é escrito nas cenas sem o seu clique. O caminho da aula 010 — escrever a história à mão no painel 03 — continua valendo.</p>
   <div class="sb-script-ctrls">
     <div id="sbScriptPreset"></div>
     <label class="field"><span class="eyebrow lbl">nº de cenas</span>
@@ -228,7 +216,20 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h3><span class="pn">03</span>Ângulos por cena</h3>
+    <h3><span class="pn">03</span>A história em cenas</h3>
+    <div class="row wrap">
+      <button id="sbAdd" class="ghost">+ cena</button>
+      <button id="sbReorder" class="ghost" title="Reordenar as cenas em um modal maior">Reordenar cenas</button>
+      <button id="sbRender" class="ghost">Gerar storyboard.md</button>
+      <button id="sbSave" class="primary">Salvar cenas</button>
+    </div>
+  </div>
+  <div id="sbScenes" class="rowlist"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3><span class="pn">04</span>Ângulos por cena</h3>
     <div id="shotsPalette" class="palette sm"></div>
   </div>
   <div id="sceneList" class="gallery"></div>
@@ -236,7 +237,7 @@
 
 <section class="panel" id="scenePanel">
   <div class="panel-head">
-    <h3><span class="pn">04</span><span id="sceneTitle">Cena — escolher e ordenar</span></h3>
+    <h3><span class="pn">05</span><span id="sceneTitle">Cena — escolher e ordenar</span></h3>
     <div class="row wrap">
       <button id="shotsCounts" type="button" class="chip mode" title="Importar os resultados gerados na Higgsfield">0 candidatos · 0 escolhidos</button>
       <label class="inline"><input id="shotsUpscaled" type="checkbox"> já upscalei estes na UI</label>

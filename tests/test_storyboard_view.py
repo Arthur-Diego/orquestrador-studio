@@ -533,3 +533,41 @@ def test_t3_13_nucleo_do_shell_intocado(rel):
                           capture_output=True, text=True)
     assert diff.returncode == 0, diff.stderr
     assert not diff.stdout.strip(), f"ADR-010: {rel} não pode mudar nesta feature"
+
+
+# ==========================================================================================
+# `[extensão]` roteiro-por-cena (ADR-028) — Frente B, card tNAsCeVR: a UI mostra as N fotos
+# INFERIDAS por cena (cada `shot_prompt` copiável) e o painel do roteiro vem ANTES da história
+# (card V2ROuQ23). Pino textual sobre `view.js`/`view.html` (ADR-008, sem navegador).
+# ==========================================================================================
+def test_adr028_render_lista_as_fotos_inferidas_de_cada_cena(js):
+    """A grade da sugestão itera `shot_prompts` (as fotos coesas), não só o `image_prompt`."""
+    render = trecho(js, "function renderScript()", "/** Geração: job")
+    assert "s.shot_prompts" in render, "a tela mostra a lista de fotos por cena, não uma foto só"
+    assert "foto(s) sugerida(s)" in render, "o número de fotos inferido aparece na cena"
+    assert "shots.length" in render, "cada foto é rotulada 1/N com o total da cena"
+
+
+def test_adr028_copiar_pega_a_foto_ao_lado_do_botao(js):
+    """Com várias fotos por cena, copiar pega o prompt do `.prompt` clicado, não sempre o 1º."""
+    handler = trecho(js, "function initScript()", "async function scriptOnProject")
+    assert 'b.closest(".prompt")' in handler, "o copiar escopa no bloco da foto clicada"
+    assert "querySelector(\".sbScriptPromptText\")" in handler
+
+
+def test_adr028_encaixe_das_fotos_no_roteiro_segue_manual(js):
+    """A aplicação às cenas NÃO muda: continua opt-in pelo `PUT /scenes`, sem automatizar o encaixe."""
+    aplica = trecho(js, "async function applyScript(all)", "function initScript()")
+    assert "saveScenes(list)" in aplica, "o encaixe é manual, pelo mesmo PUT /scenes"
+    assert "shot_prompts" not in aplica, "applyScript não passou a escrever fotos sozinho (encaixe manual)"
+
+
+def test_card_v2rouq23_roteiro_vem_antes_da_historia(html):
+    """Card V2ROuQ23: o painel 'Roteiro por Claude' (02) precede 'A história em cenas' (03)."""
+    i_roteiro = html.index("Roteiro por Claude")
+    i_historia = html.index("A história em cenas")
+    assert i_roteiro < i_historia, "o painel do roteiro tem de vir ANTES da história em cenas"
+    assert '<span class="pn">02</span>Roteiro por Claude' in html
+    assert '<span class="pn">03</span>A história em cenas' in html
+    # a numeração desceu de forma consistente: ângulos 04, cena 05.
+    assert '<span class="pn">04</span>Ângulos por cena' in html
