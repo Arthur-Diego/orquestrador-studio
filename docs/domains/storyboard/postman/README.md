@@ -233,3 +233,113 @@ nenhum candidato `source: "cli"` e nenhuma linha nova no livro-caixa. Ainda assi
 logado esse request da pasta `05` é um risco real** se alguém rodar a coleção num `pid` que já
 tenha a base — a guarda dele é candidata a manutenção futura.
 
+
+---
+
+## Extensão wave 9 (sub-wave 2) — `storyboard-roteiro-llm` `[extensão]` (roteiro por LLM)
+
+Adicionada em **2026-08-30**, commit **`905a694`** (branch `feature/storyboard-roteiro-llm`), a
+partir da **seção 5 (5.1 a 5.4)** e da **seção 6 (matriz de erros)** de
+`docs/domains/storyboard/features/storyboard-roteiro-llm-fdd.md`, **mais a seção 0 (amendas do
+gate W3)** de `.compozy/tasks/storyboard-roteiro-llm/_techspec.md` — que, por decisão do próprio
+documento, **sobrepõe o corpo do FDD**. Cruzada com `studio/etapas/storyboard/router.py`
+(`storyboard_script_generate`, `storyboard_script_job`, `storyboard_script`) e
+`studio/storyboard/service.py` (`script_generate`, `script_status`, `load_script`,
+`script_state`, `SCRIPT_MODELS`, `SCRIPT_ACTION`).
+
+Extensão **aditiva**: os 61 requests anteriores continuam byte a byte iguais (nenhum renomeado,
+reescrito ou removido); nenhuma variável de coleção antiga foi alterada.
+
+### O que entrou
+
+| Onde | O que |
+| --- | --- |
+| Pasta `07 roteiro por LLM (storyboard-roteiro-llm) [extensao]` | **13 requests**: preparo isolado (projeto próprio `pidRoteiro` + base da etapa 3), o handoff `[cross-feature]` em `GET /api/prompter/presets` (com e sem `?pid=`), os campos aditivos do `GET .../storyboard` (§5.4), `GET .../storyboard/script` = `{"script": null}` (§5.3), `GET .../storyboard/script/job` = `idle` (§5.2), e o caminho feliz completo (`POST script/generate` → polling → schema de `script.json` com o rig do preset → `script.exists`), **pulado por padrão** |
+| Pasta `erros` (**12 itens novos**, no fim) | 404 nas três rotas novas; 422 de `count` (0 e 11), `preset` desconhecido, `model_target` fora de `SCRIPT_MODELS` e `instruction` > 300; a prova de que `preset: null` é aceito (o 422 sai do `count`); 409 sem `base/base_final.png`; 409 de Claude CLI ausente (guardado por `scriptCli`); 409 de job em andamento (guardado por `allowScriptGenerate`) |
+| Variáveis de coleção | `pidRoteiro`, `projectNameRoteiro`, `baseCandIdRoteiro`, `scriptCli`, `realismRigCamera`, `realismRigLens`, `realismRigFormat`, `instrucaoLonga`, `scriptPollTries`, `allowScriptGenerate` |
+| Environment | `allowScriptGenerate` (`false`) |
+| Fixtures | **nenhuma nova** — o preparo da base reusa `fixtures/idea-a.png` |
+
+Nenhum request desta extensão gasta crédito Higgsfield: a geração de roteiro roda no Claude CLI
+(assinatura do usuário), sem `cost` nem `confirmCost` (FDD §1 e §3).
+
+### Por que a pasta `07` cria um projeto próprio
+
+`POST .../storyboard/script/generate` exige `base/base_final.png` (etapa 3). O `pid` das pastas
+antigas depende justamente da **ausência** da base para verificar os 409 que já documentava — e
+os novos casos `409 - roteiro sem base` e todos os 422 usam esse mesmo `pid` sem base (a
+validação de parâmetros do roteiro roda **antes** do 409 de base, ver `divergencias.md` R3). Por
+isso a pasta nova trabalha em `pidRoteiro`, um projeto separado onde o preparo sobe a base pela
+etapa 3 (`POST /base/import/upload` + `POST /base/select`, rotas do domínio `base`, usadas só
+como preparo). A pasta `07` é autossuficiente: roda isolada com `--folder`, sem depender do `00`.
+
+### O caminho feliz é pulado por padrão (`allowScriptGenerate`)
+
+`POST script/generate` não gasta crédito, mas **chama o Claude CLI de verdade** (timeout próprio
+de 300 s, `SCRIPT_TIMEOUT_S`). Os quatro requests desse caminho (generate, polling, schema da
+sugestão, `script.exists`) só rodam com:
+
+```bash
+newman run storyboard.postman_collection.json -e storyboard.postman_environment.json \
+  --working-dir . --folder "07 roteiro por LLM (storyboard-roteiro-llm) [extensao]" \
+  --env-var allowScriptGenerate=true --delay-request 2000
+```
+
+`--delay-request 2000` importa: o polling é um laço em `pm.execution.setNextRequest` sobre o
+próprio request (teto de 150 voltas), então sem delay ele martela o servidor.
+
+### Casos do FDD `storyboard-roteiro-llm` (§6) **não** cobertos por HTTP
+
+| Caso (FDD §6) | Por que fica de fora |
+| --- | --- |
+| Claude CLI ausente → **409** (linha 348, critério 8) | o request **existe** na pasta `erros`, mas se pula sozinho quando `script_cli` é `true`. Nesta máquina o `claude` **está** instalado, então o caso não foi exercitado — numa máquina sem o CLI ele roda e cobra a mensagem da matriz |
+| Job de roteiro já em andamento → **409** (linha 349) | exige um job real em andamento; o request existe guardado por `allowScriptGenerate` e só faz sentido disparado dentro da janela de ~60 s do job (rode-o em `--folder` próprio logo após um `generate`) |
+| Claude falha/timeout dentro do job → `state: "error"` (linha 354) | estado assíncrono do `JobRegistry`; exigiria derrubar o CLI no meio da execução. O request de polling **trata** o estado (loga `error`/`log`), mas nenhum teste o força |
+| JSON inválido ou menos cenas que `count` → `state: "error"` sem tocar o `script.json` anterior (linha 355, critério 9) | depende da resposta do modelo; só é determinístico com o fake do `prompter` nos testes de unidade |
+| `text` > 500 truncado com nota no `log` (linha 356) | idem: depende de o modelo devolver texto acima do teto. Na execução real as cinco cenas vieram entre 377 e 448 caracteres |
+| Aplicar sugestão às cenas (vazias / substituir tudo) — §4 passo 7, critérios 6 e 7 | é **client-side**, pelo `PUT .../storyboard/scenes` que já existe na pasta `04`; a feature não tem endpoint de escrita próprio. O diálogo de confirmação é estado de tela (`view.js`) |
+| Bloco `[extensão]` na UI, seletor `sbRealismPreset`, alvo fixo, `progressJob` (§5, amendas A4/A5) | frontend: sem rota HTTP correspondente |
+| Preset "ausente" ≠ `null` na resposta síncrona | o default resolvido só aparece no `preset` de `script.json` (depois do job) e no `script_preset_default` do status — ver `divergencias.md` R4 |
+
+### Resultado da execução (2026-08-30, real)
+
+`newman` **6.2.2** (`~/.local/bin/newman`), app desta worktree em `http://127.0.0.1:8770`
+(`STUDIO_PROJECTS`/`STUDIO_STATE` apontados para diretório temporário descartável), Claude CLI
+**instalado e funcional** (`script_cli: true`).
+
+**A — coleção inteira, modo padrão (sem Claude, sem crédito):**
+
+```bash
+newman run storyboard.postman_collection.json -e storyboard.postman_environment.json \
+  --working-dir . --env-var baseUrl=http://127.0.0.1:8770 --reporters cli --suppress-exit-code
+```
+
+```
+requests 80 · test-scripts 79 · assertions 161 · failures 3 · 46.3 s
+```
+
+As **3 falhas são exatamente as mesmas da execução anterior a esta wave** (baseline medido nesta
+mesma máquina antes de tocar na coleção: `requests 61 · assertions 117 · failures 3`): drift
+pré-existente de outras features já mergeadas — `have.keys` exato em `GET .../storyboard`
+(ADR-021/022), a nota do upscale que passou para a seção de ângulos e o `image` legado da cena
+substituído por `images`/`primary` (ADR-018). **Nenhuma falha nova**: os 25 requests desta
+extensão passaram todos. Foram +44 asserções sobre o baseline.
+
+Só a pasta nova, modo padrão: **9 requests executados (4 pulados), 26 asserções, 0 falhas,
+233 ms**. Os 12 casos novos de `erros` somam **18 asserções, 0 falhas** (10 executados, 2
+pulados: o 409 de CLI ausente e o 409 de job em andamento).
+
+**B — pasta 07 com o Claude CLI real (`allowScriptGenerate=true`):**
+
+```
+requests 43 · test-scripts 43 · assertions 69 · failures 0 · 1m26.8s
+```
+
+(43 = os 13 requests da pasta, com 31 voltas do laço de polling.) O job terminou `done` em
+**61,7 s**, com `log` = `"roteiro gerado: 5 cenas (preset documentary-street, 61.7s)"`, e a
+asserção `[cross-feature]` da amenda A9 passou contra a saída real do modelo: o rig
+`Blackmagic Pocket 6K Pro` + `Cooke S4` + `Super 35` aparece **literalmente nas cinco** cenas,
+com arcos `comeco, descoberta, acao, acao, desfecho` e `aspect_ratio: "16:9"`.
+
+Os projetos criados pelas execuções ficaram no diretório temporário do runner (descartável);
+`projects/` da worktree não foi tocado.

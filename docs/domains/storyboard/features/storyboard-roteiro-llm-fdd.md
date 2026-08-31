@@ -1,7 +1,7 @@
 # FDD: storyboard-roteiro-llm — roteiro completo por LLM na etapa 4 `[extensão]`
 
-Versão: 1.1 (spec de wave — **aprovada no gate W3 em lote**, 2026-08-30)
-Data: 2026-08-30
+Versão: 1.2 (implementada e reconciliada no fechamento da frente — ver seção 13)
+Data: 2026-08-30 · Reconciliação: 2026-08-31
 Responsável: Wave 9, sub-wave 2 (`docs/domains/studio/waves/wave-9.md`)
 Recon: `docs/domains/studio/recon-wave-9.md` · Base: `develop` @ `7162c41`
 
@@ -236,6 +236,12 @@ sequenceDiagram
 { "state": "running", "done": 0, "total": 1, "error": null, "log": [] }
 ```
 
+  **Reconciliado com a implementação (2026-08-31):** a resposta traz também a chave `added`
+  (sempre `0` no roteiro), herdada do `JobRegistry` compartilhado da etapa — o mesmo acontece em
+  `GET .../storyboard/script/job`. Não é um campo do roteiro; quem consome deve tratar o objeto
+  como "contém ao menos estas chaves", nunca como conjunto fechado. A coleção Postman do domínio
+  asserta com `include.keys` por causa disso.
+
 - Status: 200 job iniciado · 404 projeto inexistente · 409 pré-requisito (base ausente,
   Claude CLI ausente, job em andamento) · 422 parâmetro inválido (matriz na seção 6).
 - Limites: 1 job por projeto (registry próprio); timeout da chamada Claude = 300 s
@@ -298,11 +304,19 @@ sequenceDiagram
 
 ```json
 { "script": { "exists": true, "generated_at": "2026-08-30T14:22:05" },
-  "script_preset_default": "documentary-street" }
+  "script_preset_default": "documentary-street",
+  "script_models": [{ "id": "nano_banana_2", "label": "Nano Banana Pro", "default": true }],
+  "script_cli": true }
 ```
 
 [auto-aceito: o default de preset exposto no status evita uma rodada extra da UI; nome dos
 campos aditivos livre porque nenhum contrato publicado os fixa]
+
+**Reconciliado com a implementação (2026-08-31):** são QUATRO campos aditivos, não dois. O
+`script_models` (objetos `{id,label,default}`, não ids soltos) existe para a tela não adivinhar o
+alvo permitido, e o `script_cli` para ela desabilitar o botão quando o Claude CLI não está no
+PATH — os dois exigidos pelas amendas A5/A6 da seção 0. Nenhum campo pré-existente do status
+mudou.
 
 #### 5.5 `prompter.script(...)` (contrato interno, aditivo)
 
@@ -354,6 +368,8 @@ Matriz de erros:
 | Claude falha/timeout dentro do job | job `state: "error"`, mensagem em `error`/`log` | sem retry automático; nova tentativa é manual |
 | Claude devolve JSON inválido ou menos cenas que `count` | job `state: "error"` com detalhe | nunca completar com conteúdo inventado |
 | `text` de cena vindo > 500 caracteres | truncado em 500 no serviço, com nota no `log` | garante aplicabilidade via `save_scenes` |
+| Cena sem o rig do preset no `image_prompt` (com preset ativo) | job `state: "error"` citando as cenas e as partes do rig que faltaram | reconciliado 2026-08-31 (review 001, issue_002): é o que torna o critério 3 `[cross-feature]` uma invariante do SERVIDOR, e não uma aposta na obediência do modelo. Mesma régua da linha "JSON inválido"; regenerar é grátis |
+| Falha de I/O ao gravar `script.json` (`OSError` em `mkdir`/`write`) | job `state: "error"`, linha `script_job` no logger e detalhe em `job["log"]`; `script.json` anterior byte-idêntico | reconciliado 2026-08-31 (review 001, issue_003) |
 | `GET /script` sem geração prévia | 200 `{"script": null}` | estado normal |
 
 - Resiliência: timeout único de 300 s na chamada Claude; sem retry/backoff (operação manual
@@ -534,3 +550,39 @@ Registro em `docs/domains/studio/waves/wave-9.md` § "Gate W3 — aprovação em
    Divergência na W5 reconcilia neste contrato.
 3. **P3 — Modelo alvo v1: só `nano_banana_2` (Nano Banana Pro).** GPT-Image fica fora do
    roteiro (reversível, aditivo). Refletido em 5.1 e na matriz de erros da seção 6.
+
+---
+
+### 13. Reconciliação pós-implementação (2026-08-31)
+
+Fechamento da frente. Além das reconciliações já inseridas em 5.1, 5.4 e na matriz da seção 6,
+ficam registradas as observações que a execução real produziu e que NÃO mudam o contrato:
+
+1. **Precedência de validação.** Os 422 de parâmetro (`count`, `preset`, `model_target`,
+   `instruction`) são avaliados ANTES dos 409 de pré-requisito (base ausente, Claude CLI
+   ausente). É o oposto da ordem do caminho pago da mesma etapa (divergências 4 e 5 já
+   registradas em `postman/divergencias.md`). Consequência prática boa: um cliente consegue
+   exercitar as validações de parâmetro sem ter concluído a etapa 3.
+2. **Os três estados de `preset` não são observáveis na resposta síncrona.** "Campo ausente" e
+   `preset: null` produzem o mesmo 200 de job iniciado; o preset efetivamente resolvido só
+   aparece depois, em `script.json`, e o default da ação aparece em `script_preset_default` do
+   status. Quem precisar auditar a resolução usa esses dois lugares.
+3. **Nome do `JobRegistry`.** O registro do job chama-se `_story_registry` e não
+   `_script_registry` como dizia a seção 5: `studio/common/reset.py::_registries` descobre os
+   registros de uma etapa por uma lista FECHADA de nomes (`_registry`, `registry`,
+   `_story_registry`), e qualquer outro nome deixaria o job invisível para o reset da etapa.
+   Troca de identificador, sem efeito em contrato público. (Gap pré-existente registrado e NÃO
+   corrigido aqui: o `_video_registry` da mesma etapa também está fora dessa lista.)
+4. **Duas asserções de conjunto fechado em testes pré-existentes foram afrouxadas** para
+   acomodar campos aditivos — o mapa `defaults` de `GET /api/prompter/presets` (que agora traz
+   também `storyboard.script`) e o dict de `status` da etapa 4. Nenhum comportamento anterior
+   mudou; só deixou de ser "exatamente estas chaves".
+5. **Fora do escopo, registrado como sugestão ao dono:** o guia da etapa
+   (`studio/etapas/storyboard/guide.py`, `CHECKLIST` + `check`s por artefato) não anuncia o
+   roteiro. Seria natural fazê-lo, mas a seção 4 deste FDD não o inclui — "sugerir é permitido,
+   inventar não" (gate 2 do CLAUDE.md).
+6. **Evidência de runtime do critério 3 `[cross-feature]`.** Além dos testes com fake, o caminho
+   feliz foi exercitado contra o Claude CLI REAL pela coleção Postman do domínio: job `done` em
+   61,7 s, 5 cenas, arcos `comeco/descoberta/acao/acao/desfecho`, e o rig do preset
+   `documentary-street` (`Blackmagic Pocket 6K Pro`, `Cooke S4`, `Super 35`) literalmente nas
+   cinco cenas. Detalhes e números em `docs/domains/storyboard/postman/README.md`.
