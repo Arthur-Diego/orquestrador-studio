@@ -354,20 +354,9 @@ def trecho(js: str, inicio: str, fim: str) -> str:
     return js[i:js.index(fim, i)]
 
 
-def view_js_antes_da_feature() -> str | None:
-    """`view.js` como estava no ponto de partida da branch — `None` quando o git não está à mão."""
-    root = Path(__file__).resolve().parents[1]
-    git = shutil.which("git")
-    if not git or not (root / ".git").exists():
-        return None
-    base = subprocess.run([git, "-C", str(root), "merge-base", "develop", "HEAD"],
-                          capture_output=True, text=True)
-    if base.returncode != 0:
-        return None
-    antes = subprocess.run([git, "-C", str(root), "show",
-                            f"{base.stdout.strip()}:studio/etapas/storyboard/view.js"],
-                           capture_output=True, text=True)
-    return antes.stdout if antes.returncode == 0 else None
+def linha_de(js: str, i: int) -> str:
+    """A linha inteira do `view.js` em que cai o índice `i` (para ler a chamada `api(...)` toda)."""
+    return js[js.rindex("\n", 0, i) + 1:js.index("\n", i)].strip()
 
 
 # ---------- T3.1: o painel existe e está marcado `[extensão]` (critério 12) ----------
@@ -452,18 +441,35 @@ def test_t3_7_substituir_tudo_confirma_antes_de_qualquer_escrita(js):
 
 # ---------- T3.8: escrita de cena só pelo contrato que já existe (R1) ----------
 def test_t3_8_escrita_de_cena_so_pelo_put_scenes_existente(js):
+    """R1: o bloco do roteiro não abre um segundo caminho de escrita de cena.
+
+    As asserções são ABSOLUTAS sobre o `view.js` de hoje — nada de comparar com o estado anterior
+    à feature via `git merge-base`, que deixaria de existir no instante em que a branch entrar em
+    `develop` (o fork point passaria a ser o próprio HEAD e a contagem de delta viraria falsa).
+    O que se protege continua sendo o mesmo: (a) o único `method: "POST"` do bloco é o do job do
+    roteiro (`/script/generate`, que grava `script.json`); (b) toda escrita de cena do arquivo
+    inteiro passa pelo `PUT url("/scenes")` de sempre, e nenhuma delas mora dentro do bloco.
+    """
     bloco = bloco_roteiro(js)
     assert "saveScenes(list)" in bloco, "a aplicação reusa o caminho de gravação da tela"
     assert '"/scenes"' not in bloco, "o bloco não monta rota de escrita própria"
-    antes = view_js_antes_da_feature()
-    if antes is None:
-        pytest.skip("git/`develop` não disponível para comparar com o estado anterior à feature")
-    for marca in ('url("/scenes")', 'method: "PUT"'):
-        assert js.count(marca) == antes.count(marca), \
-            f"o bloco do roteiro não pode acrescentar caminho de escrita de cena ({marca})"
-    # o ÚNICO POST novo do bloco é o do job — que grava `script.json`, nunca `scenes.json`.
-    assert js.count('method: "POST"') == antes.count('method: "POST"') + 1
-    assert bloco.count('method: "POST"') == 1 and 'url("/script/generate")' in bloco
+    assert 'method: "PUT"' not in bloco, \
+        "o bloco não faz PUT nenhum: quem grava cena é o `saveScenes` que já existia"
+    # (a) o ÚNICO POST do bloco é o do job — que grava `script.json`, nunca `scenes.json`.
+    posts = [m.start() for m in re.finditer(r'method: "POST"', bloco)]
+    assert len(posts) == 1, f"o bloco do roteiro dispara um único POST — achados {len(posts)}"
+    assert 'url("/script/generate")' in linha_de(bloco, posts[0]), \
+        f"o POST do bloco tem de ser o do job do roteiro — achado: {linha_de(bloco, posts[0])}"
+    # (b) no arquivo INTEIRO, `/scenes` só é tocado por leitura ou pelo `PUT` do contrato — e
+    # nenhuma dessas chamadas cai dentro do bloco do roteiro (o `assert` acima já cobre o bloco).
+    inicio, fim = js.index(SCRIPT_BLOCK_START), js.index(SCRIPT_BLOCK_END)
+    chamadas = [m.start() for m in re.finditer(r'url\("/scenes"\)', js)]
+    assert chamadas, "o caminho de escrita de cena da tela (`PUT /scenes`) sumiu"
+    for i in chamadas:
+        linha = linha_de(js, i)
+        assert "method:" not in linha or 'method: "PUT"' in linha, \
+            f"escrita de cena fora do contrato `PUT /scenes`: {linha}"
+        assert not inicio <= i < fim, f"o bloco do roteiro fala com `/scenes` direto: {linha}"
 
 
 # ---------- T3.9: estado vazio silencioso (R8) ----------
