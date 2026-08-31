@@ -745,6 +745,29 @@ na limpeza. Relaciona ADR-002 (ponte só via CLI; aplica por prompt+referência,
 ADR-004 (segue `[extensão]` opt-in), ADR-010 (só plugin+serviço) e ADR-016 (livro-caixa do rótulo
 inalterado).
 
+## Atualização 2026-08-31 (wave SB, frente painel 01 do storyboard, ADH-OS-20260831-14)
+
+Costura **galeria → roteiro** no painel 01 da etapa 4 (Card `xhtT5B24`). O multishot da base
+(ADR-027) e o roteiro por LLM (ADR-025) já existiam; faltava ligá-los: as fotos que o usuário escolhe
+na galeria (`storyboard/ideas/`) não chegavam ao contexto visual do roteiro. Também **confirmado**
+(Card `bQhEEnkn`, sem código novo) que Draw-to-Edit, Multi Shot e Inpaint/"Área marcada" já estão
+expostos e operacionais no painel 01 — respectivamente `kind:"draw_to_edit"` (client-side, aula 010),
+`kind:"multishot"` (ADR-027) e o bloco `#sbArea`/`kind:"edit_area"` (inpaint-marcação, Wave 9).
+
+- **STORYBOARD** — `studio/storyboard/service.py`: `_script_images` passa a incluir as ideias
+  ESCOLHIDAS (helper novo `_selected_idea_paths`, que reusa `_visible` para excluir marcações) entre
+  a base e o mood, com teto próprio `SCRIPT_IDEA_IMAGES=3` sob o `prompter.MAX_IMAGES=4` (a base nunca
+  sai). `studio/common/prompter.py::script`: a frase de apresentação das imagens descreve a nova ordem
+  (base → chosen storyboard shots → mood). Plugin (`view.html`/`view.js`): campo de LEITURA
+  `#sbScriptIdeas` no painel "Roteiro por Claude" mostra quantas fotos da galeria entram no contexto.
+
+**ADR nova: ADR-028** (STUDIO) — roteiro do storyboard lê as fotos escolhidas da galeria do painel 01.
+Contexto visual do roteiro por LLM ganha as ideias selecionadas (`storyboard/ideas/`) na ordem base →
+ideias (≤3) → mood (≤3), teto 4; marcações (inpaint) nunca entram (invariante do FDD §6). Opt-in e
+não destrutivo: sem ideias escolhidas o comportamento é o de antes (base + mood). Relaciona ADR-025
+(motor do roteiro; opt-in), ADR-027 (fonte das fotos: multishot da base), ADR-004 (`#sbPreset` e
+painel 02 intocados), ADR-010 (núcleo intocado) e ADR-018 (galeria de ideias por cena).
+
 ---
 
 **ADR nova: ADR-029** (STORYBOARD) — seletor de histórico Higgsfield no painel de fotos do
