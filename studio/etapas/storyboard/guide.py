@@ -148,14 +148,14 @@ def guide(pid: str) -> dict:
     g.check("v41_cinco_cenas", f"~{DEFAULT_SCENES} cenas escritas (aula 010)",
             "ok" if escritas_ok else ("todo" if not written else "warn"),
             detail=f"{len(written)} de {len(scenes) or DEFAULT_SCENES} cenas com texto",
-            fix=None if escritas_ok else "Escreva o texto das cenas no painel 02")
+            fix=None if escritas_ok else "Escreva o texto das cenas no painel 03")
 
     sem_img = [s.get("id") for s in scenes if not _has_image(s)]
     g.check("v42_cena_com_imagem", "Toda cena aponta para uma ideia de storyboard/ideas/",
             "ok" if scenes and not sem_img else ("todo" if not with_image else "warn"),
             detail="todas as cenas têm imagem" if scenes and not sem_img
                    else f"sem imagem: {', '.join(sem_img)}" if sem_img else "nenhuma cena ainda",
-            fix=None if not sem_img else "Escolha a ideia de cada cena no painel 02")
+            fix=None if not sem_img else "Escolha a ideia de cada cena no painel 03")
 
     ordem_ok = [s.get("n") for s in scenes] == list(range(1, len(scenes) + 1))
     g.check("v43_ordem", "Cenas em ordem contígua (1..N)", "ok" if ordem_ok else "fail",
@@ -175,7 +175,7 @@ def guide(pid: str) -> dict:
     g.check("v46_md_atualizado", "storyboard.md mais novo que scenes.json",
             "ok" if md_ok else ("todo" if not exists(pid, "storyboard/storyboard.md") else "warn"),
             detail="documento em dia com as cenas" if md_ok else "o documento está atrás das cenas",
-            fix=None if md_ok else "Clique em \"Gerar storyboard.md\" no painel 02")
+            fix=None if md_ok else "Clique em \"Gerar storyboard.md\" no painel 03")
 
     # ---------- validações dos ângulos (nunca bloqueiam) ----------
     sem_shot = [i for i in ids if not shots_por_cena[i]]
