@@ -522,8 +522,8 @@ def start_reframe(pid: str, aspect_ratio: str) -> dict:
     root = project_dir(pid)
     _valid_aspect(aspect_ratio)
     master = _require_master(root)
-    if not hf.status().get("logged_in"):
-        raise RuntimeError("faça login no CLI para usar o reframe")
+    if not hf.status().get("logged_in"):   # defesa em profundidade: o router já barra login antes (ADR-028)
+        raise RuntimeError(hf.NO_LOGIN_MSG)
     fmt = REFRAME_ASPECT[aspect_ratio]
     edir = _export_dir(root)
 

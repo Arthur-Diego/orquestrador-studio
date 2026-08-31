@@ -257,3 +257,28 @@ def test_cost_reports_essential_param_error_instead_of_raising(monkeypatch):
     monkeypatch.setattr(hf, "_run", _cli_por_subcomando({("model", "get"): KLING26}))
     r = hf.cost("kling2_6", {"prompt": "p", "start_image": "/a.png", "end_image": "/b.png"})
     assert r["credits"] is None and "end_image" in r["error"]
+
+
+# ---------- gate único de login (ADR-028) ----------
+def test_require_cli_raises_when_binary_missing(monkeypatch):
+    hf.reset_status_cache()
+    monkeypatch.setattr(hf, "BIN", None)
+    with pytest.raises(hf.CliUnavailable) as exc:
+        hf.require_cli()
+    assert exc.value.installed is False and exc.value.args[0] == hf.NO_CLI_MSG
+
+
+def test_require_cli_raises_when_logged_out(monkeypatch):
+    hf.reset_status_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/false")
+    monkeypatch.setattr(hf, "_run", lambda args, timeout=120: (1, "", "Error: Not authenticated."))
+    with pytest.raises(hf.CliUnavailable) as exc:
+        hf.require_cli()
+    assert exc.value.installed is True and "login" in exc.value.args[0].lower()
+
+
+def test_require_cli_passes_when_logged_in(monkeypatch):
+    hf.reset_status_cache()
+    monkeypatch.setattr(hf, "BIN", "/bin/true")
+    monkeypatch.setattr(hf, "_run", _fake_run({"email": "a@b.c", "logged_in": True}))
+    hf.require_cli()   # não levanta
