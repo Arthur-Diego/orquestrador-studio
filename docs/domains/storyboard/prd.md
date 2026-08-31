@@ -34,6 +34,35 @@ Usuário único, local (ADR-001). Gera imagens na interface da Higgsfield (ilimi
 - Com `base/base_final.png` presente, o usuário sai da etapa com `scenes.json` válido (≥ 1 cena com texto) e `storyboard.md`; a etapa 5 lê `scenes.json` sem adaptação `[cross-feature]`.
 - Nenhuma instrução gerada pelo Studio contém mais de uma edição (validação determinística).
 
+## `[extensão]` Roteiro por LLM (Wave 9 · storyboard-roteiro-llm)
+
+Adendo aditivo de 2026-08-30 (Wave 9, sub-wave 2). O item "geração de roteiro por LLM"
+listado em "Fora de escopo" acima permanece como registro histórico da Wave 1: naquela
+entrega ele era INFERÊNCIA sem aula. Na Wave 9 o dono do produto aprovou a extensão
+(lacunas do levantamento do curso), condicionada a ADR nova (ADR-025) porque contraria a
+docstring da etapa ("nada de roteiro por LLM", ADR-004).
+
+- O Studio passa a OFERECER (opt-in, marcado `[extensão]` na UI) a geração de um roteiro
+  completo pelo Claude CLI (papel `script` do prompter, mesmo canal do prompt de vídeo):
+  N cenas (default 5, máx 10, arco começo → descoberta → ação → desfecho), cada uma com
+  texto da cena em pt-BR e prompt de imagem em inglês no formato "briefing de diretor de
+  fotografia" (skill `/generate_realistic_prompt_images`), aplicando o preset de
+  realismo/rig escolhido (catálogo da feature prompter-presets-realismo, Wave 9).
+- Insumos: imagem base da etapa 3 + imagens do mood selecionado + produto/vibe do projeto
+  + aspect ratio herdado do projeto; modelo alvo Nano Banana Pro — **único da v1**
+  (gate W3, pendência P3: GPT-Image fica fora do seletor de roteiro; reversível).
+- Preset default do roteiro: ação `storyboard.script` com `documentary-street`
+  (gate W3, pendência P2 — contrato de handoff com prompter-presets-realismo).
+- A sugestão vive em `storyboard/script.json` e NUNCA sobrescreve texto do usuário
+  sozinha: um botão "aplicar" preenche apenas cenas vazias; substituir texto existente
+  exige confirmação explícita. A estrutura de `scenes.json` (ADR-018/022) fica intocada.
+- Sem Claude CLI instalado a função simplesmente não existe (409): o método da aula
+  (usuário escreve as cenas) segue sendo o caminho padrão da etapa.
+- Sem custo de créditos Higgsfield (Claude CLI é assinatura local): sem confirmação de
+  custo, com barra de progresso de job.
+- Detalhes de contrato, matriz de erros e critérios de aceite:
+  `docs/domains/storyboard/features/storyboard-roteiro-llm-fdd.md`.
+
 ## Decisões auto-aceitas (auditar na W5)
 [auto-aceito: o texto da instrução é digitado pelo usuário e o Studio só envelopa com o sufixo em inglês da regra do curso, porque não há LLM/tradução na stack; fórmulas da aula ficam disponíveis como presets em inglês (aula 007: prompts em inglês)]
 [auto-aceito: número de cenas editável entre 1 e 10, padrão 5, porque a aula diz "~5 cenas" e o schema da wave diz "5 cenas por padrão, editável"]

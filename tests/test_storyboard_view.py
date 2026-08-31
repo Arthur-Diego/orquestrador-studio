@@ -324,3 +324,212 @@ def test_cancelar_o_custo_nao_dispara_o_generate_do_modo_area_marcada(js):
     guarda = bloco.index("if (!ok) return;", custo)
     gerar = bloco.index('url("/generate")', custo)
     assert custo < guarda < gerar, "a guarda de cancelamento tem que ficar entre o custo e o generate"
+
+
+# ==========================================================================================
+# `[extensão]` ROTEIRO POR LLM (ADR-025, wave 9 sub-wave 2): painel "Roteiro por Claude" na etapa 4.
+# Mesmo padrão dos blocos acima (ADR-008: sem navegador, o pino é textual sobre `view.js`/`view.html`).
+# Cobre os critérios 3b, 6, 7 e 12 da seção 9 do FDD.
+# ==========================================================================================
+#: Fronteira do bloco no `view.js` — as asserções fatiam por aqui para não medir código vizinho.
+SCRIPT_BLOCK_START = "const SCRIPT_NO_CLI ="
+SCRIPT_BLOCK_END = "// ---- fim do bloco `[extensão]` roteiro por LLM ----"
+SCRIPT_SECTION_START = '<section class="panel" id="sbScript">'
+
+
+def bloco_roteiro(js: str) -> str:
+    """Só o bloco `[extensão]` do roteiro (do 1º `const` do bloco até o marcador de fim)."""
+    i = js.index(SCRIPT_BLOCK_START)
+    return js[i:js.index(SCRIPT_BLOCK_END, i)]
+
+
+def painel_roteiro(html: str) -> str:
+    """Só a `<section id="sbScript">` do `view.html`."""
+    i = html.index(SCRIPT_SECTION_START)
+    return html[i:html.index("</section>", i) + len("</section>")]
+
+
+def trecho(js: str, inicio: str, fim: str) -> str:
+    i = js.index(inicio)
+    return js[i:js.index(fim, i)]
+
+
+def linha_de(js: str, i: int) -> str:
+    """A linha inteira do `view.js` em que cai o índice `i` (para ler a chamada `api(...)` toda)."""
+    return js[js.rindex("\n", 0, i) + 1:js.index("\n", i)].strip()
+
+
+# ---------- T3.1: o painel existe e está marcado `[extensão]` (critério 12) ----------
+def test_t3_1_painel_do_roteiro_marcado_como_extensao(html):
+    painel = painel_roteiro(html)
+    assert '<span class="ext">[extensão]</span>' in painel, \
+        "ADR-004/ADR-025: a aula 010 manda o ALUNO escrever as cenas — o bloco é `[extensão]` na tela"
+    assert "Claude" in painel, "o painel diz de onde vem a sugestão"
+
+
+# ---------- T3.2: `[cross-feature]` — a metade visível (critério 3b) ----------
+def test_t3_2_seletor_vem_do_catalogo_da_provedora(js):
+    """O bloco REUSA o seletor que a provedora deixou (populado por `GET /api/prompter/presets`)
+    e lê a escolha com `realismPresetOf` — sem segunda função de seletor e sem segundo fetch."""
+    bloco = bloco_roteiro(js)
+    assert "realismPresetField(scriptPreset())" in bloco, "o bloco não desenha o seletor da provedora"
+    assert 'realismPresetOf($("#sbScriptPreset"))' in bloco, "o preset escolhido sai do `realismPresetOf`"
+    assert "/api/prompter/presets" in js, "o catálogo continua sendo a fonte do seletor"
+    fetch = "api(`/api/prompter/presets"
+    assert js.count(fetch) == 1, \
+        "amenda A5: o catálogo é buscado UMA vez só — nada de segundo fetch para o bloco do roteiro"
+    assert fetch in trecho(js, "async function loadRealismPresets", "function realismPresetField"), \
+        "o único fetch do catálogo é o que a provedora deixou em `loadRealismPresets`"
+    assert fetch not in bloco
+
+
+# ---------- T3.3: o default vem da chave da AÇÃO do roteiro, nunca a do vídeo ----------
+def test_t3_3_default_do_roteiro_vem_da_acao_storyboard_script(js):
+    bloco = bloco_roteiro(js)
+    assert '"storyboard.script"' in bloco, "a chave da ação do roteiro é `storyboard.script` (amenda A2)"
+    assert "scriptPresetDefault" in bloco, \
+        "o default resolvido pelo servidor (`script_preset_default` do status) é a 1ª fonte"
+    assert '"motion"' not in bloco, "o default do VÍDEO não vale para o roteiro (ações diferentes, ADR-016)"
+    assert "script_preset_default" in js, "o campo aditivo do status é o que a tela lê"
+
+
+# ---------- T3.4: sem colisão com as FÓRMULAS DA AULA (amenda A4) ----------
+def test_t3_4_sem_colisao_de_vocabulario_com_as_formulas_da_aula(js, html):
+    assert html.count('id="sbPreset"') == 1, "`#sbPreset` (fórmulas da aula) continua único e intocado"
+    bloco, painel = bloco_roteiro(js), painel_roteiro(html)
+    assert "sbPreset" not in painel and "#sbPreset" not in bloco, \
+        "o bloco do roteiro nunca reaproveita o seletor das fórmulas da aula"
+    novos = set(re.findall(r'id="([A-Za-z0-9_-]+)"', painel))
+    assert novos, "o painel do roteiro não declarou id algum"
+    fora = sorted(i for i in novos if not i.startswith("sbScript"))
+    assert not fora, f"amenda A4: todo id do bloco leva o prefixo `sbScript` — fora do padrão: {fora}"
+
+
+# ---------- T3.5: geração por job, sem custo (R6) ----------
+def test_t3_5_geracao_usa_progressjob_e_nao_gasta_credito(js):
+    bloco = trecho(js, "async function runScript()", "async function applyScript")
+    assert "ui.progressJob({" in bloco, "o job do roteiro é acompanhado pelo `progressJob` (ADR-006)"
+    assert 'url("/script/generate")' in bloco and '"POST"' in bloco, "o `start` dispara o generate"
+    assert 'jobUrl: url("/script/job")' in bloco, "o polling é o `/script/job`"
+    assert "loadScript()" in bloco, "no fim do job a tela busca `GET .../script` e renderiza"
+    assert "confirmCost" not in bloco, \
+        "o Claude CLI é assinatura local: roteiro NÃO passa por confirmação de custo"
+    assert "toast(err.message)" in bloco, "erro do job aparece para o usuário pelo caminho de erro da view"
+
+
+# ---------- T3.6: aplicar às vazias preserva o texto digitado (critério 6) ----------
+def test_t3_6_aplicar_as_vazias_nao_toca_texto_do_usuario(js):
+    corpo = trecho(js, "async function applyScript(all)", "function initScript()")
+    assert "const list = collect();" in corpo, \
+        "o array do PUT sai do `collect()` da tela — montar payload paralelo perderia images/primary/photos/videos"
+    guarda = corpo.index('if (!all && String(list[i].text || "").trim()) continue;')
+    escrita = corpo.index("list[i].text =")
+    assert guarda < escrita, "a checagem de texto vazio (`trim`) tem de vir ANTES da atribuição"
+    assert corpo.count("list[i].text =") == 1, "existe um único ponto de escrita de `text`, guardado"
+
+
+# ---------- T3.7: substituir tudo exige confirmação explícita (critério 7) ----------
+def test_t3_7_substituir_tudo_confirma_antes_de_qualquer_escrita(js):
+    corpo = trecho(js, "async function applyScript(all)", "function initScript()")
+    confirma = corpo.index("confirm(")
+    salva = corpo.index("saveScenes(list)")
+    assert confirma < salva, "a confirmação tem de vir ANTES da escrita"
+    dialogo = corpo[confirma:corpo.index("\n", confirma)]
+    assert "${escritas.length}" in dialogo, "a mensagem diz QUANTOS textos serão sobrescritos"
+    assert "if (all &&" in corpo, "o diálogo é exclusivo do `Substituir tudo` (as vazias não perguntam)"
+
+
+# ---------- T3.8: escrita de cena só pelo contrato que já existe (R1) ----------
+def test_t3_8_escrita_de_cena_so_pelo_put_scenes_existente(js):
+    """R1: o bloco do roteiro não abre um segundo caminho de escrita de cena.
+
+    As asserções são ABSOLUTAS sobre o `view.js` de hoje — nada de comparar com o estado anterior
+    à feature via `git merge-base`, que deixaria de existir no instante em que a branch entrar em
+    `develop` (o fork point passaria a ser o próprio HEAD e a contagem de delta viraria falsa).
+    O que se protege continua sendo o mesmo: (a) o único `method: "POST"` do bloco é o do job do
+    roteiro (`/script/generate`, que grava `script.json`); (b) toda escrita de cena do arquivo
+    inteiro passa pelo `PUT url("/scenes")` de sempre, e nenhuma delas mora dentro do bloco.
+    """
+    bloco = bloco_roteiro(js)
+    assert "saveScenes(list)" in bloco, "a aplicação reusa o caminho de gravação da tela"
+    assert '"/scenes"' not in bloco, "o bloco não monta rota de escrita própria"
+    assert 'method: "PUT"' not in bloco, \
+        "o bloco não faz PUT nenhum: quem grava cena é o `saveScenes` que já existia"
+    # (a) o ÚNICO POST do bloco é o do job — que grava `script.json`, nunca `scenes.json`.
+    posts = [m.start() for m in re.finditer(r'method: "POST"', bloco)]
+    assert len(posts) == 1, f"o bloco do roteiro dispara um único POST — achados {len(posts)}"
+    assert 'url("/script/generate")' in linha_de(bloco, posts[0]), \
+        f"o POST do bloco tem de ser o do job do roteiro — achado: {linha_de(bloco, posts[0])}"
+    # (b) no arquivo INTEIRO, `/scenes` só é tocado por leitura ou pelo `PUT` do contrato — e
+    # nenhuma dessas chamadas cai dentro do bloco do roteiro (o `assert` acima já cobre o bloco).
+    inicio, fim = js.index(SCRIPT_BLOCK_START), js.index(SCRIPT_BLOCK_END)
+    chamadas = [m.start() for m in re.finditer(r'url\("/scenes"\)', js)]
+    assert chamadas, "o caminho de escrita de cena da tela (`PUT /scenes`) sumiu"
+    for i in chamadas:
+        linha = linha_de(js, i)
+        assert "method:" not in linha or 'method: "PUT"' in linha, \
+            f"escrita de cena fora do contrato `PUT /scenes`: {linha}"
+        assert not inicio <= i < fim, f"o bloco do roteiro fala com `/scenes` direto: {linha}"
+
+
+# ---------- T3.9: estado vazio silencioso (R8) ----------
+def test_t3_9_sem_geracao_previa_o_painel_fica_vazio_sem_erro(js):
+    carga = trecho(js, "async function loadScript()", "/** Rótulo pt-BR do momento")
+    assert "r.script ? r.script : null" in carga, '`{"script": null}` é estado NORMAL, não erro'
+    assert "catch (err) { script = null; }" in carga, "falha de rede também cai em vazio, sem erro na tela"
+    render = trecho(js, "function renderScript()", "/** Geração: job")
+    assert "if (!cenas.length)" in render and 'box.classList.add("hidden")' in render, \
+        "sem sugestão o painel some em silêncio"
+
+
+# ---------- T3.10: alvo fixo, sem seletor de modelo (gate W3 P3) ----------
+def test_t3_10_alvo_do_prompt_e_texto_fixo(js, html):
+    painel = painel_roteiro(html)
+    assert "Nano Banana Pro" in painel, "o alvo do prompt de imagem aparece como TEXTO na tela"
+    assert "<select" not in painel, "v1 não tem seletor de modelo no bloco do roteiro (gate W3 P3)"
+    corpo = trecho(js, "async function runScript()", "async function applyScript")
+    body = corpo[corpo.index("const body = {"):corpo.index("\n", corpo.index("const body = {"))]
+    assert "model_target" not in body, "a tela não escolhe alvo: quem resolve o default é o serviço"
+    assert "sbScriptModel" not in body, "o alvo é rótulo de leitura, não entrada do pedido"
+
+
+# ---------- T3.11: a proporção é leitura, nunca entrada ----------
+def test_t3_11_aspect_ratio_e_leitura_e_nao_entra_no_body(js, html):
+    painel = painel_roteiro(html)
+    i = painel.index('id="sbScriptAspect"')
+    assert painel[painel.rindex("<", 0, i):i].startswith("<span"), \
+        "a proporção do projeto é exibida, não editada"
+    corpo = trecho(js, "async function runScript()", "async function applyScript")
+    assert "aspect" not in corpo, "a proporção não entra no body: é a do projeto, resolvida no servidor"
+    controles = trecho(js, "function renderScriptControls()", "/** Boot do painel")
+    assert "ctx.project() || {}).aspect_ratio" in controles and '"16:9"' in controles, \
+        "a proporção exibida vem do projeto (servidor), com o mesmo fallback `16:9` do serviço"
+
+
+# ---------- T3.12: o bloco está ligado no ciclo da view e o arquivo continua válido ----------
+def test_t3_12_bloco_ligado_no_ciclo_da_view_e_js_valido(js):
+    assert "initScript();" in js, "os handlers do bloco entram no `init()` da metade ideação"
+    assert "await scriptOnProject();" in js, "o boot do bloco entra no `onProject()` (depois dos presets)"
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node não disponível no ambiente")
+    r = subprocess.run([node, "--check", str(VIEW_JS)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+# ---------- T3.13: núcleo intocado (ADR-010) ----------
+@pytest.mark.parametrize("rel", ["studio/web/ui.js", "studio/web/style.css"])
+def test_t3_13_nucleo_do_shell_intocado(rel):
+    """O bloco é um plugin: o CSS mora no `<style>` do próprio `view.html` e o JS no `view.js`."""
+    root = Path(__file__).resolve().parents[1]
+    git = shutil.which("git")
+    if not git or not (root / ".git").exists():
+        pytest.skip("git não disponível no ambiente")
+    base = subprocess.run([git, "-C", str(root), "merge-base", "develop", "HEAD"],
+                          capture_output=True, text=True)
+    if base.returncode != 0:
+        pytest.skip("branch `develop` não disponível para comparar")
+    diff = subprocess.run([git, "-C", str(root), "diff", "--name-only", base.stdout.strip(), "--", rel],
+                          capture_output=True, text=True)
+    assert diff.returncode == 0, diff.stderr
+    assert not diff.stdout.strip(), f"ADR-010: {rel} não pode mudar nesta feature"

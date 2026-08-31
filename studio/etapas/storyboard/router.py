@@ -123,6 +123,24 @@ class VideoGenerateReq(BaseModel):
     model: str | None = None
 
 
+# `[extensão]` wave 9 (ADR-025) — ROTEIRO por LLM. Namespace `script` para não colidir com o
+# `generate`/`job` da ideação (que geram IMAGENS pagas): o roteiro é Claude CLI, zero crédito, e
+# por isso não tem rota de `cost` nem `confirmCost` na tela.
+class ScriptGenerateReq(BaseModel):
+    #: `[extensão]` preset de REALISMO (provedora) — não confundir com o `sbPreset` das fórmulas da
+    #: aula (amenda A4). Três estados: ausente = o serviço resolve o default da ação
+    #: `storyboard.script`; `null` = sem rig; `"<id>"` = usar esse (id fora do catálogo → 422).
+    preset: str | None = None
+    count: int = sb.DEFAULT_SCENES
+    #: Alvo do prompt de imagem; ausente = o default de `SCRIPT_MODELS` (v1: só `nano_banana_2`).
+    model_target: str | None = None
+    instruction: str = ""
+
+    def preset_arg(self) -> settings.PresetArg:
+        """Ausente ≠ `null`: sem o campo no body, quem resolve o default é o serviço."""
+        return self.preset if "preset" in self.model_fields_set else settings.PRESET_UNSET
+
+
 def _guard(fn, *args, **kwargs):
     """Traduz o vocabulário de erros do serviço para HTTP (422 pedido inválido, 409 pré-requisito)."""
     try:
@@ -233,6 +251,24 @@ def storyboard_generate(pid: str, req: GenerateReq):
 def storyboard_job(pid: str):
     refs.project_dir(pid)
     return sb.job_status(pid)
+
+
+# ---------- `[extensão]` wave 9 (ADR-025): roteiro por LLM (Claude, sem crédito) ----------
+@router.post("/api/projects/{pid}/storyboard/script/generate")
+def storyboard_script_generate(pid: str, req: ScriptGenerateReq):
+    return _guard(sb.script_generate, pid, req.preset_arg(), req.count, req.model_target,
+                  req.instruction)
+
+
+@router.get("/api/projects/{pid}/storyboard/script/job")
+def storyboard_script_job(pid: str):
+    refs.project_dir(pid)
+    return sb.script_status(pid)
+
+
+@router.get("/api/projects/{pid}/storyboard/script")
+def storyboard_script(pid: str):
+    return sb.load_script(pid)
 
 
 # ---------- `[extensão]` wave 7 (ADR-021): vídeo por cena (Claude + CLI Kling) ----------

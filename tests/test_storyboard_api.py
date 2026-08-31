@@ -1,5 +1,6 @@
 """Contrato HTTP da etapa 4 — Storyboard (FastAPI TestClient), sem rede, sem CLI, sem navegador."""
 import json
+import logging
 import threading
 
 import pytest
@@ -601,3 +602,327 @@ def test_video_prompt_route_rejects_an_unknown_realism_preset(client, pid, monke
     ok = client.post(f"/api/projects/{pid}/storyboard/video-prompt",
                      json={"scene_id": "cena01", "description": "x", "preset": None})
     assert ok.status_code == 200 and ok.json()["preset"] is None
+
+
+# ---------- `[extensão]` wave 9 (ADR-025): roteiro por LLM (Claude fake, sem rede) ----------
+def _script_fake(calls, notes="Arco fechado com o produto em primeiro plano.", short_by=0,
+                 scene_text=None, broken=False, sem_rig=()):
+    """Fake do Claude CLI para o roteiro: um bot OBEDIENTE.
+
+    Lê do próprio prompt quantas cenas foram pedidas e qual rig foi exigido, e devolve esse rig
+    literalmente dentro de cada `image_prompt` — é assim que o teste do critério 3a mede o
+    SERVIÇO: se o preset não chegar ao prompter, o rig não aparece no roteiro gravado.
+
+    `sem_rig` é a lista de cenas em que o bot DESOBEDECE (devolve `image_prompt` sem o rig pedido):
+    é o cenário que a validação do serviço tem de barrar.
+    """
+    import json as _json
+    import re as _re
+    import subprocess
+
+    def run(args, capture_output=True, text=True, timeout=None, **kw):
+        prompt = args[2]
+        calls.append({"args": args, "prompt": prompt, "timeout": timeout})
+        if broken:
+            return subprocess.CompletedProcess(args, 0, "sem json aqui", "")
+        pedidas = int(_re.search(r"Write EXACTLY (\d+) scenes", prompt).group(1))
+        rig = _re.search(r"MANDATORY RIG, IDENTICAL IN EVERY SCENE: (.+?) — write", prompt, _re.S)
+        rig_text = rig.group(1) if rig else "no fixed rig"
+        cenas = [{"n": i, "arc": "ignorado-pelo-modelo",
+                  "text": scene_text or f"Cena {i}: o personagem age e o produto aparece.",
+                  "image_prompt": (f"A cinematic photograph of scene {i}. Shot on a nice camera."
+                                   if i in sem_rig else
+                                   f"A cinematic photograph of scene {i}. Shot on {rig_text}."),
+                  "negative": "plastic skin, HDR glow"}
+                 for i in range(1, pedidas + 1 - short_by)]
+        body = _json.dumps({"scenes": cenas, "notes_pt": notes}, ensure_ascii=False)
+        return subprocess.CompletedProcess(args, 0, "Segue o roteiro.\n```json\n" + body + "\n```\n", "")
+
+    return run
+
+
+@pytest.fixture()
+def claude(monkeypatch):
+    """Claude CLI fake instalado; devolve a lista de chamadas feitas ao `subprocess.run`."""
+    from studio.common import prompter
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _script_fake(calls))
+    return calls
+
+
+def _run_script_job(client, pid, body=None):
+    """Dispara o job e faz o polling limitado da rota (padrão da etapa: sem sleep)."""
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json=body or {})
+    assert r.status_code == 200, r.text
+    # Estado INICIAL do job: com o CLI fake a thread pode terminar antes da serialização da
+    # resposta, então o contrato aqui é a FORMA do estado — o job nasceu (nunca "idle").
+    inicial = r.json()
+    assert {"state", "done", "total", "error", "log"} <= set(inicial)
+    assert inicial["state"] != "idle" and inicial["total"] == 1
+    for _ in range(100):
+        job = client.get(f"/api/projects/{pid}/storyboard/script/job").json()
+        if job["state"] != "running":
+            break
+        threading.Event().wait(0.05)
+    return job
+
+
+def test_script_generate_writes_the_suggestion_file(client, pid, base, root, claude):
+    """T2.1 (critério 1): job termina `done` e grava `script.json` com as N cenas válidas."""
+    job = _run_script_job(client, pid, {"count": 5})
+    assert job["state"] == "done" and job["error"] is None
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["count"] == 5 and len(data["scenes"]) == 5
+    assert data["source"] == "claude" and data["model_target"] == "nano_banana_2"
+    assert [s["n"] for s in data["scenes"]] == [1, 2, 3, 4, 5]
+    for s in data["scenes"]:
+        assert s["text"].strip() and len(s["text"]) <= 500
+        assert s["image_prompt"].strip()
+
+
+def test_script_arc_comes_from_the_lesson_map(client, pid, base, root, claude):
+    """T2.2 (critério 2): o arco é do servidor (`scene_arc`), não do modelo."""
+    _run_script_job(client, pid, {"count": 5})
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert [s["arc"] for s in data["scenes"]] == ["comeco", "descoberta", "acao", "acao", "desfecho"]
+
+
+def test_script_carries_the_preset_rig_into_every_scene(client, pid, base, root, claude):
+    """T2.3 `[cross-feature]` (critério 3a): o rig do preset aparece LITERALMENTE em cada cena."""
+    from studio.common import prompter
+    _run_script_job(client, pid, {"count": 5, "preset": "documentary-street"})
+    rig = prompter.REALISM_PRESETS["documentary-street"]["rig"]
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["preset"] == "documentary-street"
+    for s in data["scenes"]:
+        for chave in ("camera", "lens", "format"):
+            assert rig[chave] in s["image_prompt"], (s["n"], chave)
+
+
+def test_script_action_shows_up_in_the_provider_catalog(client, pid):
+    """T2.4 `[cross-feature]` (R3): o handoff da wave — a chave da ação registrada em import time.
+
+    O endpoint da provedora devolve `{preset, source}` por ação (contrato congelado em
+    `creditos/router.py::_preset_defaults`); o `kind` fica na resolução in-process.
+    """
+    from studio.common import settings
+    for url in ("/api/prompter/presets", f"/api/prompter/presets?pid={pid}"):
+        defaults = client.get(url).json()["defaults"]
+        assert defaults["storyboard.script"] == {"preset": "documentary-street", "source": "code"}
+    assert settings.preset_default_for("storyboard.script", pid) == {
+        "kind": "storyboard.script", "preset": "documentary-street", "source": "code"}
+
+
+def test_script_without_preset_uses_the_resolved_default(client, pid, base, root, claude):
+    """T2.5 (critério 4): campo AUSENTE resolve o default por settings e o registra no arquivo."""
+    from studio.common import prompter
+    _run_script_job(client, pid, {"count": 2})
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["preset"] == "documentary-street"
+    rig = prompter.REALISM_PRESETS["documentary-street"]["rig"]
+    assert all(rig["camera"] in s["image_prompt"] for s in data["scenes"])
+
+
+def test_script_with_null_preset_sends_no_rig(client, pid, base, root, claude):
+    """T2.6: `preset: null` é escolha explícita de "sem rig" — nem no arquivo nem no prompt."""
+    _run_script_job(client, pid, {"count": 2, "preset": None})
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["preset"] is None
+    assert "MANDATORY RIG" not in claude[0]["prompt"]
+
+
+def test_script_honours_the_project_preset_override(client, pid, base, root, claude):
+    """T2.7: override de projeto (rota da provedora) vence o default de código."""
+    r = client.put(f"/api/projects/{pid}/prompter/preset-config",
+                   json={"kind": "storyboard.script", "preset": "arri-natural-narrative"})
+    assert r.status_code == 200
+    assert client.get(f"/api/projects/{pid}/storyboard").json()["script_preset_default"] == "arri-natural-narrative"
+    _run_script_job(client, pid, {"count": 2})
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["preset"] == "arri-natural-narrative"
+
+
+def test_script_unknown_preset_is_422_before_the_cli(client, pid, base, root, claude):
+    """T2.8: preset fora do catálogo → 422 com os ids válidos, sem tocar no CLI nem no disco."""
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={"preset": "nao-existe"})
+    assert r.status_code == 422 and "documentary-street" in r.json()["detail"]
+    assert claude == [] and not (root / "storyboard" / "script.json").exists()
+
+
+def test_script_aspect_ratio_comes_from_the_project(client, pid, base, root, claude):
+    """T2.9 (critério 5): a proporção é a da campanha (não vem do body); ausente → 16:9."""
+    _run_script_job(client, pid, {"count": 2})
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["aspect_ratio"] == "16:9" and "16:9" in claude[0]["prompt"]
+    meta = json.loads((root / "project.json").read_text())
+    (root / "project.json").write_text(json.dumps({**meta, "aspect_ratio": "9:16"}))
+    _run_script_job(client, pid, {"count": 2})
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["aspect_ratio"] == "9:16" and "9:16" in claude[-1]["prompt"]
+
+
+def test_script_without_claude_is_409_and_writes_nothing(client, pid, base, root, monkeypatch):
+    """T2.10 (critério 8): sem Claude no PATH a geração não existe — 409 apontando o modo manual."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", None)
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={})
+    assert r.status_code == 409 and "Claude CLI não encontrado no PATH" in r.json()["detail"]
+    assert "aula 010" in r.json()["detail"]
+    assert not (root / "storyboard" / "script.json").exists()
+    assert client.get(f"/api/projects/{pid}/storyboard").json()["script_cli"] is False
+
+
+def test_script_without_base_image_is_409(client, pid, root, claude):
+    """T2.11: sem a base da etapa 3 o roteiro não começa (mesma mensagem de precondição da etapa)."""
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={})
+    assert r.status_code == 409 and r.json()["detail"] == "Imagem base ausente: conclua a etapa 3 (base)"
+    assert claude == [] and not (root / "storyboard" / "script.json").exists()
+
+
+def test_script_job_is_one_per_project(client, pid, base, studio_env, claude):
+    """T2.12: um job de roteiro por projeto — o segundo pedido é 409 enquanto o primeiro corre.
+
+    Usa o fixture `claude` para o CLI parecer instalado: sem ele, num ambiente sem Claude no
+    PATH (CI), o endpoint responde 409 "CLI não encontrado" antes de chegar na guarda de
+    concorrência, e a asserção da mensagem falha."""
+    sb = studio_env["svc"]("storyboard")
+    sb._story_registry._jobs[pid] = {"state": "running"}
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={})
+    assert r.status_code == 409 and "roteiro em andamento" in r.json()["detail"]
+    sb._story_registry.clear(pid)
+
+
+def test_script_count_out_of_range_is_422(client, pid, base, claude):
+    """T2.13: `count` segue a régua de `MAX_SCENES` (1..10)."""
+    for count in (0, 11):
+        r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={"count": count})
+        assert r.status_code == 422, count
+        assert "1..10" in r.json()["detail"]
+    assert claude == []
+
+
+def test_script_model_target_is_nano_banana_only(client, pid, base, claude):
+    """T2.14 (gate W3 P3): v1 aceita só `nano_banana_2`; `gpt_image_2` (da ideação) é 422."""
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate",
+                    json={"count": 1, "model_target": "gpt_image_2"})
+    assert r.status_code == 422 and "nano_banana_2" in r.json()["detail"] and claude == []
+    job = _run_script_job(client, pid, {"count": 1, "model_target": "nano_banana_2"})
+    assert job["state"] == "done"
+
+
+def test_script_long_instruction_is_422(client, pid, base, claude):
+    """T2.15: a instrução livre respeita o teto `MAX_TEXT` (300) da etapa."""
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate",
+                    json={"count": 1, "instruction": "a" * 301})
+    assert r.status_code == 422 and "300" in r.json()["detail"] and claude == []
+    ok = client.post(f"/api/projects/{pid}/storyboard/script/generate",
+                     json={"count": 1, "instruction": "a" * 300})
+    assert ok.status_code == 200
+
+
+def test_script_incomplete_answer_keeps_the_previous_file(client, pid, base, root, monkeypatch, claude):
+    """T2.16 (critério 9): cenas de menos → job em erro; o roteiro anterior fica byte a byte igual."""
+    from studio.common import prompter
+    assert _run_script_job(client, pid, {"count": 5})["state"] == "done"
+    antes = (root / "storyboard" / "script.json").read_bytes()
+    monkeypatch.setattr(prompter.subprocess, "run", _script_fake([], short_by=2))
+    job = _run_script_job(client, pid, {"count": 5})
+    assert job["state"] == "error" and "5 cenas pedidas, 3 recebidas" in job["error"]
+    assert (root / "storyboard" / "script.json").read_bytes() == antes
+
+
+def test_script_scene_without_the_preset_rig_is_an_error(client, pid, base, root, monkeypatch, claude):
+    """Review 001 · issue_002 (critério 3 `[cross-feature]`, §6): o SERVIÇO cobra o rig de cada cena.
+
+    O bot desobediente devolve a cena 2 sem corpo/lente/formato do preset. Leitura estrita do FDD:
+    resposta inválida → job em `error`, mensagem dizendo QUAL cena e QUAL parte do rig faltou, e o
+    `script.json` anterior byte a byte igual (nada de completar com conteúdo inventado).
+    """
+    from studio.common import prompter
+    assert _run_script_job(client, pid, {"count": 3, "preset": "documentary-street"})["state"] == "done"
+    antes = (root / "storyboard" / "script.json").read_bytes()
+    monkeypatch.setattr(prompter.subprocess, "run", _script_fake([], sem_rig=(2,)))
+    job = _run_script_job(client, pid, {"count": 3, "preset": "documentary-street"})
+    rig = prompter.REALISM_PRESETS["documentary-street"]["rig"]
+    assert job["state"] == "error"
+    assert "cena 2 sem" in job["error"] and "documentary-street" in job["error"]
+    for chave in ("camera", "lens", "format"):
+        assert f'{chave} ("{rig[chave]}")' in job["error"], chave
+    assert "cena 1 sem" not in job["error"] and "cena 3 sem" not in job["error"]
+    assert any("roteiro falhou" in linha for linha in job["log"])
+    assert (root / "storyboard" / "script.json").read_bytes() == antes
+
+
+def test_script_without_preset_does_not_demand_any_rig(client, pid, base, root, monkeypatch, claude):
+    """Review 001 · issue_002: `preset: null` é "sem rig" — a cobrança não pode disparar aí."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter.subprocess, "run", _script_fake([], sem_rig=(1, 2)))
+    job = _run_script_job(client, pid, {"count": 2, "preset": None})
+    assert job["state"] == "done" and job["error"] is None
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert data["preset"] is None and data["count"] == 2
+
+
+def test_script_write_failure_logs_the_error_event_and_keeps_the_file(
+        client, pid, base, root, studio_env, monkeypatch, claude, caplog):
+    """Review 001 · issue_003 (§7 do FDD, task_02 R15): falha DEPOIS do prompter também é observável.
+
+    Com `write_json_atomic` levantando `OSError`, o job vai a `error`, a linha `script_job` de erro
+    sai UMA vez no logger `studio.storyboard` com `{pid, state, scenes, seconds, source}`, o detalhe
+    aparece no `log` do job (que é o que o `progressJob` mostra) e o roteiro anterior fica intacto.
+    """
+    sb = studio_env["svc"]("storyboard")
+    assert _run_script_job(client, pid, {"count": 2})["state"] == "done"
+    antes = (root / "storyboard" / "script.json").read_bytes()
+
+    def explode(*a, **kw):
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(sb, "write_json_atomic", explode)
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        job = _run_script_job(client, pid, {"count": 2})
+    assert job["state"] == "error" and "disco cheio" in job["error"]
+    assert any("roteiro falhou: disco cheio" in linha for linha in job["log"])
+    eventos = [r.getMessage() for r in caplog.records if r.getMessage().startswith("script_job ")]
+    erros = [e for e in eventos if "'state': 'error'" in e]
+    assert len(erros) == 1, eventos
+    for campo in ("'pid'", "'state'", "'scenes'", "'seconds'", "'source'"):
+        assert campo in erros[0], campo
+    assert not [e for e in eventos if "'state': 'done'" in e], "não há evento de fim `done` aqui"
+    assert (root / "storyboard" / "script.json").read_bytes() == antes
+
+
+def test_script_get_is_200_with_null_before_any_generation(client, pid, base, claude):
+    """T2.17 (critério 10): ausência de sugestão é estado normal, não 404."""
+    r = client.get(f"/api/projects/{pid}/storyboard/script")
+    assert r.status_code == 200 and r.json() == {"script": None}
+    # §5.2: o job do roteiro também nasce `idle`, no formato do contrato.
+    assert client.get(f"/api/projects/{pid}/storyboard/script/job").json() == {
+        "state": "idle", "done": 0, "total": 0, "error": None, "log": []}
+    _run_script_job(client, pid, {"count": 2})
+    got = client.get(f"/api/projects/{pid}/storyboard/script").json()["script"]
+    assert set(got) == {"generated_at", "preset", "model_target", "aspect_ratio", "count",
+                        "source", "seconds", "notes_pt", "scenes"}
+    assert set(got["scenes"][0]) == {"n", "arc", "text", "image_prompt", "negative"}
+
+
+def test_script_status_fields_are_additive(client, pid, base, claude):
+    """T2.21 (§5.4): campos novos no status, com todos os antigos preservados."""
+    antes = client.get(f"/api/projects/{pid}/storyboard").json()
+    assert antes["script"] == {"exists": False, "generated_at": None}
+    assert antes["script_preset_default"] == "documentary-street"
+    assert antes["script_models"] == [{"id": "nano_banana_2", "label": "Nano Banana Pro", "default": True}]
+    assert antes["script_cli"] is True
+    _run_script_job(client, pid, {"count": 2})
+    depois = client.get(f"/api/projects/{pid}/storyboard").json()
+    assert depois["script"]["exists"] is True and depois["script"]["generated_at"]
+    antigos = [k for k in antes if not k.startswith("script")]
+    assert {k: depois[k] for k in antigos} == {k: antes[k] for k in antigos}
+
+
+def test_script_routes_are_404_for_an_unknown_project(client):
+    """As rotas novas seguem o 404 padrão da etapa para projeto inexistente."""
+    assert client.post("/api/projects/nope/storyboard/script/generate", json={}).status_code == 404
+    assert client.get("/api/projects/nope/storyboard/script/job").status_code == 404
+    assert client.get("/api/projects/nope/storyboard/script").status_code == 404

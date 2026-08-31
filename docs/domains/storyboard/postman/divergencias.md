@@ -93,3 +93,83 @@ Os quatro 422 do modo `edit_area`, o 404, o 409 e o dedupe foram conferidos **em
   `{per_image, total}` e as quatro mensagens de 422 da §6 saem exatamente com o texto da matriz.
 - 413 (upload > 25 MB) existe no router (`_payload`, `MAX_UPLOAD_BYTES`), mas não é exercitado
   pela coleção — ver a tabela de casos não cobertos no `README.md`.
+
+---
+
+# Divergências: FDD × implementação — `storyboard-roteiro-llm` `[extensão]` (wave 9, sub-wave 2)
+
+Gerado em 2026-08-30 · commit `905a694` (branch `feature/storyboard-roteiro-llm`) · seção
+**aditiva**, nada acima foi alterado.
+
+Fontes cruzadas:
+
+- FDD: `docs/domains/storyboard/features/storyboard-roteiro-llm-fdd.md` (seção 5.1 a 5.4,
+  linhas 205-305; seção 6, matriz de erros, linhas 344-357; seção 9, critérios).
+- **Amendas do gate W3** (`.compozy/tasks/storyboard-roteiro-llm/_techspec.md`, seção 0): por
+  decisão explícita do próprio documento, **sobrepõem o corpo do FDD**. A1 (contrato da
+  provedora), A2 (registro de `storyboard.script` em `PRESET_ACTIONS`), A3 (três estados de
+  `preset`), A6 (`SCRIPT_MODELS`) e A9 (evidência `[cross-feature]`) foram usadas como contrato.
+- Implementação (**verdade** sobre rota, status e mensagem):
+  `studio/etapas/storyboard/router.py` (`storyboard_script_generate`, `storyboard_script_job`,
+  `storyboard_script`, `ScriptGenerateReq`) e `studio/storyboard/service.py` (`script_generate`,
+  `script_status`, `load_script`, `script_state`, `SCRIPT_MODELS`, `SCRIPT_ACTION`).
+- Contrato publicado (OpenAPI em arquivo): **continua não existindo**. Busca por glob
+  `openapi*.{yaml,yml,json}` com profundidade 3 na raiz da worktree, nas worktrees/repositórios
+  irmãos (`../*-contracts/`, `../contracts-*/`) e em `node_modules/@*/contracts*/`: nenhum
+  resultado. O único contrato publicado é o schema que o FastAPI gera em runtime
+  (`GET /openapi.json`), que reflete o router — por isso o cruzamento aqui é FDD × código,
+  conferido **em runtime** na porta 8770.
+
+Inventário: as **3 rotas novas** da seção 5 existem no router com o mesmo método e caminho
+(`POST .../storyboard/script/generate`, `GET .../storyboard/script/job`,
+`GET .../storyboard/script`); os campos aditivos da seção 5.4 existem em `GET .../storyboard`;
+e a rota da provedora `GET /api/prompter/presets` traz a chave de handoff `storyboard.script`.
+Nenhuma rota do FDD falta no código e nenhuma rota nova do domínio falta no FDD. Toda a matriz
+de erros da seção 6 que é observável por HTTP foi conferida em runtime.
+
+| # | Severidade | O que o FDD diz | O que a implementação faz | Fontes |
+| --- | --- | --- | --- | --- |
+| R1 | BAIXA | §5.1 (linha 236) e §5.2 (linhas 251-253): o corpo do job é `{state, done, total, error, log}` — cinco chaves, nas duas rotas. | Com job **existente** (`running`/`done`/`error`), `POST script/generate` e `GET script/job` devolvem uma chave a mais: `added` (`{"done":1,"total":1,"error":null,"log":[…],"state":"done","added":0}`). Vem do `JobRegistry` compartilhado, que carrega o contador de imagens da ideação; `script_status` só completa `done/total/error/log` sob o que o registry devolve, não filtra. No estado `idle` a chave não aparece. Aditivo e inócuo para a UI (`progressJob` lê `state`/`done`/`total`), mas o contrato publicado no FDD é mais estreito que a resposta real. As asserções da coleção usam `include.keys`, nunca `have.keys`, por causa disso. | FDD §5.1 linha 236, §5.2 linhas 251-253; `service.py` `script_status`, `common/jobs.py` `JobRegistry.status`; runtime 2026-08-30 |
+| R2 | BAIXA | §5.4 (linhas 297-305) declara **dois** campos aditivos no `GET .../storyboard`: `script: {exists, generated_at}` e `script_preset_default`. | A implementação devolve **quatro**: além dos dois, `script_models` (o catálogo `SCRIPT_MODELS`, lista de objetos `{id, label, default}` — não uma lista de ids) e `script_cli` (booleano de `prompter.available()`). Os dois extras são exigidos pelas amendas A5/A6 (a tela lê o alvo fixo e desabilita o botão sem CLI), mas o corpo do FDD §5.4 não os cita — **pendência de doc-sync**, não defeito. | FDD §5.4 linhas 297-305; techspec §0 A5/A6; `service.py` `status` linhas 205-210; runtime |
+| R3 | BAIXA | §6 (linhas 344-357) lista 404, 409 (base ausente, CLI ausente, job em andamento) e 422 (`count`, `preset`, `model_target`, `instruction`) **sem declarar precedência** entre eles. | `script_generate` valida **os quatro 422 ANTES** dos 409 (`resolve_preset`/`valid_preset` → `count` → `model_target` → `instruction` → `_require_base` → `prompter.available()` → registry). É a ordem **oposta** à do caminho pago da etapa (divergências 4 e 5 da seção original, onde o 409 engole todo 422). Consequência prática, boa: os 422 do roteiro são observáveis em projeto **sem** base da etapa 3 — é o que a pasta `erros` explora. Fica registrado porque um cliente que assuma a precedência do caminho pago erra o diagnóstico. | FDD §6 linhas 344-357; `service.py` `script_generate` linhas 1248-1257; runtime |
+| R4 | BAIXA | §5.1 (linha 220) e amenda A3: `preset` tem três estados — ausente (default da ação), `null` (sem rig), `"<id>"`. | Implementado exatamente assim (`ScriptGenerateReq.preset_arg()` + `settings.PRESET_UNSET`), **mas o estado "ausente" não é distinguível do estado `null` por HTTP em nenhuma resposta síncrona**: a única evidência do preset efetivamente resolvido é o campo `preset` de `script.json`, ou seja, só depois de um job `done` (que exige o Claude CLI). A coleção prova o que dá para provar sem CLI: `preset: null` **passa** pela validação (o 422 sai do `count`) e `script_preset_default` do status expõe o default resolvido. | FDD §5.1 linha 220; techspec §0 A3; `router.py` `ScriptGenerateReq.preset_arg`; runtime |
+
+## O que NÃO diverge (conferido em runtime, 2026-08-30, porta 8770)
+
+- **Handoff `[cross-feature]` da wave (§1 linhas 47-51, §9 critério 3, amendas A1/A2):**
+  `GET /api/prompter/presets` traz `defaults["storyboard.script"] = {"preset":
+  "documentary-street", "source": "code"}` — a chave que esta feature registra em
+  `settings.PRESET_ACTIONS` no import do serviço, sem editar `settings.py`. O catálogo lista os
+  cinco presets reais, incluindo `documentary-street` e `arri-natural-narrative`. Com `?pid=` a
+  resolução por projeto continua devolvendo a chave.
+- **§9 critérios 1, 2, 3 e 5, com Claude CLI real** (execução liberada por `allowScriptGenerate`):
+  job termina `done` em 61,7 s, grava `script.json` com 5 cenas, `text` pt-BR de 377 a 448
+  caracteres (teto 500), `image_prompt` em inglês, arcos exatamente
+  `comeco, descoberta, acao, acao, desfecho`, `aspect_ratio: "16:9"` do projeto e o rig do preset
+  (`Blackmagic Pocket 6K Pro` + `Cooke S4` + `Super 35`) **literalmente presente em todas as
+  cinco cenas** — a evidência que a amenda A9 exige.
+- **§5.3 / §6 linha 357 / §9 critério 10:** `GET .../storyboard/script` sem geração responde
+  **200** com o corpo exato `{"script": null}` (uma única chave), nunca 404.
+- **§5.2:** `GET .../storyboard/script/job` sem job responde `state: "idle"` já com o formato
+  completo (`done: 0, total: 0, error: null, log: []`) — a implementação evita aqui a divergência
+  2 da seção original.
+- **§5.4:** antes da primeira geração, `script = {"exists": false, "generated_at": null}`; depois
+  do job, `{"exists": true, "generated_at": "<ISO>"}`.
+- **§6 matriz completa, mensagem por mensagem:** 404 `projeto não encontrado` nas três rotas;
+  409 `Imagem base ausente: conclua a etapa 3 (base)`; 422 `número de cenas fora de 1..10` (0 e
+  11); 422 `preset desconhecido: … — válidos: documentary-street, arri-natural-narrative, …`
+  (mensagem que cita o catálogo da provedora); 422 `modelo alvo inválido para o roteiro:
+  gpt_image_2 (válidos: nano_banana_2)` (gate W3 P3); 422 `Instrução acima de 300 caracteres.`
+- **Zero crédito Higgsfield:** nenhuma rota desta feature tem `cost`/`confirmCost`; a geração
+  usa o Claude CLI (assinatura do usuário). Nenhuma linha nova no livro-caixa.
+- **`scenes.json` intocado:** nenhuma rota desta feature escreve nele; o job só grava
+  `storyboard/script.json` (§4 e §6, invariantes).
+
+## Ressalva de ambiente (não é divergência)
+
+O 409 de **Claude CLI ausente** (§6 linha 348, critério de aceite 8) **não pôde ser observado**
+nesta máquina: o `claude` **está** instalado (`/home/arthu/.local/bin/claude`, respondendo a
+`claude -p`), então `script_cli` é `true` e o pedido válido inicia o job em vez de recusar. O
+request existe na pasta `erros` com guarda automática (`scriptCli !== 'false'` → pulado) e volta
+a rodar sozinho em qualquer máquina sem o CLI. O comportamento inverso — CLI presente → job
+real — foi exercitado e passou.

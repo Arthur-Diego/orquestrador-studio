@@ -686,3 +686,50 @@ persiste), ADR-004 (`[extensão]`), ADR-006 (síncrono; job com polling é o pla
 100 % fake, sem rede), ADR-016 (o custo do whisper **não** entra no livro-caixa nesta entrega —
 lacuna intencional e registrada) e ADR-030 (a pendência "legenda automática" que ela fecha do lado
 servidor). O provedor real não foi exercitado: não há `OPENAI_API_KEY` neste ambiente.
+
+## Atualização 2026-08-31 (wave 9, sub-wave 2, frente ADH-OS-20260831-*)
+
+O **roteiro por LLM** na etapa 4 (feature `storyboard-roteiro-llm`), consumidora da
+`prompter-presets-realismo` da mesma wave. Tudo aqui é `[extensão]` aprovada no gate W3: a aula 010
+manda o ALUNO escrever as ~5 cenas, e a docstring de `studio/storyboard/service.py` dizia
+literalmente "nada de roteiro por LLM".
+
+- **STUDIO / prompter** (`studio/common/prompter.py`) — papel novo `ROLES["script"]` (diretor de
+  cinema publicitário + roteirista), com caminho PRÓPRIO ao lado do prompt único: `SCRIPT_OUTPUT_SPEC`
+  (fence ```json com `{scenes:[{n,arc,text,image_prompt,negative}], notes_pt}`), `_parse_script`
+  (validação por cena, corte em `count`, erro quando vêm menos cenas — nunca completa o roteiro),
+  `script_preset_block` (o rig do preset em formato de briefing de DP) e `SCRIPT_TIMEOUT_S = 300`.
+  `_parse`, `PROMPT_FORMAT`, `split_sections`, `provenance`, `preset_block` e `REALISM_PRESETS`
+  ficaram **byte-idênticos** — a feature `base-prompt-provenance` depende do formato de 5 linhas.
+- **STORYBOARD (etapa 4)** (`studio/storyboard/service.py`) — `_story_registry` (terceiro
+  `JobRegistry` do módulo; o nome sai da lista fechada que `common/reset.py::_registries` conhece),
+  `script_generate`/`script_status`/`load_script`/`script_state`, as validações da matriz de erros
+  (`_valid_script_count`, `_valid_script_preset`, `_valid_script_model`, `_valid_script_instruction`),
+  o brief e as imagens de contexto (`_script_images`: `base_final.png` + até `SCRIPT_MOOD_IMAGES=3`
+  frames de `mood/selected/` lidos por `mood.service.current`, teto `prompter.MAX_IMAGES=4`) e a
+  persistência atômica de `SCRIPT_FILE = "storyboard/script.json"`. A ação de preset
+  `SCRIPT_ACTION = "storyboard.script"` (default `documentary-street`) é registrada em
+  `settings.PRESET_ACTIONS` **em import time** — `studio/common/settings.py` não foi tocado.
+  `SCRIPT_MODELS` restringe a v1 a `nano_banana_2`; `MODELS` (com `gpt_image_2`) segue só na ideação.
+- **Rotas** (`studio/etapas/storyboard/router.py`) — três aditivas:
+  `POST …/storyboard/script/generate` (sem `cost`, sem `confirmCost`), `GET …/storyboard/script/job`
+  e `GET …/storyboard/script` (200 `{"script": null}` sem geração prévia). `GET …/storyboard` ganhou
+  `script`, `script_preset_default`, `script_models` e `script_cli`, sem mexer em campo existente.
+- **Tela** (`studio/etapas/storyboard/view.{html,js}`) — painel `[extensão]` do roteiro reusando o
+  `realismPresetField`/`realismPresetOf` que a provedora deixou no `view.js` (um único fetch do
+  catálogo), geração por `ui.progressJob` e aplicação **opt-in** pelo `PUT …/storyboard/scenes` de
+  sempre, via o `collect()` da própria view. Nada em `studio/web/*` (ADR-010).
+- **Invariantes travadas por teste** — o servidor nunca escreve `scenes.json`; nenhuma chamada a
+  `hf.*` nem `record_generation`; sem Claude CLI é 409 (não há fallback determinístico para
+  roteiro); resposta inválida deixa o `script.json` anterior intacto.
+
+**ADR nova: ADR-025** (STUDIO) — roteiro de storyboard gerado por LLM como extensão opt-in da
+etapa 4. Registra o desvio explícito do texto da própria etapa (a docstring ganhou ressalva
+aditiva, sem apagar o registro do que a aula ensina), a sugestão isolada em `script.json` com
+aplicação assimétrica (preencher vazio sem diálogo, sobrescrever só com confirmação que diz
+quantos textos serão perdidos), a ausência deliberada de fallback determinístico e o **default de
+preset ATIVO** de `storyboard.script` — exceção consciente à regra opt-in que a
+`prompter-presets-realismo` fixou para `mood`/`base`/`motion`. Relaciona ADR-001, ADR-004 (desvio
+registrado), ADR-006 (job/polling), ADR-008 (CLI sempre fake nos testes), ADR-010 (núcleo
+intocado), ADR-015 (etapa 4 fundida), ADR-016 (preset default por ação; livro-caixa não recebe o
+roteiro) e ADR-018/ADR-022 (schema de `scenes.json` preservado).

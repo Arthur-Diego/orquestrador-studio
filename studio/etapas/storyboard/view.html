@@ -91,6 +91,22 @@
   .sb-area-warn{margin:0;padding-left:10px;border-left:2px solid var(--line-2);
     font-size:var(--fs-sm);color:var(--ink-3)}
   @media (max-width:620px){.sb-area-pair{grid-template-columns:1fr}}
+
+  /* `[extensão]` roteiro por LLM (ADR-025): controles do bloco (preset, nº de cenas, proporção em
+     LEITURA e alvo fixo) + uma linha por cena sugerida [momento | texto pt-BR + prompt em inglês].
+     Escopo `.sb-script-` nesta view — o núcleo (`studio/web/*`) fica intocado (ADR-010). */
+  .sb-script-ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}
+  .sb-script-ctrls>*{min-width:0}
+  #sbScriptPreset{display:flex}
+  #sbScriptPreset>.field{flex:1;min-width:0}
+  .sb-script-read{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2)}
+  .sb-script-warn{margin:0;padding-left:10px;border-left:2px solid var(--line-2);
+    font-size:var(--fs-sm);color:var(--ink-3)}
+  .sb-script-scene{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;
+    padding:12px 0;border-top:1px solid var(--line)}
+  .sb-script-scene:first-child{border-top:0;padding-top:0}
+  .sb-script-txt{margin:0 0 8px;font-size:var(--fs-sm);color:var(--ink-row)}
+  @media (max-width:620px){.sb-script-scene{grid-template-columns:1fr}}
 </style>
 
 <header class="stephead">
@@ -171,6 +187,41 @@
     </div>
   </div>
   <div id="sbScenes" class="rowlist"></div>
+</section>
+
+<!-- `[extensão]` roteiro por LLM (ADR-025): a aula 010 manda o ALUNO escrever a história em ~5
+     cenas — e esse continua sendo o caminho PADRÃO do painel 02, intocado. Aqui o Claude propõe um
+     roteiro completo (texto pt-BR + prompt de imagem em inglês) para quem trava na escrita. A
+     sugestão é editável e só chega às cenas com um clique do usuário (PUT /scenes existente). -->
+<section class="panel" id="sbScript">
+  <div class="panel-head">
+    <h3>Roteiro por Claude <span class="ext">[extensão]</span></h3>
+    <span id="sbScriptState" class="chip mode" hidden></span>
+  </div>
+  <p class="sb-script-warn">Sugestão editável, sem gastar crédito (Claude CLI local): nada é escrito nas cenas sem o seu clique. O caminho da aula 010 — escrever a história à mão no painel 02 — continua valendo.</p>
+  <div class="sb-script-ctrls">
+    <div id="sbScriptPreset"></div>
+    <label class="field"><span class="eyebrow lbl">nº de cenas</span>
+      <input id="sbScriptCount" type="number" min="1" max="10" step="1" value="5" aria-label="Número de cenas do roteiro"></label>
+    <label class="field"><span class="eyebrow lbl">proporção (do projeto)</span>
+      <span id="sbScriptAspect" class="sb-script-read">16:9</span></label>
+    <label class="field"><span class="eyebrow lbl">alvo do prompt de imagem</span>
+      <span id="sbScriptModel" class="sb-script-read">Nano Banana Pro</span></label>
+  </div>
+  <textarea id="sbScriptInstruction" rows="2" maxlength="300" placeholder="instrução livre em pt-BR, opcional (ex.: a história termina com o produto na mão do personagem) — até 300 caracteres"></textarea>
+  <div class="row wrap">
+    <button id="sbScriptGen" type="button" class="primary">Gerar roteiro (Claude) [extensão]</button>
+    <span id="sbScriptHint" class="fine" hidden></span>
+  </div>
+  <div id="sbScriptBox" class="col hidden">
+    <div class="row wrap">
+      <span id="sbScriptMeta" class="eyebrow"></span>
+      <button id="sbScriptApplyEmpty" type="button" class="ghost">Aplicar às cenas vazias</button>
+      <button id="sbScriptApplyAll" type="button" class="ghost">Substituir tudo</button>
+    </div>
+    <p id="sbScriptNotes" class="fine" hidden></p>
+    <div id="sbScriptScenes"></div>
+  </div>
 </section>
 
 <section class="panel">

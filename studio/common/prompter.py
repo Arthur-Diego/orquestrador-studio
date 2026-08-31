@@ -136,6 +136,20 @@ ROLES = {
         "move (dolly, push-in, tracking, tilt), physics, what the last frame shows. Keep lighting and character "
         "identical to the frame. 40–90 words, English. No text, no audio."
     ),
+    # `[extensão]` (ADR-004 / ADR-025): NENHUMA aula ensina roteiro por LLM — a aula 010 manda o
+    # ALUNO escrever as ~5 cenas. Este papel é extensão opt-in aprovada no gate W3 da Wave 9: o
+    # texto gerado é SUGESTÃO editável e o caminho padrão da etapa continua sendo o manual.
+    "script": (
+        "You are a commercial film director and screenwriter. Task: write a complete N-scene advertising video "
+        "script from the given brand images (base image first, then mood frames), following the course arc "
+        "(opening → discovery → action → payoff) that is given to you per scene. For each scene return: a short "
+        "scene description in Brazilian Portuguese (\"text\", max 500 chars) and ONE photorealistic image prompt in "
+        "English (\"image_prompt\") written as a director-of-photography briefing, in this order: subject → action → "
+        "environment → camera/lens/aperture from the given rig → lighting with ONE dominant source → textures and "
+        "real imperfections → color/film grade → composition + aspect ratio → fidelity block → negatives. Use "
+        "EXACTLY the camera rig given below in EVERY scene (same body, same lens, same format — a commercial is shot "
+        "with one rig). No contradictions between scenes: same product, same palette, same world."
+    ),
 }
 
 OUTPUT_SPEC = (
@@ -441,3 +455,140 @@ def enforce_mood_rules(result: dict, no_people: bool = True) -> dict:
     if missing:
         result["prompt"] = p.rstrip(". ") + ". " + ", ".join(m.capitalize() for m in missing) + "."
     return result
+
+
+# --------------------------------------------------------------------------------------------
+# Roteiro de storyboard por LLM `[extensão]` — ADR-025 (aprovada no gate W3 da Wave 9), ADR-004.
+#
+# Caminho INDEPENDENTE do prompt único: papel próprio (`ROLES["script"]`), output spec próprio
+# (`SCRIPT_OUTPUT_SPEC`), parser próprio (`_parse_script`) e timeout próprio. Nada aqui toca
+# `_parse`/`PROMPT_FORMAT`/`split_sections`/`provenance` — o formato de 5 linhas do prompt único
+# (base-prompt-provenance) continua exatamente como estava.
+# --------------------------------------------------------------------------------------------
+
+#: Um roteiro de até 10 cenas com imagens demora mais que um prompt só: teto próprio, entre o do
+#: prompter (`TIMEOUT_S` = 180, inalterado) e o dos jobs pagos (600).
+SCRIPT_TIMEOUT_S = 300
+
+SCRIPT_OUTPUT_SPEC = (
+    'Return ONLY a JSON object inside a ```json fence, with exactly these keys: "scenes" (array, one entry per '
+    'scene, in order) and "notes_pt" (2 short lines in Brazilian Portuguese about the narrative choices). Each '
+    'entry of "scenes" is an object with: "n" (scene number, integer), "arc" (the arc id given for that scene), '
+    '"text" (the scene description in Brazilian Portuguese, max 500 chars), "image_prompt" (the full '
+    'director-of-photography briefing, English, one single paragraph) and "negative" (comma-separated things to '
+    'avoid, English). No prose outside the fence, no extra keys, no missing scene.'
+)
+
+#: Ajuste de formato por modelo alvo (R10): o id NÃO é validado aqui — quem tem o catálogo
+#: (`SCRIPT_MODELS`) é o serviço da etapa 4, que devolve 422 antes de chamar o CLI.
+SCRIPT_MODEL_HINTS = {
+    "nano_banana_2": (
+        "Target image model: Nano Banana Pro (Gemini 3 Pro Image). It follows long technical descriptions "
+        "literally, so write each \"image_prompt\" as a LONG, densely specified paragraph (about 90–150 words) in "
+        "natural English prose — explicit camera body, lens, aperture, light direction and quality, surface "
+        "textures, grade and composition. Never use tags, weights or parameter syntax."
+    ),
+}
+_SCRIPT_MODEL_HINT_FALLBACK = (
+    "Target image model: unknown. Write each \"image_prompt\" as a self-contained paragraph of natural English "
+    "prose, technical but readable, with no tags, weights or parameter syntax."
+)
+
+
+def script_preset_block(preset_id: str) -> str:
+    """Bloco de rig do ROTEIRO: o `preset_block` da provedora + o que o formato por cena exige.
+
+    `preset_block` fala das cinco linhas técnicas do prompt único (`Camera:`, `Lighting:`, ...), que
+    o roteiro não usa — daí a ressalva explícita aqui. O resto é o mesmo catálogo: corpo, lente,
+    formato, focal/abertura, luz dominante, grade, fidelidade e negativos. A provedora fica intocada
+    (`KeyError` para id desconhecido continua vindo dela).
+    """
+    p = REALISM_PRESETS[preset_id]
+    r = p["rig"]
+    return (
+        f"{preset_block(preset_id)}\n"
+        "SCRIPT FORMAT NOTE: the script has no named technical lines — fold the values above into the prose of "
+        "every scene's \"image_prompt\", in the briefing order.\n"
+        f"MANDATORY RIG, IDENTICAL IN EVERY SCENE: camera body {r['camera']}, lens {r['lens']}, "
+        f"format {r['format']}, focal length {r['focal']}, aperture {r['aperture']} — write these words "
+        f"literally in the camera part of each \"image_prompt\".\n"
+        f"Dominant light: {p['light']}. Color grade: {p['grade']}.\n"
+        f"Fidelity block (every scene): {p['fidelity']}.\n"
+        f"Negatives (end of every \"image_prompt\" and in the \"negative\" field): {', '.join(p['negative'])}."
+    )
+
+
+def _parse_script(text: str, count: int, arcs: list[str] | None = None) -> dict:
+    """Parser do roteiro: JSON da fence → `{"scenes": [...], "notes_pt": str}` validado e normalizado.
+
+    Nunca completa o que falta (decisão da seção 6 do FDD: sem fonte não se inventa) — resposta
+    incompleta ou malformada vira `RuntimeError`, que o job da etapa traduz em `state: "error"`.
+    Cenas a MAIS são cortadas em `count`; `n` é renumerado 1..count na ordem recebida e `arc` vem
+    da lista do servidor (`scene_arc`), nunca da escolha do modelo.
+    """
+    m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.S) or re.search(r"(\{.*\})", text, re.S)
+    if not m:
+        raise RuntimeError("Claude não devolveu JSON do roteiro: " + text.strip()[:300])
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError as e:
+        raise RuntimeError("JSON inválido do Claude (roteiro): " + text.strip()[:300]) from e
+    if not isinstance(data, dict) or not isinstance(data.get("scenes"), list):
+        raise RuntimeError("JSON do roteiro sem a lista 'scenes'")
+    raw = data["scenes"]
+    if len(raw) < count:
+        raise RuntimeError(f"roteiro incompleto: {count} cenas pedidas, {len(raw)} recebidas")
+    arcs = list(arcs or [])
+    scenes = []
+    for i, item in enumerate(raw[:count]):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"cena {i + 1} do roteiro não é um objeto JSON")
+        scene_text = str(item.get("text") or "").strip()
+        image_prompt = str(item.get("image_prompt") or "").strip()
+        if not scene_text:
+            raise RuntimeError(f"cena {i + 1} do roteiro sem 'text'")
+        if not image_prompt:
+            raise RuntimeError(f"cena {i + 1} do roteiro sem 'image_prompt'")
+        arc = arcs[i] if i < len(arcs) else str(item.get("arc") or "").strip()
+        scenes.append({"n": i + 1, "arc": arc, "text": scene_text, "image_prompt": image_prompt,
+                       "negative": str(item.get("negative") or "").strip()})
+    return {"scenes": scenes, "notes_pt": str(data.get("notes_pt") or "").strip()}
+
+
+def script(images: list[Path], brief: dict, preset: str | None = None, count: int = 5,
+           arcs: list[str] | None = None, model_target: str = "nano_banana_2") -> dict:
+    """Roteiro completo de `count` cenas pelo Claude CLI (`[extensão]`, ADR-025).
+
+    Cada cena volta com `text` em pt-BR e `image_prompt` em inglês no formato briefing de diretor
+    de fotografia. Com `preset`, o rig do catálogo (corpo + lente + formato) é obrigatório em TODAS
+    as cenas — é o que o critério `[cross-feature]` da wave cobra. Com `preset=None`, nenhum bloco
+    de rig entra no prompt.
+
+    `arcs` é o arco de cada cena calculado pelo SERVIDOR (`scene_arc`), não pelo modelo.
+    `model_target` só ajusta o formato pedido; a validação do id é do serviço da etapa 4
+    (`SCRIPT_MODELS`). Sem CLI, `_run` levanta `RuntimeError` (o job traduz em 409/erro).
+    """
+    images = [Path(p) for p in images][:MAX_IMAGES]
+    for p in images:
+        if not p.exists():
+            raise FileNotFoundError(str(p))
+    arcs = list(arcs or [])
+    plan = "\n".join(f"- scene {i + 1}: arc = {arcs[i]}" if i < len(arcs) else f"- scene {i + 1}"
+                     for i in range(count))
+    parts = [ROLES["script"]]
+    if preset:
+        parts.append(script_preset_block(preset))
+    if images:
+        paths = "\n".join(f"- {p}" for p in images)
+        parts.append("First, read these brand image files with the Read tool (the base image comes first, then the "
+                     "mood frames) and keep the product, palette, light and atmosphere of the script faithful to "
+                     f"them:\n{paths}")
+    parts.append(f"Write EXACTLY {count} scenes. Arc of each scene (decided by the server, keep it as given):\n{plan}")
+    parts.append(f"Brief:\n{_brief_text(brief)}")
+    parts.append(SCRIPT_MODEL_HINTS.get(model_target, _SCRIPT_MODEL_HINT_FALLBACK))
+    parts.append(SCRIPT_OUTPUT_SPEC)
+    text, secs = _run("\n\n".join(parts), images, timeout=SCRIPT_TIMEOUT_S)
+    parsed = _parse_script(text, count, arcs)
+    return {**parsed, "source": "claude", "seconds": secs, "preset": preset,
+            "model_target": model_target, "count": len(parsed["scenes"]),
+            "images": [str(p) for p in images]}

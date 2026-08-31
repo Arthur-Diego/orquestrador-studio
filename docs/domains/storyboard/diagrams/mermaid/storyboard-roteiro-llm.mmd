@@ -1,0 +1,78 @@
+%% Fluxo do roteiro por LLM na etapa 4 — feature storyboard-roteiro-llm [extensão]
+%% Fonte: docs/domains/storyboard/features/storyboard-roteiro-llm-fdd.md, seções 5 e 6
+%% Wave 9, sub-wave 2 (consumidora) · card https://trello.com/c/T53Hnvlv · ADR-025
+sequenceDiagram
+    autonumber
+    actor U as Usuário (etapa 4)
+    participant V as view.js (storyboard)
+    participant P as router prompter/presets
+    participant R as router.py (etapa 4)
+    participant S as service.py (storyboard)
+    participant G as settings (presets por ação)
+    participant J as _story_registry (thread)
+    participant B as prompter.script (Claude CLI)
+    participant F as storyboard/script.json
+
+    Note over V,P: boot do painel [extensão] do roteiro
+    V->>P: GET /api/prompter/presets?pid=...
+    P-->>V: {presets:[...], defaults:{"storyboard.script":{preset,source}, ...}}
+    V->>R: GET /api/projects/{pid}/storyboard
+    R-->>V: status + script{exists,generated_at} + script_preset_default
+    V->>R: GET /api/projects/{pid}/storyboard/script
+    R-->>V: 200 {"script": null} (estado normal, nunca 404)
+
+    U->>V: escolhe preset de realismo, nº de cenas (1..10, default 5)
+    Note over V: aspect ratio do projeto é LEITURA;<br/>alvo fixo Nano Banana Pro (gate W3 P3);<br/>sem confirmCost — não gasta crédito
+
+    U->>V: "Gerar roteiro (Claude) [extensão]"
+    V->>R: POST .../storyboard/script/generate {preset?, count, instruction?}
+    R->>S: script_generate(...)
+
+    alt pré-requisito ausente
+        S-->>R: Precondition
+        R-->>V: 409 (base ausente · Claude CLI ausente · job em andamento)
+        Note over V,F: nenhum arquivo é criado;<br/>o fluxo manual da aula 010 segue intacto
+    else parâmetro inválido
+        S-->>R: Invalid
+        R-->>V: 422 (count fora de 1..10 · preset desconhecido ·<br/>model_target != nano_banana_2 · instruction > 300)
+        Note over B: o CLI nunca é chamado
+    else aceito
+        S->>G: resolve_preset("storyboard.script", pid, preset)
+        G-->>S: preset efetivo (projeto → global → código: documentary-street)
+        S->>J: registry.start(pid, 1, run) — um roteiro por projeto
+        S-->>V: 200 {state:"running", done:0, total:1, error:null, log:[]}
+
+        J->>J: monta brief (produto, vibe, aspect ratio, arco por cena via scene_arc)
+        J->>J: imagens = base_final.png + até 3 de mood/selected (teto MAX_IMAGES=4)
+        J->>B: script(images, brief, preset, count, arcs, "nano_banana_2") — timeout 300 s
+        B-->>J: JSON {scenes:[{n,arc,text,image_prompt,negative}], notes_pt}
+
+        alt JSON inválido ou menos cenas que count
+            J->>J: state="error" (nunca completa com conteúdo inventado)
+            Note over F: script.json anterior permanece intacto
+        else resposta válida
+            J->>J: normaliza, trunca text em 500 (nota no log)
+            J->>F: write_json_atomic(storyboard/script.json)
+            J->>J: state="done"
+        end
+
+        loop progressJob (polling)
+            V->>R: GET .../storyboard/script/job
+            R-->>V: {state, done, total, error, log}
+        end
+        V->>R: GET .../storyboard/script
+        R-->>V: 200 {script:{preset, model_target, aspect_ratio, count, scenes[...]}}
+        V->>U: sugestão por cena (texto pt-BR + prompt em inglês com copiar)
+    end
+
+    Note over U,V: aplicação é OPT-IN e assimétrica (invariante do FDD)
+    alt aplicar às cenas vazias
+        U->>V: "Aplicar às cenas vazias"
+        V->>R: PUT .../storyboard/scenes (só text das cenas vazias)
+    else substituir tudo
+        U->>V: "Substituir tudo"
+        V->>U: confirmação explícita dizendo QUANTOS textos serão sobrescritos
+        U-->>V: confirma
+        V->>R: PUT .../storyboard/scenes (todas as cenas)
+    end
+    Note over S,R: o SERVIDOR nunca escreve scenes.json nesta feature;<br/>o único canal de escrita é o PUT /scenes existente (ADR-018/022)

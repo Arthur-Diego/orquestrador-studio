@@ -2,7 +2,7 @@
   "info": {
     "name": "storyboard (OS-004) - Etapa 4 - Storyboard - aula 010",
     "_postman_id": "os004-storyboard-collection",
-    "description": "Colecao gerada a partir da SECAO 5 (Contratos publicos) do FDD `docs/domains/storyboard/features/storyboard-fdd.md` e cruzada com a implementacao real em `studio/etapas/storyboard/router.py` + `studio/storyboard/service.py` (a implementacao e a verdade sobre rota, metodo e status; divergencias em `divergencias.md`).\n\nStudio local: monolito FastAPI, sem banco e SEM AUTENTICACAO (ADR-001) - nao ha header de Authorization em nenhuma rota.\n\nPre-requisitos: (1) rodar a pasta '00 preparo' primeiro, que cria o projeto e preenche `pid`; (2) `base/base_final.png` e artefato da etapa 3 (base), NAO implementada nesta wave - instructions, cost e generate respondem 409 ate ela existir; (3) import/history, cost e generate dependem do CLI pago da Higgsfield logado.\n\nExtensao aditiva (wave 9): as pastas `06 marcacao / area marcada (inpaint-marcacao) [extensao]` e os ultimos casos de `erros` vem da SECAO 5 do FDD `docs/domains/storyboard/features/inpaint-marcacao-fdd.md` (rota nova `POST .../storyboard/annotate` e o `kind: \"edit_area\"` + `annotation_id` em `cost`/`generate`), cruzada com `studio/etapas/storyboard/router.py` (`storyboard_annotate`) e `studio/storyboard/service.py` (`import_annotation`, `_cli_request`, `cost`, `start_generate`). Nada do que ja existia foi renomeado ou reescrito.",
+    "description": "Colecao gerada a partir da SECAO 5 (Contratos publicos) do FDD `docs/domains/storyboard/features/storyboard-fdd.md` e cruzada com a implementacao real em `studio/etapas/storyboard/router.py` + `studio/storyboard/service.py` (a implementacao e a verdade sobre rota, metodo e status; divergencias em `divergencias.md`).\n\nStudio local: monolito FastAPI, sem banco e SEM AUTENTICACAO (ADR-001) - nao ha header de Authorization em nenhuma rota.\n\nPre-requisitos: (1) rodar a pasta '00 preparo' primeiro, que cria o projeto e preenche `pid`; (2) `base/base_final.png` e artefato da etapa 3 (base), NAO implementada nesta wave - instructions, cost e generate respondem 409 ate ela existir; (3) import/history, cost e generate dependem do CLI pago da Higgsfield logado.\n\nExtensao aditiva (wave 9): as pastas `06 marcacao / area marcada (inpaint-marcacao) [extensao]` e os ultimos casos de `erros` vem da SECAO 5 do FDD `docs/domains/storyboard/features/inpaint-marcacao-fdd.md` (rota nova `POST .../storyboard/annotate` e o `kind: \"edit_area\"` + `annotation_id` em `cost`/`generate`), cruzada com `studio/etapas/storyboard/router.py` (`storyboard_annotate`) e `studio/storyboard/service.py` (`import_annotation`, `_cli_request`, `cost`, `start_generate`). Nada do que ja existia foi renomeado ou reescrito.\n\nExtensao aditiva (wave 9, sub-wave 2): a pasta `07 roteiro por LLM (storyboard-roteiro-llm) [extensao]` e os ultimos casos de `erros` vem da SECAO 5 do FDD `docs/domains/storyboard/features/storyboard-roteiro-llm-fdd.md` (rotas novas `POST/GET .../storyboard/script*`, campos aditivos do status) e da SECAO 0 (amendas do gate W3) de `.compozy/tasks/storyboard-roteiro-llm/_techspec.md`, mais o handoff `[cross-feature]` em `GET /api/prompter/presets` (chave `storyboard.script` no mapa `defaults`). Nada do que ja existia foi renomeado ou reescrito.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -133,6 +133,66 @@
       "value": "false",
       "type": "string",
       "description": "true libera POST generate edit_area, que GASTA creditos reais"
+    },
+    {
+      "key": "pidRoteiro",
+      "value": "",
+      "type": "string",
+      "description": "projeto isolado da feature storyboard-roteiro-llm (tem base da etapa 3)"
+    },
+    {
+      "key": "projectNameRoteiro",
+      "value": "",
+      "type": "string",
+      "description": "nome unico por execucao do projeto do roteiro (pre-request)"
+    },
+    {
+      "key": "baseCandIdRoteiro",
+      "value": "",
+      "type": "string",
+      "description": "candidata da etapa 3 escolhida como base do projeto do roteiro"
+    },
+    {
+      "key": "scriptCli",
+      "value": "",
+      "type": "string",
+      "description": "script_cli do GET .../storyboard: \"false\" libera o caso 409 de Claude CLI ausente"
+    },
+    {
+      "key": "realismRigCamera",
+      "value": "",
+      "type": "string",
+      "description": "corpo do rig de documentary-street, vindo de GET /api/prompter/presets"
+    },
+    {
+      "key": "realismRigLens",
+      "value": "",
+      "type": "string",
+      "description": "lente do rig de documentary-street (provedora)"
+    },
+    {
+      "key": "realismRigFormat",
+      "value": "",
+      "type": "string",
+      "description": "formato do rig de documentary-street (provedora)"
+    },
+    {
+      "key": "instrucaoLonga",
+      "value": "",
+      "type": "string",
+      "description": "301 caracteres, montados no pre-request do 422 de instruction"
+    },
+    {
+      "key": "scriptPollTries",
+      "value": "0",
+      "type": "string",
+      "description": "contador do laco de polling do job de roteiro (teto 150)"
+    },
+    {
+      "key": "allowScriptGenerate",
+      "value": "false",
+      "type": "string",
+      "description": "true libera o POST script/generate, que chama o Claude CLI real (sem credito Higgsfield)"
     }
   ],
   "item": [
@@ -1733,6 +1793,718 @@
       ]
     },
     {
+      "name": "07 roteiro por LLM (storyboard-roteiro-llm) [extensao]",
+      "description": "Extensao ADITIVA da wave 9 (sub-wave 2), a partir da SECAO 5 do FDD `docs/domains/storyboard/features/storyboard-roteiro-llm-fdd.md` (5.1 a 5.4, linhas 205-305) e da SECAO 0 (amendas do gate W3) da copia em `.compozy/tasks/storyboard-roteiro-llm/_techspec.md`, cruzadas com `studio/etapas/storyboard/router.py` (`storyboard_script_generate`, `storyboard_script_job`, `storyboard_script`) e `studio/storyboard/service.py` (`script_generate`, `script_status`, `load_script`, `script_state`, `SCRIPT_MODELS`).\n\nA pasta trabalha num projeto proprio (`pidRoteiro`) COM a base da etapa 3, porque o `pid` das pastas antigas depende de NAO ter base (409). O caminho feliz (`POST script/generate`) chama o Claude CLI real e por isso e pulado por padrao (`allowScriptGenerate`); tudo o que e deterministico - handoff dos presets, campos aditivos do status, `{\"script\": null}`, `state: \"idle\"` - roda sempre.",
+      "item": [
+        {
+          "name": "Preparo - projeto do roteiro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects"
+              ]
+            },
+            "description": "Nucleo do Studio (nao e rota do FDD). Cria o projeto proprio desta pasta e guarda `pidRoteiro`. Nome com timestamp porque o id sai de AAAA-MM + slug(name) (mesmo nome no mesmo mes = 409). `product`/`vibe` alimentam o brief do roteiro (`service._script_brief`).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{projectNameRoteiro}}\",\n  \"product\": \"lata gigante de energetico\",\n  \"vibe\": \"cinematic realistic\",\n  \"aspect_ratio\": \"16:9\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('projectNameRoteiro', 'Roteiro Postman ' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 projeto do roteiro criado', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('pidRoteiro', b.id);",
+                  "pm.test('devolve id usavel como pidRoteiro', function () { pm.expect(b.id).to.be.a('string').and.not.empty; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparo - etapa 3: subir a candidata da base (roteiro)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/base/import/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "base",
+                "import",
+                "upload"
+              ]
+            },
+            "description": "Rota da ETAPA 3 (dominio `base`), usada so como preparo: sem `base/base_final.png` o `POST .../storyboard/script/generate` responde 409 `Imagem base ausente` (FDD secao 6, linha 347). Reusa `fixtures/idea-a.png`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [
+                    "fixtures/idea-a.png"
+                  ],
+                  "description": "imagem valida (fixture desta pasta)"
+                },
+                {
+                  "key": "kind",
+                  "value": "situation",
+                  "type": "text",
+                  "description": "kind da etapa 3 (situation|label|upscale)"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 candidata da base importada', function () { pm.response.to.have.status(200); });",
+                  "pm.test('resposta tem added', function () { pm.expect(pm.response.json()).to.have.property('added'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparo - etapa 3: id da candidata da base (roteiro)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/base/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "base",
+                "candidates"
+              ]
+            },
+            "description": "Preparo (etapa 3): guarda `baseCandIdRoteiro` para o select que grava `base/base_final.png`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 candidatas da base', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('lista de candidatas nao vazia', function () { pm.expect(b.candidates).to.be.an('array').that.is.not.empty; });",
+                  "if (b.candidates && b.candidates.length) { pm.collectionVariables.set('baseCandIdRoteiro', b.candidates[0].id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparo - etapa 3: escolher a base do roteiro (grava base_final.png)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/base/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "base",
+                "select"
+              ]
+            },
+            "description": "Preparo (etapa 3): grava `base/base_final.png`, pre-requisito do `script/generate` (FDD secao 5.1 linha 239 e secao 6 linha 347). Com a base presente, o 409 que sobra neste projeto e so o do Claude CLI ausente.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{baseCandIdRoteiro}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 base escolhida', function () { pm.response.to.have.status(200); });",
+                  "pm.test('final = base/base_final.png', function () { pm.expect(pm.response.json().final).to.eql('base/base_final.png'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/prompter/presets - handoff [cross-feature] da wave 9",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prompter/presets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "prompter",
+                "presets"
+              ]
+            },
+            "description": "Rota da feature PROVEDORA (`prompter-presets-realismo`, sub-wave 1, ja em develop), exercitada aqui como criterio de handoff: FDD secao 1 linhas 47-51, secao 9 criterio 3 (linhas 425-427) e amendas A1/A2 do techspec.\n\nO que esta coleção cobra: o mapa `defaults` traz a chave `storyboard.script` com `{\"preset\": \"documentary-street\", \"source\": \"code\"}` - a chave que ESTA feature registra em `settings.PRESET_ACTIONS` no import do servico (`service.py`, `SCRIPT_ACTION`), sem editar `settings.py`. `source` sai `code` enquanto nao houver override global/projeto (`PUT /api/prompter/preset-config`); com override o valor vira `settings`, e ai esta asserção falha de proposito, avisando que o default nao e mais o de codigo.\n\nGuarda tambem o rig de `documentary-street` (camera + lente + formato) nas variaveis `realismRig*`, usadas pela asserção [cross-feature] do `GET .../storyboard/script`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 catalogo de presets de realismo', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "const ids = (b.presets || []).map(function (p) { return p.id; });",
+                  "pm.test('catalogo real inclui documentary-street e arri-natural-narrative', function () {",
+                  "  pm.expect(ids).to.include('documentary-street');",
+                  "  pm.expect(ids).to.include('arri-natural-narrative');",
+                  "});",
+                  "pm.test('defaults tem a chave de acao storyboard.script (handoff da wave)', function () {",
+                  "  pm.expect(b.defaults).to.be.an('object');",
+                  "  pm.expect(b.defaults).to.have.property('storyboard.script');",
+                  "});",
+                  "pm.test('storyboard.script = {preset: documentary-street, source: code}', function () {",
+                  "  pm.expect(b.defaults['storyboard.script']).to.eql({ preset: 'documentary-street', source: 'code' });",
+                  "});",
+                  "const dsc = (b.presets || []).filter(function (p) { return p.id === 'documentary-street'; })[0];",
+                  "pm.test('documentary-street publica o rig (camera, lente, formato)', function () {",
+                  "  pm.expect(dsc).to.be.an('object');",
+                  "  pm.expect(dsc.rig).to.have.property('camera');",
+                  "  pm.expect(dsc.rig).to.have.property('lens');",
+                  "  pm.expect(dsc.rig).to.have.property('format');",
+                  "});",
+                  "if (dsc && dsc.rig) {",
+                  "  pm.collectionVariables.set('realismRigCamera', dsc.rig.camera);",
+                  "  pm.collectionVariables.set('realismRigLens', dsc.rig.lens);",
+                  "  pm.collectionVariables.set('realismRigFormat', dsc.rig.format);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/prompter/presets?pid - defaults resolvidos com o projeto",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/prompter/presets?pid={{pidRoteiro}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "prompter",
+                "presets"
+              ],
+              "query": [
+                {
+                  "key": "pid",
+                  "value": "{{pidRoteiro}}"
+                }
+              ]
+            },
+            "description": "Mesma rota da provedora com `?pid=` (amenda A1): resolve os defaults com o override do projeto. E a chamada que o bloco do roteiro faz na tela (amenda A5, `loadRealismPresets()`), e o que esta coleção cobra e que a chave `storyboard.script` continua presente e resolvida quando o projeto nao tem override."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 com pid do projeto', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('defaults[storyboard.script] resolvido para o projeto', function () {",
+                  "  pm.expect(b.defaults).to.have.property('storyboard.script');",
+                  "  pm.expect(b.defaults['storyboard.script'].preset).to.eql('documentary-street');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET storyboard - campos aditivos do roteiro (secao 5.4)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard"
+              ]
+            },
+            "description": "FDD secao 5.4 (linhas 295-305): o estado da etapa ganha `script: {exists, generated_at}` e `script_preset_default`. A implementacao (`service.status`) devolve tambem `script_models` (catalogo `SCRIPT_MODELS`, amenda A6) e `script_cli` (`prompter.available()`), que o FDD nao declara - ver `divergencias.md` R2.\n\nAs asserções usam `include.keys`, NUNCA `have.keys`: os campos antigos sao cobrados como presentes (nada quebra), e nenhum campo novo de outra feature derruba este request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 estado da etapa', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('campos antigos do estado continuam presentes (aditividade)', function () {",
+                  "  pm.expect(b).to.include.keys('base_image', 'has_base', 'ideas', 'selected', 'scenes', 'scenes_with_text', 'storyboard_md');",
+                  "});",
+                  "pm.test('script = {exists, generated_at} e ainda nao houve geracao', function () {",
+                  "  pm.expect(b.script).to.be.an('object');",
+                  "  pm.expect(b.script).to.have.property('exists', false);",
+                  "  pm.expect(b.script).to.have.property('generated_at', null);",
+                  "});",
+                  "pm.test('script_preset_default = documentary-street (gate W3 P2)', function () {",
+                  "  pm.expect(b.script_preset_default).to.eql('documentary-street');",
+                  "});",
+                  "pm.test('script_models so tem nano_banana_2, marcado como default (gate W3 P3)', function () {",
+                  "  pm.expect(b.script_models).to.be.an('array');",
+                  "  pm.expect(b.script_models.map(function (m) { return m.id; })).to.eql(['nano_banana_2']);",
+                  "  pm.expect(b.script_models[0].default).to.eql(true);",
+                  "});",
+                  "pm.test('script_cli e booleano (disponibilidade do Claude CLI)', function () {",
+                  "  pm.expect(b.script_cli).to.be.a('boolean');",
+                  "});",
+                  "pm.collectionVariables.set('scriptCli', String(b.script_cli));",
+                  "console.log('script_cli =', b.script_cli, '(false = o 409 de CLI ausente e observavel; true = nao e)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET script - 200 {\"script\": null} antes da primeira geracao",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard/script",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard",
+                "script"
+              ]
+            },
+            "description": "FDD secao 5.3 (linhas 258-263) e secao 6 (linha 357): sem geracao previa a rota responde 200 com `script: null` - estado NORMAL, nunca 404, porque a UI consulta no boot do painel. Criterio de aceite 10 (linha 440)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (nao 404) sem geracao previa', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('corpo e exatamente {\"script\": null}', function () {",
+                  "  pm.expect(b).to.have.property('script', null);",
+                  "  pm.expect(Object.keys(b)).to.eql(['script']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET script/job - state idle antes da primeira geracao",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard/script/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard",
+                "script",
+                "job"
+              ]
+            },
+            "description": "FDD secao 5.2 (linhas 246-256): polling do job de roteiro, `state: \"idle\"` quando nunca rodou. A implementacao (`service.script_status`) completa o formato do contrato sob o que o `JobRegistry` devolve, entao `done`, `total`, `error` e `log` vem preenchidos ja no idle (mesma correcao que a divergencia 2 da secao original)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 polling do job de roteiro', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('formato do contrato: state, done, total, error, log', function () {",
+                  "  pm.expect(b).to.include.keys('state', 'done', 'total', 'error', 'log');",
+                  "});",
+                  "pm.test('state = idle (nunca rodou) com o formato completo', function () {",
+                  "  pm.expect(b.state).to.eql('idle');",
+                  "  pm.expect(b.done).to.eql(0);",
+                  "  pm.expect(b.total).to.eql(0);",
+                  "  pm.expect(b.error).to.eql(null);",
+                  "  pm.expect(b.log).to.eql([]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST script/generate - caminho feliz (Claude CLI real; PULADO por padrao)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 5.1 (linhas 205-244). Body com todos os campos opcionais; aqui `preset` vai EXPLICITO para a asserção [cross-feature] do rig poder cobrar o preset escolhido.\n\nPULADO por padrao: a rota nao gasta credito Higgsfield, mas dispara o Claude CLI de verdade (assinatura do usuario, timeout de 300 s). Libere com `--env-var allowScriptGenerate=true`.\n\nCaminhos possiveis: 200 com o estado inicial do job; 409 se o Claude CLI nao estiver no PATH (`script_cli: false`), se faltar a base ou se ja houver job em andamento.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preset\": \"documentary-street\",\n  \"count\": 5,\n  \"model_target\": \"nano_banana_2\",\n  \"instruction\": \"a historia deve terminar com o produto na mao do personagem\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda do caminho feliz: chama o Claude CLI DE VERDADE (assinatura do usuario, sem credito",
+                  "// Higgsfield) e leva dezenas de segundos. So roda com allowScriptGenerate=true.",
+                  "if (String(pm.variables.get('allowScriptGenerate')).toLowerCase() !== 'true') {",
+                  "  console.log('roteiro PULADO (allowScriptGenerate != true): chamaria o Claude CLI real');",
+                  "  if (typeof pm.execution !== 'undefined' && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+                  "}",
+                  "pm.collectionVariables.set('scriptPollTries', '0');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 job iniciado (ou 409 de pre-requisito: CLI/base/job em andamento)', function () {",
+                  "  pm.expect([200, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.test('estado inicial do job: state, done, total, error, log', function () {",
+                  "    pm.expect(b).to.include.keys('state', 'done', 'total', 'error', 'log');",
+                  "    pm.expect(['running', 'done']).to.include(b.state);",
+                  "    pm.expect(b.total).to.eql(1);",
+                  "  });",
+                  "} else {",
+                  "  pm.test('409 traz a mensagem de pre-requisito da secao 6', function () {",
+                  "    pm.expect(pm.response.json().detail).to.be.a('string').and.not.empty;",
+                  "  });",
+                  "  console.log('409:', pm.response.json().detail);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET script/job - polling ate done/error (PULADO por padrao)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard/script/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard",
+                "script",
+                "job"
+              ]
+            },
+            "description": "FDD secao 5.2 e fluxo principal passo 6 (linha 157): a UI acompanha via `Studio.ui.progressJob`. Aqui o polling e um laco limitado com `pm.setNextRequest` no proprio request (teto de 150 tentativas). Rode com `--delay-request 2000` para nao martelar o servidor.\n\nPULADO junto com o request anterior quando `allowScriptGenerate != true`."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda do caminho feliz: chama o Claude CLI DE VERDADE (assinatura do usuario, sem credito",
+                  "// Higgsfield) e leva dezenas de segundos. So roda com allowScriptGenerate=true.",
+                  "if (String(pm.variables.get('allowScriptGenerate')).toLowerCase() !== 'true') {",
+                  "  console.log('roteiro PULADO (allowScriptGenerate != true): chamaria o Claude CLI real');",
+                  "  if (typeof pm.execution !== 'undefined' && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test('200 com o formato do contrato', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(b).to.include.keys('state', 'done', 'total', 'error', 'log');",
+                  "});",
+                  "const tries = Number(pm.variables.get('scriptPollTries') || 0) + 1;",
+                  "pm.collectionVariables.set('scriptPollTries', String(tries));",
+                  "if (b.state === 'running' && tries < 150) {",
+                  "  // API moderna do sandbox; o `postman.setNextRequest` legado fica de fallback (Postman antigo).",
+                  "  if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(pm.info.requestName); }",
+                  "  else if (typeof postman !== 'undefined' && postman.setNextRequest) { postman.setNextRequest(pm.info.requestName); }",
+                  "} else {",
+                  "  pm.test('job terminou em done (ou error, com a mensagem no error/log)', function () {",
+                  "    pm.expect(['done', 'error', 'idle']).to.include(b.state);",
+                  "  });",
+                  "  if (b.state === 'error') { console.log('job em erro:', b.error, JSON.stringify(b.log)); }",
+                  "  if (b.state === 'done') {",
+                  "    pm.test('done = total = 1 e log com a linha do roteiro gerado', function () {",
+                  "      pm.expect(b.done).to.eql(1);",
+                  "      pm.expect(b.total).to.eql(1);",
+                  "      pm.expect(String(b.log)).to.include('roteiro gerado');",
+                  "    });",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET script - schema da sugestao + rig do preset [cross-feature] (PULADO por padrao)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard/script",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard",
+                "script"
+              ]
+            },
+            "description": "FDD secao 5.3 (linhas 258-293) e criterios de aceite 1, 2 e 3 (linhas 418-427): schema de `storyboard/script.json`, arco por cena (`scene_arc`) e a evidencia [cross-feature] da amenda A9 - o rig do preset escolhido (corpo + lente + formato de `REALISM_PRESETS`) aparece LITERALMENTE no `image_prompt` de CADA cena.\n\nPULADO junto com o caminho feliz. Se o job terminou em `error`, o request encerra sem cobrar schema (o `script.json` anterior fica intacto, secao 6 linha 355)."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda do caminho feliz: chama o Claude CLI DE VERDADE (assinatura do usuario, sem credito",
+                  "// Higgsfield) e leva dezenas de segundos. So roda com allowScriptGenerate=true.",
+                  "if (String(pm.variables.get('allowScriptGenerate')).toLowerCase() !== 'true') {",
+                  "  console.log('roteiro PULADO (allowScriptGenerate != true): chamaria o Claude CLI real');",
+                  "  if (typeof pm.execution !== 'undefined' && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 com a ultima sugestao', function () { pm.response.to.have.status(200); });",
+                  "const s = pm.response.json().script;",
+                  "if (!s) {",
+                  "  console.log('script null: o job nao chegou a gravar script.json (job em erro ou pulado)');",
+                  "} else {",
+                  "  pm.test('metadados do script.json (secao 5.3)', function () {",
+                  "    pm.expect(s).to.include.keys('generated_at', 'preset', 'model_target', 'aspect_ratio', 'count', 'source', 'seconds', 'notes_pt', 'scenes');",
+                  "    pm.expect(s.preset).to.eql('documentary-street');",
+                  "    pm.expect(s.model_target).to.eql('nano_banana_2');",
+                  "    pm.expect(s.source).to.eql('claude');",
+                  "    pm.expect(s.count).to.eql(s.scenes.length);",
+                  "  });",
+                  "  pm.test('cada cena tem n, arc, text (pt-BR <= 500) e image_prompt nao vazio', function () {",
+                  "    s.scenes.forEach(function (sc, i) {",
+                  "      pm.expect(sc).to.include.keys('n', 'arc', 'text', 'image_prompt', 'negative');",
+                  "      pm.expect(sc.n).to.eql(i + 1);",
+                  "      pm.expect(sc.text).to.be.a('string').and.not.empty;",
+                  "      pm.expect(sc.text.length).to.be.at.most(500);",
+                  "      pm.expect(sc.image_prompt).to.be.a('string').and.not.empty;",
+                  "    });",
+                  "  });",
+                  "  if (s.scenes.length === 5) {",
+                  "    pm.test('arco da aula 010 com count=5 (criterio 2)', function () {",
+                  "      pm.expect(s.scenes.map(function (sc) { return sc.arc; })).to.eql(['comeco', 'descoberta', 'acao', 'acao', 'desfecho']);",
+                  "    });",
+                  "  }",
+                  "  pm.test('[cross-feature] rig do preset literal em todo image_prompt (amenda A9)', function () {",
+                  "    const cam = pm.variables.get('realismRigCamera');",
+                  "    const lens = pm.variables.get('realismRigLens');",
+                  "    const fmt = pm.variables.get('realismRigFormat');",
+                  "    pm.expect(cam, 'rode antes o GET /api/prompter/presets').to.be.a('string').and.not.empty;",
+                  "    s.scenes.forEach(function (sc) {",
+                  "      pm.expect(sc.image_prompt).to.include(cam);",
+                  "      pm.expect(sc.image_prompt).to.include(lens);",
+                  "      pm.expect(sc.image_prompt).to.include(fmt);",
+                  "    });",
+                  "  });",
+                  "  pm.test('aspect ratio do projeto viaja no script (criterio 5)', function () {",
+                  "    pm.expect(s.aspect_ratio).to.eql('16:9');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET storyboard - script.exists apos a geracao (PULADO por padrao)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard"
+              ]
+            },
+            "description": "FDD secao 5.4: depois de um job `done`, o estado da etapa passa a `script: {exists: true, generated_at: <iso>}` (`service.script_state`). PULADO junto com o caminho feliz."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda do caminho feliz: chama o Claude CLI DE VERDADE (assinatura do usuario, sem credito",
+                  "// Higgsfield) e leva dezenas de segundos. So roda com allowScriptGenerate=true.",
+                  "if (String(pm.variables.get('allowScriptGenerate')).toLowerCase() !== 'true') {",
+                  "  console.log('roteiro PULADO (allowScriptGenerate != true): chamaria o Claude CLI real');",
+                  "  if (typeof pm.execution !== 'undefined' && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 estado da etapa', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "if (b.script && b.script.exists) {",
+                  "  pm.test('script.exists true com generated_at ISO', function () {",
+                  "    pm.expect(b.script.generated_at).to.be.a('string').and.match(/^\\d{4}-\\d{2}-\\d{2}T/);",
+                  "  });",
+                  "} else {",
+                  "  console.log('script.exists false: o job nao gravou script.json (job em erro ou pulado)');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "erros",
       "description": "FDD secao 6 (matriz de erros, linhas 330-347) e os status de erro declarados na secao 5. Cada request confere o status; os casos que dependem da base da etapa 3 aceitam o 409 que a wave produz hoje.",
       "item": [
@@ -3000,6 +3772,613 @@
                   "pm.test('mensagem cita selecionada como ideia', function () {",
                   "  pm.expect(String(pm.response.json().detail)).to.contain('selecionada como ideia');",
                   "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - pid inexistente (POST script/generate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 6, linha 345: `pid` inexistente -> 404 (`refs.project_dir`, handler global de KeyError), antes de qualquer validacao de body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"count\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });",
+                  "pm.test('mensagem cita projeto nao encontrado', function () { pm.expect(pm.response.json().detail).to.include('projeto'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - pid inexistente (GET script/job)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/script/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "script",
+                "job"
+              ]
+            },
+            "description": "FDD secao 6, linha 345. O router chama `refs.project_dir(pid)` explicitamente antes de `sb.script_status`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - pid inexistente (GET script)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/script",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "script"
+              ]
+            },
+            "description": "FDD secao 6, linha 345. `load_script` resolve o projeto antes de ler `storyboard/script.json` - projeto inexistente e 404, nao `{\"script\": null}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - roteiro com count 0 (fora de 1..10)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 5.1 (linha 222) e secao 6 (linha 350): `count` 1..10 (`MAX_SCENES`). Roda no `pid` das pastas antigas, que NAO tem base: a validacao de parametros acontece ANTES do 409 de base/CLI, entao o 422 aparece mesmo sem etapa 3 (precedencia oposta a do caminho pago - ver `divergencias.md` R3).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"count\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 count fora de 1..10', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita a regua 1..10', function () { pm.expect(pm.response.json().detail).to.include('1..10'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - roteiro com count 11 (acima de MAX_SCENES)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 6, linha 350: o outro extremo da regua de `count`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"count\": 11\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 count acima do maximo', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita o valor recusado', function () { pm.expect(pm.response.json().detail).to.include('11'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - preset de realismo desconhecido no roteiro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 6, linha 351: `preset` fora de `REALISM_PRESETS` -> 422 com os ids validos. Validado contra o catalogo da PROVEDORA (`prompter.valid_preset`), antes de qualquer chamada ao CLI (amenda A3).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preset\": \"preset-que-nao-existe\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 preset desconhecido', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem lista os ids validos do catalogo da provedora', function () {",
+                  "  const d = pm.response.json().detail;",
+                  "  pm.expect(d).to.include('preset desconhecido');",
+                  "  pm.expect(d).to.include('documentary-street');",
+                  "  pm.expect(d).to.include('arri-natural-narrative');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - model_target fora de SCRIPT_MODELS (gpt_image_2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 5.1 (linhas 223-228) e secao 6 (linha 352), gate W3 P3: v1 aceita SOMENTE `nano_banana_2`. `gpt_image_2` existe no catalogo pago da ideacao (`MODELS`) mas NAO em `SCRIPT_MODELS` - fonte unica dos ids do roteiro (amenda A6).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model_target\": \"gpt_image_2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 modelo alvo invalido', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita o unico alvo valido da v1', function () {",
+                  "  const d = pm.response.json().detail;",
+                  "  pm.expect(d).to.include('gpt_image_2');",
+                  "  pm.expect(d).to.include('nano_banana_2');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - instruction acima de 300 caracteres no roteiro",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 5.1 (linhas 229-230) e secao 6 (linha 353): teto `MAX_TEXT = 300` da etapa. O pre-request monta 301 caracteres.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instruction\": \"{{instrucaoLonga}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('instrucaoLonga', 'i'.repeat(301));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 instrucao acima do teto', function () { pm.response.to.have.status(422); });",
+                  "pm.test('mensagem cita 300 caracteres', function () { pm.expect(pm.response.json().detail).to.include('300'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - preset null (sem rig) e aceito: o 422 vem do count",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "Prova o TERCEIRO estado do campo `preset` (amenda A3 do techspec, FDD secao 5.1 linhas 220-221): ausente = default da acao `storyboard.script`; `null` = SEM preset (aceito, desliga o rig); `\"<id>\"` = usa esse.\n\nComo o servico valida `preset` ANTES de `count` (`script_generate`), enviar `preset: null` junto com um `count` invalido produz um 422 do COUNT - e nao do preset. E a unica forma deterministica de provar que `null` passa pela validacao sem disparar o Claude CLI.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preset\": null,\n  \"count\": 99\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 (do count, nao do preset)', function () { pm.response.to.have.status(422); });",
+                  "pm.test('preset null nao foi recusado: a mensagem e a do count', function () {",
+                  "  const d = pm.response.json().detail;",
+                  "  pm.expect(d).to.include('1..10');",
+                  "  pm.expect(d).to.not.include('preset desconhecido');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - roteiro sem base/base_final.png (etapa 3 pendente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 5.1 (linha 239) e secao 6 (linha 347): sem `base/base_final.png` o roteiro nao roda. Usa o `pid` das pastas antigas, que por contrato desta coleção NAO tem base. Body vazio (todos os campos sao opcionais), entao nenhuma validacao de 422 intercepta antes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 pre-requisito da etapa 3', function () { pm.response.to.have.status(409); });",
+                  "pm.test('mensagem da matriz: Imagem base ausente', function () {",
+                  "  pm.expect(pm.response.json().detail).to.include('Imagem base ausente');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - Claude CLI ausente (so quando script_cli=false)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 6 (linha 348) e criterio de aceite 8 (linha 437): sem o Claude CLI no PATH, `POST script/generate` responde 409 e nenhum arquivo e criado - NAO ha fallback deterministico (decisao da secao 6).\n\nSo e observavel numa maquina SEM o `claude`. O pre-request le `scriptCli` (capturado do `GET .../storyboard` da pasta 07) e PULA o request quando o CLI existe - caso contrario o pedido seria valido e dispararia uma geracao real. Na maquina onde a coleção foi rodada o CLI ESTA instalado, entao este caso ficou pulado (registrado no README).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"count\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// So faz sentido com o Claude CLI FORA do PATH; com CLI presente o pedido seria valido",
+                  "// (base presente em pidRoteiro) e dispararia uma geracao real.",
+                  "if (String(pm.variables.get('scriptCli')).toLowerCase() !== 'false') {",
+                  "  console.log('409 de CLI ausente PULADO: script_cli = true (Claude CLI instalado nesta maquina)');",
+                  "  if (typeof pm.execution !== 'undefined' && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Claude CLI ausente', function () { pm.response.to.have.status(409); });",
+                  "pm.test('mensagem aponta o modo manual da aula 010', function () {",
+                  "  const d = pm.response.json().detail;",
+                  "  pm.expect(d).to.include('Claude CLI');",
+                  "  pm.expect(d).to.include('manualmente');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - job de roteiro ja em andamento (PULADO por padrao)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidRoteiro}}/storyboard/script/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidRoteiro}}",
+                "storyboard",
+                "script",
+                "generate"
+              ]
+            },
+            "description": "FDD secao 6, linha 349: 1 job por projeto (`_story_registry.start` -> `RuntimeError` -> 409). So e observavel com um job REAL em andamento, entao depende de `allowScriptGenerate=true` e de rodar logo apos o `POST script/generate` da pasta 07 (o polling da pasta 07 espera o job terminar, entao rode este caso com `--folder` proprio se quiser ve-lo).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"count\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda do caminho feliz: chama o Claude CLI DE VERDADE (assinatura do usuario, sem credito",
+                  "// Higgsfield) e leva dezenas de segundos. So roda com allowScriptGenerate=true.",
+                  "if (String(pm.variables.get('allowScriptGenerate')).toLowerCase() !== 'true') {",
+                  "  console.log('roteiro PULADO (allowScriptGenerate != true): chamaria o Claude CLI real');",
+                  "  if (typeof pm.execution !== 'undefined' && pm.execution.skipRequest) { pm.execution.skipRequest(); }",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 job em andamento (ou 200 se o anterior ja terminou)', function () {",
+                  "  pm.expect([200, 409]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 409) {",
+                  "  pm.test('mensagem da matriz: geracao de roteiro em andamento', function () {",
+                  "    pm.expect(pm.response.json().detail).to.include('em andamento');",
+                  "  });",
+                  "}"
                 ]
               }
             }
