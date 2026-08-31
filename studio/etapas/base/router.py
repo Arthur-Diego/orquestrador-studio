@@ -17,11 +17,6 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 Kind = Literal["situation", "clean", "label", "upscale"]
 
 
-class BrandReq(BaseModel):
-    name: str
-    description: str = ""
-
-
 class DownloadsReq(BaseModel):
     folder: str | None = None
     since_minutes: int = 120
@@ -126,17 +121,23 @@ def base_prompter_status(pid: str):
             "max_images": base.PROMPT_IMAGES_MAX}
 
 
-@router.get("/api/projects/{pid}/base/brand")
-def base_brand_get(pid: str):
-    return base.brand_get(pid)
+@router.get("/api/projects/{pid}/base/brand-image")
+def base_brand_image_get(pid: str):
+    return base.brand_image_get(pid)
 
 
-@router.post("/api/projects/{pid}/base/brand")
-def base_brand_set(pid: str, req: BrandReq):
+@router.post("/api/projects/{pid}/base/brand-image")
+async def base_brand_image_set(pid: str, file: UploadFile = File(...)):  # noqa: B008
+    data = await file.read()
     try:
-        return base.brand_set(pid, req.name, req.description)
+        return base.brand_image_set(pid, data)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+
+
+@router.delete("/api/projects/{pid}/base/brand-image")
+def base_brand_image_clear(pid: str):
+    return base.brand_image_clear(pid)
 
 
 @router.get("/api/projects/{pid}/base/candidates")

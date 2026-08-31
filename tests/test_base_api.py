@@ -92,7 +92,8 @@ def test_view_follows_the_wave4_prototype(client):
     assert '<span class="pn">02</span>Marca do rótulo' in html
     assert '<span class="pn">03</span>Escolher e fechar a imagem base' in html
     assert 'placeholder="o que muda nesta referência"' in html, "sem o exemplo entre parênteses"
-    assert 'placeholder="como é a logo"' in html
+    # marca do rótulo por IMAGEM anexada (supersede da marca-texto): upload no lugar dos campos
+    assert 'id="brandImage"' in html and 'id="brandDrop"' in html
     assert ">Usar como imagem base<" in html and ">Gerar prompt<" in html
     # ref-picker no `.gallery.xs` e galeria de candidatas no `.gallery.sm`
     assert '<div id="refGallery" class="gallery xs"></div>' in html
@@ -116,7 +117,7 @@ def test_view_follows_the_wave4_prototype(client):
     assert 'url("prompts")' in js and "prompts?model=" not in js
     # o shell é contrato de leitura: os utilitários de layout vêm dele (`.grow`/`.grow-lg`)
     # e só o que sobra de específico fica escopado `.bs-`
-    assert 'class="grow"' in html and 'class="grow-lg"' in html
+    assert 'class="grow"' in html  # `.grow-lg` saiu com o input de descrição da marca (agora é imagem)
     assert "<style>" in html and ".bs-io" in html
     assert ".bs-grow" not in html, "utilitário de crescimento é do shell, não da etapa"
 
@@ -183,8 +184,8 @@ def test_view_keeps_every_id_the_script_queries(client):
     declarados = set(re.findall(r'id="([A-Za-z0-9_-]+)"', html))
     assert consultados <= declarados, sorted(consultados - declarados)
     for obrigatorio in ("baseClaude", "refGallery", "promptInstruction", "btnPrompt",
-                        "btnPromptNoBias", "basePrompts", "brandName", "brandDesc", "btnBrand",
-                        "btnBaseSelect", "baseChain", "baseDrop", "baseUpload",
+                        "btnPromptNoBias", "basePrompts", "brandImage", "brandDrop", "btnBrandClear",
+                        "brandPreview", "btnBaseSelect", "baseChain", "baseDrop", "baseUpload",
                         "btnBaseDownloads", "btnBaseHistory", "baseGallery"):
         assert f'id="{obrigatorio}"' in html, obrigatorio
     # ids dos controles que o protótipo não desenha (wave 4): saíram do HTML e do JS
@@ -200,7 +201,7 @@ def test_prompts_endpoint(client, pid):
     r = client.get(f"/api/projects/{pid}/base/prompts")
     assert r.status_code == 200
     body = r.json()
-    assert len(body["refs"]) == 2 and body["label_prompt"] is None and body["model"] == "nano_banana_2"
+    assert len(body["refs"]) == 2 and body["label_ready"] is False and body["model"] == "nano_banana_2"
     assert body["mood_files"] == ["mood/selected/m0.jpg"]
     assert body["aspect_ratio"] == "16:9" and body["label_count"] == 3
     assert "aba nova" in body["bot_hint"] and "aba nova" not in body["ui_hint"]
@@ -315,13 +316,20 @@ def test_prompts_422_without_mood_images(client, studio_env):
     assert r.status_code == 422 and "etapa 2" in r.json()["detail"] and "mood" in r.json()["detail"]
 
 
-def test_brand_roundtrip(client, pid):
-    assert client.get(f"/api/projects/{pid}/base/brand").json() == {"name": "", "description": ""}
-    assert client.post(f"/api/projects/{pid}/base/brand", json={"name": "  "}).status_code == 422
-    r = client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero", "description": "raio neon"})
-    assert r.status_code == 200 and r.json()["name"] == "Gelo Zero"
-    assert client.get(f"/api/projects/{pid}/base/brand").json()["description"] == "raio neon"
-    assert "Gelo Zero" in client.get(f"/api/projects/{pid}/base/prompts").json()["label_prompt"]
+def test_brand_image_roundtrip(client, pid):
+    """Marca do rótulo por IMAGEM: vazio → upload → get devolve o arquivo → o rótulo fica pronto."""
+    assert client.get(f"/api/projects/{pid}/base/brand-image").json() == {}
+    # arquivo inválido (não é imagem) → 422
+    assert client.post(f"/api/projects/{pid}/base/brand-image",
+                       files={"file": ("m.txt", b"nao sou imagem", "text/plain")}).status_code == 422
+    r = client.post(f"/api/projects/{pid}/base/brand-image",
+                    files={"file": ("marca.png", image_bytes(), "image/png")})
+    assert r.status_code == 200 and r.json() == {"file": "brand_image.png"}
+    assert client.get(f"/api/projects/{pid}/base/brand-image").json() == {"file": "brand_image.png"}
+    assert client.get(f"/api/projects/{pid}/base/prompts").json()["label_ready"] is True
+    # remover
+    assert client.request("DELETE", f"/api/projects/{pid}/base/brand-image").status_code == 200
+    assert client.get(f"/api/projects/{pid}/base/brand-image").json() == {}
 
 
 def test_upload_import_and_limits(client, pid, monkeypatch):
@@ -467,7 +475,7 @@ def test_cost_for_the_three_kinds(client, pid, hf, monkeypatch):
     """base-cli-generation §3: `base/cost` responde para os 3 kinds com o CUSTO REAL do CLI
     (`hf.cost` mockado). O upscale usa outro modelo (`bytedance_image_upscale`) → custo diferente."""
     _seed_situation(client, pid)
-    client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero", "description": "raio neon"})
+    client.post(f"/api/projects/{pid}/base/brand-image", files={"file": ("marca.png", image_bytes(), "image/png")})
     monkeypatch.setattr(hf, "available", lambda: True)
     # custo por MODELO: upscale (bytedance) difere da geração (nano_banana_2) — a UI mostra por passo
     monkeypatch.setattr(hf, "cost",
@@ -502,7 +510,7 @@ def test_generate_download_and_before_after_over_http(client, pid, hf, monkeypat
     import threading
 
     _seed_situation(client, pid)  # origem da cadeia (a "antes" do rótulo/upscale)
-    client.post(f"/api/projects/{pid}/base/brand", json={"name": "Gelo Zero"})
+    client.post(f"/api/projects/{pid}/base/brand-image", files={"file": ("marca.png", image_bytes(), "image/png")})
     monkeypatch.setattr(hf, "available", lambda: True)
     monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
 
@@ -827,7 +835,7 @@ def test_clean_prompts_endpoint_exposes_the_clean_template(client, pid):
     body = client.get(f"/api/projects/{pid}/base/prompts").json()
     assert "Remove all brand names" in body["clean_prompt"] and body["clean_count"] == 3
     # aditivo puro: nenhuma chave existente do payload mudou
-    assert body["label_count"] == 3 and body["label_prompt"] is None
+    assert body["label_count"] == 3 and body["label_ready"] is False
     assert body["model"] == "nano_banana_2" and len(body["refs"]) == 2
 
 

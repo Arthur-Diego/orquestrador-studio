@@ -69,7 +69,7 @@ def guide(pid: str) -> dict:
     product = (meta.get("product") or "").strip()
     cands = _safe(lambda: base.load(pid), [])
     ch = base.chain(cands)
-    brand = _safe(lambda: base.brand_get(pid), {"name": "", "description": ""})
+    brand_ready = bool(_safe(lambda: base.brand_image_get(pid), {}))
     md = _read_md(root)
 
     g = Guide(META).text(WHAT, CHECKLIST)
@@ -96,7 +96,7 @@ def guide(pid: str) -> dict:
     # `feita` lista tudo que já foi escolhido, na ordem da cadeia (inclusive a limpeza de marca,
     # que é `[extensão]`); a CONTAGEM do chip, abaixo, mede só os passos da aula (`COURSE_KINDS`).
     feita = [base.KIND_LABEL[k] for k in base.KINDS if ch[k]]
-    cadeia_ok = bool(ch["situation"]) and bool(ch["upscale"]) and (bool(ch["label"]) or not brand.get("name"))
+    cadeia_ok = bool(ch["situation"]) and bool(ch["upscale"]) and (bool(ch["label"]) or not brand_ready)
     md_ok = bool(md) and cadeia_ok and "Prompts e instruções usados" in md
     g.output("base_md", "base/base.md com a cadeia situação → rótulo → upscale e os prompts", md_ok,
              detail="cadeia: " + " → ".join(feita) if feita else None)
@@ -125,15 +125,15 @@ def guide(pid: str) -> dict:
                 detail=f"{w0}px → {w1}px ({ratio}x)",
                 fix=None if ok else "A aula pede 2x: refaça o upscale com 2x e High Fidelity V2")
 
-    if not brand.get("name"):
+    if not brand_ready:
         g.check("label_applied", "Rótulo trocado pela sua marca [extensão]", "todo",
-                detail="informe a marca para liberar a instrução de troca de rótulo",
-                fix="Preencha a marca no painel “Marca do rótulo”")
+                detail="anexe a imagem da sua marca para liberar a troca de rótulo",
+                fix="Anexe a imagem da marca no painel “Marca do rótulo”")
     else:
         g.check("label_applied", "Rótulo trocado pela sua marca [extensão]",
                 "ok" if ch["label"] else "warn",
-                detail=None if ch["label"] else f"o rótulo ainda é o da referência (marca: {brand['name']})",
-                fix=None if ch["label"] else "Troque o rótulo no Nano Banana e importe como “rótulo”")
+                detail=None if ch["label"] else "o rótulo ainda é o da referência (marca anexada, ainda não aplicada)",
+                fix=None if ch["label"] else "Gere o rótulo aplicando a marca-imagem e importe como “rótulo”")
 
     sit = next((c for c in cands if c.get("selected") and c.get("kind") == "situation"), None)
     prompt = (sit.get("prompt") if sit else "") or ""
@@ -176,7 +176,7 @@ def guide(pid: str) -> dict:
     # upscale), que continua sendo de três passos com ou sem o clean `[extensão]` (wave 9).
     feitos = sum(1 for k in base.COURSE_KINDS if ch[k])
     summary = f"cadeia {feitos}/3" if feitos else None
-    return g.build(next_action=_next_action(refs, mood, product, ch, brand, n_sit, prompt),
+    return g.build(next_action=_next_action(refs, mood, product, ch, brand_ready, n_sit, prompt),
                    summary=summary,
                    summary_kind="warn" if summary and up_status == "warn" else None)
 
@@ -189,7 +189,7 @@ def _read_md(root: Path) -> str:
         return ""
 
 
-def _next_action(refs, mood, product, ch, brand, n_sit, prompt) -> str | None:
+def _next_action(refs, mood, product, ch, brand_ready, n_sit, prompt) -> str | None:
     """Próxima ação no estilo do protótipo (wave 4): uma frase curta no infinitivo, um passo só.
     `None` deixa o builder derivar (é o caso quando falta entrada — aí quem manda é o bloqueio)."""
     if not (refs and mood and product):
@@ -200,8 +200,8 @@ def _next_action(refs, mood, product, ch, brand, n_sit, prompt) -> str | None:
                 return "Escolher uma referência e gerar o primeiro prompt de situação"
             return "Gerar o grid na UI da Higgsfield com o mood anexado e importar como “situação”"
         return "Escolher a candidata de situação que ficou melhor"
-    if brand.get("name") and not ch["label"]:
-        return "Trocar o rótulo pela sua marca (uma instrução só) e importar como “rótulo”"
+    if brand_ready and not ch["label"]:
+        return "Trocar o rótulo pela sua marca-imagem e importar como “rótulo”"
     if not ch["upscale"]:
         return "Fazer o upscale 2x (High Fidelity V2) e importar como “upscale”"
     return None

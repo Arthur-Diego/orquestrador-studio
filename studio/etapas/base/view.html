@@ -7,7 +7,8 @@
   /* `[extensão]` seletor de preset de realismo (opt-in): fica colado na linha da instrução. */
   .bs-preset{margin:-4px 0 12px}
   .bs-preset>select{max-width:100%}
-  .bs-brand{gap:10px}
+  .bs-brand{gap:10px;align-items:center}
+  .bs-brand-preview{max-height:72px;border-radius:6px;border:1px solid var(--line,#333)}
   .bs-io{gap:14px;margin:0}
   .bs-io .col{min-width:220px}
   /* Vazia, a galeria de candidatas não ocupa nada (é o estado do protótipo); com imagens,
@@ -160,10 +161,11 @@
   <div class="panel-head">
     <h3><span class="pn">02</span>Marca do rótulo <span class="ext">[extensão]</span></h3>
   </div>
+  <p class="fine">Anexe a <b>imagem da sua marca</b> (a logo/rótulo que você criou, ex.: no Higgsfield). Ela é aplicada na imagem base ao gerar o rótulo — sem descrever a marca por texto.</p>
   <div class="row wrap bs-brand">
-    <input id="brandName" class="grow" aria-label="nome da marca">
-    <input id="brandDesc" class="grow-lg" placeholder="como é a logo">
-    <button id="btnBrand" class="primary">Salvar marca</button>
+    <label class="drop" id="brandDrop">Arraste a imagem da marca ou <input id="brandImage" type="file" accept="image/*" hidden><u>escolha um arquivo</u></label>
+    <img id="brandPreview" class="bs-brand-preview" alt="marca anexada" hidden>
+    <button id="btnBrandClear" class="ghost" hidden>Remover marca</button>
   </div>
 </section>
 
