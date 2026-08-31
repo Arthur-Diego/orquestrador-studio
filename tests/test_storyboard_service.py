@@ -1058,3 +1058,64 @@ def test_script_registry_is_the_one_the_step_reset_discovers(sb, project, base, 
     with pytest.raises(reset.ResetBlocked):
         reset.reset_step(project, "storyboard")
     sb._story_registry.clear(project)
+
+
+# ---------- `[extensão]` roteiro-por-cena (ADR-028): N fotos por cena + rig em TODAS as fotos ----------
+def _script_result_shots(shots_by_scene: list[int], rig=None, preset=None) -> dict:
+    """Resposta multi-foto do prompter: cada cena com `shots`/`shot_prompts` (bot OBEDIENTE).
+
+    Com `rig`, o corpo/lente/formato entra LITERALMENTE em CADA `shot_prompt` — é o que o serviço
+    passou a cobrar em todas as fotos (ADR-028), não só na primeira.
+    """
+    rig_text = (f" Shot on camera body {rig['camera']}, lens {rig['lens']}, "
+                f"format {rig['format']}." if rig else "")
+    scenes = []
+    for i, k in enumerate(shots_by_scene, start=1):
+        prompts = [f"A cinematic photograph, scene {i} shot {j}.{rig_text}" for j in range(1, k + 1)]
+        scenes.append({"n": i, "arc": "acao", "text": f"Cena {i}.",
+                       "shots": k, "shot_prompts": prompts, "image_prompt": prompts[0],
+                       "negative": "plastic skin"})
+    return {"scenes": scenes, "notes_pt": "Arco fechado.", "source": "claude", "seconds": 9.0,
+            "preset": preset, "model_target": "nano_banana_2", "count": len(scenes), "images": []}
+
+
+def _fake_script_shots(sb, monkeypatch, shots_by_scene, obey_rig=True):
+    """`prompter.script` fake que devolve fotos por cena; `obey_rig=False` omite o rig da 2ª foto."""
+    def fake(images, brief, preset=None, **kw):
+        rig = sb.prompter.REALISM_PRESETS[preset]["rig"] if preset else None
+        res = _script_result_shots(shots_by_scene, rig=rig if obey_rig else None, preset=preset)
+        if rig and not obey_rig:
+            # 1ª foto obedece, 2ª foto NÃO tem o rig — é o que a validação do serviço deve barrar.
+            res["scenes"][0]["shot_prompts"][0] = (
+                f"scene 1 shot 1. Shot on camera body {rig['camera']}, lens {rig['lens']}, "
+                f"format {rig['format']}.")
+            res["scenes"][0]["image_prompt"] = res["scenes"][0]["shot_prompts"][0]
+        return res
+    monkeypatch.setattr(sb.prompter, "available", lambda: True)
+    monkeypatch.setattr(sb.prompter, "script", fake)
+
+
+def test_script_persists_the_inferred_shots_per_scene(sb, project, base, root, monkeypatch):
+    """T2.24 (ADR-028): `shots`/`shot_prompts` inferidos por cena chegam ao `script.json`."""
+    _fake_script_shots(sb, monkeypatch, [3, 5])
+    sb.script_generate(project, count=2, preset=None)
+    assert _wait_script(sb, project)["state"] == "done"
+    data = json.loads((root / "storyboard" / "script.json").read_text())
+    assert [s["shots"] for s in data["scenes"]] == [3, 5]
+    assert [len(s["shot_prompts"]) for s in data["scenes"]] == [3, 5]
+    # compat: a primeira foto continua espelhada em `image_prompt`.
+    assert all(s["image_prompt"] == s["shot_prompts"][0] for s in data["scenes"])
+
+
+def test_script_requires_the_rig_in_every_shot_of_a_scene(sb, project, base, root, monkeypatch):
+    """T2.25 (critério 3 estendido): com preset, o rig é cobrado em TODAS as fotos — não só na 1ª.
+
+    O bot obedece na foto 1 e desobedece na foto 2: o job tem de morrer em `error` citando a foto,
+    e o `script.json` anterior (inexistente aqui) não é criado.
+    """
+    _fake_script_shots(sb, monkeypatch, [2], obey_rig=False)
+    sb.script_generate(project, count=1, preset="documentary-street")
+    job = _wait_script(sb, project)
+    assert job["state"] == "error"
+    assert any("foto 2" in linha for linha in job["log"]), job["log"]
+    assert not (root / "storyboard" / "script.json").is_file()

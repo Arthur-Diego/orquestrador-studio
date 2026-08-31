@@ -326,9 +326,11 @@ def test_view_uses_the_shell_catalog_after_the_redesign(client):
     """Wave 4: DOIS painéis (01 cenas, 02 cena aberta), sem `details.lesson`, sem painel do produto."""
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    for n in ("01", "02", "03", "04"):
+    # ADR-028 (card V2ROuQ23): o roteiro por Claude virou o painel 02 (antes da história/03);
+    # ângulos desceu para 04 e a cena aberta para 05, e o painel do roteiro ganhou número.
+    for n in ("01", "02", "03", "04", "05"):
         assert f'<span class="pn">{n}</span>' in html, n
-    assert html.count('<span class="pn">') == 4, "ideação (01/02) + ângulos (03/04) na etapa fundida"
+    assert html.count('<span class="pn">') == 5, "01 ideias · 02 roteiro · 03 cenas · 04 ângulos · 05 cena"
     assert '<details class="lesson">' not in html, "regra 4 da wave 4: `details` de aula só na etapa 1"
     assert 'id="shotsPalette" class="palette sm' in html
     assert '<div id="shotsGallery" class="gallery sm">' in html
@@ -365,7 +367,8 @@ def test_prototype_shapes_of_the_wave4_screen(client):
     """Wave 4: paleta no cabeçalho, chip/checkbox/Salvar no `.panel-head`, builder de uma linha."""
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    head = html.split('<span class="pn">04</span>', 1)[1].split("</div>\n  </div>", 1)[0]
+    # ADR-028: o painel da cena aberta (chip/checkbox/Salvar) desceu de 04 para 05.
+    head = html.split('<span class="pn">05</span>', 1)[1].split("</div>\n  </div>", 1)[0]
     for ident in ("shotsCounts", "shotsUpscaled", "btnShotsSave"):
         assert ident in head, ident
     assert '<div class="row wrap sh-builder" id="shotsBuilder">' in html
@@ -388,6 +391,6 @@ def test_scene_cards_and_tiles_follow_the_prototype(client):
 def test_scene_title_keeps_the_panel_number_outside(client):
     """`#sceneTitle` é reescrito por textContent: o `.pn` fica fora dele."""
     html = client.get("/steps/storyboard/view.html").text
-    assert '<span class="pn">04</span><span id="sceneTitle">' in html
+    assert '<span class="pn">05</span><span id="sceneTitle">' in html  # ADR-028: cena desceu para 05
     # Wave 4 (5.23): o texto da cena virou `title` do card, não uma linha abaixo do título.
     assert 'id="sceneText"' not in html

@@ -699,7 +699,7 @@ Studio.register("storyboard", (ctx) => {
     // `PUT /scenes` que já existe, com o array montado pelo `collect()` da tela.
     // Vocabulário: prefixo `sbScript` (amenda A4 — no storyboard `#sbPreset` é FÓRMULA DA AULA).
     // ====================================================================================
-    const SCRIPT_NO_CLI = "Claude CLI não encontrado: escreva as cenas à mão no painel 02 (aula 010) ou instale o Claude Code.";
+    const SCRIPT_NO_CLI = "Claude CLI não encontrado: escreva as cenas à mão no painel 03 (aula 010) ou instale o Claude Code.";
     const SCRIPT_TARGET = "Nano Banana Pro";      // gate W3 (P3): v1 tem alvo ÚNICO, texto fixo — sem seletor
     const SCRIPT_ACTION = "storyboard.script";    // chave da AÇÃO deste bloco no mapa aberto `defaults`
     const SCRIPT_COUNT_DEFAULT = 5, SCRIPT_COUNT_MAX = 10;   // espelho de DEFAULT_SCENES/MAX_SCENES do serviço
@@ -721,7 +721,7 @@ Studio.register("storyboard", (ctx) => {
       return (m && m.label) || SCRIPT_TARGET;
     }
 
-    /** Sem Claude CLI o botão fica desabilitado com o motivo VISÍVEL; o painel 02 (o fluxo manual
+    /** Sem Claude CLI o botão fica desabilitado com o motivo VISÍVEL; o painel 03 (o fluxo manual
      *  da aula) não muda em nada — o roteiro é atalho opcional, nunca pré-requisito. */
     function scriptGate() {
       const gen = $("#sbScriptGen");
@@ -744,7 +744,7 @@ Studio.register("storyboard", (ctx) => {
     }
 
     /** Boot do painel: `{"script": null}` (nunca gerou) é estado NORMAL — vazio silencioso, nunca
-     *  erro na tela. Falha de rede também cai em vazio: o painel 02 segue utilizável. */
+     *  erro na tela. Falha de rede também cai em vazio: o painel 03 segue utilizável. */
     async function loadScript() {
       try {
         const r = await api(url("/script"));
@@ -770,18 +770,27 @@ Studio.register("storyboard", (ctx) => {
       const notes = $("#sbScriptNotes");
       notes.hidden = !script.notes_pt;
       notes.textContent = script.notes_pt || "";
-      list.innerHTML = cenas.map((s, i) => `
+      list.innerHTML = cenas.map((s, i) => {
+        // `[extensão]` roteiro-por-cena (ADR-028): o Claude INFERIU quantas fotos a cena pede
+        // (`shots`) e escreveu uma foto por prompt, coesa dentro da cena (`shot_prompts`). Cada
+        // prompt é copiável isolado; roteiros antigos (sem `shot_prompts`) caem no `image_prompt`.
+        const shots = (s.shot_prompts && s.shot_prompts.length) ? s.shot_prompts : [s.image_prompt || ""];
+        const shotsHtml = shots.map((p, j) => `
+              <div class="prompt sm">
+                <div class="row"><span class="eyebrow">foto ${j + 1}/${shots.length} — prompt de imagem (inglês)</span>
+                  <button type="button" class="link copy sbScriptCopy">Copiar</button><span class="ok"></span></div>
+                <p class="txt sbScriptPromptText">${esc(p || "")}</p>
+              </div>`).join("");
+        return `
         <div class="sb-script-scene" data-i="${i}">
           <span class="mom" data-mom="${esc(s.arc || "")}" title="Cena ${i + 1}">${esc(arcLabelOf(s.arc))}</span>
           <div class="col">
             <p class="sb-script-txt">${esc(s.text || "")}</p>
-            <div class="prompt sm">
-              <div class="row"><span class="eyebrow">prompt de imagem (inglês)</span>
-                <button type="button" class="link copy sbScriptCopy">Copiar</button><span class="ok"></span></div>
-              <p class="txt sbScriptPromptText">${esc(s.image_prompt || "")}</p>
-            </div>
+            <span class="fine sb-script-shots">${shots.length} foto(s) sugerida(s) para esta cena (encaixe manual)</span>
+            ${shotsHtml}
           </div>
-        </div>`).join("");
+        </div>`;
+      }).join("");
     }
 
     /** Geração: job assíncrono acompanhado pelo `progressJob` (ADR-006) e SEM `confirmCost` — o
@@ -804,7 +813,7 @@ Studio.register("storyboard", (ctx) => {
       } catch (err) { toast(err.message); }
     }
 
-    /** Aplicação OPT-IN da sugestão às cenas do painel 02.
+    /** Aplicação OPT-IN da sugestão às cenas do painel 03.
      *
      *  `all = false` ("Aplicar às cenas vazias"): preenche SÓ as cenas cujo `text` está vazio
      *  (após `trim`), sem diálogo — o que o usuário escreveu fica byte a byte igual.
@@ -818,7 +827,7 @@ Studio.register("storyboard", (ctx) => {
       const cenas = script ? (script.scenes || []) : [];
       if (!cenas.length) return toast("Gere o roteiro primeiro.");
       const list = collect();
-      if (!list.length) return toast("Nenhuma cena no painel 02 para preencher.");
+      if (!list.length) return toast("Nenhuma cena no painel 03 para preencher.");
       const alvo = Math.min(list.length, cenas.length);
       const escritas = [];
       for (let i = 0; i < alvo; i++) if (String(list[i].text || "").trim()) escritas.push(i + 1);
@@ -846,8 +855,10 @@ Studio.register("storyboard", (ctx) => {
       $("#sbScriptApplyAll").onclick = () => applyScript(true);
       $("#sbScriptScenes").addEventListener("click", async (e) => {
         const b = e.target.closest(".sbScriptCopy"); if (!b) return;
-        const linha = b.closest(".sb-script-scene"); if (!linha) return;
-        const ok = await ui.copy(linha.querySelector(".sbScriptPromptText").textContent);
+        // ADR-028: uma cena tem várias fotos; copia o prompt da FOTO ao lado do botão clicado
+        // (o `.prompt.sm` mais próximo), não sempre o primeiro da cena.
+        const bloco = b.closest(".prompt"); if (!bloco) return;
+        const ok = await ui.copy(bloco.querySelector(".sbScriptPromptText").textContent);
         const eco = b.parentElement.querySelector(".ok");
         if (eco) { eco.textContent = ok ? "copiado ✓" : "copie à mão"; setTimeout(() => (eco.textContent = ""), 1500); }
       });
@@ -1150,7 +1161,7 @@ Studio.register("storyboard", (ctx) => {
     const esc = (s) => ui.esc(s);
     const base = () => `/api/projects/${ctx.pid()}/storyboard/angles`;
 
-    const PRODUCT = "__produto__";                 // cena virtual: o card "produto" do painel 03
+    const PRODUCT = "__produto__";                 // cena virtual: o card "produto" do painel 04
     let scenes = [], scene = null, cands = [], order = [], prod = [];
     let prodState = { ref_ready: false, selected: false };
     let prodTick = 0;             // cache-buster: product_final.png é regravado no mesmo caminho
@@ -1197,7 +1208,7 @@ Studio.register("storyboard", (ctx) => {
             : "cena do produto (aula 013): envie a imagem 1 e rode as duas instruções",
         prodState.selected ? `<button type="button" class="sh-act shProdClear">remover</button>` : "");
       $("#sceneList").innerHTML = (cenas.join("") + produto)
-        || `<div class="empty">Nenhuma cena — escreva a história no painel 02.</div>`;
+        || `<div class="empty">Nenhuma cena — escreva a história no painel 03.</div>`;
     }
 
     async function openScene(id) {
@@ -1229,7 +1240,7 @@ Studio.register("storyboard", (ctx) => {
         title: `Base da ${sceneLabel(id)}`,
         subtitle: "A base define cor e luz de tudo: acerte-a antes do Multi Shot.",
         html: `<div class="col">
-          <button type="button" id="shBaseScene" class="ghost">Imagem da cena (ideia do painel 02)</button>
+          <button type="button" id="shBaseScene" class="ghost">Imagem da cena (ideia do painel 03)</button>
           <button type="button" id="shBaseCampaign" class="ghost">Imagem base da campanha</button>
           <label class="drop sm" id="shBaseDrop">Arraste uma imagem ou <input id="shBaseUpload" type="file" accept="image/*" hidden><u>envie um arquivo</u></label>
         </div>`,

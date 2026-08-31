@@ -377,9 +377,13 @@ def test_view_uses_the_shell_catalog_after_the_redesign(client):
     """Wave 4: DOIS painéis (01 ideias, 02 cenas), sem `details.lesson`, sem painel de importação."""
     html = client.get("/steps/storyboard/view.html").text
     js = client.get("/steps/storyboard/view.js").text
-    for n in ("01", "02", "03", "04"):
+    # ADR-028 (card V2ROuQ23): o roteiro por Claude passou a ser o painel 02, ANTES da história
+    # (03); ângulos (04) e cena (05) desceram um. O painel do roteiro ganhou número (antes não tinha).
+    for n in ("01", "02", "03", "04", "05"):
         assert f'<span class="pn">{n}</span>' in html, n
-    assert html.count('<span class="pn">') == 4, "ideação (01/02) + ângulos (03/04) na etapa fundida"
+    assert html.count('<span class="pn">') == 5, "01 ideias · 02 roteiro · 03 cenas · 04 ângulos · 05 cena"
+    assert html.index('<span class="pn">02</span>Roteiro por Claude') < \
+           html.index('<span class="pn">03</span>A história em cenas'), "roteiro vem ANTES da história"
     assert '<details class="lesson">' not in html, "regra 4 da wave 4: `details` de aula só na etapa 1"
     assert '<div class="grid2 rev">' in html
     assert '<div id="sbScenes" class="rowlist">' in html
@@ -951,7 +955,10 @@ def test_script_get_is_200_with_null_before_any_generation(client, pid, base, cl
     got = client.get(f"/api/projects/{pid}/storyboard/script").json()["script"]
     assert set(got) == {"generated_at", "preset", "model_target", "aspect_ratio", "count",
                         "source", "seconds", "notes_pt", "scenes"}
-    assert set(got["scenes"][0]) == {"n", "arc", "text", "image_prompt", "negative"}
+    # ADR-028: cada cena ganhou `shots` (nº de fotos inferido) e `shot_prompts` (fotos coesas);
+    # `image_prompt` continua sendo a primeira foto (compat com o consumidor de uma foto por cena).
+    assert set(got["scenes"][0]) == {"n", "arc", "text", "image_prompt", "shots", "shot_prompts",
+                                     "negative"}
 
 
 def test_script_status_fields_are_additive(client, pid, base, claude):
