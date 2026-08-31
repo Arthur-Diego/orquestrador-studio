@@ -33,7 +33,7 @@ Regras comuns a todas as frentes (herdadas do HLD `studio` e do `CLAUDE.md`):
 
 ### Feature: base (OS-003) — Etapa 3 · Imagem base · aula 009
 **Provides**
-- `base/candidates.json` — lista `[{id, source, file, thumb, ref_id, prompt, kind: "situation"|"label"|"upscale", selected}]`
+- `base/candidates.json` — lista `[{id, source, file, thumb, ref_id, prompt, kind: "situation"|"clean"|"label"|"upscale", selected}]`
 - `base/base_final.png` — a imagem base da campanha (já com rótulo próprio; upscale 2x quando importado)
 - `base/base.md` — prompt de origem, referência usada, notas
 **Consumes**

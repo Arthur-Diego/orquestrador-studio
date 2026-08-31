@@ -1,7 +1,7 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.6 (fechamento da wave 4: 11 promoções de regra ao catálogo do shell + verificação integrada das 12 telas)
-Data: 2026-08-26
+Versão: 1.7 (fechamento da Wave 9: presets de realismo do prompter, roteiro por LLM na etapa 4 e canvas de marcação — todos `[extensão]`)
+Data: 2026-08-31
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
 ---
@@ -71,6 +71,24 @@ editados **somente** pelas frentes de *preparo* e *shell* de uma wave. Uma frent
 precise de algo no núcleo pede à frente de preparo — nunca edita esses arquivos, nem para
 "uma linha só". Simetricamente, a frente shell nunca edita plugins (`studio/etapas/<id>/`,
 `studio/<id>/service.py`). Registro: ADR-010.
+
+**Wave 9 (v1.7) `[extensão]`:**
+(1) **Presets de realismo do prompter.** O `studio/common/prompter.py` passa a expor o catálogo
+`REALISM_PRESETS` (5 rigs de câmera/lente/formato + luz, grade, fidelidade e negativos) e o
+helper `preset_block`, injetado no prompt do papel apenas quando o chamador pede um preset. A
+escolha do preset default é resolvida **por ação** em `studio/common/settings.py`
+(`PRESET_ACTIONS` + `preset_default_for`), no mesmo padrão ADR-016 dos modelos: projeto →
+global → código, com default de código `null` (opt-in) para `mood`/`base`/`motion`. O registro
+de ações é aberto: outra feature acrescenta a própria chave em import time. A face HTTP fica em
+`studio/creditos/router.py` (`GET /api/prompter/presets` e as rotas de `preset-config`), e os
+três endpoints de geração de prompt aceitam o campo aditivo `preset`.
+(2) **Roteiro por LLM na etapa 4** (ADR-025): papel `script` no prompter e ação
+`storyboard.script` registrada pelo plugin (default `documentary-street`); sugestão em
+`storyboard/script.json`, aplicação opt-in via `PUT /scenes`.
+(3) **Precedente de asset novo em `web/`**: `studio/web/annotate.js` (canvas de marcação) foi
+**criado** — não editado — por frente de etapa, servido pela montagem `/static` existente e
+carregado dinamicamente pelo `view.js` do storyboard; segue o precedente de `multishot.js`/
+`creditos.js`/`moodboards.js` sem violar a regra de núcleo da v1.2 (nada existente foi tocado).
 
 **Shell (v1.3):** `studio/web/` deixou de ser um menu e virou o painel de condução da
 campanha. (1) **Roteamento**: o hash é a fonte de verdade — `#/<pid>/<step>` e
