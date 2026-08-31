@@ -470,13 +470,27 @@ def enforce_mood_rules(result: dict, no_people: bool = True) -> dict:
 #: prompter (`TIMEOUT_S` = 180, inalterado) e o dos jobs pagos (600).
 SCRIPT_TIMEOUT_S = 300
 
+#: `[extensão]` roteiro-por-cena (ADR-028) — quantas fotos uma cena pede é INFERIDO pelo modelo a
+#: partir da descrição da cena, entre estes limites. Uma cena simples (um plano, um gesto) pede o
+#: piso; uma cena densa (várias ações/beats) pede mais. O modelo devolve `shots` (o número que ele
+#: sugere) e `shot_prompts` (um `image_prompt` por foto, coeso DENTRO da cena). O servidor apenas
+#: normaliza para esta faixa — não escolhe o número.
+SHOTS_MIN = 3
+SHOTS_MAX = 6
+
 SCRIPT_OUTPUT_SPEC = (
     'Return ONLY a JSON object inside a ```json fence, with exactly these keys: "scenes" (array, one entry per '
     'scene, in order) and "notes_pt" (2 short lines in Brazilian Portuguese about the narrative choices). Each '
     'entry of "scenes" is an object with: "n" (scene number, integer), "arc" (the arc id given for that scene), '
-    '"text" (the scene description in Brazilian Portuguese, max 500 chars), "image_prompt" (the full '
-    'director-of-photography briefing, English, one single paragraph) and "negative" (comma-separated things to '
-    'avoid, English). No prose outside the fence, no extra keys, no missing scene.'
+    '"text" (the scene description in Brazilian Portuguese, max 500 chars), '
+    f'"shots" (an integer between {SHOTS_MIN} and {SHOTS_MAX}: how many photos THIS scene needs to be told well '
+    '— judge it from the scene description, a simple single-action scene needs fewer, a scene with several beats '
+    'or camera moves needs more), "shot_prompts" (array of EXACTLY "shots" full director-of-photography briefings, '
+    'English, one single paragraph each; they must be VISUALLY COHERENT with one another — same location, product, '
+    'palette, light and world within the scene, differing only in the moment, framing or camera angle so the '
+    'photos read as one continuous scene), "image_prompt" (the first entry of "shot_prompts", kept for '
+    'compatibility) and "negative" (comma-separated things to avoid, English). No prose outside the fence, no '
+    'extra keys, no missing scene.'
 )
 
 #: Ajuste de formato por modelo alvo (R10): o id NÃO é validado aqui — quem tem o catálogo
@@ -518,13 +532,37 @@ def script_preset_block(preset_id: str) -> str:
     )
 
 
+def _normalize_shots(item: dict, image_prompt: str, scene_no: int) -> tuple[int, list[str]]:
+    """`[extensão]` roteiro-por-cena (ADR-028): normaliza `shots`/`shot_prompts` de uma cena.
+
+    O modelo INFERE quantas fotos a cena pede; o servidor só ajusta à faixa `SHOTS_MIN..SHOTS_MAX`
+    e garante coerência entre `shots` e o número de prompts, SEM inventar conteúdo:
+
+    - `shot_prompts` presente e não vazio → é a fonte da verdade; `shots` passa a ser o tamanho da
+      lista (limitado ao teto), e um `shots` do modelo em desacordo é ignorado.
+    - `shot_prompts` ausente → a cena vira uma foto só, o `image_prompt` já validado (compat: o
+      caminho antigo, uma foto por cena, continua idêntico).
+
+    O piso NÃO cria fotos que o modelo não escreveu (isso seria inventar, proibido pela §6 do FDD):
+    um `shots` sugerido acima do que veio em `shot_prompts` é reduzido ao que existe. Prompts vazios
+    na lista são descartados; se sobrar nada, cai no `image_prompt`.
+    """
+    raw = item.get("shot_prompts")
+    prompts = [str(p).strip() for p in raw if str(p).strip()] if isinstance(raw, list) else []
+    if not prompts:
+        return 1, [image_prompt]
+    prompts = prompts[:SHOTS_MAX]
+    return len(prompts), prompts
+
+
 def _parse_script(text: str, count: int, arcs: list[str] | None = None) -> dict:
     """Parser do roteiro: JSON da fence → `{"scenes": [...], "notes_pt": str}` validado e normalizado.
 
     Nunca completa o que falta (decisão da seção 6 do FDD: sem fonte não se inventa) — resposta
     incompleta ou malformada vira `RuntimeError`, que o job da etapa traduz em `state: "error"`.
     Cenas a MAIS são cortadas em `count`; `n` é renumerado 1..count na ordem recebida e `arc` vem
-    da lista do servidor (`scene_arc`), nunca da escolha do modelo.
+    da lista do servidor (`scene_arc`), nunca da escolha do modelo. `shots`/`shot_prompts` são
+    normalizados por `_normalize_shots` (ADR-028); `image_prompt` continua sendo a primeira foto.
     """
     m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.S) or re.search(r"(\{.*\})", text, re.S)
     if not m:
@@ -550,19 +588,23 @@ def _parse_script(text: str, count: int, arcs: list[str] | None = None) -> dict:
         if not image_prompt:
             raise RuntimeError(f"cena {i + 1} do roteiro sem 'image_prompt'")
         arc = arcs[i] if i < len(arcs) else str(item.get("arc") or "").strip()
-        scenes.append({"n": i + 1, "arc": arc, "text": scene_text, "image_prompt": image_prompt,
+        shots, shot_prompts = _normalize_shots(item, image_prompt, i + 1)
+        scenes.append({"n": i + 1, "arc": arc, "text": scene_text,
+                       "image_prompt": shot_prompts[0], "shots": shots, "shot_prompts": shot_prompts,
                        "negative": str(item.get("negative") or "").strip()})
     return {"scenes": scenes, "notes_pt": str(data.get("notes_pt") or "").strip()}
 
 
 def script(images: list[Path], brief: dict, preset: str | None = None, count: int = 5,
            arcs: list[str] | None = None, model_target: str = "nano_banana_2") -> dict:
-    """Roteiro completo de `count` cenas pelo Claude CLI (`[extensão]`, ADR-025).
+    """Roteiro completo de `count` cenas pelo Claude CLI (`[extensão]`, ADR-025 + ADR-028).
 
-    Cada cena volta com `text` em pt-BR e `image_prompt` em inglês no formato briefing de diretor
-    de fotografia. Com `preset`, o rig do catálogo (corpo + lente + formato) é obrigatório em TODAS
-    as cenas — é o que o critério `[cross-feature]` da wave cobra. Com `preset=None`, nenhum bloco
-    de rig entra no prompt.
+    Cada cena volta com `text` em pt-BR, um número `shots` de fotos INFERIDO pelo modelo a partir da
+    descrição (faixa `SHOTS_MIN..SHOTS_MAX`, ADR-028) e uma lista `shot_prompts` coesa dentro da cena
+    (inglês, formato briefing de diretor de fotografia). `image_prompt` continua sendo a primeira
+    foto, para o caminho de uma foto por cena não mudar. Com `preset`, o rig do catálogo (corpo +
+    lente + formato) é obrigatório em TODAS as cenas e fotos — é o que o critério `[cross-feature]`
+    da wave cobra. Com `preset=None`, nenhum bloco de rig entra no prompt.
 
     `arcs` é o arco de cada cena calculado pelo SERVIDOR (`scene_arc`), não pelo modelo.
     `model_target` só ajusta o formato pedido; a validação do id é do serviço da etapa 4
