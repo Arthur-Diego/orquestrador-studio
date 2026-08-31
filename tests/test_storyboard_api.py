@@ -590,3 +590,14 @@ def test_legacy_kinds_are_unchanged_without_annotation_id(client, pid, base, mon
     assert r.status_code == 422 and "Draw to Edit" in r.json()["detail"]
     r = client.post(f"/api/projects/{pid}/storyboard/cost", json={**body, "source_id": "nao-existe"})
     assert r.status_code == 422 and r.json()["detail"] == "ideia inexistente: nao-existe"
+def test_video_prompt_route_rejects_an_unknown_realism_preset(client, pid, monkeypatch):
+    """T3.11 — `[extensão]`: preset de realismo fora do catálogo é 422 no router, antes do CLI."""
+    from studio.storyboard import service as sb
+    chamou = []
+    monkeypatch.setattr(sb.prompter, "available", lambda: chamou.append(1) or True)
+    r = client.post(f"/api/projects/{pid}/storyboard/video-prompt",
+                    json={"scene_id": "cena01", "description": "x", "preset": "nao-existe"})
+    assert r.status_code == 422 and chamou == []
+    ok = client.post(f"/api/projects/{pid}/storyboard/video-prompt",
+                     json={"scene_id": "cena01", "description": "x", "preset": None})
+    assert ok.status_code == 200 and ok.json()["preset"] is None

@@ -4,6 +4,9 @@
      cursor do stepper (que aqui também é o seletor do passo da importação). */
   .bs-instr{gap:10px;margin-bottom:12px}
   .bs-instr>input{min-width:220px}
+  /* `[extensão]` seletor de preset de realismo (opt-in): fica colado na linha da instrução. */
+  .bs-preset{margin:-4px 0 12px}
+  .bs-preset>select{max-width:100%}
   .bs-brand{gap:10px}
   .bs-io{gap:14px;margin:0}
   .bs-io .col{min-width:220px}
@@ -128,6 +131,12 @@
         <button id="btnPrompt" class="primary">Gerar prompt</button>
         <button id="btnPromptNoBias" class="ghost" title="Sessão nova do bot, sem nada sobre a campanha">Gerar sem viés</button>
       </div>
+      <label class="field bs-preset">
+        <span class="eyebrow lbl">Preset de realismo <span class="ext">[extensão]</span></span>
+        <select id="baseRealismPreset" aria-label="Preset de realismo (extensão)">
+          <option value="">(sem preset)</option>
+        </select>
+      </label>
       <div id="basePrompts" class="prompts one bs-one"></div>
       <div class="row wrap bs-p1cli">
         <button id="btnBasePanel01Cli" class="primary">Gerar via CLI</button>

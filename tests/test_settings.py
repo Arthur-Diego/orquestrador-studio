@@ -75,3 +75,99 @@ def test_storyboard_video_defaults_map_scene_to_kling26_and_transition_to_kling3
     assert scene["model"] == "kling2_6" and scene["variant"] == "5s"
     assert trans["model"] == "kling3_0" and trans["variant"] == "5s"
     assert settings.default_for("animate.video")["model"] == "kling2_6"
+
+
+# ---------- preset de realismo por ação `[extensão]` (mesmo padrão ADR-016) ----------
+def test_preset_default_is_opt_in_for_the_three_prompter_kinds(studio_env):
+    """T1.12: gate W3 — sem override, nenhum preset é aplicado (fidelidade à aula preservada)."""
+    from studio.common import settings
+    assert settings.PROMPTER_KINDS == ("mood", "base", "motion")
+    for kind in settings.PROMPTER_KINDS:
+        assert settings.preset_default_for(kind) == {"kind": kind, "preset": None, "source": "code"}
+
+
+def test_preset_resolution_accepts_any_registered_action(studio_env, monkeypatch):
+    """T1.13: contrato do handoff — a resolução é por AÇÃO registrada, não pelos 3 kinds fixos."""
+    from studio.common import settings
+    monkeypatch.setitem(settings.PRESET_ACTIONS, "storyboard.script", "documentary-street")
+    d = settings.preset_default_for("storyboard.script")
+    assert d == {"kind": "storyboard.script", "preset": "documentary-street", "source": "code"}
+    with pytest.raises(ValueError):
+        settings.preset_default_for("nao.existe")
+
+
+def test_project_preset_wins_over_global(studio_env, project):
+    """T1.14: cadeia projeto → global → código, igual à de modelos."""
+    from studio.common import settings
+    settings.set_global_preset("base", "arri-natural-narrative")
+    settings.set_project_preset(project, "base", "sony-venice-night")
+    assert settings.preset_default_for("base", project) == {
+        "kind": "base", "preset": "sony-venice-night", "source": "project"}
+    assert settings.preset_default_for("base") == {
+        "kind": "base", "preset": "arri-natural-narrative", "source": "global"}
+
+
+def test_persisted_null_ends_the_chain(studio_env, project):
+    """T1.15: `null` gravado é "sem preset" ESCOLHIDO — não cai para o global."""
+    from studio.common import settings
+    settings.set_global_preset("base", "documentary-street")
+    settings.set_project_preset(project, "base", None)
+    assert settings.preset_default_for("base", project) == {
+        "kind": "base", "preset": None, "source": "project"}
+
+
+def test_clear_project_preset_falls_back_to_global(studio_env, project):
+    """T1.16: limpar o override do projeto devolve a decisão ao nível global."""
+    from studio.common import settings
+    settings.set_global_preset("base", "documentary-street")
+    settings.set_project_preset(project, "base", None)
+    assert settings.clear_project_preset(project, "base") == {
+        "kind": "base", "preset": "documentary-street", "source": "global"}
+    assert settings.preset_default_for("base", project)["source"] == "global"
+
+
+def test_dead_preset_in_override_is_ignored(studio_env, project):
+    """T1.17: id que saiu do catálogo é ignorado — a UI nunca fica presa a um id morto."""
+    from studio.common import settings
+    path = settings._project_config_path(project)
+    path.write_text(json.dumps({"prompter_presets": {"base": "preset-que-nao-existe"}}))
+    assert settings.preset_default_for("base", project) == {
+        "kind": "base", "preset": None, "source": "code"}
+    settings.set_global_preset("base", "documentary-street")
+    assert settings.preset_default_for("base", project) == {
+        "kind": "base", "preset": "documentary-street", "source": "global"}
+
+
+def test_preset_setters_validate_kind_and_preset(studio_env):
+    """T1.18: ação não registrada e preset fora do catálogo são ValueError; `None` é válido."""
+    from studio.common import settings
+    with pytest.raises(ValueError):
+        settings.set_global_preset("nao-existe", "documentary-street")
+    with pytest.raises(ValueError):
+        settings.set_global_preset("base", "preset-que-nao-existe")
+    assert settings.set_global_preset("base", None) == {
+        "kind": "base", "preset": None, "source": "global"}
+    assert json.loads(settings.CONFIG_PATH.read_text())["prompter_presets"]["base"] is None
+
+
+def test_preset_persistence_does_not_touch_the_defaults_key(studio_env):
+    """T1.19: a chave nova convive com `defaults` (ADR-016) sem tocá-la."""
+    from studio.common import settings
+    settings.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    settings.CONFIG_PATH.write_text(json.dumps({"defaults": {"base.image": {"model": "gpt_image_2", "variant": None}}}))
+    antes = settings.default_for("base.image")
+    settings.set_global_preset("base", "documentary-street")
+    cfg = json.loads(settings.CONFIG_PATH.read_text())
+    assert cfg["defaults"] == {"base.image": {"model": "gpt_image_2", "variant": None}}
+    assert cfg["prompter_presets"] == {"base": "documentary-street"}
+    assert settings.default_for("base.image") == antes and antes["source"] == "global"
+
+
+def test_config_without_the_new_key_still_works(studio_env, project):
+    """T1.20: `config.json` antigo (sem `prompter_presets`) segue válido, sem migração."""
+    from studio.common import settings
+    settings.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    settings.CONFIG_PATH.write_text(json.dumps({"defaults": {"base.image": {"model": "gpt_image_2"}}}))
+    assert settings.global_config() == {"defaults": {"base.image": {"model": "gpt_image_2"}}}
+    assert settings.preset_default_for("base") == {"kind": "base", "preset": None, "source": "code"}
+    assert settings.preset_default_for("base", project)["source"] == "code"

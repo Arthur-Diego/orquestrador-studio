@@ -10,9 +10,10 @@ O `animate` (etapa 5) só depende do arquivo de saída `storyboard/storyboard.js
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ... import higgsfield as hf
+from ...common import prompter, settings
 from ...refs import service as refs
 from ...storyboard import angles
 from ...storyboard import service as sb
@@ -84,6 +85,20 @@ class VideoPromptReq(BaseModel):
     scene_id: str
     description: str = ""
     frames: VideoFrames = VideoFrames()
+    #: `[extensão]` preset de realismo (FDD §5) — NÃO confundir com o `sbPreset` das fórmulas da
+    #: aula (amenda A3). Três estados: campo AUSENTE = o serviço resolve o default da ação
+    #: `motion`; `null` = sem preset; `"<id>"` = usar esse. Id fora do catálogo → 422 aqui, pelo
+    #: validador, ou seja antes de o endpoint rodar e chamar o Claude CLI.
+    preset: str | None = None
+
+    @field_validator("preset")
+    @classmethod
+    def _known_preset(cls, v: str | None) -> str | None:
+        return prompter.valid_preset(v)
+
+    def preset_arg(self) -> settings.PresetArg:
+        """Ausente ≠ `null`: sem o campo no body, quem resolve o default é o serviço."""
+        return self.preset if "preset" in self.model_fields_set else settings.PRESET_UNSET
 
 
 class VideoCostReq(BaseModel):
@@ -223,7 +238,8 @@ def storyboard_job(pid: str):
 # ---------- `[extensão]` wave 7 (ADR-021): vídeo por cena (Claude + CLI Kling) ----------
 @router.post("/api/projects/{pid}/storyboard/video-prompt")
 def storyboard_video_prompt(pid: str, req: VideoPromptReq):
-    return _guard(sb.video_prompt, pid, req.scene_id, req.description, req.frames.model_dump())
+    return _guard(sb.video_prompt, pid, req.scene_id, req.description, req.frames.model_dump(),
+                  preset=req.preset_arg())
 
 
 @router.post("/api/projects/{pid}/storyboard/video/cost")

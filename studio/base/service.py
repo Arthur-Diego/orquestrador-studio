@@ -288,7 +288,7 @@ def _last_prompt(hist: list[dict], ref_id: str | None) -> dict | None:
 
 def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", instruction: str = "",
                     no_bias: bool = False, no_people: bool = False, model: str | None = None,
-                    board: str | None = None) -> dict:
+                    board: str | None = None, preset: settings.PresetArg = settings.PRESET_UNSET) -> dict:
     """B1/B2 (aula 009): o prompt de situação nasce do BOT olhando a referência e o mood.
 
     `mode`: `images` (o bot lê a referência + até 3 imagens do mood), `brief` (só texto) ou
@@ -296,10 +296,17 @@ def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", i
     só a referência, **sem** o brief da campanha e **sem** o mood, para o bot não ter viés.
     `board` `[extensão]` (ADR-013): usa as imagens de um board da biblioteca no lugar do mood da
     campanha como referência de estilo.
+
+    `preset` `[extensão]` (opt-in): preset de realismo. Ausente resolve o default da ação `base`,
+    `None` de fábrica — sem preset, o texto que vai ao CLI e o registro gravado são os de antes
+    desta extensão.
     """
     if mode not in PROMPT_MODES:
         raise ValueError(f"mode deve ser {', '.join(PROMPT_MODES)}")
     root = project_dir(pid)
+    preset, explicit = settings.resolve_preset("base", pid, preset)
+    # Sem preset a chamada ao prompter fica exatamente como era (invariante opt-in do gate W3).
+    kw = {"preset": preset} if preset else {}
     refs, _ = _require_inputs(root)
     ref = next((r for r in refs if r["ref_id"] == ref_id), None) if ref_id else refs[0]
     if ref is None:
@@ -308,16 +315,21 @@ def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", i
     pal = _palette(root)
     brief = None if no_bias else _brief(root, instruction)
     if mode == "template":
-        res = _template_result(product, pal, no_people)
+        # FDD §4: só o preset ESCOLHIDO mexe no fallback determinístico — e quem sabe preencher
+        # `Camera:`/`Lighting:`/`Color grading:` com o rig do catálogo é o template do prompter.
+        # Sem preset explícito o template da etapa fica byte-idêntico ao do curso.
+        res = ({**prompter.fallback_template("base", brief or {"product": product}, no_people=no_people,
+                                             preset=explicit), "images": []}
+               if explicit else _template_result(product, pal, no_people))
     elif not prompter.available():
         raise RuntimeError("Claude CLI indisponível — use o modo template ou instale o Claude Code")
     elif mode == "brief":
-        res = {**prompter.from_brief("base", brief or {"product": product}), "images": []}
+        res = {**prompter.from_brief("base", brief or {"product": product}, **kw), "images": []}
     elif no_bias:
-        res = prompter.from_images("base", [ref["path"]], bot_instruction(product, instruction))
+        res = prompter.from_images("base", [ref["path"]], bot_instruction(product, instruction), **kw)
     else:
         images = [ref["path"], *_ref_mood_paths(root, board)][:PROMPT_IMAGES_MAX]
-        res = prompter.from_images("base", images, instruction, brief)
+        res = prompter.from_images("base", images, instruction, brief, **kw)
     text = (res.get("prompt") or "").strip()
     if no_people and "no people" not in text.lower():
         text = text.rstrip(". ") + ". " + NO_PEOPLE
@@ -330,7 +342,9 @@ def generate_prompt(pid: str, ref_id: str | None = None, mode: str = "images", i
              # retorno e no histórico — proveniência determinística + os insumos visuais usados.
              "provenance": prompter.provenance(text),
              "mood_refs": _mood_ref_files(root, board),
-             "palette": pal or {"colors": [], "note": ""}}
+             "palette": pal or {"colors": [], "note": ""},
+             # `[extensão]`: preset resolvido da requisição, também no histórico (FDD §7).
+             "preset": preset}
     hist = _prompt_hist(root)
     hist.insert(0, entry)
     (root / STEP).mkdir(parents=True, exist_ok=True)

@@ -869,3 +869,45 @@ def test_annotation_can_never_become_a_scene_image(sb, project, base):
         sb.save_scenes(project, scenes)
     assert "storyboard/ideas" in str(e.value)
     assert not (sb.project_dir(project) / "storyboard" / "ideas" / f"{ann['id']}.png").exists()
+# ---------- `[extensão]` preset de realismo no video-prompt (FDD prompter-presets §5) ----------
+#: `preset` aqui é o preset de REALISMO, não as fórmulas da aula (`PRESETS`/`sbPreset`, amenda A3).
+def test_video_prompt_carries_the_realism_preset(sb, project, monkeypatch):
+    """T3.10 — sem o campo, resolve o default da ação `motion` (`None` de fábrica) e o prompter é
+    chamado sem preset; com id explícito, o id vai ao prompter e volta na resposta."""
+    monkeypatch.setattr(sb.prompter, "available", lambda: True)
+    seen = {}
+
+    def fake_brief(kind, brief, preset=None):
+        seen["preset"] = preset
+        return {"prompt": "Slow dolly-in.", "source": "claude", "seconds": 3.0, "preset": preset}
+
+    monkeypatch.setattr(sb.prompter, "from_brief", fake_brief)
+    r = sb.video_prompt(project, "cena01", "an astronaut walking", {"mode": "single"})
+    assert r["preset"] is None and seen["preset"] is None
+
+    com = sb.video_prompt(project, "cena01", "an astronaut walking", {"mode": "single"},
+                          preset="anamorphic-film-look")
+    assert com["preset"] == "anamorphic-film-look" and seen["preset"] == "anamorphic-film-look"
+
+
+def test_video_prompt_keeps_the_preset_when_claude_fails(sb, project, monkeypatch):
+    """T3.12 — o `except Exception` que cai no template não pode perder o preset nem virar 500."""
+    monkeypatch.setattr(sb.prompter, "available", lambda: True)
+    monkeypatch.setattr(sb.prompter, "from_brief",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("bot caiu")))
+    r = sb.video_prompt(project, "cena01", "an astronaut walking", {"mode": "single"},
+                        preset="sony-venice-night")
+    assert r["source"] == "template" and r["preset"] == "sony-venice-night"
+
+
+def test_video_prompt_does_not_touch_the_scenes_schema(sb, project, root, monkeypatch):
+    """T3.13 — amenda A5: quem persiste é o `PUT /storyboard/scenes`; `scenes.json` não ganha campo
+    (ADR-018/022). O preset do video-prompt vive só na resposta."""
+    sb.save_scenes(project, [{"text": "Close no astronauta"}])
+    arquivo = root / "storyboard" / "scenes.json"
+    antes = arquivo.read_bytes()
+    monkeypatch.setattr(sb.prompter, "available", lambda: False)
+    r = sb.video_prompt(project, "cena01", "an astronaut walking", {"mode": "single"},
+                        preset="documentary-street")
+    assert r["preset"] == "documentary-street"
+    assert arquivo.read_bytes() == antes, "video_prompt não escreve scenes.json"

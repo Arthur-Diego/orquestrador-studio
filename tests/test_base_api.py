@@ -540,3 +540,123 @@ def test_select_over_http(client, pid):
     assert client.post(f"/api/projects/{pid}/base/select", json={"id": "naoexiste"}).status_code == 404
     assert client.post(f"/api/projects/{pid}/base/select", json={}).status_code == 422
 
+
+
+# ---------- `[extensão]` presets de realismo no body de generate (FDD prompter-presets §5) ----------
+def _fake_claude(monkeypatch, sent: list[str]) -> list[str]:
+    """Claude fakeado no padrão do repo: guarda o prompt enviado (`args[2]`) e devolve JSON fixo."""
+    import json as _json
+    import subprocess
+
+    from studio.common import prompter
+
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+
+    def fake_run(args, capture_output, text, timeout):
+        sent.append(args[2])
+        payload = {"prompt": _FIVE_LINE_PROMPT, "negative": "blur", "camera": "", "notes_pt": ""}
+        return subprocess.CompletedProcess(args, 0, "```json\n" + _json.dumps(payload) + "\n```", "")
+
+    monkeypatch.setattr(prompter.subprocess, "run", fake_run)
+    return sent
+
+
+#: Nomes de corpo de câmera do catálogo — nenhum deles pode vazar para um prompt sem preset.
+_RIGS = ("Blackmagic Pocket 6K Pro", "ARRI Alexa Mini LF", "RED V-Raptor", "Sony Venice 2")
+
+
+def test_generate_without_preset_is_byte_identical_to_before(client, pid, monkeypatch):
+    """T3.1 — o body de hoje (sem `preset`), com o opt-in de fábrica, não muda nada: mesmas chaves
+    (só `preset` a mais, em `None`) e nenhum rig do catálogo no texto que vai para o CLI."""
+    sent = _fake_claude(monkeypatch, [])
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate", json={"mode": "images"})
+    assert r.status_code == 200 and r.json()["preset"] is None
+    assert set(r.json()) == {"ref_id", "ref_file", "mode", "instruction", "no_bias", "no_people", "model",
+                             "board", "aspect_ratio", "created", "prompt", "negative", "camera", "notes_pt",
+                             "source", "seconds", "images", "provenance", "mood_refs", "palette", "preset"}
+    assert not any(rig in sent[0] for rig in _RIGS), "sem preset o prompt do CLI é o de antes da extensão"
+    assert "REALISM PRESET" not in sent[0]
+
+
+def test_generate_with_explicit_preset_reaches_the_cli(client, pid, monkeypatch):
+    """T3.2 — preset explícito no body vira bloco de realismo no prompt enviado ao Claude."""
+    sent = _fake_claude(monkeypatch, [])
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate",
+                    json={"mode": "images", "preset": "arri-natural-narrative"})
+    assert r.status_code == 200 and r.json()["preset"] == "arri-natural-narrative"
+    assert "ARRI Alexa Mini LF" in sent[0] and "REALISM PRESET" in sent[0]
+
+
+def test_generate_null_preset_turns_off_a_configured_default(client, pid, studio_env, monkeypatch):
+    """T3.3 — a distinção AUSENTE × `null`: com override global gravado, o campo ausente resolve o
+    default e o `null` explícito desliga o preset (a rota de fuga do usuário)."""
+    from studio.common import settings
+    settings.set_global_preset("base", "documentary-street")
+
+    sent = _fake_claude(monkeypatch, [])
+    off = client.post(f"/api/projects/{pid}/base/prompts/generate", json={"mode": "images", "preset": None})
+    assert off.status_code == 200 and off.json()["preset"] is None
+    assert not any(rig in sent[0] for rig in _RIGS)
+
+    on = client.post(f"/api/projects/{pid}/base/prompts/generate", json={"mode": "images"})
+    assert on.status_code == 200 and on.json()["preset"] == "documentary-street"
+    assert "Blackmagic Pocket 6K Pro" in sent[1]
+
+
+def test_generate_unknown_preset_is_422_before_the_cli(client, pid, monkeypatch):
+    """T3.4 — id fora do catálogo é 422 com os ids válidos na mensagem, e o CLI não é chamado."""
+    sent = _fake_claude(monkeypatch, [])
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate",
+                    json={"mode": "images", "preset": "nao-existe"})
+    assert r.status_code == 422
+    assert "documentary-street" in json.dumps(r.json(), ensure_ascii=False)
+    assert sent == [], "a validação acontece antes de qualquer chamada ao Claude CLI"
+
+
+def test_generate_history_keeps_the_preset_and_the_existing_fields(client, pid, monkeypatch):
+    """T3.5 — `base/prompts.json` grava o preset sem perder provenance/mood_refs/palette."""
+    _fake_claude(monkeypatch, [])
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate",
+                    json={"mode": "images", "preset": "red-commercial-precision"})
+    assert r.status_code == 200
+    entry = client.get(f"/api/projects/{pid}/base/prompts/history").json()[0]
+    assert entry["preset"] == "red-commercial-precision"
+    assert entry["provenance"]["parts"] and entry["mood_refs"] and entry["palette"]["colors"]
+
+
+def test_generate_error_matrix_survives_the_preset_field(client, pid, monkeypatch):
+    """T3.6 — a matriz 409/200/422/502 da etapa 3 continua idêntica com `preset` no body."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", None)
+    body = {"mode": "images", "preset": "documentary-street"}
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate", json=body)
+    assert r.status_code == 409 and "indisponível" in r.json()["detail"]
+    assert client.post(f"/api/projects/{pid}/base/prompts/generate",
+                       json={**body, "mode": "template"}).status_code == 200
+    assert client.post(f"/api/projects/{pid}/base/prompts/generate",
+                       json={**body, "mode": "magico"}).status_code == 422
+
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    assert client.post(f"/api/projects/{pid}/base/prompts/generate",
+                       json={**body, "mode": "brief"}).status_code == 502
+
+
+def test_template_only_obeys_an_explicit_preset(client, pid):
+    """T3.7 — determinismo do fallback (FDD §4): o preset ESCOLHIDO preenche a linha `Camera:`;
+    o preset apenas resolvido por default deixa o template byte-idêntico ao do curso."""
+    from studio.common import settings
+
+    antes = client.post(f"/api/projects/{pid}/base/prompts/generate", json={"mode": "template"})
+    assert antes.status_code == 200 and antes.json()["preset"] is None
+
+    r = client.post(f"/api/projects/{pid}/base/prompts/generate",
+                    json={"mode": "template", "preset": "red-commercial-precision"})
+    assert r.status_code == 200 and r.json()["preset"] == "red-commercial-precision"
+    assert "Camera: RED V-Raptor" in r.json()["prompt"]
+
+    settings.set_global_preset("base", "documentary-street")
+    depois = client.post(f"/api/projects/{pid}/base/prompts/generate", json={"mode": "template"})
+    assert depois.status_code == 200 and depois.json()["preset"] == "documentary-street"
+    assert depois.json()["prompt"] == antes.json()["prompt"], "default resolvido não mexe no template"
+    assert not any(rig in depois.json()["prompt"] for rig in _RIGS)

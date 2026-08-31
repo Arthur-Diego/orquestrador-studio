@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import STATE_DIR
-from . import atomic, pricing
+from . import atomic, pricing, prompter
 
 CONFIG_PATH = STATE_DIR / "config.json"
 LEDGER_PATH = STATE_DIR / "spend-ledger.jsonl"
@@ -79,6 +79,43 @@ DEFAULTS: dict[str, dict] = {
     "animate.video": {"model": "kling2_6", "variant": "5s"},
     "music.track": {"model": "sonilo_music", "variant": None},
 }
+
+#: Os três papéis do prompter (`prompter.ROLES`), usados pelos routers de etapa. NÃO é o universo
+#: de validação da configuração de preset — quem manda nisso é `PRESET_ACTIONS`.
+PROMPTER_KINDS = ("mood", "base", "motion")
+
+#: Chave nova do `config.json` (global e de projeto) com os presets de realismo `[extensão]`.
+#: Fica ao lado de `"defaults"`, que esta frente não toca; config antigo sem ela segue válido.
+PRESET_CONFIG_KEY = "prompter_presets"
+
+#: `[extensão]` — registro `{ação: preset default de código}` do catálogo `prompter.REALISM_PRESETS`.
+#: Aberto de propósito: outro módulo acrescenta a própria ação em import time (a feature
+#: `storyboard-roteiro-llm` registra `"storyboard.script"`) sem editar este arquivo. As chaves podem
+#: ser pontuadas, no padrão de `ACTIONS`.
+#:
+#: Default de código `None` nos três papéis do prompter = OPT-IN (gate W3): nenhuma aula do curso
+#: ensina presets, então sem escolha explícita do usuário nada é injetado no prompt (ADR-004).
+PRESET_ACTIONS: dict[str, str | None] = {"mood": None, "base": None, "motion": None}
+
+
+class PresetUnset:
+    """Sentinela de "campo `preset` AUSENTE no body" — estado distinto de `None`.
+
+    Os bodies de geração têm três estados (FDD §5): ausente = resolver o default da ação;
+    `null` = sem preset, mesmo havendo override configurado; `"<id>"` = usar esse. Colapsar
+    ausente e `null` em `None` apagaria a rota de fuga do usuário, por isso a distinção é um
+    valor de verdade que atravessa router → serviço.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - só ajuda em traceback/teste
+        return "PRESET_UNSET"
+
+
+PRESET_UNSET = PresetUnset()
+#: Tipo do argumento `preset` que atravessa os routers de etapa e os serviços.
+PresetArg = str | None | PresetUnset
 
 
 # ---------- leitura/escrita de config ----------
@@ -172,6 +209,94 @@ def default_for(action: str, pid: str | None = None) -> dict:
             return {"action": action, "model": model, "variant": variant, "source": source}
     # inalcançável (DEFAULTS sempre válido), mas defensivo:
     return {"action": action, "model": None, "variant": None, "source": "code"}
+
+
+# ---------- preset de realismo por ação `[extensão]` (mesmo padrão ADR-016) ----------
+def _preset_overrides(path: Path) -> dict:
+    """Bloco `prompter_presets` de um `config.json` (vazio se a chave não existe ou não é dict)."""
+    over = _read(path).get(PRESET_CONFIG_KEY)
+    return over if isinstance(over, dict) else {}
+
+
+def _valid_preset(kind: str, preset: str | None) -> None:
+    if kind not in PRESET_ACTIONS:
+        raise ValueError(f"ação de preset desconhecida: {kind}")
+    if preset is not None and preset not in prompter.REALISM_PRESETS:
+        raise ValueError(f"preset desconhecido: {preset}")
+
+
+def _write_preset(path: Path, kind: str, preset: str | None) -> None:
+    cfg = _read(path)
+    if not isinstance(cfg.get(PRESET_CONFIG_KEY), dict):
+        cfg[PRESET_CONFIG_KEY] = {}
+    cfg[PRESET_CONFIG_KEY][kind] = preset
+    _write_atomic(path, cfg)
+
+
+def preset_default_for(kind: str, pid: str | None = None) -> dict:
+    """Preset de realismo resolvido de `kind`: `{kind, preset, source}`.
+
+    `kind` é qualquer ação registrada em `PRESET_ACTIONS` (inclusive pontuada, ex.:
+    `"storyboard.script"`); chave não registrada levanta `ValueError` (→ 422 no router).
+    `source ∈ {"project", "global", "code"}`, resolvido projeto → global → código. Semântica dos
+    overrides: `null` gravado é "sem preset" ESCOLHIDO (encerra a cadeia); chave ausente cai para o
+    próximo nível; id que saiu do catálogo é ignorado (a UI nunca fica presa a um id morto).
+    """
+    if kind not in PRESET_ACTIONS:
+        raise ValueError(f"ação de preset desconhecida: {kind}")
+    chain: list[tuple[str, dict]] = []
+    if pid is not None:
+        chain.append(("project", _preset_overrides(_project_config_path(pid))))
+    chain.append(("global", _preset_overrides(CONFIG_PATH)))
+    for source, over in chain:
+        if kind not in over:
+            continue
+        preset = over[kind]
+        if preset is None:
+            return {"kind": kind, "preset": None, "source": source}
+        if isinstance(preset, str) and preset in prompter.REALISM_PRESETS:
+            return {"kind": kind, "preset": preset, "source": source}
+    code = PRESET_ACTIONS[kind]
+    return {"kind": kind, "preset": code if code in prompter.REALISM_PRESETS else None, "source": "code"}
+
+
+def resolve_preset(kind: str, pid: str | None = None,
+                   preset: PresetArg = PRESET_UNSET) -> tuple[str | None, str | None]:
+    """Preset efetivo de UMA geração `[extensão]`: devolve `(resolvido, explícito)`.
+
+    `resolvido` é o que vai para o prompter e para a resposta: com o campo ausente sai de
+    `preset_default_for(kind, pid)` (projeto → global → código), senão é o próprio valor pedido.
+    `explícito` é só o que o cliente escolheu de propósito (`None` quando o valor veio apenas da
+    resolução de default) — apenas ele pode mexer no template determinístico (FDD §4), para que o
+    fallback sem Claude continue byte-idêntico ao do curso quando ninguém pediu preset.
+    """
+    if isinstance(preset, PresetUnset):
+        return preset_default_for(kind, pid)["preset"], None
+    return preset, preset
+
+
+def set_global_preset(kind: str, preset: str | None) -> dict:
+    """Fixa o preset default global de `kind` (`None` = "sem preset", persistido como `null`)."""
+    _valid_preset(kind, preset)
+    _write_preset(CONFIG_PATH, kind, preset)
+    return preset_default_for(kind)
+
+
+def set_project_preset(pid: str, kind: str, preset: str | None) -> dict:
+    _valid_preset(kind, preset)
+    _write_preset(_project_config_path(pid), kind, preset)
+    return preset_default_for(kind, pid)
+
+
+def clear_project_preset(pid: str, kind: str) -> dict:
+    """Remove o override do projeto: a resolução volta a cair para global → código."""
+    _valid_preset(kind, None)
+    path = _project_config_path(pid)
+    cfg = _read(path)
+    if isinstance(cfg.get(PRESET_CONFIG_KEY), dict):
+        cfg[PRESET_CONFIG_KEY].pop(kind, None)
+        _write_atomic(path, cfg)
+    return preset_default_for(kind, pid)
 
 
 def _variant_params(model: str, variant: str | None) -> dict:

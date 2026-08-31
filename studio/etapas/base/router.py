@@ -4,11 +4,11 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ... import higgsfield as hf
 from ...base import service as base
-from ...common import prompter
+from ...common import prompter, settings
 from ...refs import service as refs
 
 router = APIRouter(tags=["base"])
@@ -64,6 +64,19 @@ class PromptGenReq(BaseModel):
     no_people: bool = False   # frase "No people…" é opcional na base (B11)
     model: str | None = None
     board: str | None = None  # [extensão] ADR-013: usa as imagens de um board como referência
+    #: `[extensão]` preset de realismo (FDD §5). Três estados: campo AUSENTE = o serviço resolve o
+    #: default da ação; `null` = sem preset; `"<id>"` = usar esse. Id fora do catálogo → 422 aqui,
+    #: pelo validador, ou seja antes de o endpoint rodar e chamar o Claude CLI.
+    preset: str | None = None
+
+    @field_validator("preset")
+    @classmethod
+    def _known_preset(cls, v: str | None) -> str | None:
+        return prompter.valid_preset(v)
+
+    def preset_arg(self) -> settings.PresetArg:
+        """Ausente ≠ `null`: sem o campo no body, quem resolve o default é o serviço."""
+        return self.preset if "preset" in self.model_fields_set else settings.PRESET_UNSET
 
 
 @router.get("/api/projects/{pid}/base/prompts")
@@ -85,7 +98,7 @@ def base_prompt_generate(pid: str, req: PromptGenReq):
     """Roda o bot da aula. Sem Claude no PATH: 409 (a tela oferece o modo template)."""
     try:
         return base.generate_prompt(pid, req.ref_id, req.mode, req.instruction, req.no_bias,
-                                    req.no_people, req.model, req.board)
+                                    req.no_people, req.model, req.board, preset=req.preset_arg())
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except FileNotFoundError as e:
