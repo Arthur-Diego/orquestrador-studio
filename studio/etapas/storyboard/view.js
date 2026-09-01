@@ -43,8 +43,9 @@ Studio.register("storyboard", (ctx) => {
     // o mapeamento aqui torna trivial migrar per-cena↔per-foto e plugar a ponte com o downstream.
     const photoState = new Map();            // chave `${sid}:${img}` -> { desc, prompt, videos:[] }
     let videoModels = [], videoModelDefaults = { single: "", start_end: "" };  // seletor do modal (ADR-022)
-    // `[extensão]` PRESET DE REALISMO — não confundir com `#sbPreset`, que é o das FÓRMULAS DA AULA
-    // (outro conceito, intocado). Por isso o identificador local leva o prefixo `realism`. É CLASSE,
+    // `[extensão]` PRESET DE REALISMO — outro conceito das fórmulas da aula (o antigo combo
+    // `#sbPreset` foi removido a pedido do dono, ADR-031). Por isso o identificador local leva o
+    // prefixo `realism`. É CLASSE,
     // não id: o bloco se repete por foto (uma linha por foto + o modal), e id duplicado seria
     // HTML inválido — mesmo padrão de `.sbVidDesc`/`.sbVidPromptBox`.
     // `realismDefaults` = o mapa ABERTO `defaults` do catálogo, guardado inteiro: cada bloco lê a
@@ -100,8 +101,6 @@ Studio.register("storyboard", (ctx) => {
     async function loadPresets() {
       meta = await api(url("/instructions"));
       $("#sbKind").innerHTML = meta.kinds.map((k) => `<option value="${esc(k.kind)}">${esc(k.label)}</option>`).join("");
-      $("#sbPreset").innerHTML = `<option value="">— fórmulas da aula —</option>` +
-        meta.presets.map((p, i) => `<option value="${i}">${esc(p.label)}</option>`).join("");
       kindHint();
     }
     // Catálogo global do preset de realismo. O default vem do mapa ABERTO `defaults`, lido pela
@@ -701,7 +700,8 @@ Studio.register("storyboard", (ctx) => {
     // O método da aula 010 (o ALUNO escreve a história) continua o caminho PADRÃO e intocado.
     // Invariante: NADA aqui escreve cena sozinho — a aplicação é opt-in e passa pelo
     // `PUT /scenes` que já existe, com o array montado pelo `collect()` da tela.
-    // Vocabulário: prefixo `sbScript` (amenda A4 — no storyboard `#sbPreset` é FÓRMULA DA AULA).
+    // Vocabulário: prefixo `sbScript` (amenda A4 — distinto das fórmulas da aula; o combo
+    // `#sbPreset` que as expunha foi removido, ADR-031).
     // ====================================================================================
     const SCRIPT_NO_CLI = "Claude CLI não encontrado: escreva as cenas à mão no painel 03 (aula 010) ou instale o Claude Code.";
     const SCRIPT_TARGET = "Nano Banana Pro";      // gate W3 (P3): v1 tem alvo ÚNICO, texto fixo — sem seletor
@@ -1061,11 +1061,6 @@ Studio.register("storyboard", (ctx) => {
     return {
       init() {
         $("#sbKind").onchange = kindHint;
-        $("#sbPreset").onchange = (e) => {
-          const p = meta.presets[+e.target.value];
-          if (!p) return;
-          $("#sbKind").value = p.kind; $("#sbText").value = p.text; kindHint();
-        };
         $("#sbGen4").onclick = () => build(meta.counts.uncertain);
         $("#sbGen1").onclick = () => build(meta.counts.tweak);
         $("#sbCopy").onclick = async () => {

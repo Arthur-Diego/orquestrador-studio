@@ -249,14 +249,17 @@ def test_job_is_idle_before_any_generation(client, pid):
         "state": "idle", "done": 0, "total": 0, "added": 0, "error": None, "log": []}
 
 
-def test_published_presets_round_trip_through_the_validator(client, pid, base):
-    """Toda fórmula devolvida pelo GET tem que ser aceita pelo POST (contrato 2 x contrato 3)."""
-    presets = client.get(f"/api/projects/{pid}/storyboard/instructions").json()["presets"]
-    assert any(";" in p["text"] for p in presets), "o preset de inpaint da aula usa ponto-e-vírgula"
-    for preset in presets:
-        r = client.post(f"/api/projects/{pid}/storyboard/instructions",
-                        json={"kind": preset["kind"], "text": preset["text"], "count": 4})
-        assert r.status_code == 200, (preset["label"], r.status_code, r.text)
+def test_instructions_no_longer_publish_the_lesson_formulas(client, pid, base):
+    """ADR-031: o combo `#sbPreset` foi removido a pedido do dono, então o GET não publica mais o
+    catálogo `presets`. O POST segue montando a instrução a partir do texto digitado à mão —
+    inclusive o padrão do inpaint da aula (contexto e pedido ligados por ponto-e-vírgula)."""
+    body = client.get(f"/api/projects/{pid}/storyboard/instructions").json()
+    assert "presets" not in body
+    inpaint = ("There is a rope hanging from the top of the can down to the ground; "
+               "make it thinner, proportional to the character and realistic")
+    r = client.post(f"/api/projects/{pid}/storyboard/instructions",
+                    json={"kind": "edit", "text": inpaint, "count": 4})
+    assert r.status_code == 200, (r.status_code, r.text)
 
 
 def test_unknown_project_is_404_on_every_storyboard_route(client):

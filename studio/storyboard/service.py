@@ -62,8 +62,9 @@ SUFFIX = "Keep everything else identical, realistic."
 #: PRODUZ pontos de vista reais (`angles.build_prompts`: "Bring me another point of view of this
 #: image. …") — não a antiga "Another point of view of this exact scene: … Same subject, same
 #: lighting, realistic.", que travava o Nano Banana em preservação fiel (só um "tweak" mínimo em
-#: vez de um ângulo novo — ver ADR-027). `{core}` é o texto único do usuário (o preset da aula
-#: `#sbPreset` continua entrando literal aqui, ex.: "a close-up on the character"), sem a pontuação
+#: vez de um ângulo novo — ver ADR-027). `{core}` é o texto único do usuário, digitado no campo de
+#: instrução (ex.: "a close-up on the character"; o combo de fórmulas da aula `#sbPreset` que
+#: pré-preenchia esse texto foi removido a pedido do dono, ADR-031), sem a pontuação
 #: final. O pedido explícito de MUDAR câmera/enquadramento é o que empurra a variação real de
 #: viewpoint; "same scene, lighting and colors" preserva só a continuidade, não a composição.
 MULTISHOT_INSTRUCTION = (
@@ -125,15 +126,6 @@ KINDS = [
 ]
 KIND_IDS = {k["kind"] for k in KINDS}
 CLI_KINDS = {k["kind"] for k in KINDS if k["cli"]}
-
-# Fórmulas literais da aula 010, em inglês (aula 007); o pt-BR fica no label.
-PRESETS = [
-    {"kind": "edit", "label": "Menor e mais realista", "text": "Make the climber even smaller and more realistic"},
-    {"kind": "edit", "label": "Eliminar personagem da direita", "text": "Remove the small character on the right side"},
-    {"kind": "edit", "label": "Inpaint: corda proporcional",
-     "text": "There is a rope hanging from the top of the can down to the ground; make it thinner, proportional to the character and realistic"},
-    {"kind": "multishot", "label": "Close no personagem", "text": "a close-up on the character"},
-]
 
 _registry = JobRegistry()
 _NUMBERED = re.compile(r"\b\d+[.)]\s")
@@ -237,8 +229,11 @@ def scene_arc(n: int, total: int) -> dict:
 
 
 def presets() -> dict:
+    # O catálogo de fórmulas da aula (`PRESETS`/combo `#sbPreset`) foi removido a pedido do dono
+    # (ADR-031): o texto da instrução é digitado direto no campo, sem atalho. As demais chaves —
+    # kinds, contadores, modelos, arco e nota de upscale — seguem saindo do backend.
     return {"kinds": [{k: v for k, v in kind.items() if k != "cli"} for kind in KINDS],
-            "presets": PRESETS, "suffix": SUFFIX, "counts": dict(COUNTS),
+            "suffix": SUFFIX, "counts": dict(COUNTS),
             "models": MODELS, "arc": SCENE_ARC, "upscale_note": UPSCALE_NOTE}
 
 

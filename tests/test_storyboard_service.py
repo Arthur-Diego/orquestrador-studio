@@ -78,12 +78,14 @@ def test_instruction_requires_base_image_from_step_three(sb, project):
     assert sb.status(project)["has_base"] is False
 
 
-def test_every_published_preset_is_accepted_by_the_validator(sb, project, base):
-    """Contrato 2 x contrato 3: a fórmula que a etapa publica não pode ser recusada por ela mesma.
-    O preset de inpaint da aula usa ponto-e-vírgula ligando contexto e pedido — é UMA instrução."""
-    for preset in sb.presets()["presets"]:
-        r = sb.build_instruction(project, preset["kind"], preset["text"], 4)
-        assert r["instruction"], preset["label"]
+def test_catalogo_de_formulas_da_aula_foi_removido(sb):
+    """ADR-031: o combo `#sbPreset` (fórmulas da aula) foi removido a pedido do dono. O endpoint
+    de instruções não publica mais o catálogo `presets` — o texto entra digitado à mão. As demais
+    chaves seguem intactas; a validação de instrução (inclusive o ponto-e-vírgula do inpaint da
+    aula) continua coberta por `test_semicolon_joins_one_instruction_but_period_separates`."""
+    p = sb.presets()
+    assert "presets" not in p
+    assert not hasattr(sb, "PRESETS")
 
 
 def test_semicolon_joins_one_instruction_but_period_separates(sb, project, base):
@@ -94,12 +96,11 @@ def test_semicolon_joins_one_instruction_but_period_separates(sb, project, base)
             sb.build_instruction(project, "edit", two, 1)
 
 
-def test_presets_are_in_english_with_ptbr_labels(sb):
+def test_instructions_publish_counts_and_kinds(sb):
     p = sb.presets()
     assert p["counts"] == {"uncertain": 4, "tweak": 1}
     # `[extensão]` inpaint-marcacao: o kind `edit_area` entra ADITIVO ao lado dos três da aula.
     assert {k["kind"] for k in p["kinds"]} == {"draw_to_edit", "edit", "multishot", "edit_area"}
-    assert any(x["text"] == "a close-up on the character" for x in p["presets"])
 
 
 # ---------- cenas ----------
