@@ -183,15 +183,6 @@ def test_remover_com_id_invalido_e_422(client, studio_env, ruim):
     assert client.delete(f"/api/escolhidas/{ruim}").status_code == 422
 
 
-# ---------- tela (lida como texto) ----------
-def test_o_painel_vive_em_moodboards_js(client):
-    """ADR-014: a UI nova mora na biblioteca global, nunca na etapa 2."""
-    js = client.get("/static/moodboards.js").text
-    for token in ("Studio.vibes", "renderVibes", "/api/vibes", "/api/vibes/facets",
-                  "/api/vibes/select", "/api/escolhidas", "studio:escolhidas",
-                  "refreshCount", "marcar todas da página", "origem_url", "vbp-"):
-        assert token in js, token
-    assert "mood_vibe_scout" in js, "o empty-state ensina a rodar a skill"
 
 
 def test_a_etapa_2_nao_ganhou_controle_nenhum(client):
@@ -199,11 +190,3 @@ def test_a_etapa_2_nao_ganhou_controle_nenhum(client):
     for path in ("/steps/mood/view.html", "/steps/mood/view.js"):
         texto = client.get(path).text
         assert "/api/vibes" not in texto and "escolhidas" not in texto
-
-
-def test_a_paginacao_e_do_painel_e_nao_vazou_para_o_css_global(client):
-    """ADR-019: CSS novo é `<style>` inline escopado; `ui.css`/`style.css` não são tocados."""
-    js = client.get("/static/moodboards.js").text
-    assert ".vbp-pager" in js, "a barra de paginação é escopada no prefixo do painel"
-    for css in ("/static/ui.css", "/static/style.css"):
-        assert "vbp-" not in client.get(css).text

@@ -1,0 +1,389 @@
+diff --git a/studio/web/moodboards.js b/studio/web/moodboards.js
+index a0e6356..53e1933 100644
+--- a/studio/web/moodboards.js
++++ b/studio/web/moodboards.js
+@@ -42,7 +42,7 @@
+         <span class="eyebrow">Biblioteca · independente de campanha</span>
+         <h2>Mood boards <span class="ext">[extensão]</span></h2>
+         <p class="lede">Mood boards reutilizáveis: monte uma vez e use em qualquer campanha. A etapa 2 pode <b>puxar</b> um board e a etapa 3 pode referenciá-lo visualmente. Estende a vibe única do curso (ADR-007).</p>
+-        <div class="ov-actions"><button type="button" class="primary" id="btnNewBoard">Novo mood board</button></div>
++        <div class="ov-actions"><button type="button" class="primary" id="btnNewBoard">Novo mood board</button><button type="button" class="ghost" id="btnVibes" title="As fotos que o /mood_vibe_scout pesquisou no Pinterest [extensão]">Fotos de vibe</button></div>
+       </header>
+       ${boards.length
+         ? `<div class="ovgrid mb-grid">${cards}</div>`
+@@ -50,6 +50,7 @@
+     const openNew = () => newBoardModal();
+     const b1 = document.querySelector("#btnNewBoard"); if (b1) b1.onclick = openNew;
+     const b2 = document.querySelector("#btnNewBoard2"); if (b2) b2.onclick = openNew;
++    const bv = document.querySelector("#btnVibes"); if (bv) bv.onclick = goVibes;
+     main.onclick = (ev) => { const c = ev.target.closest("[data-mb]"); if (c) goEditor(c.dataset.mb); };
+     main.onkeydown = (ev) => { const c = ev.target.closest("[data-mb]"); if (c && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); goEditor(c.dataset.mb); } };
+   }
+@@ -394,8 +395,365 @@
+     if (m.actions[1]) m.actions[1].classList.add("danger");
+   }
+ 
++  // ---------- painel das fotos de vibe do Pinterest [extensão] (ADH-OS-20260902-03) ----------
++  // A peneira: o que o `/mood_vibe_scout` baixou do Pinterest vira uma grade paginada (máx. 20
++  // por página, teto do servidor) onde se marcam as boas. Marcar COPIA para `_escolhidas/` — a
++  // pesquisa nunca é destruída (D3) — e é dessa pasta que a cadeia de mood parte.
++  //
++  // Pseudo-rota `#/moodboards/_vibes`: `_vibes` jamais é um mbid válido (`MBID_RE` rejeita `_`
++  // inicial), então `open()` intercepta esse valor antes do editor. Isso dá uma tela nova SEM
++  // tocar `studio/web/app.js` nem `index.html`.
++  //
++  // Contrato completo: docs/domains/mood/features/painel-vibes-fdd.md
++  const VIBES_ROUTE = "_vibes";
++  //: prefixo do arquivo -> badge (references/saida.md do mood_vibe_scout)
++  const ORIGEM_BADGE = {
++    catalogo: { rotulo: "catálogo", kind: "mode" },
++    usuario: { rotulo: "pedida", kind: "ok" },
++    sugestao: { rotulo: "sugerida", kind: "info" },
++  };
++  //: último total conhecido de escolhidas — a feature 01 lê por `Studio.vibes.count()`.
++  let escolhidasTotal = 0;
++
++  function goVibes() { location.hash = `#/moodboards/${VIBES_ROUTE}`; }
++
++  /** Publica o contador. Só é chamado DEPOIS de o estado já estar no disco, e só quando o valor
++   *  muda de fato — salvar dispara duas leituras (a resposta do select e o repinte da peneira) e
++   *  quem escuta não deve ver o mesmo total duas vezes. */
++  function setEscolhidasTotal(total) {
++    const novo = Number(total) || 0;
++    if (novo === escolhidasTotal) return;
++    escolhidasTotal = novo;
++    document.dispatchEvent(new CustomEvent("studio:escolhidas", { detail: { total: escolhidasTotal } }));
++  }
++
++  /** Só http(s) vira href — `origem_url` é dado de terceiro e nunca deve virar `javascript:`. */
++  const safeUrl = (u) => (/^https?:\/\//i.test(u || "") ? String(u) : "");
++
++  function pinHtml(url) {
++    const href = safeUrl(url);
++    return href
++      ? `<a class="vbp-pin" href="${esc(href)}" target="_blank" rel="noopener noreferrer">pin de origem ↗</a>`
++      : `<span class="vbp-pin off">sem origem_url</span>`;
++  }
++
++  function metaHtml(it, nome) {
++    const badge = ORIGEM_BADGE[it.origem] || ORIGEM_BADGE.catalogo;
++    return `<div class="vbp-meta">
++      <span class="vbp-name">${esc(nome)}</span>
++      <span class="row wrap">${ui.chip(it.vibe_nome || it.vibe || "sem vibe", "info")}${ui.chip(badge.rotulo, badge.kind)}</span>
++      ${pinHtml(it.origem_url)}</div>`;
++  }
++
++  function vibeCardHtml(it) {
++    return `<div class="vbp-card" data-vid="${esc(it.id)}" tabindex="0" role="checkbox" aria-checked="false" title="${esc(it.arquivo)}">
++      <img loading="lazy" src="${esc(it.url)}" alt="">
++      <span class="vbp-check" aria-hidden="true">✓</span>
++      ${it.escolhida ? `<span class="vbp-tag">já escolhida</span>` : ""}
++      ${metaHtml(it, it.arquivo)}</div>`;
++  }
++
++  function chosenCardHtml(it) {
++    return `<div class="vbp-card" data-cid="${esc(it.id)}" title="${esc(it.origem_arquivo || it.arquivo)}">
++      <img loading="lazy" src="${esc(it.url)}" alt="">
++      <button class="vbp-rm" type="button" data-rm="${esc(it.id)}" title="Tirar da peneira — o original da pesquisa não é apagado">remover</button>
++      ${metaHtml(it, it.origem_arquivo || it.arquivo)}</div>`;
++  }
++
++  const gridIds = () => [...document.querySelectorAll("#vbGrid [data-vid]")].map((el) => el.dataset.vid);
++  const pageAllMarked = (st) => { const ids = gridIds(); return ids.length > 0 && ids.every((id) => st.sel.has(id)); };
++
++  function markSelected(st) {
++    document.querySelectorAll("#vbGrid [data-vid]").forEach((el) => {
++      const on = st.sel.has(el.dataset.vid);
++      el.classList.toggle("vbp-on", on);
++      el.setAttribute("aria-checked", on ? "true" : "false");
++    });
++  }
++
++  function paintSelCount(st) {
++    const c = document.querySelector("#vbSelCount");
++    if (c) c.textContent = `${st.sel.size} marcada(s)`;
++    const save = document.querySelector("#vbSave");
++    if (save) {
++      save.disabled = !st.sel.size;
++      save.textContent = st.sel.size ? `Salvar ${st.sel.size} em escolhidas` : "Salvar em escolhidas";
++    }
++    const all = document.querySelector("#vbAllPage");
++    if (all) all.textContent = pageAllMarked(st) ? "desmarcar todas da página" : "marcar todas da página";
++  }
++
++  function paintIndice(indice) {
++    const el = document.querySelector("#vbIndice");
++    if (!el) return;
++    el.innerHTML = (indice && indice.ok)
++      ? ui.chip(indice.campanha ? `_indice.json ok · ${indice.campanha}` : "_indice.json ok", "ok")
++      : ui.chip(`_indice.json ${(indice && indice.erro) || "indisponível"} — vibe e pin vêm do nome do arquivo`, "warn");
++  }
++
++  function pagerHtml(page, pages, perPage, total, rotulo) {
++    if (!total) return "";
++    const primeiro = (page - 1) * perPage + 1;
++    const ultimo = Math.min(page * perPage, total);
++    const btn = (alvo, texto, off) =>
++      `<button type="button" class="ghost" data-pg="${alvo}"${off ? " disabled" : ""}>${texto}</button>`;
++    return btn(1, "« primeira", page <= 1) + btn(page - 1, "‹ anterior", page <= 1) +
++      `<span class="vbp-pg">página <b>${page}</b> de ${pages} · ${primeiro}–${ultimo} de ${total} ${esc(rotulo)}</span>` +
++      btn(page + 1, "próxima ›", page >= pages) + btn(pages, "última »", page >= pages);
++  }
++
++  function emptyVibesHtml(st, body) {
++    if (body.total === 0 && (st.vibe || st.origem)) {
++      return `<div class="empty">Nenhuma foto com esse filtro. <button class="link" data-vbclear>limpar filtros</button></div>`;
++    }
++    if (body.total === 0) {
++      return `<div class="empty-state"><span class="eyebrow">Nenhuma pesquisa ainda</span>
++        <h2>A pasta de fotos de vibe está vazia</h2>
++        <p class="lede">Rode a pesquisa de vibe apontando a saída para esta pasta:</p>
++        <pre class="vbp-cmd">/mood_vibe_scout --saida ${esc(body.pasta || "")}</pre>
++        <p class="fine">A skill entrevista você como um diretor de arte, cruza o catálogo de 30 vibes com sugestões e baixa N referências por vibe no Pinterest. Depois volte aqui para peneirar.</p></div>`;
++    }
++    return `<div class="empty">Esta página está além do fim (${body.pages} páginas ao todo).
++      <button class="link" data-vblast>ir para a última página</button></div>`;
++  }
++
++  async function paintGrid(st) {
++    const grid = document.querySelector("#vbGrid");
++    if (!grid) return;
++    const qs = new URLSearchParams({ page: String(st.page), per_page: String(st.perPage) });
++    if (st.vibe) qs.set("vibe", st.vibe);
++    if (st.origem) qs.set("origem", st.origem);
++    let body;
++    try { body = await api(`/api/vibes?${qs.toString()}`); }
++    catch (e) { grid.innerHTML = `<div class="empty">Não foi possível listar as fotos: ${esc(e.message)}</div>`; return; }
++
++    st.page = body.page; st.perPage = body.per_page; st.pages = body.pages; st.total = body.total;
++    const folder = document.querySelector("#vbFolder");
++    if (folder) folder.textContent = body.pasta || "";
++    paintIndice(body.indice);
++    grid.innerHTML = body.items.length ? body.items.map(vibeCardHtml).join("") : emptyVibesHtml(st, body);
++    const limpar = grid.querySelector("[data-vbclear]");
++    if (limpar) limpar.onclick = () => { st.vibe = ""; st.origem = ""; st.page = 1; syncFilters(st); paintGrid(st); };
++    const ultima = grid.querySelector("[data-vblast]");
++    if (ultima) ultima.onclick = () => { st.page = st.pages; paintGrid(st); };
++    const pager = document.querySelector("#vbPager");
++    if (pager) pager.innerHTML = pagerHtml(st.page, st.pages, st.perPage, st.total, "fotos");
++    markSelected(st);
++    paintSelCount(st);
++  }
++
++  async function paintChosen(st) {
++    const grid = document.querySelector("#vbChosen");
++    if (!grid) return;
++    let body;
++    try { body = await api(`/api/escolhidas?page=${st.chosenPage}&per_page=${st.perPage}`); }
++    catch (e) { grid.innerHTML = `<div class="empty">Não foi possível listar as escolhidas: ${esc(e.message)}</div>`; return; }
++    if (body.page > body.pages) { st.chosenPage = body.pages; return paintChosen(st); }
++
++    st.chosenPage = body.page;
++    setEscolhidasTotal(body.total);
++    const c = document.querySelector("#vbChosenCount");
++    if (c) c.textContent = `${body.total} escolhida(s)`;
++    grid.innerHTML = body.items.length
++      ? body.items.map(chosenCardHtml).join("")
++      : `<div class="empty">Nenhuma foto escolhida ainda — marque acima e salve.</div>`;
++    const pager = document.querySelector("#vbChosenPager");
++    if (pager) pager.innerHTML = pagerHtml(body.page, body.pages, body.per_page, body.total, "escolhidas");
++  }
++
++  async function paintFacets(st) {
++    const sel = document.querySelector("#vbVibe");
++    if (!sel) return;
++    let facets;
++    try { facets = await api("/api/vibes/facets"); }
++    catch (e) { toast(e.message); return; }
++    sel.innerHTML = `<option value="">todas as vibes (${facets.total})</option>` +
++      facets.vibes.map((v) => `<option value="${esc(v.slug)}">${esc(v.nome || v.slug)} (${v.total})</option>`).join("");
++    sel.value = st.vibe;
++  }
++
++  function syncFilters(st) {
++    const v = document.querySelector("#vbVibe"); if (v) v.value = st.vibe;
++    const o = document.querySelector("#vbOrigem"); if (o) o.value = st.origem;
++  }
++
++  async function saveVibes(st) {
++    const ids = [...st.sel];
++    if (!ids.length) { toast("Marque ao menos uma foto"); return; }
++    const btn = document.querySelector("#vbSave");
++    if (btn) btn.disabled = true;
++    try {
++      const r = await api("/api/vibes/select", { method: "POST", body: JSON.stringify({ ids }) });
++      st.sel.clear();
++      const partes = [`${r.copiadas.length} copiada(s)`];
++      if (r.duplicadas.length) partes.push(`${r.duplicadas.length} já estava(m) na peneira`);
++      if (r.ausentes.length) partes.push(`${r.ausentes.length} sumiu(ram) do disco`);
++      toast(partes.join(" · "));
++      setEscolhidasTotal(r.total_escolhidas);
++      st.chosenPage = 1;
++      await paintGrid(st);
++      await paintChosen(st);
++      await paintFacets(st);
++    } catch (err) { toast(err.message); }
++    paintSelCount(st);   // devolve o botão ao estado certo, inclusive depois de erro
++  }
++
++  async function removeChosen(st, id) {
++    try {
++      const r = await api(`/api/escolhidas/${encodeURIComponent(id)}`, { method: "DELETE" });
++      setEscolhidasTotal(r.total_escolhidas);
++      toast("Foto tirada da peneira — o original da pesquisa continua lá");
++      await paintChosen(st);
++      await paintGrid(st);
++      await paintFacets(st);
++    } catch (err) { toast(err.message); }
++  }
++
++  async function renderVibes() {
++    const main = $main();
++    main.onclick = null; main.onkeydown = null;
++    //: A marcação vive AQUI, fora do ciclo de repintura da grade — por isso sobrevive a trocar
++    //: de página, a filtrar e a recarregar.
++    const st = { page: 1, perPage: 20, vibe: "", origem: "", sel: new Set(), pages: 1, total: 0, chosenPage: 1 };
++
++    main.innerHTML = `
++      <style>
++        .vbp-folder{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.8rem;opacity:.85;margin:.3rem 0 0}
++        .vbp-folder code{font-family:"IBM Plex Mono",ui-monospace,monospace;background:rgba(120,120,120,.16);padding:2px 6px;border-radius:6px;word-break:break-all}
++        .vbp-cmd{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.82rem;background:rgba(120,120,120,.16);padding:9px 11px;border-radius:8px;overflow-x:auto;max-width:100%}
++        .vbp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:14px}
++        .vbp-card{position:relative;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;
++          border:2px solid transparent;background:rgba(120,120,120,.12);cursor:pointer;transition:border-color .15s,transform .15s}
++        .vbp-card:hover{transform:translateY(-2px)}
++        .vbp-card>img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block}
++        .vbp-card.vbp-on{border-color:var(--accent);box-shadow:var(--ring-sel)}
++        .vbp-check{position:absolute;top:7px;left:7px;width:22px;height:22px;border-radius:999px;display:grid;place-items:center;
++          background:rgba(0,0,0,.55);color:#fff;font-size:.72rem;z-index:2;opacity:.4}
++        .vbp-card.vbp-on .vbp-check{background:var(--accent);opacity:1}
++        .vbp-tag{position:absolute;top:7px;right:7px;font-size:.66rem;padding:2px 7px;border-radius:999px;background:rgba(60,150,90,.92);color:#fff;z-index:2}
++        .vbp-rm{position:absolute;top:7px;right:7px;font-size:.68rem;padding:3px 9px;border-radius:999px;border:none;
++          cursor:pointer;background:rgba(170,60,60,.92);color:#fff;z-index:2}
++        .vbp-rm:hover{background:rgba(195,70,70,1)}
++        .vbp-meta{display:flex;flex-direction:column;gap:4px;padding:6px 7px 8px;font-size:.72rem}
++        .vbp-name{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.66rem;opacity:.78;word-break:break-all}
++        .vbp-pin{font-size:.68rem;opacity:.85}
++        .vbp-pin.off{opacity:.42;font-style:italic}
++        .vbp-chosen .vbp-card{cursor:default}
++        .vbp-chosen .vbp-card:hover{transform:none}
++        .vbp-pager{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:.8rem}
++        .vbp-pg{font-size:.8rem;opacity:.85}
++      </style>
++      <header class="stephead">
++        <span class="eyebrow"><button class="link" id="vbBack">← Biblioteca</button> · Fotos de vibe <span class="ext">[extensão]</span></span>
++        <h2>Fotos de vibe do Pinterest</h2>
++        <p class="lede">O resultado da pesquisa do <b>/mood_vibe_scout</b>. Marque as que valem: marcar <b>copia</b> para as escolhidas e nunca destrói a pesquisa. É da pasta de escolhidas que a cadeia de mood parte.</p>
++        <p class="vbp-folder"><span>Pasta pesquisada:</span> <code id="vbFolder"></code> <span id="vbIndice"></span></p>
++      </header>
++
++      <section class="panel">
++        <div class="panel-head">
++          <h3><span class="pn">01</span>Escolher as fotos</h3>
++          <div class="row wrap">
++            <select id="vbVibe" title="Filtrar por vibe (lido do _indice.json)"><option value="">todas as vibes</option></select>
++            <select id="vbOrigem" title="Filtrar por origem">
++              <option value="">toda origem</option>
++              <option value="catalogo">catálogo</option>
++              <option value="usuario">pedida</option>
++              <option value="sugestao">sugerida</option>
++            </select>
++            <button type="button" class="ghost" id="vbAllPage">marcar todas da página</button>
++            <span id="vbSelCount" class="chip mode">0 marcada(s)</span>
++            <button type="button" class="primary" id="vbSave" disabled>Salvar em escolhidas</button>
++          </div>
++        </div>
++        <p class="fine">No máximo 20 por página (teto do servidor). A marcação <b>sobrevive à troca de página e ao filtro</b> — pode marcar em várias páginas e salvar tudo de uma vez.</p>
++        <div id="vbGrid" class="vbp-grid"></div>
++        <div id="vbPager" class="vbp-pager"></div>
++      </section>
++
++      <section class="panel">
++        <div class="panel-head">
++          <h3><span class="pn">02</span>Fotos escolhidas</h3>
++          <span id="vbChosenCount" class="chip mode">0 escolhida(s)</span>
++        </div>
++        <p class="fine">A peneira não tem teto — o limite de 8 é do mood board (ADR-007), não daqui. Remover uma foto aqui apaga só a cópia: o original da pesquisa continua na pasta.</p>
++        <div id="vbChosen" class="vbp-grid vbp-chosen"></div>
++        <div id="vbChosenPager" class="vbp-pager"></div>
++      </section>`;
++
++    document.querySelector("#vbBack").onclick = goList;
++    document.querySelector("#vbVibe").onchange = (e) => { st.vibe = e.target.value; st.page = 1; paintGrid(st); };
++    document.querySelector("#vbOrigem").onchange = (e) => { st.origem = e.target.value; st.page = 1; paintGrid(st); };
++    document.querySelector("#vbSave").onclick = () => saveVibes(st);
++    document.querySelector("#vbAllPage").onclick = () => {
++      const ids = gridIds();
++      const desmarcar = pageAllMarked(st);
++      ids.forEach((id) => (desmarcar ? st.sel.delete(id) : st.sel.add(id)));
++      markSelected(st); paintSelCount(st);
++    };
++
++    const grid = document.querySelector("#vbGrid");
++    const toggle = (card) => {
++      const id = card.dataset.vid;
++      if (st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
++      markSelected(st); paintSelCount(st);
++    };
++    grid.addEventListener("click", (e) => {
++      if (e.target.closest("a")) return;                 // o link do pin abre o Pinterest, não marca
++      const card = e.target.closest("[data-vid]");
++      if (card) toggle(card);
++    });
++    grid.addEventListener("keydown", (e) => {
++      const card = e.target.closest("[data-vid]");
++      if (card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(card); }
++    });
++
++    document.querySelector("#vbPager").addEventListener("click", (e) => {
++      const b = e.target.closest("[data-pg]");
++      if (!b || b.disabled) return;
++      st.page = Number(b.dataset.pg); paintGrid(st);
++    });
++    document.querySelector("#vbChosenPager").addEventListener("click", (e) => {
++      const b = e.target.closest("[data-pg]");
++      if (!b || b.disabled) return;
++      st.chosenPage = Number(b.dataset.pg); paintChosen(st);
++    });
++    document.querySelector("#vbChosen").addEventListener("click", (e) => {
++      const b = e.target.closest("[data-rm]");
++      if (b) removeChosen(st, b.dataset.rm);
++    });
++
++    await paintFacets(st);
++    await paintGrid(st);
++    await paintChosen(st);
++  }
++
++  /** Contador autoritativo das escolhidas (uma chamada barata: `per_page=1`). */
++  async function refreshEscolhidasCount() {
++    const r = await api("/api/escolhidas?page=1&per_page=1");
++    setEscolhidasTotal(r.total);
++    return escolhidasTotal;
++  }
++
+   // ---------- entrada da área (chamada por app.js applyRoute) ----------
+-  function open(mbid) { if (mbid) renderEditor(mbid); else renderList(); }
++  function open(mbid) {
++    if (mbid === VIBES_ROUTE) { renderVibes(); return; }   // pseudo-rota, ver o bloco acima
++    if (mbid) renderEditor(mbid); else renderList();
++  }
+ 
+-  window.Studio.moodboards = { open, goList, goEditor };
++  window.Studio.moodboards = { open, goList, goEditor, goVibes };
++
++  //: Contrato consumido pela feature 01 (mood-run) — seção 12 "Provides" do FDD do painel.
++  //: A fonte de verdade é `GET /api/escolhidas` (`total`); isto aqui é só o açúcar da mesma tela.
++  window.Studio.vibes = {
++    route: VIBES_ROUTE,
++    open: renderVibes,
++    count: () => escolhidasTotal,
++    refreshCount: refreshEscolhidasCount,
++    onChange(cb) {
++      const h = (ev) => cb(ev.detail.total);
++      document.addEventListener("studio:escolhidas", h);
++      return () => document.removeEventListener("studio:escolhidas", h);
++    },
++  };
+ })();

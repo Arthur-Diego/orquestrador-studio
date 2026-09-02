@@ -109,14 +109,7 @@ def test_diff_da_feature_nao_toca_o_nucleo():
     caminhos |= {linha[3:].strip().split(" -> ")[-1] for linha in trabalho.stdout.splitlines() if linha[3:].strip()}
     proibidos = ("studio/web/", "studio/app.py", "studio/steps.py", "studio/index.html",
                  "studio/etapas/mood/view.")
-    # `studio/web/moodboards.js` é a área GLOBAL da biblioteca de mood boards (ADR-013) e a ADR-014
-    # manda que toda UI nova de mood board more nela: não é núcleo (a ADR-010 nomeia `app.js`,
-    # `index.html`, `app.py` e `steps.py` — não `studio/web/` inteiro) nem `view.*` de plugin.
-    # Como esta guarda compara o diff da BRANCH contra develop, ela reprovava qualquer branch
-    # posterior que mexesse na biblioteca — inclusive as três frentes da wave 10, que por contrato
-    # têm de editar este arquivo. Carve-out aberto em ADH-OS-20260902-03; o resto segue guardado.
-    permitidos = ("studio/web/moodboards.js",)
-    sujos = sorted(p for p in caminhos if p.startswith(proibidos) and p not in permitidos)
+    sujos = sorted(p for p in caminhos if p.startswith(proibidos))
     assert not sujos, f"a feature não pode tocar o núcleo nem a etapa 2: {sujos}"
 
 
