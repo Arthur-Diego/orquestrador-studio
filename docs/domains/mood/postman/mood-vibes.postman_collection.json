@@ -1,0 +1,272 @@
+{
+  "info": {
+    "name": "mood — painel de fotos de vibe [extensão] (ADH-OS-20260902-03)",
+    "description": "Contratos da seção 5 e matriz de erros da seção 6 do FDD docs/domains/mood/features/painel-vibes-fdd.md. Rotas GLOBAIS (sem pid). Ordem: facets → listagem → bordas de paginação → filtros → select → escolhidas → remoção → 404/422. Pré-requisito: MOODBOARDS_DIR/_vibes/ populada pelo /mood_vibe_scout (a coleção degrada com elegância se estiver vazia — os testes de conteúdo só rodam quando total > 0).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:8765"}
+  ],
+  "item": [
+    {
+      "name": "GET /api/vibes/facets — filtros e contagens",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes/facets"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('envelope de facetas', () => {",
+        "  pm.expect(b).to.have.property('vibes').that.is.an('array');",
+        "  pm.expect(b).to.have.property('origens').that.is.an('array');",
+        "  pm.expect(b).to.have.property('total').that.is.a('number');",
+        "  pm.expect(b).to.have.property('escolhidas').that.is.a('number');",
+        "  pm.expect(b.indice).to.have.property('ok');",
+        "  pm.expect(b.pasta).to.be.a('string');",
+        "});",
+        "pm.test('a soma das vibes bate com o total', () => {",
+        "  pm.expect(b.vibes.reduce((s, v) => s + v.total, 0)).to.eql(b.total);",
+        "});",
+        "pm.test('toda origem é do vocabulário do contrato', () => {",
+        "  b.origens.forEach(o => pm.expect(['catalogo','usuario','sugestao']).to.include(o.origem));",
+        "});",
+        "pm.collectionVariables.set('total_vibes', b.total);",
+        "pm.collectionVariables.set('vibe_slug', b.vibes.length ? b.vibes[0].slug : '');"
+      ]}}]
+    },
+    {
+      "name": "GET /api/vibes — primeira página (teto de 20)",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes?page=1&per_page=20"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('envelope de paginação', () => {",
+        "  pm.expect(b.page).to.eql(1);",
+        "  pm.expect(b.per_page).to.eql(20);",
+        "  pm.expect(b.pages).to.be.at.least(1);",
+        "  pm.expect(b.items.length).to.be.at.most(20);",
+        "});",
+        "if (b.items.length) {",
+        "  const it = b.items[0];",
+        "  pm.test('item completo', () => {",
+        "    ['id','arquivo','url','vibe','vibe_nome','origem','origem_url','bytes','escolhida']",
+        "      .forEach(k => pm.expect(it).to.have.property(k));",
+        "    pm.expect(it.url).to.match(/^\\/mbfiles\\/_vibes\\//);",
+        "    pm.expect(['catalogo','usuario','sugestao']).to.include(it.origem);",
+        "  });",
+        "  pm.collectionVariables.set('foto_id', it.id);",
+        "  pm.collectionVariables.set('foto_url', it.url);",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "GET /mbfiles/_vibes/... — servido pelo mount que já existe (D1)",
+      "request": {"method": "GET", "url": "{{base_url}}{{foto_url}}"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "if (!pm.collectionVariables.get('foto_url')) { pm.test.skip('sem fotos na pasta', () => {}); } else {",
+        "  pm.test('200 — nenhuma rota estática nova foi precisa', () => pm.response.to.have.status(200));",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "GET /api/vibes?per_page=100 — E6: clampado, não é erro",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes?per_page=100"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('per_page devolvido é 20', () => pm.expect(pm.response.json().per_page).to.eql(20));",
+        "pm.test('no máximo 20 itens', () => pm.expect(pm.response.json().items.length).to.be.at.most(20));"
+      ]}}]
+    },
+    {
+      "name": "GET /api/vibes?page=0 — E5: 422",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes?page=0"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "GET /api/vibes?per_page=0 — E7: 422",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes?per_page=0"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "GET /api/vibes?page=9999 — E8: página além do fim é 200 vazio",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes?page=9999&per_page=20"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('items vazio com total correto', () => {",
+        "  pm.expect(b.items).to.eql([]);",
+        "  pm.expect(b.total).to.eql(Number(pm.collectionVariables.get('total_vibes')));",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "GET /api/vibes?origem=pinterest — E9: 422 listando as aceitas",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes?origem=pinterest"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));",
+        "pm.test('a mensagem lista o vocabulário', () => pm.expect(pm.response.json().detail).to.include('catalogo'));"
+      ]}}]
+    },
+    {
+      "name": "GET /api/vibes?vibe=... — filtro por vibe",
+      "request": {"method": "GET", "url": "{{base_url}}/api/vibes?vibe={{vibe_slug}}"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const slug = pm.collectionVariables.get('vibe_slug');",
+        "if (slug) {",
+        "  pm.test('todo item é da vibe pedida', () => {",
+        "    pm.response.json().items.forEach(i => pm.expect(i.vibe).to.eql(slug));",
+        "  });",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "POST /api/vibes/select — copia e deduplica",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"ids\": [\"{{foto_id}}\"]}"},
+        "url": "{{base_url}}/api/vibes/select"
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "if (!pm.collectionVariables.get('foto_id')) { pm.test.skip('sem fotos na pasta', () => {}); } else {",
+        "  pm.test('200', () => pm.response.to.have.status(200));",
+        "  const b = pm.response.json();",
+        "  pm.test('as três listas + total, nunca um número solto', () => {",
+        "    ['copiadas','duplicadas','ausentes'].forEach(k => pm.expect(b[k]).to.be.an('array'));",
+        "    pm.expect(b.total_escolhidas).to.be.a('number');",
+        "  });",
+        "  pm.test('entrou ou já estava', () => {",
+        "    pm.expect(b.copiadas.length + b.duplicadas.length).to.eql(1);",
+        "  });",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "POST /api/vibes/select (repetido) — E13: duplicata por hash",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"ids\": [\"{{foto_id}}\"]}"},
+        "url": "{{base_url}}/api/vibes/select"
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "if (!pm.collectionVariables.get('foto_id')) { pm.test.skip('sem fotos na pasta', () => {}); } else {",
+        "  pm.test('200', () => pm.response.to.have.status(200));",
+        "  const b = pm.response.json();",
+        "  pm.test('reportada como duplicata, não copiada de novo', () => {",
+        "    pm.expect(b.duplicadas).to.include(pm.collectionVariables.get('foto_id'));",
+        "    pm.expect(b.copiadas).to.eql([]);",
+        "  });",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "POST /api/vibes/select — E10: id com traversal é 422",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"ids\": [\"../fora.jpg\"]}"},
+        "url": "{{base_url}}/api/vibes/select"
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "POST /api/vibes/select — E11: lista vazia é 422",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"ids\": []}"},
+        "url": "{{base_url}}/api/vibes/select"
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "POST /api/vibes/select — E12: id que não existe volta em ausentes",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"ids\": [\"99-nao-existe-1.jpg\"]}"},
+        "url": "{{base_url}}/api/vibes/select"
+      },
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('ausente, não erro', () => pm.expect(pm.response.json().ausentes).to.include('99-nao-existe-1.jpg'));"
+      ]}}]
+    },
+    {
+      "name": "GET /api/escolhidas — a peneira (contrato lido pela feature 01)",
+      "request": {"method": "GET", "url": "{{base_url}}/api/escolhidas?page=1&per_page=20"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const b = pm.response.json();",
+        "pm.test('total é o contador do gate do botão da feature 01', () => pm.expect(b.total).to.be.a('number'));",
+        "if (b.items.length) {",
+        "  const it = b.items[0];",
+        "  pm.test('item traz caminho absoluto para o --foto', () => {",
+        "    ['id','arquivo','origem_arquivo','url','caminho','vibe','origem','bytes','escolhida_em']",
+        "      .forEach(k => pm.expect(it).to.have.property(k));",
+        "    pm.expect(it.id).to.match(/^[0-9a-f]{12}$/);",
+        "    pm.expect(it.url).to.match(/^\\/mbfiles\\/_escolhidas\\//);",
+        "  });",
+        "  pm.collectionVariables.set('escolhida_id', it.id);",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "DELETE /api/escolhidas/{id} — tira só a cópia",
+      "request": {"method": "DELETE", "url": "{{base_url}}/api/escolhidas/{{escolhida_id}}"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "if (!pm.collectionVariables.get('escolhida_id')) { pm.test.skip('peneira vazia', () => {}); } else {",
+        "  pm.test('200', () => pm.response.to.have.status(200));",
+        "  pm.test('devolve o novo total', () => {",
+        "    pm.expect(pm.response.json().removida).to.eql(pm.collectionVariables.get('escolhida_id'));",
+        "    pm.expect(pm.response.json().total_escolhidas).to.be.a('number');",
+        "  });",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "GET /mbfiles/_vibes/... — E: o original NÃO foi movido nem apagado",
+      "request": {"method": "GET", "url": "{{base_url}}{{foto_url}}"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "if (!pm.collectionVariables.get('foto_url')) { pm.test.skip('sem fotos na pasta', () => {}); } else {",
+        "  pm.test('D3: copia, nunca move — o original segue servido', () => pm.response.to.have.status(200));",
+        "}"
+      ]}}]
+    },
+    {
+      "name": "DELETE /api/escolhidas/000000000000 — E15: 404 com mensagem própria",
+      "request": {"method": "DELETE", "url": "{{base_url}}/api/escolhidas/000000000000"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('404', () => pm.response.to.have.status(404));",
+        "pm.test('não é o 404 genérico de projeto', () => {",
+        "  pm.expect(pm.response.json().detail).to.include('foto escolhida');",
+        "});"
+      ]}}]
+    },
+    {
+      "name": "DELETE /api/escolhidas/ZZZZZZZZZZZZ — E14: 422",
+      "request": {"method": "DELETE", "url": "{{base_url}}/api/escolhidas/ZZZZZZZZZZZZ"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('422', () => pm.response.to.have.status(422));"
+      ]}}]
+    },
+    {
+      "name": "GET /api/moodboards — as pastas _vibes/_escolhidas não viram board fantasma",
+      "request": {"method": "GET", "url": "{{base_url}}/api/moodboards"},
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.test('nenhum board com id iniciado por _', () => {",
+        "  pm.response.json().forEach(b => pm.expect(b.id.startsWith('_')).to.eql(false));",
+        "});"
+      ]}}]
+    }
+  ]
+}
