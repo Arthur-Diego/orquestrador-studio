@@ -22,3 +22,13 @@ métricas (comentário) vivem nele. Não existe checklist em markdown.
 
 - SDD/Compozy: `OS-NNN` (ex.: `OS-004`).
 - Ad-hoc: `ADH-OS-<YYYYMMDD>-<seq>` (ex.: `ADH-OS-20260825-01`).
+
+## Acesso ao Trello
+
+Servidor MCP `trello` (`@delorenj/mcp-server-trello`) registrado em escopo **user**
+(`~/.claude.json`) — as tools aparecem após reiniciar a sessão.
+
+Credenciais ficam **fora do repositório**, em `~/.config/orquestrador-studio/trello.env`
+(chmod 600). Para (re)registrar em outra máquina: preencher esse arquivo e rodar
+`./scripts/trello-mcp-setup.sh`; sem `TRELLO_TOKEN` o script imprime a URL de autorização e
+para. A API do Trello exige **key + token** — o OAuth secret não autentica a REST API.

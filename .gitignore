@@ -34,3 +34,13 @@ harvest-report.json
 
 # artefatos de rodadas de QA E2E (skill qa-studio): ambientes isolados, prints, logs
 .qa/
+
+# saída das corridas manuais da cadeia `mood_` (imagens de terceiros do Pinterest, ~25 MB):
+# material local de trabalho, nunca versionado. Os PLANOS moram em docs/domains/mood/planos/.
+processo_manual/
+
+# lixo do Finder
+.DS_Store
+
+# original da skill mood_visual_dna: o diretório entra como proveniência, o zip duplicado não
+skills_proprias/*.zip

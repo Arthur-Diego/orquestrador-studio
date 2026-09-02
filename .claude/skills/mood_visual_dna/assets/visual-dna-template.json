@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "attachment",
+    "identifier": "image-1",
+    "url": null
+  },
+  "summary": "",
+  "visual_dna": {
+    "modality": [],
+    "realism": null,
+    "subjects": [],
+    "composition": [],
+    "color": [],
+    "lighting": [],
+    "materials": [],
+    "textures": [],
+    "forms": [],
+    "typography": [],
+    "space": [],
+    "perceived_era": [],
+    "emotion": [],
+    "narrative": []
+  },
+  "aesthetics": {
+    "primary": {
+      "label": "",
+      "rationale": "",
+      "confidence": "medium"
+    },
+    "related": []
+  },
+  "palette": [
+    {
+      "hex": "#000000",
+      "role": "background",
+      "approximate": true
+    }
+  ],
+  "observations": [
+    {
+      "dimension": "",
+      "value": "",
+      "observation_type": "observed",
+      "confidence": "medium"
+    }
+  ],
+  "search_queries": [
+    {
+      "category": "hero",
+      "query": "",
+      "platform": "Pinterest",
+      "intent": "anchor"
+    }
+  ],
+  "moodboard_plan": {
+    "target_count": 10,
+    "categories": [],
+    "layout_notes": []
+  },
+  "references": [],
+  "uncertainties": []
+}
