@@ -1,4 +1,4 @@
-PASS: venv em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.venv
+PASS: venv em <WORKTREE>/.venv
 PASS: fastapi/uvicorn importáveis
 PASS: playwright (python) importável
 PASS: Chromium do Playwright sobe (v151.0.7922.34)
@@ -10,7 +10,7 @@ PASS: gh autenticado (higiene de cards por PR)
 INFO: run=react-e0 modo=offline base=http://127.0.0.1:8790
 PASS: servidor responde em http://127.0.0.1:8790/api/steps
 PASS: servidor serve o frontend (/)
-PASS: STUDIO_PROJECTS isolado (fora de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/projects)
+PASS: STUDIO_PROJECTS isolado (fora de <WORKTREE>/projects)
 PASS: fake higgsfield ativo no PATH
 PASS: fake claude ativo no PATH
 PASS: fake higgsfield responde (account status)

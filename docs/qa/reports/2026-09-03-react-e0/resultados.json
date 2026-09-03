@@ -2474,7 +2474,7 @@
    "titulo": "'Salvar marca' persiste nome e descrição da marca do rótulo",
    "pid": "2026-09-e2e-mock",
    "status": "FALHA",
-   "detalhe": "exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\nTraceback (most recent call last):\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/scripts/qa/run.py\", line 149, in main\n    res = caso.fn(page, ctx)\n          ^^^^^^^^^^^^^^^^^^\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/scripts/qa/cenarios/base.py\", line 348, in salvar_marca\n    page.locator(\"#brandName\").fill(\"QA Marca\")\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py\", line 18242, in fill\n    self._sync(\nplaywright._impl._errors.TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\n",
+   "detalhe": "exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\nTraceback (most recent call last):\n  File \"<WORKTREE>/scripts/qa/run.py\", line 149, in main\n    res = caso.fn(page, ctx)\n          ^^^^^^^^^^^^^^^^^^\n  File \"<WORKTREE>/scripts/qa/cenarios/base.py\", line 348, in salvar_marca\n    page.locator(\"#brandName\").fill(\"QA Marca\")\n  File \"<WORKTREE>/.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py\", line 18242, in fill\n    self._sync(\nplaywright._impl._errors.TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\n",
    "evidencias": [
     "evidencias/light-1440x900-C-BASE-14-excecao.png"
    ],
@@ -2490,7 +2490,7 @@
    "titulo": "'Salvar marca' sem nome mostra o erro da aula e não grava nada",
    "pid": "2026-09-e2e-mock",
    "status": "FALHA",
-   "detalhe": "exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\nTraceback (most recent call last):\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/scripts/qa/run.py\", line 149, in main\n    res = caso.fn(page, ctx)\n          ^^^^^^^^^^^^^^^^^^\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/scripts/qa/cenarios/base.py\", line 366, in marca_sem_nome\n    page.locator(\"#brandName\").fill(\"\")\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py\", line 18242, in fill\n    self._sync(\nplaywright._impl._errors.TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\n",
+   "detalhe": "exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\nTraceback (most recent call last):\n  File \"<WORKTREE>/scripts/qa/run.py\", line 149, in main\n    res = caso.fn(page, ctx)\n          ^^^^^^^^^^^^^^^^^^\n  File \"<WORKTREE>/scripts/qa/cenarios/base.py\", line 366, in marca_sem_nome\n    page.locator(\"#brandName\").fill(\"\")\n  File \"<WORKTREE>/.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py\", line 18242, in fill\n    self._sync(\nplaywright._impl._errors.TimeoutError: Locator.fill: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#brandName\")\n\n",
    "evidencias": [
     "evidencias/light-1440x900-C-BASE-15-excecao.png"
    ],
@@ -2506,7 +2506,7 @@
    "titulo": "no passo 'rótulo' o card de prompt vira a instrução de troca de rótulo",
    "pid": "2026-09-e2e-mock",
    "status": "FALHA",
-   "detalhe": "exceção no caso: KeyError: 'label_prompt_ready'\nTraceback (most recent call last):\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/scripts/qa/run.py\", line 149, in main\n    res = caso.fn(page, ctx)\n          ^^^^^^^^^^^^^^^^^^\n  File \"/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/scripts/qa/cenarios/base.py\", line 380, in prompt_rotulo\n    if not api[\"label_prompt_ready\"]:\n           ~~~^^^^^^^^^^^^^^^^^^^^^^\nKeyError: 'label_prompt_ready'\n",
+   "detalhe": "exceção no caso: KeyError: 'label_prompt_ready'\nTraceback (most recent call last):\n  File \"<WORKTREE>/scripts/qa/run.py\", line 149, in main\n    res = caso.fn(page, ctx)\n          ^^^^^^^^^^^^^^^^^^\n  File \"<WORKTREE>/scripts/qa/cenarios/base.py\", line 380, in prompt_rotulo\n    if not api[\"label_prompt_ready\"]:\n           ~~~^^^^^^^^^^^^^^^^^^^^^^\nKeyError: 'label_prompt_ready'\n",
    "evidencias": [
     "evidencias/light-1440x900-C-BASE-16-excecao.png"
    ],
@@ -2614,7 +2614,7 @@
    "titulo": "'Importar da pasta Downloads' traz a mídia recente da pasta da rodada",
    "pid": "2026-09-e2e-mock",
    "status": "PASSA",
-   "detalhe": "1 candidata(s) de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.qa/runs/react-e0/downloads (toast='1 imagem(ns) importada(s)')",
+   "detalhe": "1 candidata(s) de <WORKTREE>/.qa/runs/react-e0/downloads (toast='1 imagem(ns) importada(s)')",
    "evidencias": [
     "evidencias/light-1440x900-base-downloads.png"
    ],
@@ -2832,7 +2832,7 @@
    "titulo": "o botão de Downloads informa a pasta e a janela de tempo no tooltip",
    "pid": "2026-09-e2e-mock",
    "status": "PASSA",
-   "detalhe": "tooltip='Últimos 120 min de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.qa/runs/react-e0/downloads'",
+   "detalhe": "tooltip='Últimos 120 min de <WORKTREE>/.qa/runs/react-e0/downloads'",
    "evidencias": [],
    "console": [],
    "pageerrors": [],
@@ -3987,7 +3987,7 @@
    "titulo": "'Importar da pasta Downloads' varre a pasta configurada e importa os mp4 recentes",
    "pid": "2026-09-e2e-mock",
    "status": "PASSA",
-   "detalhe": "toast='1 novos de 1 vídeos recentes' · candidato importado da pasta /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.qa/runs/react-e0/downloads",
+   "detalhe": "toast='1 novos de 1 vídeos recentes' · candidato importado da pasta <WORKTREE>/.qa/runs/react-e0/downloads",
    "evidencias": [],
    "console": [],
    "pageerrors": [],
@@ -6740,7 +6740,7 @@
    "titulo": "editor mostra nome, pasta real do board e os três painéis",
    "pid": null,
    "status": "PASSA",
-   "detalhe": "pasta=/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.qa/runs/react-e0/moodboards/qa-board, 3 painéis",
+   "detalhe": "pasta=<WORKTREE>/.qa/runs/react-e0/moodboards/qa-board, 3 painéis",
    "evidencias": [
     "evidencias/light-1440x900-mb-editor.png"
    ],
@@ -6954,7 +6954,7 @@
    "titulo": "multishot: 'Importar fotos' abre o modal de importação com a pasta Downloads",
    "pid": null,
    "status": "PASSA",
-   "detalhe": "modal de importação com 'pasta Downloads: /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.qa/runs/react-e0/downloads'",
+   "detalhe": "modal de importação com 'pasta Downloads: <WORKTREE>/.qa/runs/react-e0/downloads'",
    "evidencias": [
     "evidencias/light-1440x900-mb-multishot-importar.png"
    ],

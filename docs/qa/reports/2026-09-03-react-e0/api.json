@@ -180,7 +180,7 @@
    "grupo": "server.log",
    "nome": "sem Traceback no log do servidor",
    "status": "PASSA",
-   "detalhe": "0 traceback(s) em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.qa/runs/react-e0/server.log"
+   "detalhe": "0 traceback(s) em <WORKTREE>/.qa/runs/react-e0/server.log"
   },
   {
    "grupo": "server.log",

@@ -23,7 +23,7 @@
 ## 2. Ambiente (saída real do check-env.sh)
 
 ```text
-PASS: venv em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.venv
+PASS: venv em <WORKTREE>/.venv
 PASS: fastapi/uvicorn importáveis
 PASS: playwright (python) importável
 PASS: Chromium do Playwright sobe (v151.0.7922.34)
@@ -35,7 +35,7 @@ PASS: gh autenticado (higiene de cards por PR)
 INFO: run=react-e0 modo=offline base=http://127.0.0.1:8790
 PASS: servidor responde em http://127.0.0.1:8790/api/steps
 PASS: servidor serve o frontend (/)
-PASS: STUDIO_PROJECTS isolado (fora de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/projects)
+PASS: STUDIO_PROJECTS isolado (fora de <WORKTREE>/projects)
 PASS: fake higgsfield ativo no PATH
 PASS: fake claude ativo no PATH
 PASS: fake higgsfield responde (account status)
@@ -130,7 +130,7 @@ PRE-VOO OK
 | C-BASE-13 | base | histórico de prompts guarda referência, modo e proveniência de cada geração | PASSA | 3 entradas; topo={'ref_id': 'c864a2ed2313', 'mode': 'images', 'source': 'claude', 'created': '2026-09-03T00:09:54'} |
 | C-BASE-14 | base | 'Salvar marca' persiste nome e descrição da marca do rótulo | FALHA | evidencias/light-1440x900-C-BASE-14-excecao.png — exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded. Call log:   - waiting for locator("#brandName")  Traceback (most recent call last):   Fil |
 | C-BASE-15 | base | 'Salvar marca' sem nome mostra o erro da aula e não grava nada | FALHA | evidencias/light-1440x900-C-BASE-15-excecao.png — exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded. Call log:   - waiting for locator("#brandName")  Traceback (most recent call last):   Fil |
-| C-BASE-16 | base | no passo 'rótulo' o card de prompt vira a instrução de troca de rótulo | FALHA | evidencias/light-1440x900-C-BASE-16-excecao.png — exceção no caso: KeyError: 'label_prompt_ready' Traceback (most recent call last):   File "/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktre |
+| C-BASE-16 | base | no passo 'rótulo' o card de prompt vira a instrução de troca de rótulo | FALHA | evidencias/light-1440x900-C-BASE-16-excecao.png — exceção no caso: KeyError: 'label_prompt_ready' Traceback (most recent call last):   File "<WORKTREE>/orquestrador-studio-worktre |
 | C-BASE-17 | base | stepper tem os 3 passos da aula, com 'done' no escolhido e 'on' no ativo | FALHA | evidencias/light-1440x900-base-stepper.png — passos=[{'k': 'situation', 'c': 'st done'}, {'k': 'clean', 'c': 'st'}, {'k': 'label', 'c': 'st on'}, {'k': 'upscale', 'c': 'st'}] escolhidos_api=['situation'] a |
 | C-BASE-18 | base | clicar num passo do stepper troca o passo ativo e o rótulo do botão do CLI | PASSA | 'Gerar upscale via CLI' → 'Gerar situação via CLI' |
 | C-BASE-19 | base | Enter num passo focado do stepper também troca o passo ativo (teclado) | PASSA | Enter trocou o passo ativo |
@@ -146,7 +146,7 @@ PRE-VOO OK
 | C-BASE-29 | base | 'Gerar via CLI' do painel 01 gera a situação e mostra o antes → depois | PASSA | evidencias/light-1440x900-base-gerar-cli.png |
 | C-BASE-30 | base | sem referência da etapa 1, o CLI avisa em vez de estourar erro cru | PASSA | evidencias/light-1440x900-base-cli-sem-insumo.png |
 | C-BASE-31 | base | campanha sem referência mostra o gate da etapa 1 no painel do prompt | PASSA | evidencias/light-1440x900-base-gate-etapa1.png |
-| C-BASE-32 | base | o botão de Downloads informa a pasta e a janela de tempo no tooltip | PASSA | tooltip='Últimos 120 min de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-2026 |
+| C-BASE-32 | base | o botão de Downloads informa a pasta e a janela de tempo no tooltip | PASSA | tooltip='Últimos 120 min de <WORKTREE>/adh-os-2026 |
 | C-BASE-33 | base | ao abrir a etapa, o card de prompt e o passo ativo do stepper concordam | FALHA | evidencias/light-1440x900-base-card-x-stepper.png — o stepper abre em 'label' (load() avança para o 1º passo sem escolha) mas o card do painel 01 continua no prompt de situação: rótulo='Prompt · situação · editáv |
 | C-STORYBOARD-01 | storyboard | painel 01 mostra a imagem base e o chip de contagem bate com a API | PASSA | evidencias/light-1440x900-sb-painel01.png |
 | C-STORYBOARD-02 | storyboard | #sbKind lista os modos de ideação de /instructions e o title segue o modo | PASSA | 4 modos, title do multishot ok |
@@ -219,7 +219,7 @@ PRE-VOO OK
 | C-ANIMATE-18 | animate | ▶ do tile abre o mp4 do take em nova aba | PASSA | abriu http://127.0.0.1:8790/files/2026-09-e2e-mock/videos/cena01/shot01_take1.mp4 |
 | C-ANIMATE-19 | animate | chip do CLI fica oculto com o CLI logado e o contador reflete /candidates | PASSA | contador='1 vídeos' chip oculto=True |
 | C-ANIMATE-20 | animate | upload de mp4 pelo #anUpload importa o vídeo e atualiza o contador | PASSA | evidencias/light-1440x900-animate-upload.png |
-| C-ANIMATE-21 | animate | 'Importar da pasta Downloads' varre a pasta configurada e importa os mp4 recentes | PASSA | toast='1 novos de 1 vídeos recentes' · candidato importado da pasta /Users/arthursantana/senhor_da_tecnologia/orquestrad |
+| C-ANIMATE-21 | animate | 'Importar da pasta Downloads' varre a pasta configurada e importa os mp4 recentes | PASSA | toast='1 novos de 1 vídeos recentes' · candidato importado da pasta <WORKTREE>/orquestrad |
 | C-ANIMATE-22 | animate | 'Importar do histórico Higgsfield' lê o histórico do CLI e reporta jobs e vídeos | PASSA | toast='1 vídeos de 3 jobs' · 1→2 candidatos |
 | C-ANIMATE-23 | animate | 'Gerar via CLI' mostra o custo antes; Cancelar não gera nem gasta | PASSA | evidencias/light-1440x900-animate-custo.png |
 | C-ANIMATE-24 | animate | gerar 1 take via CLI: modal de progresso, take em takes.json e mp4 em videos/ | PASSA | evidencias/light-1440x900-animate-gerado.png |
@@ -532,7 +532,7 @@ Os prints ficam fora do git (`.qa/` é gitignored). Para regerá-los:
 | contratos | pid reservado ('moodboards') é recusado | PASSA | → 409 |
 | disco | project.json do seed cheio continua íntegro após a auditoria | PASSA | {'id': '2026-09-e2e-mock', 'name': 'E2E Mock', 'product': 'energético', 'vibe': 'gelo neon ciano, alto contraste', 'crea |
 | offline | fakes foram chamados (higgsfield/claude passam pelos fakes) | PASSA | fakes.log sem chamadas de higgsfield — o servidor pode estar usando o binário real |
-| server.log | sem Traceback no log do servidor | PASSA | 0 traceback(s) em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao/.qa/run |
+| server.log | sem Traceback no log do servidor | PASSA | 0 traceback(s) em <WORKTREE>/.qa/run |
 | server.log | sem respostas 500 / linhas ERROR | PASSA | — |
 
 ### 6.2 Newman
