@@ -22,6 +22,24 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
   },
+  // Wave 10 · E4 (ADR-032): os testes das telas moram fora da raiz do projeto Vite
+  // (`../studio/etapas/*/ui/**`), então o Vitest precisa de permissão de leitura fora dela.
+  server: { fs: { allow: [".."] } },
+  // As telas (e seus testes) ficam fora de `frontend/`, então a busca de `node_modules` subindo a
+  // partir delas não acha `frontend/node_modules`. `dedupe` força esses pacotes (e seus subpaths,
+  // como o `react/jsx-dev-runtime` que o plugin injeta) a resolverem sempre pela raiz do projeto
+  // Vite — react/react-dom para as telas; testing-library/vitest para os `*.test.tsx`.
+  resolve: {
+    dedupe: [
+      "react",
+      "react-dom",
+      "vitest",
+      "@testing-library/react",
+      "@testing-library/user-event",
+      "@testing-library/dom",
+      "@testing-library/jest-dom",
+    ],
+  },
   test: {
     environment: "jsdom",
     globals: true,

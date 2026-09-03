@@ -31,8 +31,9 @@ def outra_obra(studio_env, slug):
 def test_etapa_aparece_pronta_no_catalogo(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "publish")
     assert step["status"] == "ready" and step["n"] == 9 and step["aula"] == "015"
-    assert client.get("/steps/publish/view.html").status_code == 200
-    assert client.get("/steps/publish/view.js").status_code == 200
+    # Wave 10 · E4 (ADR-032): a tela migrou para React (`studio/etapas/publish/ui/index.tsx`); os
+    # `view.{html,js}` saíram. DOM/comportamento e textos de aula → substituto Vitest
+    # `studio/etapas/publish/ui/index.test.tsx` (C-PUBLISH-*).
 
 
 def test_get_exports(client, pid):
@@ -209,36 +210,9 @@ def test_log_corrompido_nao_derruba_as_rotas(client, studio_env, pid):
     assert client.get(f"/api/projects/{pid}/publish/exports").status_code == 200
 
 
-def test_view_html_segue_a_aula_sem_copy_automatica(client):
-    """A tela pede só o que a aula 015 pede: vídeo, rede, URL, data, nota e feedback."""
-    import re
-    html = client.get("/steps/publish/view.html").text
-    assert "Etapa 9 · aula 015" in html and "4 vídeos publicados" in html and "feedback" in html.lower()
-    campos = set(re.findall(r'<(?:input|select|textarea)[^>]*\bid="([^"]+)"', html))
-    assert campos == {"pubVideo", "pubNetwork", "pubDate", "pubUrl", "pubNote"}, \
-        "sem campo de legenda, hashtag, agendamento ou métrica de alcance"
-    js = client.get("/steps/publish/view.js").text
-    assert 'id="guide"' in html, "convenção de tela da wave 2: o painel do guia mora aqui"
-    assert "comunidade ABRAhub" in html, "10.2: a comunidade entra nas redes sugeridas"
-    assert "prática, exposição e validação" in html
-    assert "destroy()" in js
-
-
-def test_view_segue_o_catalogo_do_redesign(client):
-    """Wave 4: dois painéis numerados (registro primeiro) e `.pub-row` por publicação."""
-    html = client.get("/steps/publish/view.html").text
-    js = client.get("/steps/publish/view.js").text
-    assert '<span class="pn">01</span>Registrar uma publicação' in html
-    assert '<span class="pn">02</span>Publicações e comunidade' in html
-    assert "lesson" not in html, "wave 4 regra 4: `details.lesson` só na etapa 1"
-    assert 'id="pubLog" class="rowlist"' in html
-    # 10.12/10.13/10.14: a galeria de exports, o eyebrow e o resumo global saíram da tela.
-    assert "pubExports" not in html and "pubExports" not in js
-    assert "pubGlobal" not in html and "pubGlobal" not in js
-    # 10.5/10.17: os chips de contagem e o link do portfolio.md saíram do head dos painéis.
-    for ido in ("pubCounter", "pubPosts", "pubPortfolio", "pubReady"):
-        assert ido not in html and ido not in js, ido
-    assert 'class="pub-row"' in js
-    # 10.20/10.21/10.23: url encurtada, nota entre aspas e "Remover" só no hover (`.act`).
-    assert r'replace(/^https?:\/\/(www\.)?/, "")' in js
-    assert 'class="link del act"' in js
+# Wave 10 · E4 (ADR-032): `test_view_html_segue_a_aula_sem_copy_automatica` e
+# `test_view_segue_o_catalogo_do_redesign` liam o fonte de `publish/view.{html,js}` (substring sobre
+# a tela vanilla). A tela virou React (`publish/ui/index.tsx`); o contrato de DOM/comportamento, o
+# conjunto exato de campos do formulário e os textos de aula (ADR-004) passam a ser verificados pelo
+# substituto Vitest `studio/etapas/publish/ui/index.test.tsx` (C-PUBLISH-*) e pelo diff de
+# `textContent` do baseline da E0.
