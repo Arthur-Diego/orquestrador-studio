@@ -81,20 +81,10 @@ def test_jobs_use_progressjob_as_single_source(client):
 # reforçada pelos cenários de QA C-ANIMATE-23/24 (recon §7.2).
 
 
-def test_deterministic_generators_do_not_open_a_modal(client):
-    """Storyboard: "Montar instrução" (ideação) e "Gerar prompt" (ângulos) são determinísticos: sem modal.
-
-    Wave 7 (`[extensão]`, ADR-021): o MESMO `view.js` ganhou o vídeo por cena, que SIM abre modal —
-    `ui.progress` no "Gerar prompt de vídeo" (chamada síncrona ao Claude) e `progressJob` na geração
-    via CLI (`/video/job`). O que este teste trava é que os DOIS geradores determinísticos
-    (`build` = montar instrução; `prompts` = prompt de ângulo) seguem SEM modal.
-    """
-    js = _view(client, "storyboard")
-    # o caminho de vídeo da wave 7 usa os dois modais...
-    assert "ui.progress(" in js and "Gerar prompt de vídeo" in js
-    assert "progressJob(" in js and "/video/job" in js
-    # ...mas os geradores determinísticos continuam modal-free:
-    build = js.split("async function build(", 1)[1].split("\n    }", 1)[0]
-    assert "ui.progress" not in build and "progressJob" not in build, "montar instrução não abre modal"
-    prompts = js.split("async function prompts(", 1)[1].split("\n    }", 1)[0]
-    assert "ui.progress" not in prompts and "progressJob" not in prompts, "prompt de ângulo não abre modal"
+# Wave 10 · E8 (card [REACT-09]): `test_deterministic_generators_do_not_open_a_modal` lia o fonte de
+# `studio/etapas/storyboard/view.js` (agora React). O invariante — os geradores DETERMINÍSTICOS
+# "Montar instrução" (ideação) e "Gerar prompt" (ângulo) NÃO abrem modal, enquanto o "Gerar prompt de
+# vídeo" (chamada ao Claude) e a geração paga SIM — migrou para o substituto Vitest de renderização
+# `studio/etapas/storyboard/ui/storyboard.test.tsx` (assert de `.modal.progress-modal` ausente após o
+# clique nos geradores determinísticos, presente após o vídeo). Os demais testes deste arquivo, que
+# leem as telas ainda vanilla (refs/edit/export/animate/music/prospect), permanecem até a E10.

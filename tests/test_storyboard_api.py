@@ -6,7 +6,11 @@ import threading
 import pytest
 
 from tests.conftest import image_bytes, make_image
-from tests.test_storyboard_view import html_sem_area_marcada, js_sem_area_marcada
+
+# Wave 10 · E8 (card [REACT-09]): a tela do storyboard virou React (`studio/etapas/storyboard/ui/`).
+# Os testes que liam o fonte de `view.{html,js}` (contrato de DOM caixa-branca) saíram daqui e viraram
+# testes Vitest de renderização em `studio/etapas/storyboard/ui/storyboard.test.tsx` — os asserts de
+# BACKEND (rotas HTTP, guia, contrato do serviço) permanecem intocados neste arquivo.
 
 
 @pytest.fixture()
@@ -28,8 +32,8 @@ def base(root):
 def test_step_is_registered_as_plugin(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "storyboard")
     assert step["n"] == 4 and step["status"] == "ready" and step["aula"] == "010+011"
-    assert client.get("/steps/storyboard/view.html").status_code == 200
-    assert client.get("/steps/storyboard/view.js").status_code == 200
+    # A tela React vive em `studio/etapas/storyboard/ui/` e é servida pelo bundle (não pela rota
+    # `/steps/<id>/view.*`, que a E10 remove). A cobertura de DOM está no substituto Vitest.
 
 
 def test_status_and_instructions_depend_on_base_image(client, pid, root):
@@ -278,58 +282,19 @@ def test_unknown_project_is_404_on_every_storyboard_route(client):
 
 
 # ---------- wave 2: guia na tela e correções da auditoria (4.1–4.6) ----------
-def test_view_follows_the_wave2_screen_contract(client):
-    """A tela expõe o painel de guia, para os polls ao sair e usa os componentes compartilhados."""
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    assert '<section id="guide" class="guide"></section>' in html
-    assert "Etapa 4 · aulas 010 + 011" in html
-    assert 'Studio.register("storyboard"' in js
-    assert 'Studio.ui.renderGuide("storyboard")' in js.replace("ui.renderGuide", "Studio.ui.renderGuide")
-    # Wave 4: a etapa 4 deixou de gerar pelo CLI — não há poll, e `destroy()` continua existindo.
-    assert "destroy()" in js and "ui.poll(" not in js
-
-
-def test_generate_buttons_say_where_the_generation_happens(client):
-    """4.3 + wave 4 (4.15): os rótulos são os do protótipo — os botões só MONTAM a instrução."""
-    html = client.get("/steps/storyboard/view.html").text
-    assert "Montar instrução — gere 4 (incerto)" in html
-    assert ">gere 1 (tweak)<" in html
-    assert "Gerar 4 (estou incerto)" not in html and "Gerar 1 (é só um tweak)" not in html
-
-
-def test_screen_mentions_the_narrative_arc_and_the_upscale_step(client, pid, base):
-    """4.1 e 4.5: o arco fica no lede; o lugar do upscale migrou para o guia (wave 4, 4.20)."""
-    html = client.get("/steps/storyboard/view.html").text
-    assert "começo, descoberta, ação e desfecho" in html
-    assert "etapa 5" not in html, "o `details` de aula saiu da tela (só a etapa 1 tem)"
+# Os asserts de DOM (painel de guia, rótulos dos botões, `.scene-row`/`.mom`, catálogo de classes do
+# shell, formas do protótipo, ausência de caminho pago de ideação na tela) migraram para o substituto
+# Vitest `studio/etapas/storyboard/ui/storyboard.test.tsx` (Wave 10 · E8). O que segue aqui é backend.
+def test_narrative_arc_upscale_step_lives_in_the_guide(client, pid, base):
+    """4.5 (wave 4, 4.20): o lugar do upscale é o GUIA do backend, não a tela — assert de guia."""
     g = client.get(f"/api/projects/{pid}/guide").json()
     sb = next(x for x in g["steps"] if x["id"] == "storyboard")
     assert any("etapa 5" in c for c in sb["checklist"])
 
 
-def test_screen_dropped_the_paid_cli_path(client):
-    """Wave 4 (4.21/4.24): a aula 010 gera IDEIAS na UI da Higgsfield — o CLI de IDEAÇÃO sai da TELA.
-
-    Wave 7 (`[extensão]`, ADR-021): a MESMA tela ganhou o caminho pago de VÍDEO por cena (contrato
-    congelado wave-7.md), então `confirmCost`/`progressJob` passam a existir — mas só para o vídeo.
-
-    Wave 9 (`[extensão]` inpaint-marcacao, ADR-004): o painel "Área marcada" (`kind edit_area`) traz
-    de volta `Gerar via CLI`/`source_id`/`hfChip` — só DENTRO do bloco dele. O que a wave 4 congelou
-    é a ideação DA AULA (`sbGen4`/`sbGen1`, que continuam sem gastar crédito), então os marcadores
-    são conferidos com o bloco `[extensão]` recortado.
-    """
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    aula_html, aula_js = html_sem_area_marcada(html), js_sem_area_marcada(js)
-    for termo in ("Gerar via CLI", "usar como origem", "source_id", "hfChip"):
-        assert termo not in aula_html and termo not in aula_js, termo
-    # As rotas de ideação continuam publicadas para quem quiser o caminho pago.
+def test_paid_ideation_route_stays_published(client):
+    """Decisão AP-21 (wave 4): o caminho pago de IDEAÇÃO saiu da tela mas as rotas ficam publicadas."""
     assert client.get("/openapi.json").json()["paths"].get("/api/projects/{pid}/storyboard/generate")
-    # O caminho pago que a tela desenha é o de VÍDEO da wave 7 (ADR-021), não o de ideação da aula.
-    assert "confirmCost" in js and '"/video/cost"' in js and '"/video/generate"' in js
-    # …e, desde a wave 9, o modo `edit_area` — o único caminho pago de IMAGEM desenhado na tela.
-    assert '"edit_area"' in js and 'id="sbArea"' in html
 
 
 def test_cli_generate_chains_on_the_selected_idea(client, pid, base, root, monkeypatch):
@@ -352,15 +317,10 @@ def test_cli_generate_chains_on_the_selected_idea(client, pid, base, root, monke
 
 
 def test_model_options_come_from_the_backend_with_the_extension_mark(client, pid):
-    """4.4: a aula só cita o Nano Banana; o GPT Image 2 é `[extensão]` e não é o padrão."""
+    """4.4: a aula só cita o Nano Banana; o GPT Image 2 é `[extensão]` e não é o padrão (backend)."""
     models = client.get(f"/api/projects/{pid}/storyboard/instructions").json()["models"]
     assert [m["id"] for m in models] == ["nano_banana_2", "gpt_image_2"]
     assert "[extensão]" in dict((m["id"], m["label"]) for m in models)["gpt_image_2"]
-    js = client.get("/steps/storyboard/view.js").text
-    assert "meta.models" not in js_sem_area_marcada(js), \
-        "wave 4: o select de modelo saiu da tela da ideação da aula junto com o CLI"
-    # `[extensão]` wave 9: o ÚNICO seletor de modelo de imagem da tela é o do modo `edit_area`.
-    assert "sbAreaModel" in js and "meta.models" in js
 
 
 def test_two_sentence_instruction_is_accepted_over_http(client, pid, base):
@@ -372,57 +332,10 @@ def test_two_sentence_instruction_is_accepted_over_http(client, pid, base):
     assert two.status_code == 422 and "heurística" in two.json()["detail"].lower()
 
 
-# ---------- wave 3: redesign da tela (ADH-OS-20260826-05) ----------
-def test_view_uses_the_shell_catalog_after_the_redesign(client):
-    """Wave 4: DOIS painéis (01 ideias, 02 cenas), sem `details.lesson`, sem painel de importação."""
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    # ADR-028 (card V2ROuQ23): o roteiro por Claude passou a ser o painel 02, ANTES da história
-    # (03); ângulos (04) e cena (05) desceram um. O painel do roteiro ganhou número (antes não tinha).
-    for n in ("01", "02", "03", "04", "05"):
-        assert f'<span class="pn">{n}</span>' in html, n
-    assert html.count('<span class="pn">') == 5, "01 ideias · 02 roteiro · 03 cenas · 04 ângulos · 05 cena"
-    assert html.index('<span class="pn">02</span>Roteiro por Claude') < \
-           html.index('<span class="pn">03</span>A história em cenas'), "roteiro vem ANTES da história"
-    assert '<details class="lesson">' not in html, "regra 4 da wave 4: `details` de aula só na etapa 1"
-    assert '<div class="grid2 rev">' in html
-    assert '<div id="sbScenes" class="rowlist">' in html
-    assert '<div class="card wide static sb-base">' in html, "`.card.static` do shell = tile não clicável"
-    assert "CARD_BTN" not in js, "o botão do tile é posicionado por CSS escopado, não por style inline"
-    # A galeria de ideias passou a viver no picker aberto pela thumb da cena (4.23).
-    assert 'id="sbGallery" class="gallery sm"' in js and "sbGallery" not in html
-
-
-def test_prototype_shapes_of_the_wave4_screen(client):
-    """Wave 4: chip único, caixa `.prompt.sm` com texto estático e cena com thumb clicável."""
-    html = client.get("/steps/storyboard/view.html").text
-    js = client.get("/steps/storyboard/view.js").text
-    assert '<div class="prompt sm">' in html and '<p id="sbInstruction" class="txt">' in html
-    assert "<textarea id=\"sbInstruction\"" not in html, "regra 4: a instrução montada é texto estático"
-    assert 'id="sbCounts"' in html and 'id="sbBaseChip"' not in html and 'id="sbBaseWarn"' not in html
-    assert 'id="sbKindHint"' not in html and 'id="sbHint"' not in html
-    assert 'class="thumb pick sb-pick"' in js, "a thumb da cena abre o picker de ideias"
-    assert "sbImg" not in js, "o `select` de imagem por cena saiu (4.31)"
-    assert 'class="txt sbTxt"' in js, "o texto da cena é editável com cara de estático (4.33)"
-    assert "Studio.ui.modal" in js.replace("ui.modal", "Studio.ui.modal")
-
-
-def test_scenes_render_as_scene_rows_with_the_narrative_moment(client):
-    """Wave 3: cada cena é uma `.scene-row` com `.mom[data-mom]` colorido pelo shell."""
-    js = client.get("/steps/storyboard/view.js").text
-    assert 'class="scene-row"' in js
-    assert 'class="mom" data-mom=' in js
-    assert '#sbScenes .scene-row' in js, "collect() lê as cenas pelo novo seletor"
-
-
-def test_scene_buttons_stay_childless(client):
-    """O handler usa `e.target.classList.contains`: ↑ ↓ ✕ não podem ganhar filhos."""
-    import re
-    js = client.get("/steps/storyboard/view.js").text
-    for cls in ("sbUp", "sbDown", "sbDel"):
-        m = re.search(r'<button[^>]*\b' + cls + r'\b[^>]*>(.*?)</button>', js)
-        assert m, cls
-        assert "<" not in m.group(1), (cls, m.group(1))
+# ---------- wave 3/4: redesign da tela ----------
+# Os asserts de DOM (numeração 01–05, roteiro antes da história, catálogo de classes, formas do
+# protótipo, cenas como `.scene-row`, botões sem filhos) migraram para o substituto Vitest
+# `studio/etapas/storyboard/ui/storyboard.test.tsx` (Wave 10 · E8, card [REACT-09]).
 
 
 # ---------- `[extensão]` wave 7 (ADR-021): vídeo por cena (contrato congelado) ----------
