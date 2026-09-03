@@ -7,6 +7,7 @@ etapa é um plugin em `studio/etapas/<id>/` (router + view + guia opcional) desc
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -221,6 +222,24 @@ app.mount("/mbfiles", StaticFiles(directory=str(MOODBOARDS_DIR)), name="mbfiles"
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
+#: Shell do frontend a servir na raiz. Wave 10 · E3 (card [REACT-04], ADR-032): enquanto a ponte
+#: strangler existe (E3…E10), os dois mundos convivem e a flag `STUDIO_UI` decide qual responde.
+#: `react` serve o bundle de `studio/web/dist/index.html` (gerado por `make frontend-build`); o
+#: DEFAULT segue no shell vanilla `studio/web/index.html`, intocado, até a E10 trocar o default.
+#:
+#: Isto é serving ESTÁTICO — a exceção sancionada pelo recon §1.1/§6.3. A invariante "backend
+#: intocado" refere-se à lógica de etapa (`service.py`/`router.py`/`guide.py`), não à escolha de
+#: qual `index.html` a raiz devolve. O bundle é servido pelo MESMO processo em `/static/dist/`
+#: (ADR-001, monolito single-process — nada de segundo runtime).
+_REACT_INDEX = Path(WEB_DIR) / "dist" / "index.html"
+
+
+def _usar_react() -> bool:
+    return os.environ.get("STUDIO_UI", "").strip().lower() == "react" and _REACT_INDEX.exists()
+
+
 @app.get("/")
 def index():
+    if _usar_react():
+        return FileResponse(_REACT_INDEX)
     return FileResponse(Path(WEB_DIR) / "index.html")

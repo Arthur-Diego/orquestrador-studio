@@ -85,6 +85,15 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "(cópia byte-a-byte de style.css/ui.css). O vanilla segue intocado até a E10 — ADR-031/ADR-032",
         ("frontend/",),
     ),
+    "refactor/adh-os-20260903-04-react-shell-ponte": (
+        "Wave 10 · E3 shell React + ponte strangler — card [REACT-04]; acrescenta o shell React em "
+        "`frontend/src/shell/` (sidebar, rail, topbar, visão geral, wizard, roteamento por hash, "
+        "contrato de host do plugin React e a ponte `window.Studio` para as 10 etapas vanilla) e "
+        "serve o índice React sob a flag `STUDIO_UI=react` em `studio/app.py` — o serving estático do "
+        "shell é a exceção sancionada (recon §1.1/§6.3), a lógica de backend (service/router/guide) "
+        "segue intocada. O vanilla continua no default até a E10 — ADR-031/ADR-032",
+        ("frontend/", "studio/app.py"),
+    ),
 }
 
 
