@@ -789,7 +789,7 @@ mood/animate/moodboards-multishot, que não checavam login e deixavam o job esto
 Relaciona ADR-002 (só via CLI), ADR-004 (troca de implementação, não de processo), ADR-016 (ordem
 custo→gerar e livro-caixa intactos) e ADR-008 (CLI sempre fake nos testes).
 
-**ADR nova: ADR-031** (STUDIO) — remoção do combo de "fórmulas da aula" (`#sbPreset`) do painel 01
+**ADR nova: ADR-033** (STUDIO) — remoção do combo de "fórmulas da aula" (`#sbPreset`) do painel 01
 do storyboard, a pedido explícito do dono (card Trello fNXeZRx9, WhatsApp 31/08). O combo era açúcar
 de UI puro: um atalho que preenchia `#sbKind`+`#sbText` com quatro frases literais da aula 010
 (`PRESETS`), publicadas na chave `presets` do `GET .../storyboard/instructions`. O valor nunca ia

@@ -250,7 +250,7 @@ def test_job_is_idle_before_any_generation(client, pid):
 
 
 def test_instructions_no_longer_publish_the_lesson_formulas(client, pid, base):
-    """ADR-031: o combo `#sbPreset` foi removido a pedido do dono, então o GET não publica mais o
+    """ADR-033: o combo `#sbPreset` foi removido a pedido do dono, então o GET não publica mais o
     catálogo `presets`. O POST segue montando a instrução a partir do texto digitado à mão —
     inclusive o padrão do inpaint da aula (contexto e pedido ligados por ponto-e-vírgula)."""
     body = client.get(f"/api/projects/{pid}/storyboard/instructions").json()

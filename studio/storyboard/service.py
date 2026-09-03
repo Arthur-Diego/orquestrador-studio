@@ -64,7 +64,7 @@ SUFFIX = "Keep everything else identical, realistic."
 #: lighting, realistic.", que travava o Nano Banana em preservação fiel (só um "tweak" mínimo em
 #: vez de um ângulo novo — ver ADR-027). `{core}` é o texto único do usuário, digitado no campo de
 #: instrução (ex.: "a close-up on the character"; o combo de fórmulas da aula `#sbPreset` que
-#: pré-preenchia esse texto foi removido a pedido do dono, ADR-031), sem a pontuação
+#: pré-preenchia esse texto foi removido a pedido do dono, ADR-033), sem a pontuação
 #: final. O pedido explícito de MUDAR câmera/enquadramento é o que empurra a variação real de
 #: viewpoint; "same scene, lighting and colors" preserva só a continuidade, não a composição.
 MULTISHOT_INSTRUCTION = (
@@ -230,7 +230,7 @@ def scene_arc(n: int, total: int) -> dict:
 
 def presets() -> dict:
     # O catálogo de fórmulas da aula (`PRESETS`/combo `#sbPreset`) foi removido a pedido do dono
-    # (ADR-031): o texto da instrução é digitado direto no campo, sem atalho. As demais chaves —
+    # (ADR-033): o texto da instrução é digitado direto no campo, sem atalho. As demais chaves —
     # kinds, contadores, modelos, arco e nota de upscale — seguem saindo do backend.
     return {"kinds": [{k: v for k, v in kind.items() if k != "cli"} for kind in KINDS],
             "suffix": SUFFIX, "counts": dict(COUNTS),

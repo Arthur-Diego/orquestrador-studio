@@ -79,7 +79,7 @@ def test_instruction_requires_base_image_from_step_three(sb, project):
 
 
 def test_catalogo_de_formulas_da_aula_foi_removido(sb):
-    """ADR-031: o combo `#sbPreset` (fórmulas da aula) foi removido a pedido do dono. O endpoint
+    """ADR-033: o combo `#sbPreset` (fórmulas da aula) foi removido a pedido do dono. O endpoint
     de instruções não publica mais o catálogo `presets` — o texto entra digitado à mão. As demais
     chaves seguem intactas; a validação de instrução (inclusive o ponto-e-vírgula do inpaint da
     aula) continua coberta por `test_semicolon_joins_one_instruction_but_period_separates`."""

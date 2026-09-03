@@ -1,4 +1,4 @@
-# ADR-031: Remoção do combo de "fórmulas da aula" (`#sbPreset`) a pedido do dono
+# ADR-033: Remoção do combo de "fórmulas da aula" (`#sbPreset`) a pedido do dono
 
 **Status:** Aceito
 **Data:** 2026-09-01
