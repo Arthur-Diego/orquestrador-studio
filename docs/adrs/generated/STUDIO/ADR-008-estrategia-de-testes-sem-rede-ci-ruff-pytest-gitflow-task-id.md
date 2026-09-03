@@ -2,7 +2,32 @@
 
 **Status:** Aceito
 **Data:** 25-08-2026
-**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-002](../HIGGSFIELD/ADR-002-integracao-higgsfield-somente-via-cli-oficial.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-005](../REFS/ADR-005-scraping-pinterest-via-playwright.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-007](../MOOD/ADR-007-mood-board-vibe-unica-teto-de-8-grid-de-4-como-orientacao-de-ui.md), [ADR-010](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md)
+**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-002](../HIGGSFIELD/ADR-002-integracao-higgsfield-somente-via-cli-oficial.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-005](../REFS/ADR-005-scraping-pinterest-via-playwright.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-007](../MOOD/ADR-007-mood-board-vibe-unica-teto-de-8-grid-de-4-como-orientacao-de-ui.md), [ADR-010](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md), [ADR-031](./ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md) (emenda), [ADR-032](./ADR-032-plugin-de-ui-da-etapa-em-ui-index-tsx-descoberto-por-import-meta-glob.md)
+
+> ## ⚠ Emenda — Wave 10, migração React (2026-09-03, [ADR-031](./ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md))
+>
+> **A restrição central desta ADR permanece: nenhum teste do CI abre navegador real nem toca a
+> rede.** Vitest + Testing Library rodam em **jsdom**, que é uma implementação de DOM em processo —
+> não há Chromium, não há `PLAYWRIGHT_BROWSERS_PATH`, não há socket. A frase "testes sem
+> rede/navegador" continua literalmente verdadeira.
+>
+> O que muda é o escopo do CI:
+>
+> | Trecho | Situação |
+> | --- | --- |
+> | "CI via GitHub Actions… `build-and-test`, que roda `ruff check` e `pytest`" | **Ampliado.** Passa a haver um segundo job, `frontend`: `npm ci` · `tsc --noEmit` · `eslint` · `vitest` · `vite build` · guarda do `dist`. |
+> | "`.github/workflows/ci.yml` — job `build-and-test`: `ruff check studio tests` + `pytest`" (Referências) | idem — o job Python fica **inalterado**. |
+>
+> O job `frontend` é **paralelo**, não um passo dentro do `build-and-test`. Isso é deliberado: o job
+> Python já roda em ~9-11 min com teto de 20 minutos — teto que foi elevado de 10 depois de ser
+> estourado por uma wave anterior. Somar a cadeia Node ali dentro raspa o teto de novo e faz uma
+> falha de frontend mascarar o orçamento de tempo do Python.
+>
+> Também é revogada, pela [ADR-032](./ADR-032-plugin-de-ui-da-etapa-em-ui-index-tsx-descoberto-por-import-meta-glob.md),
+> a leitura desta ADR registrada como motivador na ADR-010 — *"teste de frontend com
+> Node/Playwright contraria a ADR-008"*. Ela conflatava duas coisas: Playwright (navegador real,
+> proibido no CI e que segue fora dele, na skill `qa-studio`) e Node (runtime, nunca proibido).
+> Teste de frontend em jsdom sempre coube nesta ADR; simplesmente não existia ferramenta para ele.
 
 ## Contexto e Problema
 

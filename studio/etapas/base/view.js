@@ -18,7 +18,7 @@ Studio.register("base", (ctx) => {
 
   let cands = [], sel = null, chain = { situation: null, clean: null, label: null, upscale: null };
   let finalRel = null;     // wave 5 · ponto 2: caminho de base/base_final.png quando já existe
-  let refs = [], labelPrompt = null, cleanPrompt = null, claudeOk = false;
+  let refs = [], cleanPrompt = null, claudeOk = false;
   // Prompt fixo do rótulo por marca-imagem (espelha LABEL_IMAGE_PROMPT do backend); a marca em si
   // vai como imagem de referência na geração.
   const LABEL_PROMPT = "Apply the attached brand/logo image onto the product label. "
@@ -78,8 +78,13 @@ Studio.register("base", (ctx) => {
       // base-clean-marca [extensão]: o MESMO card vira a instrução de limpeza, com chave própria
       // em `edits` (o texto editado do rótulo e o da situação não se misturam com ele).
       el.innerHTML = card("Prompt · limpar marca · editável", cleanPrompt, "clean");
-    } else if (step === "label" && labelPrompt !== null) {
-      el.innerHTML = card("Prompt · rótulo · editável", labelPrompt, "label");
+    } else if (step === "label") {
+      // C-BASE-33: o card é o do PASSO ATIVO, sempre. A instrução de rótulo é texto FIXO
+      // (`LABEL_PROMPT`, espelho do `LABEL_IMAGE_PROMPT` do backend) e não depende da marca
+      // anexada — quem exige a marca é a GERAÇÃO, no backend ("Anexe a imagem da marca antes de
+      // trocar o rótulo."). Esconder o card atrás de `label_ready` era herança da marca-texto (o
+      // prompt saía do nome da marca) e deixava o stepper em "rótulo" com o card na situação.
+      el.innerHTML = card("Prompt · rótulo · editável", LABEL_PROMPT, "label");
     } else if (f) {
       el.innerHTML = card("Prompt · situação · editável", f.prompt, `p:${f.ref_id}`);
     } else {
@@ -215,13 +220,13 @@ Studio.register("base", (ctx) => {
   }
 
   async function loadPrompts() {
-    refs = []; labelPrompt = null; cleanPrompt = null;
+    refs = []; cleanPrompt = null;
     try {
       const r = await api(url("prompts"));
       refs = r.refs;
-      // Marca-imagem: o rótulo libera quando a imagem da marca foi anexada. O card editável usa
-      // o prompt fixo padrão (o usuário pode ajustá-lo); a marca vai como imagem de referência.
-      labelPrompt = r.label_ready ? LABEL_PROMPT : null;
+      // Marca-imagem: o card editável do rótulo usa o prompt fixo padrão (o usuário pode
+      // ajustá-lo) e a marca vai como imagem de referência na geração. `r.label_ready` diz se a
+      // marca já foi anexada — é o guia (`/guide`) que reporta prontidão, não o card (ADR-010 a).
       // base-clean-marca [extensão]: o texto do passo de limpeza também vem do backend (o `target`
       // é campo à parte e o backend o costura no template na hora de gerar).
       cleanPrompt = r.clean_prompt || null;

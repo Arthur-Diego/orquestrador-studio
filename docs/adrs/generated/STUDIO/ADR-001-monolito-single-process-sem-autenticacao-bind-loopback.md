@@ -2,7 +2,25 @@
 
 **Status:** Aceito
 **Data:** 2026-08-25
-**ADRs relacionados:** [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md), [ADR-010](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md)
+**ADRs relacionados:** [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md), [ADR-010](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md), [ADR-031](./ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md) (emenda)
+
+> ## ⚠ Emenda — Wave 10, migração React (2026-09-03, [ADR-031](./ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md))
+>
+> **A decisão desta ADR permanece INTACTA e não é superseded.** Um único processo
+> (`uvicorn studio.app:app`), bind em `127.0.0.1`, sem autenticação, backend e frontend servidos
+> pelo mesmo processo. A migração para React **não** cria segundo runtime: o bundle é construído
+> para `studio/web/dist/` e servido pelo `StaticFiles` já montado em `/static`.
+>
+> O que a ADR-031 emenda são **duas frases de caracterização**, que deixaram de descrever o sistema:
+>
+> | Trecho | Situação |
+> | --- | --- |
+> | "uma SPA estática vanilla (HTML/CSS/JS, sem framework, sem bundler, sem etapa de build)" (Contexto) | **Não vale mais.** O frontend é React + TypeScript construído por Vite. |
+> | "Iteração rápida no frontend sem pipeline de build: qualquer alteração é visível imediatamente após reload do navegador" (Motivadores) | **Não vale mais** como motivador. A iteração passa a ser `vite dev` com HMR. |
+> | "O frontend sem framework/TypeScript/testes de tipo também significa que mudanças de contrato na API não são pegas em tempo de build" (Consequências) | **Deixa de valer** a partir da E1, que gera tipos do `/openapi.json` e adiciona teste de drift no CI. |
+>
+> Nada mais desta ADR é afetado. A opção "framework com SSR / segundo runtime" foi considerada e
+> **rejeitada na ADR-031 justamente por contrariar esta decisão**.
 
 ## Contexto e Problema
 

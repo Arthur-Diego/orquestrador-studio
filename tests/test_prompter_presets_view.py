@@ -87,30 +87,20 @@ def test_etapa2_fica_fora_da_ui_de_preset(client):
 
 
 # ---------- T4.6: o diff da feature não toca o núcleo ----------
-def test_diff_da_feature_nao_toca_o_nucleo():
-    """ADR-010: o seletor mora nos `view.*` dos plugins. Nada de `studio/web/*`, `app.py`,
-    `steps.py` ou `index.html` no diff da branch (commitado + working tree)."""
-    git = shutil.which("git")
-    if not git or not (ROOT / ".git").exists():
-        pytest.skip("git não disponível no ambiente")
-
-    def run(*args):
-        return subprocess.run([git, "-C", str(ROOT), *args], capture_output=True, text=True)
-
-    base = run("merge-base", "develop", "HEAD")
-    if base.returncode != 0:
-        pytest.skip("branch `develop` não disponível para comparar")
-    commitado = run("diff", "--name-only", f"{base.stdout.strip()}..HEAD")
-    assert commitado.returncode == 0, commitado.stderr
-    trabalho = run("status", "--porcelain")
-    assert trabalho.returncode == 0, trabalho.stderr
-
-    caminhos = set(commitado.stdout.split())
-    caminhos |= {linha[3:].strip().split(" -> ")[-1] for linha in trabalho.stdout.splitlines() if linha[3:].strip()}
-    proibidos = ("studio/web/", "studio/app.py", "studio/steps.py", "studio/index.html",
-                 "studio/etapas/mood/view.")
-    sujos = sorted(p for p in caminhos if p.startswith(proibidos))
-    assert not sujos, f"a feature não pode tocar o núcleo nem a etapa 2: {sujos}"
+# MOVIDA para `tests/test_adr010_fronteira_nucleo.py` (Wave 10, ADR-032).
+#
+# A guarda que morava aqui afirmava um invariante do REPOSITÓRIO INTEIRO ("ninguém edita
+# `studio/web/*`, `app.py`, `steps.py`, `index.html`") a partir do arquivo de teste de UMA feature,
+# e o fazia sem prever frente de núcleo. A Wave 10 é frente de núcleo por definição, e reprovava em
+# `make verify` sem ter feito nada errado. A proteção não foi desligada: virou guarda única com
+# titularidade declarada explicitamente.
+#
+# O trecho `studio/etapas/mood/view.` não migrou junto, de propósito. Ele não era ADR-010: era a
+# amenda A4 desta feature ("a etapa 2 fica fora da UI de preset"), e é uma afirmação sobre o DIFF de
+# uma feature já mergeada há waves. Como afirmação sobre o diff ela nem sobrevive à E4, que remove
+# `etapas/mood/view.{html,js}` inteiros ao portar a tela para React. O que ela realmente protegia
+# continua protegido, e por CONTEÚDO em vez de por diff, logo abaixo em
+# `test_etapa2_fica_fora_da_ui_de_preset` — que a E4 tem de substituir por equivalente Vitest.
 
 
 # ---------- sintaxe do view.js (equivalente ao `node --check`) ----------

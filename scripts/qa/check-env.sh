@@ -17,11 +17,30 @@ PY="$REPO/.venv/bin/python"
 chk "venv em $REPO/.venv" test -x "$PY"
 chk "fastapi/uvicorn importáveis" "$PY" -c "import fastapi, uvicorn"
 chk "playwright (python) importável" "$PY" -c "from playwright.sync_api import sync_playwright"
-chk "Chromium do Playwright instalado" bash -c "ls -d \"\$HOME\"/.cache/ms-playwright/chromium-* >/dev/null"
+# O Chromium é provado por LAUNCH, não por caminho: o diretório de instalação do Playwright muda
+# por SO (`~/.cache/ms-playwright` no Linux, `~/Library/Caches/ms-playwright` no macOS) e ainda pode
+# ser redirecionado por `PLAYWRIGHT_BROWSERS_PATH`. Checar caminho dava falso negativo 100% das
+# vezes no macOS com o browser instalado e funcional. Quem sobe o navegador é o próprio Playwright:
+# se ele abre, o pré-voo está provado; se não abre, o motivo real aparece no stderr.
+CHROMIUM_VER="$("$PY" - <<'PY' 2>/dev/null
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    b = p.chromium.launch()
+    print(b.version)
+    b.close()
+PY
+)"
+if [[ -n "$CHROMIUM_VER" ]]; then
+  echo "PASS: Chromium do Playwright sobe (v$CHROMIUM_VER)"
+else
+  echo "FAIL: Chromium do Playwright sobe (rode: $PY -m playwright install chromium)"; fails=$((fails + 1))
+fi
 chk "PIL importável (fakes/seed)" "$PY" -c "import PIL"
 chk "ffmpeg no PATH" command -v ffmpeg
 chk "ffprobe no PATH" command -v ffprobe
-warn "newman no PATH (coleções Postman)" command -v newman
+# `newman` é devDependency de `frontend/` (ADR-031): sem Node global ele vem do node_modules local.
+warn "newman disponível (PATH ou frontend/node_modules)" bash -c \
+  "command -v newman >/dev/null || test -x '$REPO/frontend/node_modules/.bin/newman'"
 warn "gh autenticado (higiene de cards por PR)" gh auth status
 
 if [[ -f "$RUN/env.sh" ]]; then

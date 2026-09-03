@@ -1,0 +1,94 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+4/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-e2e-mock
+E2E Mock
+energético
+16:9 · YouTube
+vibe: gelo neon ciano, alto contraste
+● 9999 créditos
+Progresso
+4/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 6 · aula 013
+Trilha
+Primeiro assista a história inteira, sem cortes. Depois ouça várias músicas e escolha
+sentindo a energia
+— a música define ritmo, emoção e impacto.
+Resetar etapa [extensão]
+Guia
+bloqueada
+→ Antes de continuar: ≥ 1 take com like por cena (etapa 5). Volte à etapa 5, gere os takes que faltam e marque o melhor de cada cena
+01
+Assistir a história inteira
+Montar sequência bruta
+▶
+audio/rough_sequence.mp4 · sem música, sem corte
+A história fecha, ou falta uma cena?
+A história fecha
+Falta cena / encerramento mais forte
+Se faltar encerramento comercial, a saída é a cena do produto (etapas 5 e 6).
+Salvar decisão
+02
+Ouvir e escolher
+1 candidata
+▶
+m.wav
+0:12 · 120 bpm
+escolhida
+Ouça cada faixa inteira; escolha pelo sentimento, não pelo bpm. Ao escolher: audio/music.* + batidas em audio/beats.json.
+03
+Batidas da trilha escolhida
+24 batidas · 23 impactos
+Riscos altos são os impactos — é neles que a etapa 7 propõe os cortes.

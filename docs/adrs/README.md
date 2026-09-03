@@ -24,6 +24,8 @@ organizadas por módulo, e mostra o grafo de relacionamentos entre elas.
 | ADR-015 | A etapa 5 (Ângulos por cena) é fundida na etapa 4 (Storyboard) e sai do pipeline (storyboard passa a cobrir aulas 010+011; estende a ADR-004, amenda a moldura de numeração da ADR-011) | STUDIO | Aceito | [ADR-015](generated/STUDIO/ADR-015-fusao-da-etapa-5-angulos-na-etapa-4-storyboard.md) |
 | ADR-024 | Transcrição de legendas via OpenAI `whisper-1`, com fake sem chave (`[extensão]`; primeiro serviço externo HTTP do studio, import lazy, política assimétrica de falha) | STUDIO | Aceito | [ADR-024](generated/STUDIO/ADR-024-transcricao-de-legendas-via-openai-whisper-1-com-fake-sem-chave.md) |
 | ADR-030 | Editor de vídeo completo como extensão não destrutiva da etapa 8 (bloco `editor` aditivo em `timeline.json`, preview no browser e render fiel no ffmpeg) | STUDIO | Aceito | [ADR-030](generated/STUDIO/ADR-030-editor-de-video-completo-como-extensao-nao-destrutiva-da-etapa-8.md) |
+| ADR-031 | Frontend em React + Vite com etapa de build e `dist/` versionado (emenda ADR-001 §stack, ADR-006 §driver e ADR-008 §CI; cita ADR-004 como gate) | STUDIO | Aceito | [ADR-031](generated/STUDIO/ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md) |
+| ADR-032 | Plugin de UI da etapa é `ui/index.tsx`, descoberto por `import.meta.glob` (emenda ADR-010: reafirma (a) e (c), reescreve (b) para `frontend/**` e revoga o motivador anti-Node) | STUDIO | Aceito | [ADR-032](generated/STUDIO/ADR-032-plugin-de-ui-da-etapa-em-ui-index-tsx-descoberto-por-import-meta-glob.md) |
 
 ## Grafo de relacionamentos
 
@@ -80,6 +82,16 @@ graph LR
     ADR011 --- ADR015
     ADR003 --- ADR015
     ADR010 --- ADR015
+    ADR031["ADR-031<br/>React + Vite com build"]
+    ADR032["ADR-032<br/>Plugin de UI = ui/index.tsx"]
+    ADR001 --- ADR031
+    ADR004 --- ADR031
+    ADR006 --- ADR031
+    ADR008 --- ADR031
+    ADR010 --- ADR031
+    ADR031 --- ADR032
+    ADR010 --- ADR032
+    ADR008 --- ADR032
 ```
 
 _Índice atualizado no fechamento da wave 4 (2026-08-27): ADR-010 a ADR-012, geradas nas waves 1–2, entraram na tabela e no grafo. A wave 4 (fidelidade ao protótipo) não criou ADR — suas decisões de lote foram pré-autorizadas pelo dono do produto e ficam em `docs/domains/studio/waves/wave-4.md` §"Decisões do lote" e na retro `wave-4-retro.md`._
@@ -107,3 +119,5 @@ _ADR-028 (2026-08-31, ADH-OS-20260831-B-roteiro-cena): a Frente B do storyboard 
   geradas/importadas via CLI da Higgsfield.
 - **Testes e CI cobrem todo o domínio** (ADR-008 ↔ todas): a estratégia de testes sem rede/CI se
   aplica a STUDIO, HIGGSFIELD, REFS e MOOD por igual.
+
+_ADR-031 e ADR-032 (2026-09-03, ADH-OS-20260902-08, Wave 10 · E0): o frontend passou de HTML/CSS/JS vanilla sem build para React + TypeScript estrito construído por Vite, com saída em `studio/web/dist/` servida pelo mesmo processo (a **ADR-001 não é contrariada**: nenhum segundo runtime) e `dist/` versionado no estado final com guarda de CI, porque o usuário desta ferramenta local não tem Node. A UI de cada etapa vira `studio/etapas/<id>/ui/index.tsx` descoberta por `import.meta.glob` — **sem registry central**, que é o que preserva a invariante 'etapa nova cria só a sua pasta' (ADR-010 c) e permite às seis frentes de tela rodarem em paralelo. Nenhuma ADR foi superseded: as duas novas **emendam** ADR-001 (caracterização da stack), ADR-006 (só o driver — a decisão de polling sem WebSocket/SSE fica de pé), ADR-008 (ganha o job `frontend`; Vitest em jsdom mantém 'sem navegador' verdadeiro) e ADR-010 (reafirma (a) e (c), reescreve (b) para `frontend/**` e **revoga** o motivador 'teste de frontend com Node/Playwright contraria a ADR-008'). A guarda do item (b) saiu de dois testes de feature para `tests/test_adr010_fronteira_nucleo.py`, com titularidade declarada. ADR-004 é citada como gate: a migração é refatoração pura e o diff de `textContent` contra o baseline da E0 tem de ser vazio._

@@ -1,0 +1,93 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+4/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-e2e-mock
+E2E Mock
+energético
+16:9 · YouTube
+vibe: gelo neon ciano, alto contraste
+● 9999 créditos
+Progresso
+4/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 2 · aula 009
+Mood board
+Uma vibe só para a campanha inteira — ambiente, luz e cor. A criação de moods vive na
+biblioteca global
+; aqui você
+escolhe
+um mood board e o
+aplica
+a esta campanha.
+Resetar etapa [extensão]
+Guia
+concluída
+100%
+→ montar a imagem base do produto
+01
+Escolher um mood board
+nenhum selecionado
+Aplicar a esta campanha
+A criação e a curadoria de mood boards ficam na biblioteca global
+[extensão]
+. Aqui você só escolhe um board existente e o aplica — as imagens dele são
+copiadas
+para o mood desta campanha (o board fica intacto).
+QA Board · 0 img
+02
+Mood atual da campanha
+vibe: gelo neon ciano, alto contraste
+Trocar
+Criar / gerenciar mood boards
+palette.json · derivado técnico [extensão]

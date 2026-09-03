@@ -1,0 +1,70 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+—
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha
+Nenhuma campanha
+● 9999 créditos
+Progresso
+—
+Editar
+Continuar de onde parei →
+Biblioteca · independente de campanha
+Mood boards
+[extensão]
+Mood boards reutilizáveis: monte uma vez e use em qualquer campanha. A etapa 2 pode
+puxar
+um board e a etapa 3 pode referenciá-lo visualmente. Estende a vibe única do curso (ADR-007).
+Novo mood board
+QA Board
+seed do qa-studio
+0 imagem(ns)

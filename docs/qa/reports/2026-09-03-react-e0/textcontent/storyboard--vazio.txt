@@ -1,0 +1,190 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+0/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-qa-vazia
+QA Vazia
+produto de teste
+16:9 · YouTube
+vibe: definida na etapa 2
+● 9999 créditos
+Progresso
+0/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 4 · aulas 010 + 011
+Storyboard
+A imagem base vira história: edite
+uma instrução por vez
+, escreva ~5 cenas com começo, descoberta, ação e desfecho e, por cena, monte
+vários ângulos
+(upload + prompt de ângulo, escolha e ordene) — mais a cena do produto.
+Resetar etapa [extensão]
+Guia
+bloqueada
+0/5 cenas com frames
+→ Escolher a imagem base da campanha na etapa 3
+01
+Ideias a partir da imagem base
+0 ideias · 0 escolhidas
+base/base_final.png
+Draw to Edit
+Edição (uma instrução)
+Multi Shot
+Área marcada (inpaint aproximado) [extensão]
+— fórmulas da aula —
+Menor e mais realista
+Eliminar personagem da direita
+Inpaint: corda proporcional
+Close no personagem
+Montar instrução — gere 4 (incerto)
+gere 1 (tweak)
+Cole isto na Higgsfield
+Copiar
+a instrução montada aparece aqui — os botões não gastam crédito
+Área marcada
+[extensão]
+● CLI · qa-fake · 9999 créditos
+Best-effort por prompt: a marcação vai como referência, não é inpaint com máscara; o resultado pode variar fora da área marcada (CLI sem máscara, ADR-002)
+imagem base (etapa 3)
+Marcar área [extensão]
+original
+marcada
+gere 4 (incerto)
+gere 1 (tweak)
+Nano Banana Pro
+GPT Image 2 [extensão]
+Gerar via CLI (gasta créditos)
+02
+Roteiro por Claude
+[extensão]
+Sugestão editável, sem gastar crédito (Claude CLI local): nada é escrito nas cenas sem o seu clique. O caminho da aula 010 — escrever a história à mão no painel 03 — continua valendo.
+preset de realismo
+[extensão]
+(sem preset)
+Documentary Street Realism — Documentário autêntico: cru, granulado, câmera na mão, contexto amplo de rua.
+ARRI Natural Narrative — Narrativa cinematográfica orgânica: pele quente e contraste suave; default seguro com pessoa.
+RED Commercial Precision — Precisão comercial: nitidez cristalina para produto, moda e tech.
+Sony Venice Night — Noturno limpo: neon e interiores escuros sem ruído.
+Anamorphic Film Look — Widescreen épico: flares horizontais e bokeh oval (indicado p/ 2.39:1).
+nº de cenas
+proporção (do projeto)
+16:9
+alvo do prompt de imagem
+Nano Banana Pro
+fotos da galeria no contexto
+nenhuma — escolha na galeria
+Gerar roteiro (Claude) [extensão]
+Aplicar às cenas vazias
+Substituir tudo
+03
+A história em cenas
++ cena
+Reordenar cenas
+Gerar storyboard.md
+Salvar cenas
+começo
+↑
+↓
+✕
+descoberta
+↑
+↓
+✕
+ação
+↑
+↓
+✕
+ação
+↑
+↓
+✕
+desfecho
+↑
+↓
+✕
+04
+Ângulos por cena
+sem mood/palette.json ainda (etapa 2)
+cena 01
+0/0 upscalados
+base ▾
+cena 02
+0/0 upscalados
+base ▾
+cena 03
+0/0 upscalados
+base ▾
+cena 04
+0/0 upscalados
+base ▾
+cena 05
+0/0 upscalados
+base ▾
+produto
+0/0 upscalados
+05
+Cena 01 — escolher e ordenar
+0 candidatos · 0 escolhidos
+já upscalei estes na UI
+Salvar ordem da cena
+Outro ponto de vista (Multi Shot)
+Edição numerada (uma rodada por vez)
+close
+médio
+aberto
+altura dos olhos
+contra-plongée
+plongée
+Gerar prompt
+Nenhum candidato — gere na UI da Higgsfield e importe.
+Clique na ordem em que os frames entram na cena — o número é a ordem (shot01_final.png, shot02_final.png…).

@@ -1,0 +1,82 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+0/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-qa-vazia
+QA Vazia
+produto de teste
+16:9 · YouTube
+vibe: definida na etapa 2
+● 9999 créditos
+Progresso
+0/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 5 · aula 012
+Animação
+Cada frame vira take de vídeo: áudio OFF, 2 takes por shot, like no usável. Três falhas? Troque de modelo. Sem jeito? Corte para preto na montagem.
+Resetar etapa [extensão]
+Guia
+bloqueada
+→ Antes de continuar: storyboard/storyboard.json com os frames finais (etapa 4). Volte à etapa 4, gere os frames de cada cena e salve o storyboard
+01
+Takes por shot
+Recarregar plano
+Etapa 4 ainda não produziu storyboard/storyboard.json
+02
+Importar os vídeos que você gerou na UI
+0 vídeos
+Arraste os mp4 aqui ou
+escolha arquivos
+Importar da pasta Downloads
+Importar do histórico Higgsfield
+Dica da aula: enquanto um take gera, dispare os outros shots em paralelo na UI e importe os mp4 depois.

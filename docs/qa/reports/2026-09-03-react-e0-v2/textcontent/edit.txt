@@ -1,0 +1,195 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+4/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-e2e-mock
+E2E Mock
+energético
+16:9 · YouTube
+vibe: gelo neon ciano, alto contraste
+● 9999 créditos
+Progresso
+4/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 7 · aula 014 · editor [extensão]
+Studio de vídeo
+Resetar etapa [extensão]
+Guia
+em andamento
+50%
+master: pronto
+→ Renderizar o rough cut para conferir o ritmo
+‹
+Etapa 7 · Studio de vídeo
+E2E Mock
+Salvo
+↺
+↻
+autosave
+Proporção
+16:9
+9:16
+1:1
+4:5
+4:3
+21:9
+Resolução
+720p
+1080p
+1440p
+4K
+FPS
+24
+25
+30
+60
+?
+⇤ Menu
+⛶
+Salvar
+Exportar ↗
+▦
+Mídia
+T
+Texto
+CC
+Legendas
+♪
+Áudio
+⧓
+Transições
+✦
+Efeitos
+◑
+Filtros
+◈
+Elementos
+⚙
+Ajustes
+▤
+Biblioteca
+Mídia
+2 itens
+Arraste imagens/vídeos aqui
+▶
+→ VÍDEO 2
+shot01_take1
+0.5s
+▶
+→ VÍDEO 2
+shot02_take1
+0.5s
+⬆
+upload +
+novo
+shot01_take1
+⇤
+◂◂
+▶
+▸▸
+⇥
+00:00:00 / 00:01:00
+⟲ loop
+🔊
+⛶
+Projeto
+nenhuma seleção
+Resolução
+1080p
+Proporção
+16:9
+FPS
+30
+Duração
+00:01:00
+Clipes
+2
+Tracks
+6
+Fade final
+1.5
+Normalizar áudio [ext]
+Selecione um clipe na timeline para editar suas propriedades, ou arraste mídias da barra lateral.
+✂ Dividir
+⧉ Duplicar
+🗑 Excluir
+⇥| Ripple
+⚑ Marker
+snap
+clique num clipe
+－
+＋
+100%
+TEXTO
+◉
+🔓
+LEGENDAS
+◉
+🔓
+VÍDEO 2
+◉
+🔓
+VÍDEO 1
+◉
+🔓
+MÚSICA
+◉
+🔓
+SFX
+◉
+🔓
+0s
+2s
+shot01_take1
+shot02_take1
+7bd90956856a.wav

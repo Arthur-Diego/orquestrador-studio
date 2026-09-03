@@ -1,0 +1,21 @@
+PASS: venv em <WORKTREE>/.venv
+PASS: fastapi/uvicorn importáveis
+PASS: playwright (python) importável
+PASS: Chromium do Playwright sobe (v151.0.7922.34)
+PASS: PIL importável (fakes/seed)
+PASS: ffmpeg no PATH
+PASS: ffprobe no PATH
+PASS: newman disponível (PATH ou frontend/node_modules)
+PASS: gh autenticado (higiene de cards por PR)
+INFO: run=react-e0 modo=offline base=http://127.0.0.1:8790
+PASS: servidor responde em http://127.0.0.1:8790/api/steps
+PASS: servidor serve o frontend (/)
+PASS: STUDIO_PROJECTS isolado (fora de <WORKTREE>/projects)
+PASS: fake higgsfield ativo no PATH
+PASS: fake claude ativo no PATH
+PASS: fake higgsfield responde (account status)
+PASS: servidor de mídia fake em http://127.0.0.1:8791
+PASS: API vê o CLI fake como logado
+INFO: git refactor/adh-os-20260902-08-react-fundacao @ 64a8bcb
+PASS: árvore git limpa (alterações locais aparecem no diff da rodada)
+PRE-VOO OK
