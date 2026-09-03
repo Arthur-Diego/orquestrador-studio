@@ -9,8 +9,8 @@
 // é `../../../studio/etapas/*/ui/index.tsx` (o `studio/` é irmão de `frontend/` na raiz). O padrão
 // de teste do Vitest já aponta para lá (`vite.config.ts`: `../studio/etapas/*/ui/**`).
 //
-// Em E3 nenhuma tela React existe: o glob resolve para `{}`, `temTelaReact` é sempre `false` e toda
-// etapa cai na ponte vanilla (`bridge.ts`). Este host é o terreno pronto para E4…E9.
+// As 10 telas migraram nas E4…E9: o glob resolve para os 10 `ui/index.tsx` e `temTelaReact` é `true`
+// para todas. A ponte vanilla foi removida na E10 (card [REACT-11]) — este host é o único caminho.
 import { Suspense, lazy, useEffect } from "react";
 import type { ComponentType } from "react";
 

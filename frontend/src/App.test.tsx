@@ -26,7 +26,6 @@ describe("App — shell React E3 (fiação completa)", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
-    document.querySelectorAll("script[data-bridge]").forEach((s) => s.remove());
     delete (window as { Studio?: unknown }).Studio;
   });
 

@@ -39,39 +39,20 @@ def test_new_project_creates_every_layout_folder(client, studio_env):
         assert (root / folder).is_dir(), folder
 
 
-def test_shared_ui_assets_are_served(client):
-    """`Studio.ui` (ui.js + ui.css) vive em /static e é carregado antes dos plugins."""
-    index = client.get("/").text
-    assert "/static/ui.css" in index and "/static/ui.js" in index
-    assert index.index("/static/ui.js") < index.index("/static/app.js"), "ui.js antes do app.js"
-    js = client.get("/static/ui.js")
-    assert js.status_code == 200
-    for fn in ("esc", "chip", "hfChip", "drop", "upload", "confirmCost", "poll", "guide", "renderGuide"):
-        assert fn in js.text, f"Studio.ui.{fn} ausente"
-    assert "crie uma campanha" in js.text
-    assert client.get("/static/ui.css").status_code == 200
-
-
-def test_shell_destroys_the_previous_view_and_exposes_go(client):
-    app_js = client.get("/static/app.js").text
-    assert "destroy" in app_js, "app.js precisa encerrar a tela anterior (polls órfãos)"
-    assert "go(target)" in app_js and "renderGuide" in app_js, "Studio.go navega para etapa ou visão geral"
-    assert "destroyCurrent()" in app_js, "a troca de tela e a visão geral encerram a instância anterior"
-
-
 def test_plugins_serve_their_assets(client):
-    """Wave 10 (ADR-031/ADR-032): uma etapa é OU vanilla (`view.{html,js}` servidos por
-    `/steps/<id>/<asset>`) OU React (`ui/index.tsx`, descoberto por `import.meta.glob` e servido pelo
-    bundle). As duas formas convivem atrás da ponte strangler até a E10. Uma etapa migrada não serve
-    mais `view.*`; o contrato da tela dela vive no substituto Vitest `ui/index.test.tsx`."""
+    """Wave 10 · E10 (ADR-031/ADR-032): a migração para React terminou. TODAS as 10 etapas são React
+    (`ui/index.tsx`, descoberto por `import.meta.glob` e servido pelo bundle `studio/web/dist/`), e a
+    rota `/steps/<id>/view.{html,js}` foi REMOVIDA de `studio/app.py`. Nenhuma etapa serve mais
+    `view.*`; o contrato de cada tela vive no substituto Vitest `ui/index.test.tsx`.
+
+    Guarda: toda etapa migrada tem `ui/index.tsx` e `/steps/<id>/view.html` responde 404 (rota
+    inexistente). O `else` — etapa vanilla ainda servindo `view.*` — não deve existir mais."""
     from studio.etapas import discover
     for sid, plugin in discover().items():
-        if (plugin["dir"] / "ui" / "index.tsx").exists():
-            assert client.get(f"/steps/{sid}/view.html").status_code == 404, \
-                f"{sid} migrou para React (ui/index.tsx): não deve mais servir view.html"
-        else:
-            assert client.get(f"/steps/{sid}/view.html").status_code == 200, sid
-            assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
+        assert (plugin["dir"] / "ui" / "index.tsx").exists(), \
+            f"{sid} deveria ter migrado para React (ui/index.tsx) até a E10"
+        assert client.get(f"/steps/{sid}/view.html").status_code == 404, \
+            f"{sid} é React: a rota /steps/<id>/view.* não existe mais (removida na E10)"
     assert client.get("/steps/nao-existe/view.html").status_code == 404
     assert client.get("/steps/refs/secret.txt").status_code == 404
 

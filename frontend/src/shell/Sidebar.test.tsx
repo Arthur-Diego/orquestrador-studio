@@ -62,7 +62,7 @@ describe("Sidebar — contrato DOM do shell.py (recon §3.1)", () => {
     expect(api.cycleTheme).toHaveBeenCalled();
   });
 
-  it("#hfChipSide existe para a Studio.ui.hfChip vanilla (C-SHELL-14)", () => {
+  it("#hfChipSide existe (chip do CLI via <HfChip> React da E2, C-SHELL-14)", () => {
     renderNoShell(<Sidebar />);
     expect(document.querySelector("#hfChipSide")).not.toBeNull();
   });
