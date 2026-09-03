@@ -25,8 +25,9 @@ def upload(client, pid, name, tmp_path, seconds=10, bpm=120):
 def test_step_is_published_as_plugin(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "music")
     assert step["status"] == "ready" and step["n"] == 6 and step["aula"] == "013"
-    assert client.get("/steps/music/view.html").status_code == 200
-    assert client.get("/steps/music/view.js").status_code == 200
+    # Wave 10 · E4 (ADR-032): a tela migrou para React (`studio/etapas/music/ui/index.tsx`); os
+    # `view.{html,js}` saíram e o contrato de DOM/comportamento é coberto pelo substituto Vitest
+    # em `studio/etapas/music/ui/index.test.tsx` (casos C-MUSIC-*).
 
 
 def test_prompt_and_empty_candidates(client, pid):
@@ -242,45 +243,11 @@ def test_story_render_builds_the_raw_sequence(ffmpeg, client, studio_env):
     assert client.get(f"/files/{proj}/audio/rough_sequence.mp4").status_code == 200
 
 
-def test_step_screen_follows_the_lesson_and_the_wave_contract(client):
-    """Auditoria 7.3 e 7.7 + convenção de tela da wave 2 (textos revistos na wave 4)."""
-    html = client.get("/steps/music/view.html").text
-    js = client.get("/steps/music/view.js").text
-    assert "Etapa 6 · aula 013" in html
-    assert '<section id="guide" class="guide"></section>' in html
-    assert "3 a 5" not in html, "a aula 013 não dá número de candidatas (auditoria 7.3)"
-    # Wave 4 (7.03): o lede é o do protótipo; a ordem da aula ("assistir antes de escolher")
-    # continua no título do painel 01 e no `guide.py`.
-    assert "Primeiro assista a história inteira, sem cortes." in html
-    assert "<span class=\"pn\">01</span>Assistir a história inteira" in html
-    assert "Você não deve editar antes de escolher a trilha" not in html, "saiu do lede (7.03)"
-    # Wave 4 (7.23): o campo origem/licença `[extensão]` saiu da tela; a rota continua no backend.
-    assert "[extensão]" not in html and "origem (opcional)" not in html
-    assert "3 a 5" not in js
-    assert "Studio.ui" in js and "destroy()" in js and "ctx.guide()" in js
-
-
-def test_step_screen_consumes_the_shell_catalog(client):
-    """Wave 4 (ADH-OS-20260826-15): a tela é o protótipo — 3 painéis, sem `details.lesson`."""
-    html = client.get("/steps/music/view.html").text
-    js = client.get("/steps/music/view.js").text
-    # painéis numerados com `.pn` (03 painéis, na ordem visual do protótipo)
-    assert html.count('<span class="pn">') == 3
-    assert '<span class="pn">01</span>' in html and '<span class="pn">03</span>' in html
-    assert "<details" not in html, "o protótipo só desenha `details.lesson` na etapa 1 (regra 4)"
-    assert "<style" not in html, "a etapa 6 não tem mais lacuna de catálogo do shell"
-    # o passo 0 da aula ganhou o layout do protótipo: player 16/9 + coluna da decisão
-    assert 'class="grid2 even"' in html and 'class="player"' in html and 'class="play-big"' in html
-    assert 'class="q"' in html and 'class="col g10"' in html and 'class="inline lg"' in html
-    # candidatas em `.rowlist`/`.track-row`; régua pelo helper `Studio.ui.beats`
-    assert 'id="musList" class="rowlist"' in html
-    assert "track-row" in js and "rowcard" in js
-    assert "ui.beats(" in js
-    # onda do protótipo com o `<audio>` escondido atrás dela (7.30) e bpm por faixa (7.29)
-    assert 'class="wave"' in js and "<audio hidden" in js and "bpm" in js
-    assert 'class="pick ghost sm"' in js
-    # nada mais é posicionado/colorido por style inline (era o desenho antigo da régua)
-    assert "position:absolute" not in js and "crimson" not in js
+# Wave 10 · E4 (ADR-032): `test_step_screen_follows_the_lesson_and_the_wave_contract` e
+# `test_step_screen_consumes_the_shell_catalog` liam o fonte de `music/view.{html,js}` (substring
+# sobre a tela vanilla). A tela virou React (`music/ui/index.tsx`); o contrato de DOM/comportamento
+# e os textos de aula (ADR-004) passam a ser verificados pelo substituto Vitest
+# `studio/etapas/music/ui/index.test.tsx` (C-MUSIC-*) e pelo diff de `textContent` do baseline da E0.
 
 
 def test_instructions_do_not_invent_a_number(client, pid):

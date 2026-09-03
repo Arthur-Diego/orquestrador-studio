@@ -120,33 +120,9 @@ def test_resumo_do_guia_e_o_estado_do_master(client, studio_env, pid):
 
 
 # ---------- textos de tela (auditoria 9.1, 9.2 e wave 4) ----------
-def test_tela_atribui_o_formato_ao_destino_e_marca_a_extensao(client):
-    html = client.get("/steps/export/view.html").text
-    assert "Etapa 8 · aula 014" in html, "9.2: a aula 007 fala de imagem no Midjourney, não de export"
-    assert "aulas 007 e 014" not in html
-    # Wave 4 (9.3): a lede é a do protótipo — o destino escolhe o formato e o corte é central.
-    assert "O destino escolhe o formato" in html and "Corte central" in html
-    assert "1:1 opcional" in html
-    # 9.20: o único `[extensão]` que o protótipo desenha nesta tela é o do título do QA.
-    assert html.count("[extensão]") == 1
-    assert '<span class="pn">02</span>QA técnico <span class="ext">[extensão]</span>' in html
-    assert 'id="guide"' in html, "convenção de tela da wave 2"
-    js = client.get("/steps/export/view.js").text
-    assert "destroy()" in js and "Studio.ui.poll" in js
-
-
-def test_view_segue_o_catalogo_do_redesign(client):
-    """Wave 4: dois painéis, sem `details.lesson`, card com UM botão e QA em grid de checks."""
-    html = client.get("/steps/export/view.html").text
-    js = client.get("/steps/export/view.js").text
-    assert '<span class="pn">01</span>' in html and '<span class="pn">02</span>' in html
-    assert '<span class="pn">03</span>' not in html, "9.27/9.28: os painéis Thumb e Reframe saíram"
-    assert "lesson" not in html, "wave 4 regra 4: `details.lesson` só na etapa 1"
-    assert 'id="expFormats" class="fmt-grid"' in html
-    assert '<span class="ext">[extensão]</span>' in html, "o rótulo [extensão] usa .ext, não chip"
-    assert "fmt-card" in js and 'class="box ex-box"' in js, "o card desenha a proporção e o preview na mesma caixa"
-    # 9.18: um botão por card — ghost "Ver arquivo" quando existe, primary "Renderizar" quando não.
-    assert ">Ver arquivo</button>" in js and ">Renderizar</button>" in js
-    assert "ex-acts" not in js and ">Preview<" not in js, "o preview virou o clique na caixa (9.16)"
-    assert '<div class="checks qa">' in js, "9.22/9.23: o QA é o grid de checks por critério"
-    assert "max-width:150px" not in js
+# Wave 10 · E4 (ADR-032): `test_tela_atribui_o_formato_ao_destino_e_marca_a_extensao` e
+# `test_view_segue_o_catalogo_do_redesign` liam o fonte de `export/view.{html,js}` (substring sobre a
+# tela vanilla). A tela virou React (`export/ui/index.tsx`); o contrato de DOM/comportamento e os
+# textos de aula (ADR-004) passam a ser verificados pelo substituto Vitest
+# `studio/etapas/export/ui/index.test.tsx` (C-EXPORT-*) e pelo diff de `textContent` do baseline da
+# E0. Os testes de guia deste arquivo (leitura pura de `/guide`, ADR-010) seguem intactos.

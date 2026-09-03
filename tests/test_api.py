@@ -346,12 +346,10 @@ def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
 
 
 def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
-    """Etapa 2 escolhe/aplica um board (etapa2-pick, ADR-014); etapa 3 tem seletor + galeria."""
-    mood_html = client.get("/steps/mood/view.html").text
-    mood_js = client.get("/steps/mood/view.js").text
-    # etapa2-pick: a etapa 2 escolhe da biblioteca e aplica via pull_board
-    assert 'id="btnApplyBoard"' in mood_html and "Aplicar a esta campanha" in mood_html
-    assert '"/api/moodboards"' in mood_js and "/mood/pull/" in mood_js
-    # Wave 10 · E7 (card [REACT-08]): a galeria visual da etapa 3 (junção #baseJunction, #moodSource,
-    # mosaico do mood) migrou para React e é coberta pelo substituto Vitest
-    # (`studio/etapas/base/ui/index.test.tsx`); `base/view.*` foi removido.
+    """Etapas 2 (mood, etapa2-pick/ADR-014) e 3 (base) migraram para React na Wave 10 (E4/E7): o
+    contrato de tela — `#btnApplyBoard`/"Aplicar a esta campanha", `/mood/pull`, a junção
+    `#baseJunction`/`#moodSource` e o mosaico — é coberto pelos substitutos Vitest
+    `studio/etapas/{mood,base}/ui/index.test.tsx`. Aqui só confirmamos que os `view.*` vanilla dessas
+    etapas deixaram de ser servidos (o corte da rota `/steps/<id>/view.*` do `app.py` é da E10)."""
+    assert client.get("/steps/mood/view.html").status_code == 404
+    assert client.get("/steps/base/view.html").status_code == 404
