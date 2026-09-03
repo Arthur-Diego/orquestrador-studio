@@ -25,7 +25,7 @@ Convenção (renomear os labels no Trello é opcional e manual):
 | orange | severidade MEDIA |
 | yellow | severidade BAIXA |
 | blue | dono = backend (`studio/**/service.py`, routers) |
-| purple | dono = frontend (`studio/web/`, `studio/etapas/*/view.*`) |
+| purple | dono = frontend (`frontend/` — shell/ui/areas React, e `studio/etapas/*/ui/` — telas React; desde a Wave 10 · E10) |
 | green (`Prioridade`) | não usado pela skill |
 
 ## Ambiente
