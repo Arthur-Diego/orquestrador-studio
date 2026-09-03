@@ -40,8 +40,13 @@ def _recarrega():
     A fixture `studio_env` do `conftest` apaga todo `studio.*` de `sys.modules`; sem repor o
     objeto antes, o `reload` estoura e as demais funções deste arquivo ficariam com uma
     referência morta. Repor mantém a identidade do módulo que o `monkeypatch` usa.
+
+    A reposição é uma ATRIBUIÇÃO, não um `setdefault`: qualquer teste que rode antes deste e
+    importe `skill_runner` depois do `studio_env` (é o caso de `tests/test_mood_run_api.py`)
+    deixa em `sys.modules` um objeto DIFERENTE do que este arquivo capturou no import. Com
+    `setdefault` a reposição virava no-op e o `reload` estourava, mas só na suíte inteira.
     """
-    sys.modules.setdefault(skill_runner.__name__, skill_runner)
+    sys.modules[skill_runner.__name__] = skill_runner
     return importlib.reload(skill_runner)
 
 

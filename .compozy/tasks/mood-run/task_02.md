@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Serviço e rotas `mood-run`
 type: backend
 complexity: high
