@@ -74,6 +74,11 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "Wave 10 · E0 fundação — card [REACT-01]; cria o scaffold `frontend/` (ADR-031)",
         ("frontend/",),
     ),
+    "refactor/adh-os-20260903-02-react-contrato-api": (
+        "Wave 10 · E1 contrato tipado da API — card [REACT-02]; acrescenta `frontend/src/api/` "
+        "(tipos gerados do /openapi.json, client HTTP e hooks TanStack Query) — ADR-031/ADR-032",
+        ("frontend/",),
+    ),
 }
 
 
