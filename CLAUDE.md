@@ -156,6 +156,12 @@ precisa instalar npm. Os alvos são separados, espelhando os dois jobs paralelos
 `import.meta.glob` — **não existe registry central**, e criar etapa nova continua sendo criar só a
 pasta dela (ADR-031, ADR-032).
 
+O acesso à API sai todo de `frontend/src/api/` (Wave 10 · E1): `api()`/`apiUpload()` equivalentes
+ao helper do vanilla, rotas e corpos tipados a partir de `schema.ts` e os hooks TanStack Query.
+`schema.ts` é **gerado** do `/openapi.json` que o FastAPI publica — quem mexer em rota ou em modelo
+Pydantic roda `make frontend-schema` e commita o arquivo, senão o job `frontend` reprova na guarda
+de drift. Nenhum hook deriva prontidão de etapa: ela vem sempre do guia do backend (ADR-010 a).
+
 ## Idioma
 
 Documentação, PRs, prompts do fluxo e textos funcionais em português brasileiro;
