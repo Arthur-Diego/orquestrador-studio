@@ -33,7 +33,7 @@ Não há `_tests.md` neste fluxo: o workflow DD usa o FDD como techspec e não r
 | `task_01` | backend | medium | `studio/common/skill_runner.py` — o runner de skill com escrita em disco | UT-01…UT-16 |
 | `task_02` | backend | high | `mood_run.py` + `mood_run_router.py` + inclusão no `router.py` | IT-01…IT-26 |
 | `task_03` | frontend | medium | painel da tela **como patch** em `pendencias/` (ADR-010) | FT-01…FT-05 |
-| `task_04` | docs | low | ADR-031, diagrama Mermaid, coleção Postman | DT-01…DT-03 |
+| `task_04` | docs | low | ADR-034, diagrama Mermaid, coleção Postman | DT-01…DT-03 |
 
 ## Restrição que vale para as quatro tasks
 

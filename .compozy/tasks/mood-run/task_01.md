@@ -13,7 +13,7 @@ Entrega `studio/common/skill_runner.py`, o **irmão** de `prompter._run()`: mesm
 (`claude -p`, assinatura do usuário, sem chave de API), modo de execução diferente — `cwd` na raiz
 do repositório, `--allowedTools` explícito com escrita e busca, sem teto de turnos, timeout de
 minutos e leitura de um contrato de saída em arquivo (`_run.json`). Todas as demais tasks da
-feature consomem este módulo; ele é a fatia que o ADR-031 registra.
+feature consomem este módulo; ele é a fatia que o ADR-034 registra.
 
 <critical>
 - ALWAYS READ the PRD, the TechSpec, and their catalogs (`_user_stories.md`, `_tests.md`) before starting
@@ -26,7 +26,7 @@ feature consomem este módulo; ele é a fatia que o ADR-031 registra.
 <requirements>
 - **R1.** O módulo MUST ser **novo**. `studio/common/prompter.py` MUST NOT ser alterado em
   nenhuma linha — nem para extrair helper comum. Duplicação controlada aqui é decisão registrada
-  (ADR-031): o runner de pergunta curta somente-leitura e o runner de corrida com escrita têm
+  (ADR-034): o runner de pergunta curta somente-leitura e o runner de corrida com escrita têm
   ciclos de vida diferentes.
 - **R2.** `BIN` MUST ser um símbolo de módulo (`shutil.which("claude")`), monkeypatchável — é o
   que torna os testes possíveis sem `claude` real (padrão de `prompter.BIN`, seção D do recon).
@@ -93,13 +93,13 @@ que os testes exercitam o caminho feliz sem rede e sem `claude` real (ADR-008).
 
 ### Dependent Files
 - `studio/moodboards/mood_run.py` (task_02) — único consumidor imediato.
-- `docs/adrs/generated/STUDIO/ADR-031-…md` (task_04) — registra a decisão que este módulo encarna.
+- `docs/adrs/generated/STUDIO/ADR-034-…md` (task_04) — registra a decisão que este módulo encarna.
 
 ### Related ADRs
 - **ADR-006** (jobs assíncronos) — o runner é chamado de dentro de uma thread de job.
 - **ADR-008** (testes sem rede) — obriga o fake do CLI.
 - **ADR-016** (créditos) — a cadeia é gratuita: nada de `spend_action`.
-- **ADR-031** (a criar na task_04) — o modo de execução com escrita que este módulo implementa.
+- **ADR-034** (a criar na task_04) — o modo de execução com escrita que este módulo implementa.
 
 ## Deliverables
 - `studio/common/skill_runner.py` anotado, com docstrings Google-style e `Raises:`.

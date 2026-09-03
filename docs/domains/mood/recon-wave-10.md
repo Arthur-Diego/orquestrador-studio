@@ -339,11 +339,11 @@ Classes reutilizáveis: `.panel`, `.panel-head`, `.pn`, `.gallery.sm`, `.card`,
 | **ADR-003** / **ADR-001** | FS sem banco / monólito single-process, loopback | Estado em arquivo; nada de banco nem serviço auxiliar. |
 | **ADR-004** | Fidelidade ao roteiro do curso | O que a aula não ensina é `[extensão]`, marcado no código e na doc. **A cadeia `mood_` inteira é `[extensão]`.** |
 
-**Próximo número de ADR livre: `ADR-031`** (o maior existente é ADR-030).
+**Próximo número de ADR livre: `ADR-034`** (o maior existente é ADR-030).
 
 ⚠️ **`ADR-028` está triplicado** — `HIGGSFIELD/ADR-028-gate-unico-de-login…`,
 `STUDIO/ADR-028-roteiro-do-storyboard-le-as-fotos-escolhidas…` e
-`STUDIO/ADR-028-roteiro-por-cena-fotos-inferidas…`. Ao criar o ADR-031, citar "ADR-028" sem o
+`STUDIO/ADR-028-roteiro-por-cena-fotos-inferidas…`. Ao criar o ADR-034, citar "ADR-028" sem o
 diretório é ambíguo.
 
 ---

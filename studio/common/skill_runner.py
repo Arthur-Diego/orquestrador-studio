@@ -2,7 +2,7 @@
 
 Irmão de `studio/common/prompter.py`: mesmo binário (`claude -p`, assinatura do usuário, sem
 chave de API), modo de execução diferente. Não é uma alteração do `prompter._run()` — os dois
-runners têm ciclos de vida diferentes e o `prompter` continua intocado (ADR-031). As seis
+runners têm ciclos de vida diferentes e o `prompter` continua intocado (ADR-034). As seis
 diferenças, e o porquê de cada uma:
 
 ===================  ==========================  ===============================  ==================================================

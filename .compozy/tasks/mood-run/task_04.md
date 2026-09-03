@@ -1,15 +1,15 @@
 ---
 status: completed
-title: ADR-031, diagrama do fluxo e coleção Postman
+title: ADR-034, diagrama do fluxo e coleção Postman
 type: docs
 complexity: low
 ---
 
-# Task 4: ADR-031, diagrama do fluxo e coleção Postman
+# Task 4: ADR-034, diagrama do fluxo e coleção Postman
 
 ## Overview
 
-Fecha a documentação da fatia: o **ADR-031**, que registra o modo de execução do Claude CLI **com
+Fecha a documentação da fatia: o **ADR-034**, que registra o modo de execução do Claude CLI **com
 escrita em disco** (estendendo a decisão do `prompter.py`, que só previa pergunta curta
 somente-leitura); o diagrama Mermaid do fluxo de disparo; e a coleção Postman executável das cinco
 rotas. O FDD já existe e é o `_techspec.md` — esta task não o reescreve.
@@ -23,9 +23,9 @@ rotas. O FDD já existe e é o `_techspec.md` — esta task não o reescreve.
 </critical>
 
 <requirements>
-- **R1.** O ADR MUST ser o **ADR-031** (o maior existente é o ADR-030; confirmado pelo recon) e
+- **R1.** O ADR MUST ser o **ADR-034** (os números 031–033 foram tomados por outras frentes; confirmado pelo recon) e
   MUST morar em `docs/adrs/generated/STUDIO/`, seguindo o formato dos existentes: título
-  `# ADR-031: …`, `**Status:** Aceito`, `**Data:**`, `**Task-Id:**`, `**ADRs relacionados:**`, e
+  `# ADR-034: …`, `**Status:** Aceito`, `**Data:**`, `**Task-Id:**`, `**ADRs relacionados:**`, e
   as seções Contexto e Problema · Decision Drivers · Decisão · Consequências.
 - **R2.** **`ADR-028` está triplicado no repositório** (um em `HIGGSFIELD/`, dois em `STUDIO/`).
   Toda citação de ADR no documento novo MUST vir com o diretório ou com link relativo resolvível,
@@ -51,7 +51,7 @@ rotas. O FDD já existe e é o `_techspec.md` — esta task não o reescreve.
 </requirements>
 
 ## Subtasks
-- [ ] 4.1 Escrever `docs/adrs/generated/STUDIO/ADR-031-execucao-de-skill-do-claude-cli-com-escrita-em-disco.md`.
+- [ ] 4.1 Escrever `docs/adrs/generated/STUDIO/ADR-034-execucao-de-skill-do-claude-cli-com-escrita-em-disco.md`.
 - [ ] 4.2 Conferir que todas as citações de ADR trazem o diretório e que os links relativos
       resolvem para arquivos existentes.
 - [ ] 4.3 Escrever o diagrama Mermaid do fluxo de disparo.
@@ -87,7 +87,7 @@ sempre `auto`) e a D5 (ADR novo) estão registradas no `_prd.md` e no plano de o
 - **ADR-016** — corrida gratuita: nenhum `spend_action`.
 
 ## Deliverables
-- `docs/adrs/generated/STUDIO/ADR-031-….md`.
+- `docs/adrs/generated/STUDIO/ADR-034-….md`.
 - `docs/domains/mood/diagrams/mermaid/fluxo-mood-run.md`.
 - Coleção + environment Postman em `docs/domains/mood/postman/`.
 - Every test case assigned in `## Tests` implemented and passing **(REQUIRED)**
@@ -97,7 +97,7 @@ sempre `auto`) e a D5 (ADR novo) estão registradas no `_prd.md` e no plano de o
 Casos inline (não há `_tests.md` neste fluxo — ver `_tasks.md`). São verificações documentais,
 executadas na validação da task e citadas com output real.
 
-- [ ] **DT-01** `docs/adrs/generated/STUDIO/ADR-031-*.md` existe, contém `**Status:** Aceito`,
+- [ ] **DT-01** `docs/adrs/generated/STUDIO/ADR-034-*.md` existe, contém `**Status:** Aceito`,
       `**Task-Id:** ADH-OS-20260902-01`, e nenhuma citação de `ADR-028` sem diretório.
 - [ ] **DT-02** `docs/domains/mood/diagrams/mermaid/fluxo-mood-run.md` existe e contém um bloco
       ` ```mermaid ` com o nó da estimativa entre a escolha dos parâmetros e o POST de disparo.

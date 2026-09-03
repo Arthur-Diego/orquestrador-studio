@@ -29,7 +29,7 @@ foi escrito para uma pergunta curta somente-leitura — `--allowedTools Read`, `
 `TIMEOUT_S = 180`, sem `cwd`. Rodar `/mood_orquestrador` exige `Bash`, `Write`, busca na web,
 `cwd` na raiz do repositório (senão `.claude/skills` não resolve) e **minutos** — a corrida manual
 de 2026-09-02 levou ~15 min e 84 downloads. É um segundo modo de chamada do mesmo CLI, irmão do
-`_run()`, e por ser um modo **com escrita em disco** ele vira decisão registrada (ADR-031).
+`_run()`, e por ser um modo **com escrita em disco** ele vira decisão registrada (ADR-034).
 
 Duas dependências desta wave já entregaram o que esta frente consome:
 
@@ -74,7 +74,7 @@ Nenhum objetivo, default ou opção de enum é escrito à mão nesta feature. Tu
 | `docs/domains/mood/features/mood-run-fdd.md` | **novo** | este documento |
 | `docs/domains/mood/diagrams/mermaid/fluxo-mood-run.md` | **novo** | diagrama do fluxo |
 | `docs/domains/mood/postman/` | existente/novo | coleção executável das cinco rotas |
-| `docs/adrs/generated/STUDIO/ADR-031-…md` | **novo** | o modo de execução do Claude CLI com escrita em disco |
+| `docs/adrs/generated/STUDIO/ADR-034-…md` | **novo** | o modo de execução do Claude CLI com escrita em disco |
 | `docs/domains/mood/features/pendencias/mood-run-front.patch` | **novo** | o front, **como patch** (ver 3.1) |
 | `docs/domains/mood/features/pendencias/mood-run-front-tests.py.txt` | **novo** | os testes de tela do patch |
 
@@ -453,7 +453,7 @@ skill do repositório que precise rodar com escrita em disco.
 | 6 | `tests/test_mood_run_api.py` | 4, 5 |
 | 7 | `docs/domains/mood/diagrams/mermaid/fluxo-mood-run.md` | este FDD |
 | 8 | `docs/domains/mood/postman/` (coleção) | seção 5 |
-| 9 | `docs/adrs/generated/STUDIO/ADR-031-…md` | 1 |
+| 9 | `docs/adrs/generated/STUDIO/ADR-034-…md` | 1 |
 | 10 | `pendencias/mood-run-front.patch` + `pendencias/mood-run-front-tests.py.txt` | 4 |
 
 São **10 artefatos**, sendo 5 de código. Nenhum arquivo único do núcleo é editado; a única
@@ -466,7 +466,7 @@ alteração em arquivo compartilhado é o bloco de duas linhas em `studio/moodbo
 #### Provides
 
 `studio/common/skill_runner.py` é genérico: qualquer feature futura que precise rodar uma skill do
-Claude Code com escrita em disco usa `run_skill()` sem duplicar a decisão do ADR-031.
+Claude Code com escrita em disco usa `run_skill()` sem duplicar a decisão do ADR-034.
 
 As cinco rotas da seção 5 são o contrato da tela.
 

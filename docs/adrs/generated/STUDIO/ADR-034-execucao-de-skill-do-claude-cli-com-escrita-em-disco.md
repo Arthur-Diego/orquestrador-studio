@@ -1,4 +1,4 @@
-# ADR-031: Execução de skill do Claude CLI com escrita em disco, separada do bot de prompts
+# ADR-034: Execução de skill do Claude CLI com escrita em disco, separada do bot de prompts
 
 **Status:** Aceito
 **Data:** 2026-09-02
