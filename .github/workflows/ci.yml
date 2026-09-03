@@ -14,7 +14,11 @@ jobs:
   build-and-test:
     name: build-and-test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 10 min era o teto original e já vinha raspando: os runs da wave 10 marcaram 8m27s e
+    # 9m16s ANTES de a suíte crescer. Com +145 testes (frentes 03 e 04) o job passou de 10
+    # min e foi cancelado — falha de orçamento, não de teste. 20 min dá folga real: a suíte
+    # roda em ~3,5 min local; o resto é apt-get do ffmpeg, setup do Python e pip.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
