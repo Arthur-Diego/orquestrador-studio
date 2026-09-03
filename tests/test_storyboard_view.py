@@ -518,21 +518,13 @@ def test_t3_12_bloco_ligado_no_ciclo_da_view_e_js_valido(js):
 
 
 # ---------- T3.13: núcleo intocado (ADR-010) ----------
-@pytest.mark.parametrize("rel", ["studio/web/ui.js", "studio/web/style.css"])
-def test_t3_13_nucleo_do_shell_intocado(rel):
-    """O bloco é um plugin: o CSS mora no `<style>` do próprio `view.html` e o JS no `view.js`."""
-    root = Path(__file__).resolve().parents[1]
-    git = shutil.which("git")
-    if not git or not (root / ".git").exists():
-        pytest.skip("git não disponível no ambiente")
-    base = subprocess.run([git, "-C", str(root), "merge-base", "develop", "HEAD"],
-                          capture_output=True, text=True)
-    if base.returncode != 0:
-        pytest.skip("branch `develop` não disponível para comparar")
-    diff = subprocess.run([git, "-C", str(root), "diff", "--name-only", base.stdout.strip(), "--", rel],
-                          capture_output=True, text=True)
-    assert diff.returncode == 0, diff.stderr
-    assert not diff.stdout.strip(), f"ADR-010: {rel} não pode mudar nesta feature"
+# MOVIDA para `tests/test_adr010_fronteira_nucleo.py` (Wave 10, ADR-032).
+#
+# `studio/web/ui.js` e `studio/web/style.css` são núcleo, não território do storyboard: a guarda
+# afirmava um invariante do repositório inteiro de dentro do teste de uma tela, e barrava por
+# construção qualquer frente que fosse LEGITIMAMENTE dona do núcleo. Os dois arquivos continuam
+# protegidos — agora pelo prefixo `studio/web/` da guarda única, que só libera quem declara
+# titularidade. Nenhuma cobertura foi perdida: o recorte novo é mais amplo que estes dois arquivos.
 
 
 # ==========================================================================================
