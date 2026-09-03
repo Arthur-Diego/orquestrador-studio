@@ -479,10 +479,60 @@ def test_o_front_com_o_patch_aplicado_e_javascript_valido(tmp_path):
     assert checado.returncode == 0, checado.stderr
 
 
+def _front_com_patch(tmp_path: Path) -> str:
+    """Aplica o patch numa cópia em `tmp_path` e devolve o `moodboards.js` resultante.
+
+    Trabalha SEMPRE fora da árvore: `studio/web/` é núcleo (ADR-010) e nem um teste pode sujá-lo —
+    a guarda `test_diff_da_feature_nao_toca_o_nucleo` lê o working tree, não só os commits.
+    """
+    git = shutil.which("git")
+    if not git:
+        pytest.skip("git não disponível no ambiente")
+    raiz = Path(__file__).resolve().parent.parent
+    destino = tmp_path / "studio" / "web"
+    destino.mkdir(parents=True, exist_ok=True)
+    shutil.copy(raiz / "studio/web/moodboards.js", destino / "moodboards.js")
+    r = subprocess.run([git, "apply", str(PATCH_FRONT)], cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    return (destino / "moodboards.js").read_text(encoding="utf-8")
+
+
 def test_os_testes_de_tela_acompanham_o_patch():
-    """FT-05: o patch sem os testes de tela viraria código não verificado na integração."""
+    """O patch sem os testes de tela viraria código não verificado na integração."""
     testes = PENDENCIAS / "mood-run-front-tests.py.txt"
     assert testes.is_file(), "os testes de tela do painel 05 precisam viajar junto com o patch"
     texto = testes.read_text(encoding="utf-8")
     for token in ("Studio.moodRun", "mrn-", "confirmCost"):
         assert token in texto, token
+
+
+# As três funções abaixo rodam, contra o patch APLICADO, exatamente as asserções que o
+# `mood-run-front-tests.py.txt` só poderá rodar depois da integração. Sem elas as asserções ficam
+# adiadas, e um patch que as quebra passa despercebido: foi o que aconteceu na primeira versão
+# deste patch, que montava as rotas por concatenação (`${base}/options`) e portanto não continha
+# nenhum dos literais que o teste de tela procura.
+def test_o_painel_do_patch_referencia_as_cinco_rotas_inteiras(tmp_path):
+    """FT-03 antecipado: cada rota aparece INTEIRA e grepável no JS."""
+    js = _front_com_patch(tmp_path)
+    for token in ("Studio.moodRun", "renderMoodRunPanel", "/mood-run/options", "/mood-run/estimate",
+                  "/mood-run/job", "/mood-run/result", "/api/escolhidas", "studio:escolhidas",
+                  "leitura.md", "curadoria.md"):
+        assert token in js, token
+
+
+def test_o_css_do_painel_do_patch_e_escopado(tmp_path):
+    """FT-04 antecipado (ADR-019): prefixo `.mrn-` no JS e ausente do CSS global."""
+    js = _front_com_patch(tmp_path)
+    assert ".mrn-grid" in js and ".mrn-boards" in js
+    raiz = Path(__file__).resolve().parent.parent
+    for css in ("studio/web/ui.css", "studio/web/style.css"):
+        assert "mrn-" not in (raiz / css).read_text(encoding="utf-8"), css
+
+
+def test_o_painel_do_patch_nao_abre_modal_de_custo(tmp_path):
+    """FT-05 antecipado: a cadeia é gratuita (ADR-016) — a barreira é a conta de downloads."""
+    js = _front_com_patch(tmp_path)
+    trecho = js[js.index("ADH-OS-20260902-01"):]
+    assert "confirmCost" not in trecho, "a corrida não gasta crédito: não pode abrir modal de custo"
+    assert "refreshCredits" not in trecho
+    assert "mrnConfirmarDownloads" in trecho and "downloads" in trecho
