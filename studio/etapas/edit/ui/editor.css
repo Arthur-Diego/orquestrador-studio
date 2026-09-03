@@ -1,4 +1,3 @@
-<style>
   /* Etapa 8 — Editor de vídeo completo [extensão]. Layout, paleta e comportamento seguem À RISCA
      o protótipo canônico (editor_video.html): tema quase-preto multicamada com accent teal
      #4FC8D9, 5 regiões, 6 tracks. Mantém as MESMAS fontes do design system (Bricolage Grotesque
@@ -312,15 +311,3 @@
 
   @media (max-width:1180px){ .ved{left:0} }
   @media (max-width:860px){ .ved-left{display:none} .ved-right{display:none} }
-</style>
-
-<header class="stephead ved-fallback">
-  <span class="eyebrow">Etapa 7 · aula 014 · editor [extensão]</span>
-  <h2>Studio de vídeo</h2>
-</header>
-
-<!-- Guia da aula 014 (hook puro guide.py): "gelo, ambiência, respiração, impacto", ritmo, dever
-     de casa. O editor o abre no modal pelo botão "?". Fidelidade ao curso acessível no editor. -->
-<section id="guide" class="guide ved-fallback"></section>
-
-<div class="ved" id="ved"></div>

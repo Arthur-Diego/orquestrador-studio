@@ -313,43 +313,6 @@ def test_media_upload_and_list(client, project, root):
     assert client.get(url(project, "/sfx")).json() == []
 
 
-def test_step_screen_is_the_editor_extension(client):
-    """Etapa 8 vira o EDITOR de vídeo completo [extensão] (ADR-030). A tela é o editor, marcada
-    como extensão, com o slot do guia da aula 014 preservado — a fidelidade ao curso vive no
-    hook `guide.py` (coberto por test_edit_guide), acessível no editor pelo botão Guia."""
-    html = client.get("/steps/edit/view.html").text
-    js = client.get("/steps/edit/view.js").text
-    assert "Etapa 7 · aula 014" in html, "cabeçalho da aula preservado"
-    assert "[extensão]" in html, "o editor completo é uma extensão do curso, marcada como tal"
-    # o slot do guia continua no HTML; `ved-fallback` só o esconde atrás do editor em tela cheia
-    # (o conteúdo é lido pelo botão Guia), senão a faixa do guia fica sob o root fixo `.ved`
-    assert '<section id="guide" class="guide ved-fallback"></section>' in html, "slot do guia da aula preservado"
-    assert 'class="ved"' in html and 'id="ved"' in html, "container do editor"
-    # o plugin continua no contrato do shell (registro, ui, ciclo de vida, guia)
-    assert 'Studio.register("edit"' in js
-    assert "Studio.ui" in js and "destroy()" in js and "onProject()" in js and "ctx.guide()" in js
-
-
-def test_step_editor_reuses_design_system_and_lesson_stays_in_guide(client, project):
-    """O editor reusa o design system (tokens `--*` + helpers de `Studio.ui`) em vez de inventar,
-    e a aula 014 continua carregando seus textos no guia (fidelidade preservada, ADR-030)."""
-    html = client.get("/steps/edit/view.html").text
-    js = client.get("/steps/edit/view.js").text
-    # segue o protótipo canônico: mesmas FONTES do design system + tema teal escopado em vars `--v*`
-    assert "Bricolage Grotesque" in html and "IBM Plex Mono" in html and "Instrument Sans" in html
-    assert "--vac:#4FC8D9" in html and "--vbg" in html, "paleta do protótipo escopada em vars locais"
-    assert "crimson" not in js and "crimson" not in html, "sem cores soltas fora do tema"
-    # reutiliza os helpers de Studio.ui (modal, drop, upload, progressJob) em vez de reinventar
-    for helper in ("ui.modal(", "ui.drop(", "ui.upload(", "ui.progressJob("):
-        assert helper in js, helper
-    # o botão Guia abre a aula 014 (guide.py) dentro do editor
-    assert "openGuide" in js and "aula 014" in js
-    # e o guia da aula continua entregando os textos do curso (SFX de formiguinha + dever de casa)
-    g = client.get(f"/api/projects/{project}/guide/edit").json()
-    assert "SFX, ambiência, respiração, gelo, impacto" in g["what"]
-    assert "Vou publicar mesmo imperfeito — o primeiro sempre será o pior." in g["checklist"]
-
-
 # ---------- legendas [extensão] ----------
 # Sem `OPENAI_API_KEY` no ambiente, todo `generate` cai no `FakeTranscribe`: nenhum teste daqui
 # abre socket nem importa o SDK de verdade (ADR-008). Quando o provedor real precisa aparecer,
@@ -572,70 +535,23 @@ def test_put_with_zero_clips_is_200_and_render_is_422(client, project, root):
 
 
 # ---------- rodada 3: contrato de UI do editor estável (ADR-008: front sem teste unitário) ----------
-def test_view_has_side_toggle_and_stable_timeline_css(client):
-    """Rodada 3 [extensão]: o editor deixou de se refazer a cada ação. O front não tem teste
-    unitário (ADR-008), então o que dá para fixar no pytest é a presença das strings que provam a
-    mudança de forma: o toggle do menu lateral, a timeline com scroll próprio e o render
-    incremental que substituiu o `renderAll()` destrutivo."""
-    html = client.get("/steps/edit/view.html").text
-    js = client.get("/steps/edit/view.js").text
-    # item 7: esconder o menu lateral do Studio é uma classe no shell, não um innerHTML novo
-    assert ".app.side-hidden" in html, "classe que esconde a sidebar do Studio"
-    # item 2: a timeline rola por dentro — MÚSICA e SFX não ficam mais cortadas fora da viewport
-    regra = next((ln for ln in html.splitlines() if ".ved-tl-main{" in ln), "")
-    assert "overflow-y:auto" in regra, f"a área da timeline precisa rolar na vertical: {regra!r}"
-    # item 1: toda ação de edição passa pelo render incremental; o render destrutivo saiu do arquivo
-    assert "renderDirty(" in js, "render incremental"
-    assert "renderAll(" not in js, "o render destrutivo do editor inteiro não existe mais"
-    # item 7: a preferência de sidebar sobrevive ao reload
-    assert "studio.edit.sideHidden" in js, "preferência do menu lateral lembrada"
-    # item 5: mover entre VÍDEO 1 e VÍDEO 2 é explícito (mover, não copiar)
-    assert "moveToTrack(" in js, "movimento V1 ↔ V2"
-
-
 # ---------- wave 8 · frente C: contrato de UI das legendas com karaokê [extensão] ----------
-def test_captions_ui_calls_the_frozen_contract_and_paints_karaoke(client):
-    """A UI de legendas existe e fala com as rotas da frente B. O front não tem teste unitário
-    (ADR-008): o que dá para fixar aqui é a presença das strings que provam a forma da entrega —
-    as rotas chamadas, o karaokê montado por spans e a régua compartilhada com o servidor."""
-    js = client.get("/steps/edit/view.js").text
-    html = client.get("/steps/edit/view.html").text
-    # o modal fala com o contrato congelado da wave 8 (frente B), não com uma rota inventada
-    assert "captions/generate" in js and "captions/narration" in js
-    # o pré-preenchimento do roteiro vem do storyboard, rotulado como descrição (não é fala)
-    assert "storyboard/scenes" in js
-    assert "descrição das cenas, não é fala" in js
-    # karaokê: spans por palavra dentro da camada reconciliada, pintados sem re-render
-    assert "paintKaraoke" in js
-    assert "data-cap-karaoke" in js and "data-cap-widx" in js
-    assert ".ved-cap-k" in html, "CSS da linha de karaokê"
-    # a régua de fala é a MESMA do servidor (studio/edit/captions/__init__.py)
-    assert "WPS = 2.4" in js
+def test_captions_ui_mirrors_the_server_side_constants():
+    """As constantes vivem em dois lugares (Python e a UI React) por necessidade — o palco re-fatia
+    as janelas sem ida ao servidor. Guard cross-language: lê os valores do módulo do servidor e
+    exige cada um no porte imperativo `studio/etapas/edit/ui/editor.ts` (Wave 10 · E9, verbatim do
+    antigo `view.js`), impedindo que as duas cópias divirjam em silêncio."""
+    from pathlib import Path
 
-
-def test_captions_ui_mirrors_the_server_side_constants(client):
-    """As constantes vivem em dois lugares (Python e JS) por necessidade — o palco re-fatia as
-    janelas sem ida ao servidor. Este teste é o que impede as duas cópias de divergirem em
-    silêncio: ele lê os valores do módulo do servidor e exige cada um no `view.js`."""
     from studio.edit.captions import CAPTION_MODES, CHUNK_OPTS, HI_COLORS, WPS
 
-    js = client.get("/steps/edit/view.js").text
+    editor = (
+        Path(__file__).resolve().parents[1] / "studio" / "etapas" / "edit" / "ui" / "editor.ts"
+    ).read_text(encoding="utf-8")
     modos = ", ".join('"%s"' % m for m in CAPTION_MODES)
     cores = ", ".join('"%s"' % c for c in HI_COLORS)
     chunks = ", ".join(str(c) for c in CHUNK_OPTS)
-    assert f"const WPS = {WPS};" in js
-    assert f"const CAPTION_MODES = [{modos}];" in js
-    assert f"const HI_COLORS = [{cores}];" in js
-    assert f"const CHUNK_OPTS = [{chunks}];" in js
-
-
-def test_captions_ui_keeps_the_editor_invariants(client):
-    """Legenda não pode reintroduzir o render destrutivo nem inventar cor fora do tema: o karaokê
-    entra pelo hook de camada da frente A e a pintura por frame só troca `style.color`."""
-    js = client.get("/steps/edit/view.js").text
-    html = client.get("/steps/edit/view.html").text
-    # o ramo de legenda é um hook de `LAYER_HOOKS` (reconciliação por `data-uid` intacta)
-    assert "caption: { create: textLayerCreate, update: capLayerUpdate }" in js
-    # nenhuma ação de legenda cai em renderRoot(): quem atualiza a tela é o commit incremental
-    assert "renderDirty(" in js and "renderAll(" not in js
-    assert "crimson" not in js and "crimson" not in html, "sem cores soltas fora do tema"
+    assert f"const WPS = {WPS};" in editor
+    assert f"const CAPTION_MODES = [{modos}];" in editor
+    assert f"const HI_COLORS = [{cores}];" in editor
+    assert f"const CHUNK_OPTS = [{chunks}];" in editor

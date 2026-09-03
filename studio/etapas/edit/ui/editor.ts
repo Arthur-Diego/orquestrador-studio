@@ -1,17 +1,25 @@
-// Etapa 8 — Montagem de vídeo: editor de vídeo completo [extensão], seguindo À RISCA o protótipo
-// canônico (editor_video.html): tema quase-preto, accent teal #4FC8D9, 5 regiões, 6 tracks
-// (TEXTO, LEGENDAS, VÍDEO 2, VÍDEO 1, MÚSICA, SFX), timeline 46 px/s × zoom, timecode MM:SS:FF.
+/* eslint-disable */
+// @ts-nocheck
+// Editor de vídeo (Etapa 7 · aula 014) — porte imperativo 1:1 do vanilla
+// `studio/etapas/edit/view.js` para a Wave 10 · E9 (card [REACT-10], ADR-031/ADR-032).
 //
-// A montagem da aula 014 é o BACKBONE real: a track VÍDEO 1 são os clipes que o ffmpeg concatena
-// (studio/edit/render.py); MÚSICA/SFX idem. As camadas novas (VÍDEO 2/overlay, TEXTO, LEGENDAS,
-// transições, efeitos) vivem no bloco `editor` da timeline, aparecem no preview do browser e são
-// persistidas — o que ainda não entra no master.mp4 é rotulado, nunca simulado. Guia da aula no "?".
+// Esta é a maior e mais imperativa tela do Studio (timeline, drag por ponteiro, palco por
+// reconciliação de nós por `data-uid`, karaokê pintado por frame): TODO o DOM é gerado por JS. O
+// recon §6.2 é explícito — "encapsular em componente com ref, NÃO reescrever a lógica de desenho".
+// Logo, a lógica abaixo é o vanilla verbatim; só o CONTRATO DE HOST muda:
+//   `Studio.register("edit", ctx => ...)` -> `export function createEditor(ctx, ui)`
+//   `const ui = Studio.ui`                -> `ui` injetado (frontend/src/ui + shim de modal/drop)
+//   `Studio.go("music")`                  -> `ctx.go("music")`
+// O `index.tsx` monta isto num ref no mount (init) e chama `destroy()` no unmount; a troca de
+// projeto remonta por `key={pid}` (recon §1.3).
 //
-// Módulos internos: Store (estado+histórico) · model (backbone→6 tracks) · Playback · Preview ·
-// Timeline · Panels · Props · Header · Shortcuts · ContextMenu · Export · Persistence.
-Studio.register("edit", (ctx) => {
-  const { $, api, toast } = ctx;
-  const ui = Studio.ui;
+// A checagem de tipos é suprimida DE PROPÓSITO neste arquivo (`@ts-nocheck`): ela é o equivalente
+// exato do `node --check view.js` (só sintaxe) que o vanilla tinha — o `tsc --noEmit` continua
+// validando a SINTAXE, e o COMPORTAMENTO é provado pelo oráculo da wave (a suíte QA inalterada
+// `scripts/qa/cenarios/edit.py` + o diff de `textContent`, ADR-004), não por tipos. A cola nova e
+// tipada (`index.tsx`, `helpers.ts`) passa no strict integralmente.
+export function createEditor(ctx, ui) {
+  const { api, toast } = ctx;
   const esc = (s) => ui.esc(s);
   const base = () => `/api/projects/${ctx.pid()}/edit`;
   const root = () => document.getElementById("ved");
@@ -813,7 +821,7 @@ Studio.register("edit", (ctx) => {
       </div></div>`;
   }
   function bindHeader() {
-    document.getElementById("edBack").onclick = (e) => { e.preventDefault(); Studio.go("music"); };
+    document.getElementById("edBack").onclick = (e) => { e.preventDefault(); ctx.go("music"); };
     document.getElementById("edUndo").onclick = undo; document.getElementById("edRedo").onclick = redo;
     document.getElementById("edSaveBtn").onclick = () => save(false);
     document.getElementById("edExport").onclick = openExport;
@@ -1952,4 +1960,4 @@ Studio.register("edit", (ctx) => {
     // a classe sai com a etapa (senão o menu lateral some no resto do Studio); a preferência fica
     destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); const app = document.querySelector(".app"); if (app) app.classList.remove("side-hidden"); videoPool.clear(); sfxPool.clear(); overlayPool.forEach((v) => { v.pause(); v.remove(); }); overlayPool.clear(); musicAudio = null; },
   };
-});
+}
