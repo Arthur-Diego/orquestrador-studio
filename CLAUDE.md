@@ -162,6 +162,17 @@ ao helper do vanilla, rotas e corpos tipados a partir de `schema.ts` e os hooks 
 Pydantic roda `make frontend-schema` e commita o arquivo, senão o job `frontend` reprova na guarda
 de drift. Nenhum hook deriva prontidão de etapa: ela vem sempre do guia do backend (ADR-010 a).
 
+O design system vive em `frontend/src/ui/` (Wave 10 · E2): componentes e hooks React que reproduzem
+**100% da superfície de `window.Studio.ui`** do vanilla (28 membros — `Modal`, `ProgressModal`
++ `useProgress`/`progressJob`, `CostSheet` + `useCostConfirm`, `Guide`/`StepGuide`, `MoodMosaic`,
+`Tile`, `Pipe`, `Beats`, `HfChip`, `CreditsChip`, `Chip`, `CopyButton`, `useUpload`, `usePoll`,
+`useAutosize`, `esc`, `fmtPct`, os mapas `STATUS_LABEL/ITEM_LABEL/STATUS_KIND` etc.), com os MESMOS
+ids/classes/atributos ARIA. As folhas `style.css`/`ui.css` são cópias **byte-a-byte** em
+`frontend/src/styles/` — nenhuma classe é renomeada (contrato com os cenários de QA). O vanilla
+(`studio/web/ui.js`) segue servindo as telas ainda não migradas até a E10; as telas React (E4+)
+importam de `frontend/src/ui`. O POST multipart (`upload`) mora na camada de API e é reexportado
+pela `ui`, sem segunda cópia.
+
 ## Idioma
 
 Documentação, PRs, prompts do fluxo e textos funcionais em português brasileiro;

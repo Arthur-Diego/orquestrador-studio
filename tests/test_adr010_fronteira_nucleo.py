@@ -79,6 +79,12 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "(tipos gerados do /openapi.json, client HTTP e hooks TanStack Query) — ADR-031/ADR-032",
         ("frontend/",),
     ),
+    "refactor/adh-os-20260903-03-react-design-system": (
+        "Wave 10 · E2 design system e biblioteca de UI — card [REACT-03]; acrescenta "
+        "`frontend/src/ui/` (componentes/hooks equivalentes ao `Studio.ui`) e `frontend/src/styles/` "
+        "(cópia byte-a-byte de style.css/ui.css). O vanilla segue intocado até a E10 — ADR-031/ADR-032",
+        ("frontend/",),
+    ),
 }
 
 
