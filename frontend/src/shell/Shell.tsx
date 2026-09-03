@@ -212,7 +212,7 @@ export function Shell() {
     if (contentRootRef.current === null) contentRootRef.current = createRoot(el);
     const root = contentRootRef.current;
 
-    const reactNode = computeReactNode({ booted, area, view, studioCtx, sub, pid, refreshKey: resetNonce });
+    const reactNode = computeReactNode({ booted, area, view, studioCtx, sub, pid, refreshKey: resetNonce, onResetStep: confirmResetStep });
 
     if (reactNode !== null) {
       if (ownerRef.current === "vanilla") el.innerHTML = ""; // remove resíduo vanilla
@@ -290,15 +290,17 @@ function computeReactNode(args: {
   sub: string | null;
   pid: string | null;
   refreshKey: number;
+  onResetStep: (stepId: string) => void;
 }): React.ReactNode {
-  const { booted, area, view, studioCtx, sub, pid, refreshKey } = args;
+  const { booted, area, view, studioCtx, sub, pid, refreshKey, onResetStep } = args;
   if (!booted) return <div className="empty">Carregando…</div>;
   // Áreas globais em React (Wave 10 · E6): moodboards e créditos deixam de passar pela ponte vanilla.
   if (area === MB_ROUTE) return <MoodboardsArea sub={sub} refreshKey={refreshKey} />;
   if (area === CR_ROUTE) return <CreditosArea pid={pid} refreshKey={refreshKey} />;
   if (view === "overview") return <Overview />;
   if (view === null) return <NoProject />; // sem campanhas (router zera view)
-  if (view && temTelaReact(view)) return <PluginHost stepId={view} ctx={studioCtx} />;
+  if (view && temTelaReact(view))
+    return <PluginHost stepId={view} ctx={studioCtx} onResetStep={onResetStep} />;
   return null; // tela de etapa vanilla → ponte
 }
 

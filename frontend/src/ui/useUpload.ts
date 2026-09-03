@@ -7,7 +7,7 @@
 // O POST multipart NÃO mora aqui: ele é o `apiUpload` da camada de API (E1), reexportado abaixo
 // como `upload` para manter a superfície `Studio.ui.upload` completa com uma implementação só
 // (ver a nota em `frontend/src/api/http.ts`). Este hook cuida só do que toca DOM.
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   DragEventHandler,
   ChangeEventHandler,
@@ -51,20 +51,41 @@ export function useUpload(
 ): UploadDropzone {
   const [isOver, setIsOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Último elemento-alvo do arraste — para reafirmar a classe após um re-render (abaixo).
+  const alvoRef = useRef<Element | null>(null);
 
+  // A classe `.over` é alternada SÍNCRONA no elemento (`e.currentTarget.classList`), como o
+  // `Studio.ui.drop` do vanilla fazia — o React só aplicaria o `isOver` no próximo render, e o
+  // cenário de QA checa `.over` logo após o `dragover` (foi a causa do C-BASE-21). O `isOver` state
+  // segue disponível para quem quiser compor `className`.
   const onDragOver = useCallback<DragEventHandler>((e) => {
     e.preventDefault();
+    alvoRef.current = e.currentTarget;
+    e.currentTarget.classList.add("over");
     setIsOver(true);
   }, []);
-  const onDragLeave = useCallback<DragEventHandler>(() => setIsOver(false), []);
+  const onDragLeave = useCallback<DragEventHandler>((e) => {
+    e.currentTarget.classList.remove("over");
+    setIsOver(false);
+  }, []);
   const onDrop = useCallback<DragEventHandler>(
     (e) => {
       e.preventDefault();
+      e.currentTarget.classList.remove("over");
       setIsOver(false);
       if (e.dataTransfer && e.dataTransfer.files.length) onFiles(e.dataTransfer.files);
     },
     [onFiles],
   );
+
+  // Reafirma a classe DEPOIS do commit do React: se o alvo tiver `className` estático (sem `isOver`),
+  // o re-render disparado por `setIsOver` apagaria o `.over` imperativo. Isto garante que ele
+  // sobreviva ao render sem exigir que o consumidor componha `isOver` no `className`.
+  useEffect(() => {
+    const el = alvoRef.current;
+    if (!el) return;
+    el.classList.toggle("over", isOver);
+  }, [isOver]);
   const onChange = useCallback<ChangeEventHandler<HTMLInputElement>>(
     (e) => {
       if (e.target.files && e.target.files.length) onFiles(e.target.files);

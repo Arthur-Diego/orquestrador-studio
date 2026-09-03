@@ -156,8 +156,6 @@ export default function MusicScreen() {
         ctx.toast((err as Error).message);
       }
     },
-    // reconciliar/load estáveis o suficiente; ctx é estável (memoizado no shell)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [ctx, load],
   );
 
