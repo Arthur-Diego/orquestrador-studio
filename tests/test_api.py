@@ -346,12 +346,9 @@ def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
 
 
 def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
-    """Etapa 2 escolhe/aplica um board (etapa2-pick, ADR-014); etapa 3 tem seletor + galeria."""
-    mood_html = client.get("/steps/mood/view.html").text
-    mood_js = client.get("/steps/mood/view.js").text
-    # etapa2-pick: a etapa 2 escolhe da biblioteca e aplica via pull_board
-    assert 'id="btnApplyBoard"' in mood_html and "Aplicar a esta campanha" in mood_html
-    assert '"/api/moodboards"' in mood_js and "/mood/pull/" in mood_js
+    """Etapa 3 tem seletor + galeria. (Etapa 2 — etapa2-pick, ADR-014 — migrou para React na Wave 10
+    · E4: seu contrato de tela é coberto por `studio/etapas/mood/ui/index.test.tsx`, casos C-MOOD-03
+    e C-MOOD-06, que asseveram `#btnApplyBoard`/"Aplicar a esta campanha" e o POST `/mood/pull`.)"""
     base_html = client.get("/steps/base/view.html").text
     base_js = client.get("/steps/base/view.js").text
     # wave 5 · ponto 1: o seletor de fonte do mood e o mosaico vivem DENTRO da junção (#baseJunction),
