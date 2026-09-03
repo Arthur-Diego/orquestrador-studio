@@ -28,14 +28,16 @@ describe("host de plugin React — contrato de E4…E9", () => {
     expect(temTelaReact("publish")).toBe(true);
     expect(temTelaReact("export")).toBe(true);
     expect(temTelaReact("music")).toBe(true);
-    // As etapas ainda não migradas continuam na ponte vanilla (ex.: `edit`, E9).
-    expect(temTelaReact("edit")).toBe(false);
+    // Uma etapa sem `ui/index.tsx` (vanilla na ponte, ou inexistente) não é vista como React — o
+    // glob não alucina. Usamos um id inexistente para o teste ser robusto às migrações seguintes
+    // (na integração da wave, `edit`/`storyboard`/etc. deixam de ser vanilla um a um).
+    expect(temTelaReact("etapa-inexistente")).toBe(false);
   });
 
   it("temTelaReact enxerga um módulo descoberto pelo glob", () => {
     const modulos = { "../../../studio/etapas/mood/ui/index.tsx": async () => ({ default: () => null }) };
     expect(temTelaReact("mood", modulos)).toBe(true);
-    expect(temTelaReact("edit", modulos)).toBe(false);
+    expect(temTelaReact("etapa-inexistente", modulos)).toBe(false);
   });
 
   it("PluginHost monta a tela e entrega o ctx via useStudio()", async () => {
