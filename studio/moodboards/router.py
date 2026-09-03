@@ -200,3 +200,8 @@ def board_multishot_job(mbid: str):
 from .skills_router import router as skills_router  # noqa: E402
 
 router.include_router(skills_router)
+
+# ---------- painel das fotos de vibe do Pinterest `[extensão]` (ADH-OS-20260902-03) ----------
+from .vibes_router import router as vibes_router  # noqa: E402  (bloco de inclusão no fim, wave 10)
+
+router.include_router(vibes_router)
