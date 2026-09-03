@@ -224,8 +224,15 @@ Erros: **404** quando o `mbid` não existe (`board_dir` levanta `KeyError`).
   "formula": "downloads = objetivos × (board − 1) × n" }
 ```
 
-`todos` no lugar da lista é aceito e expandido. Erros: **404** mbid; **422** objetivo fora da
-lista, lista vazia, `board < 4`, `n < 1`.
+`todos` no lugar da lista é aceito e expandido. `board` e `n` são **opcionais**: ausentes ou `null`,
+caem nos defaults declarados do manifesto, e a resposta ecoa os valores efetivamente usados — é o
+mesmo comportamento do disparo, para a conta mostrada ser sempre a conta que vai valer.
+
+Erros: **404** mbid; **422** objetivo fora da lista, lista vazia, `board` ou `n` abaixo do piso.
+
+> Os pisos vêm da camada de apresentação do manifesto (`apresentacao.minimo`), não de números
+> escritos aqui. Hoje são 4 e 1; se a frente 04 mudá-los, o comportamento acompanha sozinho e este
+> parágrafo continua verdadeiro. É de propósito que a prosa não repita os valores.
 
 `todos --board 8 --n 3` (4 objetivos) dá **84**, o número da corrida manual de referência.
 
@@ -280,7 +287,13 @@ Status do `JobRegistry` para `mood_run:<mbid>`, com as chaves-base sempre presen
 
 As três `*_url` são acrescentadas por nós; só aparecem quando o arquivo correspondente existe em
 disco (o `leitura.md`/`curadoria.md` só é escrito em `--gate auto`). O resto é o `_run.json` da
-skill, repassado. Erros: **404** mbid; **404** quando ainda não houve corrida (sem `_run.json`);
+skill, repassado.
+
+> **O que é garantido e o que não é.** O servidor devolve `{**_run.json, "boards": [...]}`. Só
+> `boards` e as três `*_url` são contrato **nosso**. `semente`, `gate`, `downloads` e qualquer outra
+> chave vêm do produtor externo e podem sumir sem erro: a validação é de shape mínimo (`dict` +
+> `boards: list`), pelo motivo do R1 da seção 10. O consumidor deve tratar tudo fora de `boards`
+> como opcional — o painel do front já faz isso. Erros: **404** mbid; **404** quando ainda não houve corrida (sem `_run.json`);
 **502** quando o `_run.json` existe mas não é JSON válido ou não tem o shape mínimo — o arquivo é
 de um produtor externo, e mentir sobre ele seria pior que falhar.
 
@@ -339,8 +352,9 @@ As quatro diferenças em relação a `prompter._run()`, e o porquê de cada uma:
 | E8 | **Nenhuma foto escolhida** na peneira | `mood_run._validar_foto` | **422** `"nenhuma foto escolhida — rode /mood_vibe_scout e escolha ao menos uma no painel de vibes"` |
 | E9 | **Objetivo inválido** | `mood_run._validar_objetivos` contra o manifesto | **422** `"objetivo inválido: <x>. Aceitos: ambiente, campanha, produto, personagem, todos"` — lista os aceitos, nunca adivinha (regra do `SKILL.md`) |
 | E10 | `foto` fora de `_escolhidas/` ou inexistente | `mood_run._validar_foto` | **422** `"a foto-semente precisa ser uma das escolhidas"`. Contenção sobre caminho resolvido |
-| E11 | `board < 4` ou `n < 1` | `mood_run._validar_numeros` | **422** com o piso citado (o piso vem da camada de apresentação do manifesto) |
-| E12 | Caminho com `"` (aspas duplas) | `skill_runner.build_prompt` | `ValueError` → **422**. O prompt é uma string única; aspas quebrariam a citação do argumento |
+| E11 | `board` ou `n` abaixo do piso | `mood_run._validar_numeros` | **422** com o piso citado (o piso vem da camada de apresentação do manifesto, não de número escrito no código) |
+| E11b | **`fundo` fora do manifesto** | `mood_run._validar_fundo` | **422** `"fundo inválido: <x>. Aceitos: escuro, claro"` — mesma regra de listar os aceitos do E9. Lacuna encontrada no cruzamento do FDD com a implementação (coleção Postman), corrigida aqui |
+| E12 | Caminho com `"` (aspas duplas) | `skill_runner.build_prompt` | `ValueError` → **422**. O prompt é uma string única; aspas quebrariam a citação do argumento. **Inalcançável pelo caminho HTTP**: `_validar_foto` recusa antes, com a mensagem do E10 — o status é o mesmo, a origem não. A guarda existe porque `build_prompt` é API pública do runner e outros chamadores virão |
 | E13 | `GET /result` sem corrida anterior | `mood_run.read_result` | **404** `"nenhuma corrida de mood neste board ainda"` |
 | E14 | `GET /result` com `_run.json` corrompido | `mood_run.read_result` | **502** — o arquivo é de produtor externo; falhar explícito é melhor que devolver shape mentiroso |
 | E15 | Prancha declarada no `_run.json` mas ausente do disco | `mood_run.read_result` | o board aparece **sem** `prancha_url`. Degradação, não exceção: o `leitura.md` ainda pode ser útil |
@@ -488,6 +502,15 @@ As cinco rotas da seção 5 são o contrato da tela.
    único compartilhado — não é de nenhuma frente isolada.
 4. **Rodar a corrida real uma vez** com `claude` de verdade (validação manual do dono). O CI nunca
    a executa por construção (ADR-008).
+4.5. **Declarar os status no OpenAPI.** O `/openapi.json` que o FastAPI gera declara só `200` e o
+   `422` de validação para as cinco rotas: os `404`/`409`/`502` desta feature **existem e foram
+   verificados por execução**, mas não estão declarados (as rotas não passam `responses=`). Além
+   disso o `detail` do 422 desta feature é *string*, enquanto o schema publicado promete *lista* de
+   `{loc,msg,type}`. É dívida de declaração, não de comportamento, e vale para as rotas vizinhas de
+   `moodboards` também — por isso é da integração, não desta frente.
+4.6. **Mensagem do 404 de `mbid`.** O handler global de `KeyError` responde "projeto não
+   encontrado", e um mood board não é projeto (biblioteca global, ADR-013). A frente 03 traduziu na
+   borda das rotas dela; as rotas de `moodboards` em geral não. Uniformizar é decisão de área.
 5. **`.env.local` é versionado** (`PORT=8767`). Cada worktree da wave precisaria de uma porta
    própria ali, mas mudá-lo suja o diff de todas. A integração deve decidir: mover para
    `.gitignore` com um `.env.local.example`, ou documentar o uso de `PORT=<n> ./run.sh`.
