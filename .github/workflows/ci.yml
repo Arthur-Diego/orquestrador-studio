@@ -100,17 +100,21 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-      - name: Guarda do dist
-        # DURANTE a Wave 10 o bundle é gitignored (wave-10.md §6.1): seis frentes paralelas
-        # commitando bundles rivais conflitariam em todo merge. A guarda desta fase prova que
-        # ninguém versionou o dist por acidente — o build acima acabou de gerá-lo, então se ele
-        # aparecesse no git, apareceria aqui.
-        # A E10 INVERTE esta guarda: passa a versionar o dist e a falhar quando o rebuild diverge
-        # do commitado (o usuário final desta ferramenta local não tem Node).
+      - name: Guarda do dist (versionado e igual ao rebuild)
+        # A partir da E10 (card [REACT-11]) o bundle `studio/web/dist/` é VERSIONADO — o usuário final
+        # desta ferramenta local não tem Node (ADR-031). Esta guarda (inversão da guarda da wave,
+        # wave-10.md §6.1) prova duas coisas: (1) o `dist/` está no git; (2) o rebuild `npm run build`
+        # acima bate byte-a-byte com o commitado. Se alguém mexeu no frontend e esqueceu de rodar
+        # `make frontend-build` e commitar, o `git status` acusa a divergência e o job falha.
         run: |
-          if [ -n "$(git status --porcelain -- studio/web/dist)" ] || git ls-files --error-unmatch studio/web/dist >/dev/null 2>&1; then
-            echo "studio/web/dist/ não pode ser versionado durante a Wave 10 (wave-10.md §6.1)." >&2
+          git ls-files --error-unmatch studio/web/dist/index.html >/dev/null 2>&1 || {
+            echo "studio/web/dist/ não está versionado. Rode 'make frontend-build' e commite o bundle." >&2
+            exit 1
+          }
+          if [ -n "$(git status --porcelain -- studio/web/dist)" ]; then
+            echo "O bundle commitado diverge do rebuild. Rode 'make frontend-build' e commite o dist." >&2
             git status --porcelain -- studio/web/dist >&2
+            git diff --stat -- studio/web/dist >&2
             exit 1
           fi
-          echo "dist fora do git, como a wave manda."
+          echo "dist versionado e idêntico ao rebuild."
