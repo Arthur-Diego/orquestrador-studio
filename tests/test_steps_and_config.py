@@ -60,10 +60,22 @@ def test_shell_destroys_the_previous_view_and_exposes_go(client):
 
 
 def test_plugins_serve_their_assets(client):
+    """Cada etapa expõe a sua tela: as vanilla por `/steps/<id>/view.{html,js}`; as migradas para
+    React (Wave 10) por `studio/etapas/<id>/ui/index.tsx`, que é empacotado no bundle e NÃO servido
+    por arquivo (a etapa deixa de ter `view.*`). O contrato aqui é 'a etapa tem UMA das duas'."""
+    from pathlib import Path
+
     from studio.etapas import discover
+
+    etapas_dir = Path(__file__).resolve().parents[1] / "studio" / "etapas"
     for sid in discover():
-        assert client.get(f"/steps/{sid}/view.html").status_code == 200, sid
-        assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
+        tem_view = (etapas_dir / sid / "view.html").exists()
+        if tem_view:
+            assert client.get(f"/steps/{sid}/view.html").status_code == 200, sid
+            assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
+        else:
+            assert (etapas_dir / sid / "ui" / "index.tsx").exists(), f"{sid}: sem view.* nem ui/index.tsx"
+            assert client.get(f"/steps/{sid}/view.html").status_code == 404, sid
     assert client.get("/steps/nao-existe/view.html").status_code == 404
     assert client.get("/steps/refs/secret.txt").status_code == 404
 

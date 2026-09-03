@@ -59,16 +59,19 @@ def test_sync_claude_calls_open_the_progress_modal(client):
 
 
 def test_jobs_use_progressjob_as_single_source(client):
-    """Cada JOB (geração/render/scrape/teaser) é ligado ao `progressJob` (log real)."""
+    """Cada JOB (geração/render/scrape/teaser) é ligado ao `progressJob` (log real).
+
+    Wave 10 · E5 (card [REACT-06]): `refs`, `animate` e `prospect` migraram para React e não têm mais
+    `view.js` — o uso do `progressJob` nessas telas passou a ser provado pelos substitutos Vitest
+    (`studio/etapas/<id>/ui/index.test.tsx`) e pelos cenários de QA (C-REFS busca, C-ANIMATE-24,
+    C-PROSPECT-15). Aqui ficam só as etapas ainda vanilla.
+    """
     liga = {
-        "refs": "refs/job",         # scrape
         # a etapa 2 (mood) não roda mais job de geração via CLI (etapa2-pick, ADR-014: criação
         # migrou para a biblioteca — a geração paga vive em moodboards, fora do escopo da tela)
         "edit": "render/job",       # render ffmpeg
         "export": 'url("job")',     # render por formato
-        "animate": "/job",          # geração paga
         "music": "music/story/job",  # sequência bruta
-        "prospect": "/job",         # teaser
     }
     for step, jobref in liga.items():
         js = _view(client, step)
@@ -76,16 +79,11 @@ def test_jobs_use_progressjob_as_single_source(client):
         assert jobref in js, f"{step}: o jobUrl esperado ({jobref}) sumiu"
 
 
-def test_confirm_cost_still_precedes_paid_generations(client):
-    """O modal de progresso abre DEPOIS do `confirmCost` (FDD §2B) — a confirmação não regrediu.
-
-    A etapa 2 (mood) não tem mais geração paga (etapa2-pick, ADR-014); resta `animate`.
-    """
-    for step in ("animate",):
-        js = _view(client, step)
-        assert "ui.confirmCost(" in js, step
-        # a ordem no código: confirmCost antes do progressJob (o `if (!ok) return;` corta antes).
-        assert js.index("confirmCost(") < js.index("progressJob("), step
+# Wave 10 · E5 (card [REACT-06]): `test_confirm_cost_still_precedes_paid_generations` lia
+# `animate/view.js` para provar que o `confirmCost` (aula 008) precede o `progressJob`. A `animate`
+# migrou para React; a garantia virou o substituto Vitest
+# `studio/etapas/animate/ui/index.test.tsx` ("'Gerar via CLI' passa pelo gate de custo …") e é
+# reforçada pelos cenários de QA C-ANIMATE-23/24 (recon §7.2).
 
 
 def test_deterministic_generators_do_not_open_a_modal(client):
