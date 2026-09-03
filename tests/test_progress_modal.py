@@ -48,11 +48,9 @@ def test_sync_claude_calls_open_the_progress_modal(client):
     A etapa 2 (mood) deixou de chamar o bot (etapa2-pick, ADR-014: a criação de moods migrou para
     a biblioteca) — a chamada síncrona ao Claude na criação de moods vive agora em `moodboards.js`.
     """
-    base = _view(client, "base")
-    assert "ui.progress(" in base and "Consultando o Claude" in base
-    # "Gerar prompt" e "Gerar sem viés" passam pela mesma função; só o modo `images` usa o bot.
-    assert "usaBot" in base
-
+    # Wave 10 · E7 (card [REACT-08]): a etapa 3 (base) virou React; a chamada síncrona ao Claude com
+    # o modal `progress` ("Consultando o Claude", ramo `usaBot`) é coberta pelo substituto Vitest
+    # (`studio/etapas/base/ui/index.test.tsx`). `base/view.js` foi removido.
     boards = _static(client, "moodboards.js")
     assert "ui.progress(" in boards and "Consultando o Claude" in boards
     assert 'mode === "template"' in boards

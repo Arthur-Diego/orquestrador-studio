@@ -60,8 +60,19 @@ def test_shell_destroys_the_previous_view_and_exposes_go(client):
 
 
 def test_plugins_serve_their_assets(client):
+    # Wave 10 (migração React): uma etapa migrada troca `view.{html,js}` (vanilla) por
+    # `ui/index.tsx` (React, descoberto por import.meta.glob) e DEIXA de servir os assets pela
+    # rota `/steps/<id>/view.*`. Só as etapas ainda-vanilla precisam servir view.html/view.js.
+    from pathlib import Path
+
     from studio.etapas import discover
+
+    base_dir = Path(__file__).resolve().parents[1] / "studio" / "etapas"
     for sid in discover():
+        if (base_dir / sid / "ui" / "index.tsx").exists():
+            # etapa React: não serve assets vanilla (a rota devolve 404 de propósito)
+            assert client.get(f"/steps/{sid}/view.html").status_code == 404, sid
+            continue
         assert client.get(f"/steps/{sid}/view.html").status_code == 200, sid
         assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
     assert client.get("/steps/nao-existe/view.html").status_code == 404

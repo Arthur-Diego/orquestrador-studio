@@ -347,10 +347,6 @@ def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
     # etapa2-pick: a etapa 2 escolhe da biblioteca e aplica via pull_board
     assert 'id="btnApplyBoard"' in mood_html and "Aplicar a esta campanha" in mood_html
     assert '"/api/moodboards"' in mood_js and "/mood/pull/" in mood_js
-    base_html = client.get("/steps/base/view.html").text
-    base_js = client.get("/steps/base/view.js").text
-    # wave 5 · ponto 1: o seletor de fonte do mood e o mosaico vivem DENTRO da junção (#baseJunction),
-    # renderizados pelo view.js — o painel "M" separado deixou de existir.
-    assert 'id="baseJunction"' in base_html
-    assert 'id="moodSource"' in base_js and "moodMosaic" in base_js
-    assert "board: boardSel" in base_js and "mood-sources" in base_js
+    # Wave 10 · E7 (card [REACT-08]): a galeria visual da etapa 3 (junção #baseJunction, #moodSource,
+    # mosaico do mood) migrou para React e é coberta pelo substituto Vitest
+    # (`studio/etapas/base/ui/index.test.tsx`); `base/view.*` foi removido.
