@@ -94,6 +94,15 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "segue intocada. O vanilla continua no default até a E10 — ADR-031/ADR-032",
         ("frontend/", "studio/app.py"),
     ),
+    "refactor/adh-os-20260903-09-react-lote-e": (
+        "Wave 10 · E8 lote E storyboard + canvas de marcação — card [REACT-09]; porta a etapa 4 para "
+        "React em `studio/etapas/storyboard/ui/` (com o canvas `Annotate` CO-LOCALIZADO na própria "
+        "etapa, não no shell) e REMOVE `studio/web/annotate.js`. O ÚNICO arquivo de núcleo tocado é "
+        "`studio/web/annotate.js` (deleção); como o guard granulariza por prefixo de `NUCLEO_PREFIXOS`, "
+        "o recorte mínimo declarável é `studio/web/`. Não toca o shell (`frontend/src/**`), que é da E4. "
+        "ADR-031/ADR-032, ADR-004/ADR-017/ADR-021.",
+        ("studio/web/",),
+    ),
 }
 
 

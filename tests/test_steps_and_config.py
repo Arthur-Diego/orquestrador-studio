@@ -60,8 +60,17 @@ def test_shell_destroys_the_previous_view_and_exposes_go(client):
 
 
 def test_plugins_serve_their_assets(client):
+    from pathlib import Path
+
     from studio.etapas import discover
+    etapas_dir = Path(__file__).resolve().parents[1] / "studio" / "etapas"
     for sid in discover():
+        # Wave 10: uma tela migrada para React tem `ui/index.tsx` e é servida pelo bundle, não pela
+        # rota `/steps/<id>/view.*` (que a E10 remove). As telas ainda vanilla seguem servindo os
+        # assets; a migrada não serve mais o `view.html`.
+        if (etapas_dir / sid / "ui" / "index.tsx").exists():
+            assert client.get(f"/steps/{sid}/view.html").status_code == 404, sid
+            continue
         assert client.get(f"/steps/{sid}/view.html").status_code == 200, sid
         assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
     assert client.get("/steps/nao-existe/view.html").status_code == 404
