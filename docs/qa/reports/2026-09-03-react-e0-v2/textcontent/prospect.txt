@@ -1,0 +1,115 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+5/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-e2e-mock
+E2E Mock
+energético
+16:9 · YouTube
+vibe: gelo neon ciano, alto contraste
+● 9999 créditos
+Progresso
+5/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 10 · aula 001
+Prospecção
+10 DMs por dia em pequenos negócios, com o script literal, citando um post específico e sem link. Teaser só para quem responde.
+O Studio redige; enviar é com você.
+Resetar etapa [extensão]
+Gate do portfólio
+4/4 obras publicadas
+Portfólio pronto: 4 vídeos publicados. Pode prospectar.
+01
+Leads
+1/10 hoje
+teaser
++ Novo lead
+segmento
+clínicas
+academias
+advogados
+estética
+dentistas
+comércios
+sou fã da marca
+sou consumidor
+Cadastrar lead
+Zé do Hambúrguer
+@zeburger · fã
+post: hambúrgueres gourmet
+teaser pronto
+Copiar follow-up
+Ordem da aula: novo → DM enviada → respondeu → teaser → call. O teaser só aparece depois de "respondeu".
+02
+Pitch da call — 15 minutos
+Copiar
+Salvar valores e regerar
+Conceito
+R$
+Mood board
+R$
+Roteirização
+R$
+Direção criativa
+R$
+Produção
+R$
+Montagem
+R$
+Entrega
+R$
+Total
+R$
+· 50% off no 1º
+Revele o valor por etapa até o total. Condição especial na hora, ou válida por 24h. 50% na entrada, 50% na entrega. Venda o resultado, não a IA.
+→ prospect/pitch.md

@@ -1,0 +1,23 @@
+"""Testes de tela do painel de vibes — aplicar JUNTO com painel-vibes-front.patch.
+
+Saíram de tests/test_vibes_api.py porque leem `studio/web/moodboards.js`, que é núcleo
+sob a ADR-010 e só a frente de preparo/shell da wave pode editar. Cole-os de volta em
+tests/test_vibes_api.py quando o patch do front for aplicado.
+"""
+
+# ---------- tela (lida como texto) ----------
+def test_o_painel_vive_em_moodboards_js(client):
+    """ADR-014: a UI nova mora na biblioteca global, nunca na etapa 2."""
+    js = client.get("/static/moodboards.js").text
+    for token in ("Studio.vibes", "renderVibes", "/api/vibes", "/api/vibes/facets",
+                  "/api/vibes/select", "/api/escolhidas", "studio:escolhidas",
+                  "refreshCount", "marcar todas da página", "origem_url", "vbp-"):
+        assert token in js, token
+    assert "mood_vibe_scout" in js, "o empty-state ensina a rodar a skill"
+
+def test_a_paginacao_e_do_painel_e_nao_vazou_para_o_css_global(client):
+    """ADR-019: CSS novo é `<style>` inline escopado; `ui.css`/`style.css` não são tocados."""
+    js = client.get("/static/moodboards.js").text
+    assert ".vbp-pager" in js, "a barra de paginação é escopada no prefixo do painel"
+    for css in ("/static/ui.css", "/static/style.css"):
+        assert "vbp-" not in client.get(css).text

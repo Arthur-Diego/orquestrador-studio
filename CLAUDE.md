@@ -73,7 +73,9 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
 
 - Python 3.12 · FastAPI + Uvicorn · Playwright (Chromium) · Pillow. Sem banco: persistência
   em arquivos sob `projects/<id>/` (nunca versionado).
-- Frontend estático em `studio/web/` (HTML/CSS/JS sem build).
+- Frontend em `studio/web/` (HTML/CSS/JS sem build) **em migração para React** desde a Wave 10:
+  `frontend/` (Vite + React + TypeScript estrito) constrói para `studio/web/dist/`, servido pelo
+  mesmo processo. Os dois mundos convivem atrás de uma ponte até a E10 (ADR-031, ADR-032).
 - **Etapas são plugins**: `studio/etapas/<id>/` com `META`, `router.py`, `view.html`, `view.js`
   (descoberta automática; ver `docs/domains/studio/hld.md`). Para implementar uma etapa nova,
   crie só essa pasta + `studio/<id>/service.py` + testes; **não edite** `app.py`, `index.html`,
@@ -90,6 +92,10 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
 | `ft-pr` | Gate obrigatório antes de push/PR |
 | `ship-manual` | Encerrar entrega fora do SDD: commit com `ADH-OS-*` + PR para `develop` |
 | `qa-studio` | QA E2E da aplicação inteira (telas via Playwright + API + newman), cards no Trello, correção em `fix/qa-<data>` e revalidação incremental até zerar (`/qa-studio [telas]`; config em `docs/qa/config.md`) |
+| `mood_orquestrador` | Cadeia de mood ponta a ponta: pergunta a foto escolhida → DNA → board (`/mood_orquestrador`) `[extensão]` |
+| `mood_vibe_scout` | Descobrir a vibe do zero: entrevista de diretor de arte + coleta de N referências por vibe no Pinterest (`/mood_vibe_scout`) `[extensão]` |
+| `mood_visual_dna` | Ler a foto escolhida e devolver DNA visual, paleta e consultas por função (também disponível como agente) `[extensão]` |
+| `mood_board_builder` | A partir do DNA: busca, baixa, cura e monta a prancha `_moodboard.jpg` (`/mood_board_builder`) `[extensão]` |
 | `cy-trello-mcp` | Camada de acesso ao Trello usada pelo protocolo do `/dd` |
 | `cy-create-prd`, `cy-create-tasks`, `cy-execute-task`, `cy-review-round`, `cy-fix-reviews`, `cy-final-verify`, `cy-workflow-memory` | Pipeline SDD (Compozy) — acionadas pelo `dd-feature` |
 | `compozy` | Entender capacidades e fluxo do Compozy |
@@ -111,6 +117,44 @@ Regra completa em `docs/gitflow.md`. Resumo:
 Várias sessões podem trabalhar em worktrees distintas (`/dd-parallel`): `.venv` próprio por
 worktree, `PORT` a partir de `8766` (`8765` é da instância de referência), `projects/` local.
 Um runner Compozy por worktree.
+
+### Convenções da Wave 10 — migração do frontend para React
+
+Valem enquanto a wave estiver aberta (E0…E10, `docs/domains/studio/waves/wave-10.md`):
+
+1. **Rodada de QA usa `RUN=<nome-da-frente>`, nunca `RUN=local`.** Ex.: `make qa-up qa-seed qa-run
+   RUN=react-e4`. Frentes paralelas compartilham a máquina; `RUN=local` faz duas frentes
+   escreverem no mesmo `.qa/runs/`, e a segunda sobrescreve o resultado da primeira sem aviso.
+   O `stack-up.sh` já resolve a primeira porta livre a partir de 8790, então o único conflito
+   real é o diretório da rodada. Relatório commitado em
+   `docs/qa/reports/<AAAA-MM-DD>-<run-id>/`.
+2. **`studio/web/dist/` não é commitado durante a wave.** Ele está no `.gitignore` e o commit
+   único do bundle é da **E10**, junto com a inversão da guarda de CI. O bundle é versionado no
+   estado final de propósito — o usuário desta ferramenta local não tem Node —, mas seis frentes
+   paralelas commitando bundles minificados rivais conflitariam em todo merge, em código que
+   ninguém revisa (ADR-031; `wave-10.md` §6.1).
+3. **Tocar o núcleo exige declarar titularidade.** `tests/test_adr010_fronteira_nucleo.py` barra
+   qualquer branch que mexa em `studio/web/`, `studio/app.py`, `steps.py`, `config.py`,
+   `higgsfield.py`, `etapas/__init__.py` ou `frontend/` sem estar registrada em
+   `TITULARES_DO_NUCLEO` com card e recorte mínimo. Frente de etapa continua barrada (ADR-010 b,
+   ADR-032).
+4. **Os cenários de `scripts/qa/cenarios/` não se editam.** Eles são o oráculo da migração: se um
+   cenário precisou mudar para passar, o comportamento mudou — isso é bug da migração, não ajuste
+   de teste. Mesma regra para o diff de `textContent` contra o baseline VIGENTE
+   (`docs/qa/reports/2026-09-03-react-e0-v2/textcontent/`), que tem de ser vazio (ADR-004).
+   O baseline original da E0 (`…-react-e0/`) foi **substituído** pelo `-v2`, regerado depois da
+   correção do bug real que ele apontava (C-BASE-33, card [REACT-BUG-01], ADH-OS-20260903-01):
+   o alvo agora é **375 PASSA · 5 FALHA · 2 BLOQUEADO** de 382.
+
+### Frontend (a partir da Wave 10)
+
+`frontend/` é um projeto npm (Vite + React + TypeScript estrito + Vitest + ESLint) que constrói
+para `studio/web/dist/`. `make verify` **não** depende de Node — quem só mexe em Python nunca
+precisa instalar npm. Os alvos são separados, espelhando os dois jobs paralelos do CI:
+`make frontend-setup` (npm ci), `make frontend-verify` (typecheck + lint + vitest),
+`make frontend-build`. A UI de cada etapa é `studio/etapas/<id>/ui/index.tsx`, descoberta por
+`import.meta.glob` — **não existe registry central**, e criar etapa nova continua sendo criar só a
+pasta dela (ADR-031, ADR-032).
 
 ## Idioma
 

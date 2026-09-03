@@ -1,0 +1,142 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+4/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-e2e-mock
+E2E Mock
+energético
+16:9 · YouTube
+vibe: gelo neon ciano, alto contraste
+● 9999 créditos
+Progresso
+4/10 etapas
+Editar
+Continuar de onde parei →
+Etapas 1 a 10 · aulas 009 → 015 · 001
+Visão geral da campanha
+As 10 etapas do curso, na ordem das aulas, com o estado real dos artefatos. Você está na
+etapa 3 — Imagem base
+.
+4 concluída
+5 em andamento
+1 bloqueada
+Resetar campanha [extensão]
+01
+aula 009
+concluída
+Referências
+Buscar campanhas reais no Pinterest e escolher o que você gosta (ainda sem ter ideia nenhuma).
+→ encontrar a vibe no mood board
+Rever
+02
+aula 009
+concluída
+Mood board
+Uma vibe única para a campanha inteira: escolha um mood board da biblioteca global e aplique-o à campanha (a criação vive na biblioteca).
+→ montar a imagem base do produto
+Rever
+03
+aula 009
+em andamento
+Imagem base
+Produto na situação da referência, rótulo próprio, upscale 2x.
+→ Fazer o upscale 2x (High Fidelity V2) e importar como “upscale”
+Continuar aqui
+04
+aula 010+011
+em andamento
+Storyboard
+Cenas em texto + vários ângulos por cena: ideias a partir da base, várias imagens por cena (upload, prompt de ângulo, escolher/ordenar) e a cena do produto.
+→ Gerar ideias a partir da imagem base e escrever as 5 cenas
+Abrir
+05
+aula 012
+em andamento
+Animação
+Image-to-video por take, start/end frame, troca de modelo após falhas.
+→ Gerar 2 takes do shot01 e dar like no usável
+Abrir
+06
+aula 013
+bloqueada
+Trilha
+Trilha antes da montagem: reunir candidatas, ouvir até sentir a certa, escolher e detectar as batidas.
+→ Antes de continuar: ≥ 1 take com like por cena (etapa 5). Volte à etapa 5, gere os takes que faltam e marque o melhor de cada cena
+Abrir
+07
+aula 014
+em andamento
+Studio de vídeo
+Cortes nos impactos, speed ramp com mistura de quadros, pretos, música cortada para o ápice, fade, SFX.
+→ Renderizar o rough cut para conferir o ritmo
+Abrir
+08
+aula 014
+concluída
+Export e QA
+Formatos por rede a partir do master (16:9, 9:16, 1:1), thumb e checklist técnico antes de publicar.
+→ Etapa concluída — siga para a etapa 9 (Publicar).
+Rever
+09
+aula 015
+concluída
+Publicar
+Publique nas redes (à mão), registre o link de cada post e feche o portfólio de 4 vídeos antes de prospectar.
+→ Etapa concluída — siga para a etapa 10 (Prospecção).
+Rever
+10
+aula 001
+em andamento
+Prospecção
+10 DMs por dia com o script literal, teaser de 5–10 s com música e call de 15 min. O Studio redige e registra; enviar é humano.
+→ Produza o próximo artefato: prospect/pitch.md com as etapas e os valores.
+Abrir

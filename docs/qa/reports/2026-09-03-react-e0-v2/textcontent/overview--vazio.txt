@@ -1,0 +1,138 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+0/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-qa-vazia
+QA Vazia
+produto de teste
+16:9 · YouTube
+vibe: definida na etapa 2
+● 9999 créditos
+Progresso
+0/10 etapas
+Editar
+Continuar de onde parei →
+Etapas 1 a 10 · aulas 009 → 015 · 001
+Visão geral da campanha
+As 10 etapas do curso, na ordem das aulas, com o estado real dos artefatos. Você está na
+etapa 1 — Referências
+.
+7 bloqueada
+3 a fazer
+Resetar campanha [extensão]
+01
+aula 009
+a fazer
+Referências
+Buscar campanhas reais no Pinterest e escolher o que você gosta (ainda sem ter ideia nenhuma).
+Continuar aqui
+02
+aula 009
+a fazer
+Mood board
+Uma vibe única para a campanha inteira: escolha um mood board da biblioteca global e aplique-o à campanha (a criação vive na biblioteca).
+Abrir
+03
+aula 009
+bloqueada
+Imagem base
+Produto na situação da referência, rótulo próprio, upscale 2x.
+→ Antes de continuar: ≥ 1 referência escolhida em refs/brainstorming/ (etapa 1). Volte à etapa 1, escolha as referências que você gostou e salve a seleção
+Abrir
+04
+aula 010+011
+bloqueada
+Storyboard
+Cenas em texto + vários ângulos por cena: ideias a partir da base, várias imagens por cena (upload, prompt de ângulo, escolher/ordenar) e a cena do produto.
+→ Escolher a imagem base da campanha na etapa 3
+Abrir
+05
+aula 012
+bloqueada
+Animação
+Image-to-video por take, start/end frame, troca de modelo após falhas.
+→ Antes de continuar: storyboard/storyboard.json com os frames finais (etapa 4). Volte à etapa 4, gere os frames de cada cena e salve o storyboard
+Abrir
+06
+aula 013
+bloqueada
+Trilha
+Trilha antes da montagem: reunir candidatas, ouvir até sentir a certa, escolher e detectar as batidas.
+→ Antes de continuar: storyboard/storyboard.json com a ordem das cenas (etapa 4). Volte à etapa 4 e escolha um ângulo por cena
+Abrir
+07
+aula 014
+bloqueada
+Studio de vídeo
+Cortes nos impactos, speed ramp com mistura de quadros, pretos, música cortada para o ápice, fade, SFX.
+→ Antes de continuar: Takes com like na etapa 5. Volte à etapa 5 e marque o melhor take de cada cena
+Abrir
+08
+aula 014
+bloqueada
+Export e QA
+Formatos por rede a partir do master (16:9, 9:16, 1:1), thumb e checklist técnico antes de publicar.
+→ Antes de continuar: edit/master.mp4 (etapa 7). Volte à etapa 7 e renderize o master com a trilha
+Abrir
+09
+aula 015
+bloqueada
+Publicar
+Publique nas redes (à mão), registre o link de cada post e feche o portfólio de 4 vídeos antes de prospectar.
+→ Antes de continuar: export/*.mp4 (etapa 8). Volte à etapa 8 e gere o formato da rede onde você vai publicar
+Abrir
+10
+aula 001
+a fazer
+Prospecção
+10 DMs por dia com o script literal, teaser de 5–10 s com música e call de 15 min. O Studio redige e registra; enviar é humano.
+Abrir

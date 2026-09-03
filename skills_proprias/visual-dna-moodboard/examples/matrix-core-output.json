@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "type": "attachment",
+    "identifier": "example-image",
+    "url": null
+  },
+  "summary": "Direção tech noir realista com preto dominante, verde fosforescente e sinais Y2K.",
+  "visual_dna": {
+    "modality": ["cinematic photography"],
+    "realism": "realistic",
+    "subjects": ["central figure", "digital environment"],
+    "composition": ["central", "negative space"],
+    "color": ["black dominant", "phosphor green accent"],
+    "lighting": ["low-key", "green practical light", "high contrast"],
+    "materials": ["black leather", "glass", "dark metal"],
+    "textures": ["CRT glow", "scanlines", "digital glitch"],
+    "forms": ["angular", "modular grid"],
+    "typography": ["monospace"],
+    "space": ["dark technological interior"],
+    "perceived_era": ["late 1990s", "Y2K"],
+    "emotion": ["mysterious", "controlled", "tense"],
+    "narrative": ["human figure inside a controlled digital system"]
+  },
+  "aesthetics": {
+    "primary": {
+      "label": "Matrix Core / Tech Noir",
+      "rationale": "Low-key green lighting, black styling and late-1990s digital cues converge on a restrained tech-noir language.",
+      "confidence": "high"
+    },
+    "related": ["Hacker Core", "Digital Dystopia", "Y2K Tech", "Cyberpunk Minimal"]
+  },
+  "palette": [
+    {"hex": "#050806", "role": "background", "approximate": true},
+    {"hex": "#0B1E10", "role": "deep green", "approximate": true},
+    {"hex": "#1D5C2A", "role": "mid green", "approximate": true},
+    {"hex": "#68B46A", "role": "glow", "approximate": true},
+    {"hex": "#B7D8B5", "role": "highlight", "approximate": true}
+  ],
+  "observations": [
+    {
+      "dimension": "lighting",
+      "value": "low-key green practical lighting",
+      "observation_type": "observed",
+      "confidence": "high"
+    },
+    {
+      "dimension": "perceived era",
+      "value": "late 1990s / Y2K",
+      "observation_type": "inferred",
+      "confidence": "medium"
+    }
+  ],
+  "search_queries": [
+    {
+      "category": "hero",
+      "query": "late 90s tech noir cinematic portrait phosphor green",
+      "platform": "Pinterest",
+      "intent": "anchor"
+    },
+    {
+      "category": "2d",
+      "query": "tech noir 2D poster phosphor green graphic novel",
+      "platform": "Pinterest",
+      "intent": "translation"
+    },
+    {
+      "category": "3d",
+      "query": "black chrome green glow abstract futuristic 3D render",
+      "platform": "Pinterest",
+      "intent": "translation"
+    }
+  ],
+  "moodboard_plan": {
+    "target_count": 10,
+    "categories": ["hero", "environment", "styling", "object", "texture", "typography", "2d", "3d"],
+    "layout_notes": ["Give 30 percent of the canvas to the hero image", "Keep the five-color palette in a narrow strip"]
+  },
+  "references": [],
+  "uncertainties": [
+    "Palette is visually estimated rather than pixel-sampled.",
+    "Perceived era is an aesthetic inference, not confirmed metadata."
+  ]
+}

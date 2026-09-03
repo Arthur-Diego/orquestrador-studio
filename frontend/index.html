@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orquestrador Studio</title>
+  </head>
+  <body>
+    <!--
+      Casca mínima da E0. O shell de verdade (sidebar, rail das 11 etapas, topbar, tema aplicado
+      ANTES do primeiro paint) é da E3 — ver `docs/domains/studio/waves/wave-10.md`.
+      Nesta frente o `index.html` do Vite existe só para o build ter um entry point; quem serve a
+      aplicação continua sendo `studio/web/index.html`, o vanilla, intocado.
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

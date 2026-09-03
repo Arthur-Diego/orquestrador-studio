@@ -14,7 +14,11 @@ jobs:
   build-and-test:
     name: build-and-test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 10 min era o teto original e já vinha raspando: os runs da wave 10 marcaram 8m27s e
+    # 9m16s ANTES de a suíte crescer. Com +145 testes (frentes 03 e 04) o job passou de 10
+    # min e foi cancelado — falha de orçamento, não de teste. 20 min dá folga real: a suíte
+    # roda em ~3,5 min local; o resto é apt-get do ffmpeg, setup do Python e pip.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -36,3 +40,55 @@ jobs:
       - name: Testes (pytest)
         # Sem rede e sem navegador: os testes cobrem serviços, API e ponte do CLI com fakes.
         run: pytest
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    # Job PARALELO ao build-and-test, não um passo dentro dele. O job Python já roda em ~9-11 min
+    # com teto de 20; somar npm ci + tsc + vitest + build ali dentro raspa o teto de novo, e uma
+    # falha de frontend passaria a mascarar o tempo do Python. Separado, cada um falha pelo que é.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+        working-directory: frontend
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+        working-directory: frontend
+
+      - name: Lint (eslint)
+        run: npm run lint
+        working-directory: frontend
+
+      - name: Testes (vitest)
+        # jsdom, sem navegador real: a ADR-008 continua valendo (ver emenda na ADR-031).
+        run: npm test
+        working-directory: frontend
+
+      - name: Build (vite → studio/web/dist/)
+        run: npm run build
+        working-directory: frontend
+
+      - name: Guarda do dist
+        # DURANTE a Wave 10 o bundle é gitignored (wave-10.md §6.1): seis frentes paralelas
+        # commitando bundles rivais conflitariam em todo merge. A guarda desta fase prova que
+        # ninguém versionou o dist por acidente — o build acima acabou de gerá-lo, então se ele
+        # aparecesse no git, apareceria aqui.
+        # A E10 INVERTE esta guarda: passa a versionar o dist e a falhar quando o rebuild diverge
+        # do commitado (o usuário final desta ferramenta local não tem Node).
+        run: |
+          if [ -n "$(git status --porcelain -- studio/web/dist)" ] || git ls-files --error-unmatch studio/web/dist >/dev/null 2>&1; then
+            echo "studio/web/dist/ não pode ser versionado durante a Wave 10 (wave-10.md §6.1)." >&2
+            git status --porcelain -- studio/web/dist >&2
+            exit 1
+          fi
+          echo "dist fora do git, como a wave manda."

@@ -1,4 +1,4 @@
-.PHONY: help setup hooks run test lint verify qa-up qa-seed qa-run qa-api qa-down
+.PHONY: help setup hooks run test lint verify frontend-setup frontend-verify frontend-build qa-up qa-seed qa-run qa-api qa-down
 
 help: ## Lista os alvos
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-10s %s\n", $$1, $$2}'
@@ -21,7 +21,17 @@ test: ## Roda a suíte de testes
 lint: ## Lint com ruff
 	. .venv/bin/activate && ruff check studio tests scripts
 
-verify: lint test ## Lint + testes (o que o CI roda)
+verify: lint test ## Lint + testes Python (o job `build-and-test` do CI)
+
+# ---- frontend React (Wave 10, ADR-031). Paralelo ao Python: `verify` NÃO depende de Node ----
+# Node não é pré-requisito para rodar a ferramenta (o `dist/` é versionado a partir da E10), então
+# o alvo é separado de propósito — quem só mexe em Python nunca precisa instalar npm.
+frontend-setup: ## Instala as dependências do frontend (npm ci)
+	cd frontend && npm ci
+frontend-verify: ## Typecheck + lint + testes do frontend (o job `frontend` do CI)
+	cd frontend && npm run typecheck && npm run lint && npm test
+frontend-build: ## Constrói o bundle em studio/web/dist/
+	cd frontend && npm run build
 
 # ---- QA E2E fora do CI (skill qa-studio, ADR-008). RUN=<run-id> (padrão: local) ----
 RUN ?= local

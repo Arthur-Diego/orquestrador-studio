@@ -1,0 +1,282 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+—
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha
+Nenhuma campanha
+● 9999 créditos
+Progresso
+—
+Editar
+Continuar de onde parei →
+Extensão do Studio · aula 008 (o custo em primeiro lugar)
+Créditos & Custos
+[extensão]
+Saldo do CLI, quanto cada modelo custa, para onde os créditos foram e qual modelo cada etapa usa por padrão.
+Saldo restante
+9999
+créditos
+qa-fake
+Saldo do CLI da Higgsfield. O ilimitado do plano vale só na UI — cada geração pelo CLI gasta os créditos abaixo.
+Atualizar saldo
+Modelos default por ação
+Defaults
+globais
+— abra uma campanha para definir override por projeto.
+As telas de etapa preselecionam o modelo escolhido aqui (config do projeto › global › código). Trocar aqui não gera nada.
+Ação
+Modelo
+Custo
+Origem
+Gerar a imagem base
+Etapa 3 — Imagem base
+GPT Image 2
+Nano Banana Pro
+1k
+2k
+4k
+2 cr
+código
+Upscale 2x da base
+Etapa 3 — Imagem base
+Bytedance Upscale
+2 cr
+código
+Limpar marca/logo/texto da base [extensão]
+Etapa 3 — Imagem base
+GPT Image 2
+Nano Banana Pro
+1k
+2k
+4k
+2 cr
+código
+Gerar o grid de vibe
+Etapa 2 — Mood board
+GPT Image 2
+Nano Banana Pro
+1k
+2k
+4k
+2 cr
+código
+Multishot da imagem de vibe
+Etapa 2 — Mood board
+GPT Image 2
+Nano Banana Pro
+1k
+2k
+4k
+2 cr
+código
+Gerar a foto da cena (prompt realista)
+Etapa 4 — Storyboard
+GPT Image 2
+Nano Banana Pro
+1k
+2k
+4k
+2 cr
+código
+Multishot (fotos-semente e frames da cena)
+Etapa 4 — Storyboard
+GPT Image 2
+Nano Banana Pro
+1k
+2k
+4k
+2 cr
+código
+Editar área marcada (inpaint aproximado) [extensão]
+Etapa 4 — Storyboard
+GPT Image 2
+Nano Banana Pro
+1k
+2k
+4k
+2 cr
+código
+Gerar o vídeo da cena (image-to-video) [extensão]
+Etapa 4 — Storyboard
+Kling 2.6
+Kling 3.0
+Kling 3.0 Turbo
+Seedance 2.0
+Veo 3.1 Lite
+5s
+10s
+10 cr
+código
+Gerar a transição start/end (image-to-video) [extensão]
+Etapa 4 — Storyboard
+Kling 2.6
+Kling 3.0
+Kling 3.0 Turbo
+Seedance 2.0
+Veo 3.1 Lite
+5s
+10s
+10 cr
+código
+Animar (image-to-video)
+Etapa 5 — Animação
+Kling 2.6
+Kling 3.0
+Kling 3.0 Turbo
+Seedance 2.0
+Veo 3.1 Lite
+5s
+10s
+10 cr
+código
+Gerar a trilha
+Etapa 6 — Trilha
+Sonilo Music
+0.94 cr
+código
+Custo por modelo e resolução
+Custo medido em gerações reais (créditos Higgsfield). Consultar custo não gasta crédito — só a geração real gasta.
+Imagem
+Modelo
+Variação
+Custo
+Nota
+GPT Image 2
+gpt_image_2
+—
+8.5 cr
+Imagem alternativa; mais cara que a Nano Banana Pro.
+Nano Banana Pro
+nano_banana_2
+1k
+2 cr
+Imagem fotorrealista (Gemini 3 Pro Image). Padrão das etapas de imagem.
+2k
+2 cr
+4k
+4 cr
+Upscale
+Modelo
+Variação
+Custo
+Nota
+Bytedance Upscale
+bytedance_image_upscale
+—
+2 cr
+Upscale 2x da imagem base (aula 009).
+Vídeo
+Modelo
+Variação
+Custo
+Nota
+Kling 2.6
+kling2_6
+5s
+10 cr
+Image-to-video (Kling 2.6). Cena do storyboard/animação; custo medido no CLI (wave 7).
+10s
+20 cr
+Kling 3.0
+kling3_0
+5s
+10 cr
+Image-to-video (aula 012); transição start/end (ADR-023: é a Kling que aceita end frame). Custo por duração do clipe.
+10s
+20 cr
+Kling 3.0 Turbo
+kling3_0_turbo
+5s
+7.5 cr
+Image-to-video rápido (transição start/end). Custo medido no CLI (wave 7).
+10s
+15 cr
+Seedance 2.0
+seedance_2_0
+—
+22.5 cr
+Image-to-video alternativo; clipe mais caro.
+Veo 3.1 Lite
+veo3_1_lite
+8s
+8 cr
+Image-to-video econômico, clipe de 8 s.
+Áudio
+Modelo
+Variação
+Custo
+Nota
+Sonilo Music
+sonilo_music
+—
+0.94 cr
+Trilha (aula 013); custo aproximado por faixa.
+Histórico de gasto
+total 0 cr
+0 gerações
+Por etapa
+Etapa
+Créditos
+Ger.
+Nenhum gasto registrado ainda.
+Por projeto
+Projeto
+Créditos
+Ger.
+—
+Gerações recentes
+Quando (UTC)
+Projeto
+Etapa
+Modelo
+Custo
+Sem gerações registradas.

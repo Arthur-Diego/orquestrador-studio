@@ -1,0 +1,103 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+0/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-qa-vazia
+QA Vazia
+produto de teste
+16:9 · YouTube
+vibe: definida na etapa 2
+● 9999 créditos
+Progresso
+0/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 1 · aula 009
+Referências
+Comece sem ideia nenhuma: pesquise uma marca já validada, role o Pinterest e marque só o que você gosta. As escolhidas viram referência para os prompts das próximas etapas.
+Resetar etapa [extensão]
+Guia
+a fazer
+→ Produza o próximo artefato: Seleção salva em refs/brainstorming/.
+01
+Buscar no Pinterest
+sessão: ?
+Refazer login
+O que a aula 009 manda fazer aqui
+Comece por uma
+marca já validada
+("Red Bull, que já tem anúncios validados") e só depois refine pela situação ("Red Bull snow ads"). Os termos pelo seu produto entram como complemento. A vibe ainda não precisa existir — ela é encontrada na etapa 2.
+marca validada para se inspirar
+Salvar marca validada
+termos de busca — um por linha, em inglês
+máx. por termo
+ver o navegador
+Sugerir termos a partir do projeto
+ou traga um pin/board que você já tem, pela URL
+máx. do board
+Importar URL
+Extensão do Studio — a aula 009 busca por termos; importar um link pronto é atalho nosso. Roda com a sua sessão e contraria os termos do Pinterest: prefira uma conta secundária.
+Buscar e baixar
+Último scrape
+—
+Roda em ritmo humano com a sua sessão. Contraria os termos do Pinterest — prefira uma conta secundária.
+02
+Escolher o que você gosta
+0 candidatas · 0 escolhidas
+Salvar seleção
+trazer imagens
+Marque o que
+você
+gosta e o que foge do clichê. Clique para marcar; a aula manda voltar no fim e desmarcar o que já não agrada.
+Nenhuma candidata ainda — rode uma busca ou
+traga imagens
+.
