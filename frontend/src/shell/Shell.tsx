@@ -30,6 +30,8 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { NoProject, Overview } from "./Overview";
 import { EditModal, ResetCampaignModal, ResetStepModal, WizardModal } from "./modals";
+import { MoodboardsArea } from "../areas/moodboards/MoodboardsArea";
+import { CreditosArea } from "../areas/creditos/CreditosArea";
 
 type ModalState =
   | { kind: "wizard" }
@@ -210,7 +212,7 @@ export function Shell() {
     if (contentRootRef.current === null) contentRootRef.current = createRoot(el);
     const root = contentRootRef.current;
 
-    const reactNode = computeReactNode({ booted, area, view, studioCtx });
+    const reactNode = computeReactNode({ booted, area, view, studioCtx, sub, pid, refreshKey: resetNonce, onResetStep: confirmResetStep });
 
     if (reactNode !== null) {
       if (ownerRef.current === "vanilla") el.innerHTML = ""; // remove resíduo vanilla
@@ -223,15 +225,13 @@ export function Shell() {
       return;
     }
 
-    // Conteúdo vanilla (tela por ponte ou área global).
+    // Conteúdo vanilla (tela de etapa ainda não migrada, hospedada pela ponte strangler).
     const key = `${area}|${view}|${sub}|${pid}|${resetNonce}`;
     if (ownerRef.current === "react") flushSync(() => root.render(null));
     if (ownerRef.current !== "vanilla" || vanillaKeyRef.current !== key) {
       ownerRef.current = "vanilla";
       vanillaKeyRef.current = key;
-      if (area === MB_ROUTE) void bridge.openMoodboards(sub);
-      else if (area === CR_ROUTE) void bridge.openCreditos(pid);
-      else if (view) void bridge.showView(view, el);
+      if (view) void bridge.showView(view, el);
     }
   }, [booted, area, view, sub, pid, resetNonce, shellApi, studioCtx, qc, bridge]);
 
@@ -287,13 +287,20 @@ function computeReactNode(args: {
   area: string;
   view: string | null;
   studioCtx: StudioCtx;
+  sub: string | null;
+  pid: string | null;
+  refreshKey: number;
+  onResetStep: (stepId: string) => void;
 }): React.ReactNode {
-  const { booted, area, view, studioCtx } = args;
+  const { booted, area, view, studioCtx, sub, pid, refreshKey, onResetStep } = args;
   if (!booted) return <div className="empty">Carregando…</div>;
-  if (area !== "campaign") return null; // moodboards/creditos → vanilla
+  // Áreas globais em React (Wave 10 · E6): moodboards e créditos deixam de passar pela ponte vanilla.
+  if (area === MB_ROUTE) return <MoodboardsArea sub={sub} refreshKey={refreshKey} />;
+  if (area === CR_ROUTE) return <CreditosArea pid={pid} refreshKey={refreshKey} />;
   if (view === "overview") return <Overview />;
   if (view === null) return <NoProject />; // sem campanhas (router zera view)
-  if (view && temTelaReact(view)) return <PluginHost stepId={view} ctx={studioCtx} />;
+  if (view && temTelaReact(view))
+    return <PluginHost stepId={view} ctx={studioCtx} onResetStep={onResetStep} />;
   return null; // tela de etapa vanilla → ponte
 }
 

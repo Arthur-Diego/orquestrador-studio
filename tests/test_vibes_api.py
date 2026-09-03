@@ -185,8 +185,8 @@ def test_remover_com_id_invalido_e_422(client, studio_env, ruim):
 
 
 
-def test_a_etapa_2_nao_ganhou_controle_nenhum(client):
-    """ADR-014 de novo, pelo lado negativo (risco 9 do recon)."""
-    for path in ("/steps/mood/view.html", "/steps/mood/view.js"):
-        texto = client.get(path).text
-        assert "/api/vibes" not in texto and "escolhidas" not in texto
+# Wave 10 · E4 (ADR-032): `test_a_etapa_2_nao_ganhou_controle_nenhum` lia o fonte de
+# `mood/view.{html,js}` para provar, pelo lado negativo (ADR-014), que a etapa 2 não expõe
+# `/api/vibes` nem "escolhidas". A tela virou React (`mood/ui/index.tsx`); esse invariante passa a
+# ser coberto pelo substituto Vitest `studio/etapas/mood/ui/index.test.tsx` (C-MOOD-18: a etapa não
+# oferece importar, curar nem gerar prompt) e pelo diff de `textContent` do baseline da E0.

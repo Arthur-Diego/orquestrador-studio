@@ -39,7 +39,8 @@ function chips(g: GuideData) {
   return (
     <>
       <Chip kind={(STATUS_KIND[g.status] as ChipKind) || "mode"}>{STATUS_LABEL[g.status] || g.status}</Chip>
-      {g.status === "in_progress" || g.status === "done" ? <Chip kind="mode">{pct}%</Chip> : null}
+      {/* nó de texto único (`100%`, não `100`+`%`) — o oráculo ADR-004 anda por text node */}
+      {g.status === "in_progress" || g.status === "done" ? <Chip kind="mode">{`${pct}%`}</Chip> : null}
       {g.summary ? <Chip kind={(g.summary_kind as ChipKind) || "mode"}>{g.summary}</Chip> : null}
     </>
   );
@@ -72,7 +73,7 @@ export function Guide({ g, steps = [], onGo }: GuideProps) {
       <button className="guide-strip" type="button" aria-expanded="false" onClick={() => toggle(true)}>
         <span className="eyebrow sm">Guia</span>
         {chips(g)}
-        {g.next_action ? <span className="guide-next">→ {g.next_action}</span> : null}
+        {g.next_action ? <span className="guide-next">{`→ ${g.next_action}`}</span> : null}
       </button>
     );
   }
@@ -86,7 +87,7 @@ export function Guide({ g, steps = [], onGo }: GuideProps) {
     <div className="guide-body" data-open="1">
       <button className="guide-toggle" type="button" aria-expanded="true" onClick={() => toggle(false)}>
         <span className="caret">▾</span>
-        <span className="ttl">Guia da etapa {g.n}</span>
+        <span className="ttl">{`Guia da etapa ${g.n}`}</span>
         {chips(g)}
         <span className="hint">recolher</span>
       </button>
@@ -121,7 +122,7 @@ export function Guide({ g, steps = [], onGo }: GuideProps) {
         ) : null}
         {g.next_action ? (
           <div className="guide-actions">
-            <p className="guide-next">→ Próxima ação: {g.next_action}</p>
+            <p className="guide-next">{`→ Próxima ação: ${g.next_action}`}</p>
             {alvoStep ? (
               <button className="ghost" data-go={alvoStep} onClick={() => onGo?.(alvoStep)}>
                 Ir para a etapa {alvo?.n ?? "seguinte"}
