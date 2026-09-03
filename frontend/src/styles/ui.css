@@ -1,0 +1,226 @@
+/* Studio.ui — estilos dos componentes compartilhados: guia por etapa (faixa compacta +
+   expandido), cards da visão geral e modal. Usa só as variáveis de style.css (claro/escuro
+   vêm de lá). Nenhuma frente de etapa edita este arquivo (HLD studio v1.4 · ADR-010).
+
+   Wave 4 (ADH-OS-20260826-10): o guia expandido é uma grade só (união de entradas, saídas e
+   validações), sem títulos de seção, sublinha de detalhe, links por item nem checklist — é o
+   que o protótipo desenha em `proto/01-refs.html`. */
+
+/* ================= guia por etapa ================= */
+.guide{display:block;margin:0 0 16px}
+
+/* colapsado: faixa clicável com status, % e a próxima ação */
+/* `white-space:normal` reverte o `nowrap` do `button` base: a faixa é um botão, mas a próxima
+   ação é uma frase e precisa quebrar (sem isso a faixa força scroll horizontal a 900px). */
+.guide-strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;text-align:left;
+  white-space:normal;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-tile);
+  padding:10px 16px;color:var(--ink);cursor:pointer}
+.guide-strip:hover{border-color:var(--ctl-hover);color:var(--ink)}
+.guide-strip>.eyebrow{font-size:9.5px;letter-spacing:.1em;color:var(--ink-5)}
+/* Chips de faixa são mais baixos que os chips de painel (protótipo: 2px 8px). */
+.guide-strip .chip,.guide-toggle .chip{padding:2px 8px}
+.guide-next{margin:0;font-size:var(--fs-sm);font-weight:500;color:var(--ink);flex:1;min-width:200px}
+
+/* expandido */
+.guide-body{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-panel);overflow:hidden}
+.guide-head{display:contents}
+.guide-toggle{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;
+  white-space:normal;background:var(--bg-2);border:0;border-radius:0;padding:12px 18px;text-align:left;
+  color:var(--ink);font-weight:600;font-size:13.5px;cursor:pointer}
+.guide-toggle:hover{background:var(--bg-2);border-color:transparent;color:var(--ink)}
+.guide-toggle .caret{font-family:"IBM Plex Mono",monospace;color:var(--ink-5);font-size:11px}
+.guide-toggle .ttl{font-family:"Bricolage Grotesque","Instrument Sans",sans-serif;font-size:13.5px;font-weight:600}
+.guide-toggle .hint{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-5)}
+.guide-sections{display:flex;flex-direction:column;gap:var(--s3);padding:16px 18px;border-top:1px solid var(--line)}
+.guide-body[data-open="0"] .guide-sections{display:none}
+.guide-missing{display:flex;gap:var(--s2);align-items:baseline;flex-wrap:wrap;font-size:var(--fs-sm)}
+.guide-missing .k{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--gate)}
+.guide-missing.all-ok .k{color:var(--ok)}
+.guide-missing .v{color:var(--ink-2);min-width:0}
+.guide-pin{display:none}
+/* Grade única de itens ✓/✕/! — herda a grade de `.checks` (auto-fit minmax(240px,1fr)). */
+.guide-items{list-style:none;margin:0;padding:0}
+.guide-actions{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap;padding-top:var(--s1)}
+.guide-actions .guide-next{font-size:13.5px;flex:0 1 auto}
+.guide-actions button{padding:6px 12px;font-weight:500}
+
+/* ================= visão geral da campanha ================= */
+.ovgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.ovcard{display:flex;flex-direction:column;gap:9px;min-width:0;background:var(--surface);
+  border:1px solid var(--line-2);border-radius:var(--r-panel);padding:16px 17px;
+  transition:border-color .15s,transform .15s,box-shadow .15s}
+.ovcard:hover{border-color:var(--ctl-hover);transform:translateY(-1px)}
+.ovcard.is-current{background:var(--surface-3);border-color:var(--accent-line-2);box-shadow:var(--glow-card)}
+.ovcard.st-unknown{border-style:dashed}
+.ovcard-top{display:flex;align-items:center;gap:var(--s2)}
+.ovcard-top .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-5);font-variant-numeric:tabular-nums}
+.ovcard.is-current .ovcard-top .n{color:var(--accent)}
+.ovcard .aula{margin:0;font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-5)}
+.ovcard-top .chip{margin-left:auto;font-size:10px;padding:2px 8px}
+.ovcard h4{font-size:16.5px;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.ovcard.st-todo h4{color:var(--ink-row)}
+.ovcard .desc{margin:0;font-size:var(--fs-fine);color:var(--ink-3);line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ovcard .progress,.ovcard .progress .bar{border-radius:2px}
+.ovcard .progress{height:4px;margin-top:2px}
+.ovcard .next{margin:0;font-size:12px;color:var(--ink-2);
+  display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ovcard .act{margin-top:auto;padding-top:var(--s2);display:flex;gap:var(--s2)}
+/* Botões do card são mais largos que o ghost de linha (protótipo: 7px 14px / 500). */
+.ovcard .act button{padding:7px 14px}
+.ovcard .act button.ghost{font-weight:500}
+.ov-summary{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+/* No cabeçalho da visão geral o chip "a fazer" é mais claro que o do card. */
+.ov-summary .chip.todo{background:var(--bg-2)}
+
+/* ---- biblioteca de mood boards [extensão] (ADR-013): cards de capa na lista ---- */
+.mb-card{cursor:pointer}
+.mb-cover{aspect-ratio:16/10;border-radius:var(--r-sm);overflow:hidden;background:var(--bg-2);
+  border:1px solid var(--line-2);display:flex;align-items:center;justify-content:center}
+.mb-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.mb-nocover{font-size:var(--fs-fine);color:var(--ink-5)}
+.mb-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:auto}
+.mb-meta .chip{font-size:10px;padding:2px 8px}
+
+/* ---- mosaico quadricular do mood [wave 5 · ponto 4] (Studio.ui.moodMosaic) ----
+   Grade 2×2 fixa reutilizada na biblioteca, na etapa 2 e na junção da etapa 3. Tema-aware
+   (tokens do shell). O `data-n` faz 1/2/3 imagens preencherem sem buracos; 4+ vira 2×2 com "+N". */
+.mm-title{display:block;margin-bottom:6px}
+.mood-mosaic{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);
+  gap:3px;aspect-ratio:1/1;width:100%;border-radius:var(--r-sm);overflow:hidden;
+  border:1px solid var(--line-2);background:var(--bg-2)}
+.mood-mosaic .mm-cell{position:relative;overflow:hidden;background:var(--bg-2);min-width:0}
+.mood-mosaic .mm-cell img{width:100%;height:100%;object-fit:cover;display:block}
+.mood-mosaic .mm-more{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:var(--scrim);color:#fff;font-weight:600;font-size:16px}
+/* 1 imagem: ocupa a grade inteira; 2: duas colunas altas; 3: uma alta à esquerda + duas à direita */
+.mood-mosaic[data-n="1"]{grid-template-rows:1fr}
+.mood-mosaic[data-n="1"] .mm-cell{grid-column:1/3}
+.mood-mosaic[data-n="2"]{grid-template-rows:1fr}
+.mood-mosaic[data-n="3"] .mm-cell:first-child{grid-row:1/3}
+.mood-mosaic.empty{display:flex;align-items:center;justify-content:center}
+.mood-mosaic .mm-empty{font-size:var(--fs-fine);color:var(--ink-5)}
+
+/* ================= modal ================= */
+.modal-backdrop{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(3px);
+  -webkit-backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;
+  padding:8vh 16px 16px;z-index:70;overflow:auto}
+.modal{background:var(--surface);border:1px solid var(--ctl);border-radius:var(--r-modal);
+  box-shadow:var(--shadow-modal);width:min(540px,100%);display:flex;flex-direction:column}
+.modal-head{display:flex;align-items:flex-start;gap:var(--s3);padding:22px 24px 10px}
+.modal-head h3{font-size:var(--fs-h2);font-weight:700;letter-spacing:-.01em}
+.modal-head .sub{margin:3px 0 0;font-size:var(--fs-fine);color:var(--ink-3)}
+.modal-close{margin-left:auto;background:none;border:0;color:var(--ink-5);font-size:17px;line-height:1;padding:2px 6px}
+.modal-close:hover{color:var(--ink);background:none;border-color:transparent}
+.modal-body{padding:10px 24px 24px;display:flex;flex-direction:column;gap:14px}
+.modal-body form{display:flex;flex-direction:column;gap:14px}
+.modal-actions{display:flex;gap:var(--s2);justify-content:flex-end;padding-top:var(--s3);border-top:1px solid var(--line)}
+
+/* ===== modal de progresso (ADH-OS-20260827-06) ===== */
+/* Reusa `.modal-backdrop`/`.modal`; só acrescenta o cronômetro, a lista de passos e a nota.
+   Tokens do catálogo (claro/escuro vêm de style.css); sem scroll horizontal (labels quebram). */
+.progress-modal .modal-head{align-items:center}
+.prog-timer{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:var(--fs-sm);
+  color:var(--ink-3);font-variant-numeric:tabular-nums}
+.progress-modal .modal-close{margin-left:8px}
+.progress-modal .modal-close:disabled{opacity:.35;cursor:not-allowed}
+.prog-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.prog-step{display:flex;align-items:flex-start;gap:10px;font-size:var(--fs-sm);color:var(--ink-2);min-width:0}
+.prog-step .prog-lbl{min-width:0;overflow-wrap:anywhere;line-height:1.4}
+.prog-step[data-state="done"]{color:var(--ink-3)}
+.prog-step[data-state="active"]{color:var(--ink)}
+.prog-step[data-state="error"]{color:var(--gate)}
+.prog-ico{flex:0 0 auto;width:16px;height:16px;display:inline-flex;align-items:center;
+  justify-content:center;font-size:12px;line-height:1;margin-top:1px}
+.prog-step[data-state="done"] .prog-ico{color:var(--ok)}
+.prog-step[data-state="error"] .prog-ico{color:var(--gate)}
+.prog-step[data-state="active"] .prog-ico{width:14px;height:14px;border:2px solid var(--line-2);
+  border-top-color:var(--accent);border-radius:50%;animation:prog-spin .7s linear infinite}
+.prog-count{margin-left:auto;padding-left:8px;font-family:"IBM Plex Mono",monospace;
+  font-size:var(--fs-fine);color:var(--ink-5);font-variant-numeric:tabular-nums}
+.prog-note{font-size:var(--fs-fine);color:var(--ink-3);border-top:1px solid var(--line);padding-top:10px}
+.prog-note .prog-err{color:var(--gate)}
+@keyframes prog-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.prog-step[data-state="active"] .prog-ico{animation:none}}
+
+/* picker de formato (3 cards radio com a proporção desenhada) */
+.fmt{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s2)}
+.fmt label{position:relative;display:flex;flex-direction:column;gap:6px;cursor:pointer;
+  border:1px solid var(--ctl);background:var(--surface-2);border-radius:var(--r-tile);padding:12px}
+.fmt label:hover{border-color:var(--ctl-hover)}
+.fmt label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.fmt label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.fmt .box{display:flex;align-items:center;justify-content:center;height:26px}
+.fmt .box i{display:block;background:var(--ctl);border-radius:3px}
+.fmt label:has(input:checked) .box i{background:var(--accent)}
+.fmt .ratio{font-family:"IBM Plex Mono",monospace;font-size:var(--fs-sm);font-weight:600;color:var(--ink)}
+.fmt .dest{font-size:11px;color:var(--ink-3);line-height:1.35}
+.fmt input{position:absolute;opacity:0;width:0;height:0}
+@media (max-width:560px){.fmt{grid-template-columns:1fr}}
+
+/* ---------- Créditos & Custos [extensão] (ADR-016) ---------- */
+.tb-credits{cursor:pointer;font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+.cr-grid{display:flex;flex-direction:column;gap:var(--s5)}
+.cr-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-panel);padding:var(--s5);display:flex;flex-direction:column;gap:var(--s3)}
+.cr-card-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.cr-card-head h3{font-size:var(--fs-h3);font-weight:600;color:var(--ink);margin-right:auto}
+.cr-card h3{font-size:var(--fs-h3);font-weight:600;color:var(--ink)}
+.cr-card h4{font-size:var(--fs-sm);font-weight:600;color:var(--ink-2);margin-top:var(--s2)}
+.cr-note{font-size:var(--fs-fine);color:var(--ink-4);line-height:1.5}
+.cr-balance{background:var(--surface-3);border-color:var(--accent-line-3)}
+.cr-balance-main{display:flex;align-items:center;gap:var(--s4)}
+.cr-saldo{display:flex;align-items:baseline;gap:6px}
+.cr-saldo b{font-size:var(--fs-display);font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1}
+.cr-saldo span{font-size:var(--fs-sm);color:var(--ink-4)}
+.cr-balance-msg{font-size:var(--fs-fine);color:var(--ink-3);line-height:1.5}
+.cr-balance code,.cost-warn code{font-family:"IBM Plex Mono",monospace;background:var(--code-bg);padding:1px 5px;border-radius:4px;font-size:.9em}
+.cr-scope{display:flex;align-items:center;gap:var(--s2)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:var(--r-sm);overflow:hidden}
+.seg-btn{padding:5px 12px;font-size:var(--fs-fine);background:var(--surface);color:var(--ink-3);border:0;cursor:pointer}
+.seg-btn.on{background:var(--accent-soft-2);color:var(--accent);font-weight:600}
+.cr-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.cr-table th{text-align:left;font-size:var(--fs-micro);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-5);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--line)}
+.cr-table td{padding:8px 10px;border-bottom:1px solid var(--line);color:var(--ink-row);vertical-align:top}
+.cr-table tbody tr:last-child td{border-bottom:0}
+.cr-table .cr-cost{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cr-table .cr-mid{display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--ink-5)}
+.cr-table .cr-mnote{font-size:var(--fs-fine);color:var(--ink-4)}
+.cr-table .cr-empty{color:var(--ink-5);text-align:center;font-style:italic}
+.cr-kind{margin-top:var(--s3)}
+.cr-act{display:flex;flex-direction:column;gap:1px}
+.cr-act span{font-size:var(--fs-micro);color:var(--ink-5)}
+.cr-modelcell{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cr-model,.cr-variant{padding:5px 8px;border:1px solid var(--ctl);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font-size:var(--fs-fine)}
+.cr-variant{max-width:80px}
+.cr-src{white-space:nowrap}
+.cr-clear{margin-left:8px;font-size:var(--fs-fine)}
+.cr-hist-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+.cr-hist-scroll{overflow-x:auto;max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--r-sm)}
+@media (max-width:720px){.cr-hist-grid{grid-template-columns:1fr}}
+
+/* modal de custo antes de gerar */
+.cost-sheet{display:flex;flex-direction:column;gap:2px;margin-bottom:var(--s3)}
+.cost-row{display:flex;justify-content:space-between;gap:var(--s4);padding:6px 0;font-size:var(--fs-sm);color:var(--ink-2);border-bottom:1px solid var(--line)}
+.cost-row b{color:var(--ink);font-variant-numeric:tabular-nums}
+.cost-row.total{border-bottom:2px solid var(--line-2)}
+.cost-row.total b{color:var(--accent);font-size:var(--fs-base)}
+.cost-warn{background:var(--gate-soft);border:1px solid var(--gate-line);border-radius:var(--r-sm);padding:8px 10px;font-size:var(--fs-fine);color:var(--ink-2);line-height:1.5;margin-bottom:var(--s2)}
+.cost-note{font-size:var(--fs-fine);color:var(--ink-4);line-height:1.5}
+.cost-line{font-size:var(--fs-base);color:var(--ink);margin-bottom:6px}
+
+/* ---------- Multishot [extensão] (ADR-017) ---------- */
+.gallery .card{position:relative}
+.ms-btn{position:absolute;top:6px;right:6px;z-index:2;font-size:11px;padding:3px 8px;border:1px solid var(--line-2);
+  border-radius:var(--r-chip);background:var(--surface);color:var(--ink-2);cursor:pointer;opacity:0;transition:opacity .12s}
+.gallery .card:hover .ms-btn,.gallery .card:focus-within .ms-btn{opacity:1}
+.ms-btn:hover{border-color:var(--accent-line-2);color:var(--accent)}
+.ms-wrap{display:flex;flex-direction:column;gap:var(--s4)}
+.ms-source{display:flex;flex-direction:column;gap:6px}
+.ms-source img{max-width:220px;max-height:220px;border-radius:var(--r-tile);border:1px solid var(--line);object-fit:cover}
+.ms-controls{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.ms-controls .ms-hint{color:var(--ink-4);flex:1 1 240px}
+.ms-controls input[type=number]{width:56px;padding:5px 8px;border:1px solid var(--ctl);border-radius:var(--r-sm);background:var(--surface);color:var(--ink)}
+.ms-results{border-top:1px solid var(--line);padding-top:var(--s3)}
+.ms-empty{font-size:var(--fs-fine);color:var(--ink-4);line-height:1.5}
+.ms-count{font-size:var(--fs-fine);color:var(--ink-3);margin-bottom:var(--s2)}
+.ms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:var(--s2)}
