@@ -1,0 +1,183 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+0/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-qa-vazia
+QA Vazia
+produto de teste
+16:9 · YouTube
+vibe: definida na etapa 2
+● 9999 créditos
+Progresso
+0/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 7 · aula 014 · editor [extensão]
+Studio de vídeo
+Resetar etapa [extensão]
+Guia
+bloqueada
+→ Antes de continuar: Takes com like na etapa 5. Volte à etapa 5 e marque o melhor take de cada cena
+‹
+Etapa 7 · Studio de vídeo
+QA Vazia
+Salvo
+↺
+↻
+autosave
+Proporção
+16:9
+9:16
+1:1
+4:5
+4:3
+21:9
+Resolução
+720p
+1080p
+1440p
+4K
+FPS
+24
+25
+30
+60
+?
+⇤ Menu
+⛶
+Salvar
+Exportar ↗
+▦
+Mídia
+T
+Texto
+CC
+Legendas
+♪
+Áudio
+⧓
+Transições
+✦
+Efeitos
+◑
+Filtros
+◈
+Elementos
+⚙
+Ajustes
+▤
+Biblioteca
+Mídia
+0 itens
+↺ Montar a partir dos takes com like
+Arraste imagens/vídeos aqui
+⬆
+upload +
+novo
+sem clipes
+⇤
+◂◂
+▶
+▸▸
+⇥
+00:00:00 / 00:00:00
+⟲ loop
+🔊
+⛶
+Projeto
+nenhuma seleção
+Resolução
+1080p
+Proporção
+16:9
+FPS
+30
+Duração
+00:00:00
+Clipes
+0
+Tracks
+6
+Fade final
+1.5
+Normalizar áudio [ext]
+Selecione um clipe na timeline para editar suas propriedades, ou arraste mídias da barra lateral.
+✂ Dividir
+⧉ Duplicar
+🗑 Excluir
+⇥| Ripple
+⚑ Marker
+snap
+clique num clipe
+－
+＋
+100%
+TEXTO
+◉
+🔓
+LEGENDAS
+◉
+🔓
+VÍDEO 2
+◉
+🔓
+VÍDEO 1
+◉
+🔓
+MÚSICA
+◉
+🔓
+SFX
+◉
+🔓
+0s
+2s

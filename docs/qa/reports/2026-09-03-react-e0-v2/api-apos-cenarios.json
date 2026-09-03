@@ -1,0 +1,370 @@
+{
+ "run": "react-e0-v2",
+ "base": "http://127.0.0.1:8790",
+ "modo": "offline",
+ "quando": "2026-09-03T12:01:41.946000+00:00",
+ "itens": [
+  {
+   "grupo": "openapi",
+   "nome": "219 operações descobertas",
+   "status": "PASSA",
+   "detalhe": "219 (esperado > 50)"
+  },
+  {
+   "grupo": "openapi",
+   "nome": "nenhum GET responde 5xx",
+   "status": "PASSA",
+   "detalhe": "",
+   "lista": []
+  },
+  {
+   "grupo": "openapi",
+   "nome": "nenhum GET acima de 5s",
+   "status": "PASSA",
+   "detalhe": "",
+   "lista": []
+  },
+  {
+   "grupo": "contratos",
+   "nome": "pid inexistente devolve 404 (GET) e nunca 5xx",
+   "status": "PASSA",
+   "detalhe": "",
+   "lista": []
+  },
+  {
+   "grupo": "contratos",
+   "nome": "corpo inválido em POST/PUT/PATCH nunca devolve 5xx",
+   "status": "PASSA",
+   "detalhe": "",
+   "lista": []
+  },
+  {
+   "grupo": "contratos",
+   "nome": "todo GET …/job devolve {state}",
+   "status": "PASSA",
+   "detalhe": ""
+  },
+  {
+   "grupo": "catalogo",
+   "nome": "/api/steps tem 10 etapas com n=1..10",
+   "status": "PASSA",
+   "detalhe": "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
+  },
+  {
+   "grupo": "catalogo",
+   "nome": "guia.total == etapas ready",
+   "status": "PASSA",
+   "detalhe": "total=10 ready=10"
+  },
+  {
+   "grupo": "contratos",
+   "nome": "POST /api/projects duplicado → 409",
+   "status": "PASSA",
+   "detalhe": "→ 409"
+  },
+  {
+   "grupo": "contratos",
+   "nome": "PATCH aspect_ratio inválido → 422",
+   "status": "PASSA",
+   "detalhe": "→ 422"
+  },
+  {
+   "grupo": "contratos",
+   "nome": "reset de etapa desconhecida → 404",
+   "status": "PASSA",
+   "detalhe": "→ 404"
+  },
+  {
+   "grupo": "contratos",
+   "nome": "guia de etapa desconhecida → 404",
+   "status": "PASSA",
+   "detalhe": "→ 404"
+  },
+  {
+   "grupo": "contratos",
+   "nome": "/api/higgsfield/status tem installed/logged_in",
+   "status": "PASSA",
+   "detalhe": "{\"installed\":true,\"logged_in\":true,\"email\":\"qa-fake@studio.local\",\"plan\":\"qa-fake\",\"credits\":9999,\"raw\":{\"email\":\"qa-fak"
+  },
+  {
+   "grupo": "contratos",
+   "nome": "pid reservado ('moodboards') é recusado",
+   "status": "PASSA",
+   "detalhe": "→ 409"
+  },
+  {
+   "grupo": "disco",
+   "nome": "project.json do seed cheio continua íntegro após a auditoria",
+   "status": "PASSA",
+   "detalhe": "{'id': '2026-09-e2e-mock', 'name': 'E2E Mock', 'product': 'energético', 'vibe': 'gelo neon ciano, alto contraste', 'crea"
+  },
+  {
+   "grupo": "offline",
+   "nome": "fakes foram chamados (higgsfield/claude passam pelos fakes)",
+   "status": "PASSA",
+   "detalhe": "fakes.log sem chamadas de higgsfield — o servidor pode estar usando o binário real"
+  },
+  {
+   "grupo": "newman",
+   "nome": "animate: 25 requests, 8 falhas",
+   "status": "FALHA",
+   "detalhe": "GET /api/steps — etapa 6 pronta: expected 5 to deeply equal 6; GET animate/shots — plano na ordem do storyboard: expected 'kling2_6' to deeply equal 'kling3_0'; GET animate/shots — plano na ordem do storyboard: expected { scene: 'cena01', …(20) } to have keys 'scene', 'shot', 'order', 'image', 'scene_prompt', ; GET animate/candidates — galeria de vídeos importados: expected +0 to be above +0"
+  },
+  {
+   "grupo": "newman",
+   "nome": "base: 45 requests, 6 falhas",
+   "status": "FALHA",
+   "detalhe": "GET prompts da aula (contrato 1): expected { model: 'nano_banana_2', …(15) } to have property 'label_prompt_ready'; GET brand (contrato 2): expected response to have status code 200 but got 404; GET brand (contrato 2): expected { detail: 'Not Found' } to have property 'name'; POST brand (contrato 2): expected response to have status code 200 but got 404"
+  },
+  {
+   "grupo": "newman",
+   "nome": "edit: 30 requests, 0 falhas",
+   "status": "PASSA",
+   "detalhe": ""
+  },
+  {
+   "grupo": "newman",
+   "nome": "export: 42 requests, 2 falhas",
+   "status": "FALHA",
+   "detalhe": "POST render — projeto sem edit/master.mp4 (404): expected 'Not Found' to include 'master.mp4'; POST qa — projeto sem edit/master.mp4 (404): expected 'Not Found' to include 'master.mp4'"
+  },
+  {
+   "grupo": "newman",
+   "nome": "mood: 20 requests, 0 falhas",
+   "status": "PASSA",
+   "detalhe": ""
+  },
+  {
+   "grupo": "newman",
+   "nome": "music: 40 requests, 23 falhas",
+   "status": "FALHA",
+   "detalhe": "GET candidates — lista vazia antes de importar: expected [ { id: '7bd90956856a', …(12) } ] to be empty; POST import/upload — 2 wav (added 2): expected response to have status code 200 but got 422; POST import/upload — 2 wav (added 2): expected undefined to deeply equal 2; POST import/upload — duplicata ignorada (added 0): expected response to have status code 200 but got 422"
+  },
+  {
+   "grupo": "newman",
+   "nome": "prospect: 26 requests, 12 falhas",
+   "status": "FALHA",
+   "detalhe": "Lead: obter: expected undefined to deeply equal ''; DM: ver o texto para copiar: expected response to have status code 200 but got 404; DM: ver o texto para copiar: expected undefined to be a string; DM: ver o texto para copiar: the given combination of arguments (undefined and string) is invalid for this assertion. You can use"
+  },
+  {
+   "grupo": "newman",
+   "nome": "publish: 22 requests, 0 falhas",
+   "status": "PASSA",
+   "detalhe": ""
+  },
+  {
+   "grupo": "newman",
+   "nome": "refs: 58 requests, 4 falhas",
+   "status": "FALHA",
+   "detalhe": "GET job — polling do import de seção: expected 20 to be at most 1; GET job — polling do import de pin: expected 20 to be at most 1; GET job — polling do reimport de pin: expected 20 to be at most 1; GET job — drena o job dos 409: expected 20 to be at most 1"
+  },
+  {
+   "grupo": "newman",
+   "nome": "shots: domínio legado sem plugin — coleção não executada",
+   "status": "BLOQUEADO",
+   "detalhe": "docs/domains/shots/postman/shots.postman_collection.json"
+  },
+  {
+   "grupo": "newman",
+   "nome": "storyboard: 80 requests, 10 falhas",
+   "status": "FALHA",
+   "detalhe": "GET storyboard - estado da etapa: expected { …(13) } to have keys 'base_image', 'has_base', 'ideas', 'selected', 'scenes', 'scenes_wit; POST instructions - multishot (count 1): expected 'Bring me another point of view of thi…' to include 'Another point of view of this exact s…; GET instructions - modelos, arco da historia e nota do upscale (wave 2): expected 'O upscale acontece na seção de ângulo…' to include 'etapa 5'; PUT scenes - anexar imagem selecionada a cena 1: expected undefined to match /^storyboard\\/ideas\\//"
+  },
+  {
+   "grupo": "newman",
+   "nome": "studio: 18 requests, 0 falhas",
+   "status": "PASSA",
+   "detalhe": ""
+  },
+  {
+   "grupo": "server.log",
+   "nome": "sem Traceback no log do servidor",
+   "status": "PASSA",
+   "detalhe": "0 traceback(s) em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/fix/adh-os-20260903-01-base-stepper-prompt/.qa/runs/react-e0-v2/server.log"
+  },
+  {
+   "grupo": "server.log",
+   "nome": "sem respostas 500 / linhas ERROR",
+   "status": "PASSA",
+   "detalhe": "",
+   "lista": []
+  }
+ ],
+ "newman": [
+  {
+   "dominio": "animate",
+   "colecao": "docs/domains/animate/postman/animate.postman_collection.json",
+   "segundos": 0.9,
+   "requests": 25,
+   "asserts": 43,
+   "falhas": 8,
+   "erros": 9,
+   "falhas_lista": [
+    "GET /api/steps — etapa 6 pronta: expected 5 to deeply equal 6",
+    "GET animate/shots — plano na ordem do storyboard: expected 'kling2_6' to deeply equal 'kling3_0'",
+    "GET animate/shots — plano na ordem do storyboard: expected { scene: 'cena01', …(20) } to have keys 'scene', 'shot', 'order', 'image', 'scene_prompt', ",
+    "GET animate/candidates — galeria de vídeos importados: expected +0 to be above +0",
+    "POST animate/.../takes — candidato vira take (201): expected response to have status code 201 but got 404",
+    "POST animate/.../takes — candidato vira take (201): Cannot read properties of undefined (reading 'file')",
+    "POST animate/.../takes — candidato vira take (201): Cannot read properties of undefined (reading 'id')",
+    "POST animate/.../takes — mesmo vídeo duas vezes (409): expected response to have status code 409 but got 404",
+    "POST animate/.../like — like grava o _final: expected response to have status code 200 but got 404"
+   ]
+  },
+  {
+   "dominio": "base",
+   "colecao": "docs/domains/base/postman/base-etapa3-imagem-base.postman_collection.json",
+   "segundos": 1.2,
+   "requests": 45,
+   "asserts": 94,
+   "falhas": 6,
+   "erros": 6,
+   "falhas_lista": [
+    "GET prompts da aula (contrato 1): expected { model: 'nano_banana_2', …(15) } to have property 'label_prompt_ready'",
+    "GET brand (contrato 2): expected response to have status code 200 but got 404",
+    "GET brand (contrato 2): expected { detail: 'Not Found' } to have property 'name'",
+    "POST brand (contrato 2): expected response to have status code 200 but got 404",
+    "POST cost — estimativa, nao gasta creditos (contrato 7): expected 2 to deeply equal 1",
+    "422 — brand com name vazio: expected response to have status code 422 but got 404"
+   ]
+  },
+  {
+   "dominio": "edit",
+   "colecao": "docs/domains/edit/postman/edit.postman_collection.json",
+   "segundos": 0.8,
+   "requests": 30,
+   "asserts": 75,
+   "falhas": 0,
+   "erros": 0,
+   "falhas_lista": []
+  },
+  {
+   "dominio": "export",
+   "colecao": "docs/domains/export/postman/export.postman_collection.json",
+   "segundos": 2.4,
+   "requests": 42,
+   "asserts": 112,
+   "falhas": 2,
+   "erros": 2,
+   "falhas_lista": [
+    "POST render — projeto sem edit/master.mp4 (404): expected 'Not Found' to include 'master.mp4'",
+    "POST qa — projeto sem edit/master.mp4 (404): expected 'Not Found' to include 'master.mp4'"
+   ]
+  },
+  {
+   "dominio": "mood",
+   "colecao": "docs/domains/mood/postman/mood-vibes.postman_collection.json",
+   "segundos": 0.5,
+   "requests": 20,
+   "asserts": 32,
+   "falhas": 0,
+   "erros": 0,
+   "falhas_lista": []
+  },
+  {
+   "dominio": "music",
+   "colecao": "docs/domains/music/postman/music.postman_collection.json",
+   "segundos": 1.3,
+   "requests": 40,
+   "asserts": 100,
+   "falhas": 23,
+   "erros": 24,
+   "falhas_lista": [
+    "GET candidates — lista vazia antes de importar: expected [ { id: '7bd90956856a', …(12) } ] to be empty",
+    "POST import/upload — 2 wav (added 2): expected response to have status code 200 but got 422",
+    "POST import/upload — 2 wav (added 2): expected undefined to deeply equal 2",
+    "POST import/upload — duplicata ignorada (added 0): expected response to have status code 200 but got 422",
+    "POST import/upload — duplicata ignorada (added 0): expected undefined to deeply equal +0",
+    "POST import/upload — extensão não suportada (added 0): expected response to have status code 200 but got 422",
+    "POST import/upload — extensão não suportada (added 0): expected undefined to deeply equal +0",
+    "GET candidates — 2 candidatas, nenhuma selecionada: expected [ { id: '7bd90956856a', …(12) } ] to have a length of 2 but got 1",
+    "GET candidates — 2 candidatas, nenhuma selecionada: expected [ { id: '7bd90956856a', …(12) } ] to have a length of +0 but got 1",
+    "GET candidates — 2 candidatas, nenhuma selecionada: Cannot read properties of undefined (reading 'id')",
+    "POST import/downloads — pasta explícita: expected response to have status code 200 but got 404",
+    "POST import/downloads — pasta explícita: expected { Object (detail) } to have keys 'added', 'scanned', and 'folder'",
+    "POST import/downloads — pasta explícita: expected undefined to deeply equal 1",
+    "POST import/downloads — pasta explícita: expected undefined to deeply equal 1",
+    "POST import/downloads — pasta explícita: expected undefined to deeply equal 'gerado em music.postman_environment.l…'"
+   ]
+  },
+  {
+   "dominio": "prospect",
+   "colecao": "docs/domains/prospect/postman/prospect.postman_collection.json",
+   "segundos": 0.8,
+   "requests": 26,
+   "asserts": 46,
+   "falhas": 12,
+   "erros": 12,
+   "falhas_lista": [
+    "Lead: obter: expected undefined to deeply equal ''",
+    "DM: ver o texto para copiar: expected response to have status code 200 but got 404",
+    "DM: ver o texto para copiar: expected undefined to be a string",
+    "DM: ver o texto para copiar: the given combination of arguments (undefined and string) is invalid for this assertion. You can use",
+    "Follow-up: texto do convite para a call: expected response to have status code 200 but got 404",
+    "Follow-up: texto do convite para a call: the given combination of arguments (undefined and string) is invalid for this assertion. You can use",
+    "Follow-up: texto do convite para a call: expected { detail: 'Not Found' } to have property 'teaser'",
+    "Pitch: gravar os valores por etapa (ancoragem, 11.4): expected 1300 to deeply equal 300",
+    "Pitch: gravar os valores por etapa (ancoragem, 11.4): expected '# Pitch: QA Newman\\n\\n## Etapas de pr…' to include 'R$ 300,00'",
+    "Negativo: cadastrar lead com o gate fechado (409): expected response to have status code 409 but got 200",
+    "Negativo: cadastrar lead com o gate fechado (409): the given combination of arguments (undefined and string) is invalid for this assertion. You can use",
+    "422 · teaser antes da empresa responder (11.1): expected [ 200, 422 ] to include 404"
+   ]
+  },
+  {
+   "dominio": "publish",
+   "colecao": "docs/domains/publish/postman/publish.postman_collection.json",
+   "segundos": 0.6,
+   "requests": 22,
+   "asserts": 59,
+   "falhas": 0,
+   "erros": 0,
+   "falhas_lista": []
+  },
+  {
+   "dominio": "refs",
+   "colecao": "docs/domains/refs/postman/refs-import-url.postman_collection.json",
+   "segundos": 77.0,
+   "requests": 58,
+   "asserts": 183,
+   "falhas": 4,
+   "erros": 4,
+   "falhas_lista": [
+    "GET job — polling do import de seção: expected 20 to be at most 1",
+    "GET job — polling do import de pin: expected 20 to be at most 1",
+    "GET job — polling do reimport de pin: expected 20 to be at most 1",
+    "GET job — drena o job dos 409: expected 20 to be at most 1"
+   ]
+  },
+  {
+   "dominio": "storyboard",
+   "colecao": "docs/domains/storyboard/postman/storyboard.postman_collection.json",
+   "segundos": 1.9,
+   "requests": 80,
+   "asserts": 164,
+   "falhas": 10,
+   "erros": 10,
+   "falhas_lista": [
+    "GET storyboard - estado da etapa: expected { …(13) } to have keys 'base_image', 'has_base', 'ideas', 'selected', 'scenes', 'scenes_wit",
+    "POST instructions - multishot (count 1): expected 'Bring me another point of view of thi…' to include 'Another point of view of this exact s…",
+    "GET instructions - modelos, arco da historia e nota do upscale (wave 2): expected 'O upscale acontece na seção de ângulo…' to include 'etapa 5'",
+    "PUT scenes - anexar imagem selecionada a cena 1: expected undefined to match /^storyboard\\/ideas\\//",
+    "409 - annotate sem source_id e sem base (etapa 3 pendente): expected response to have status code 409 but got 200",
+    "409 - annotate sem source_id e sem base (etapa 3 pendente): expected 'undefined' to include 'base'",
+    "409 - cost edit_area sem CLI/base tem precedencia sobre o 422: expected response to have status code 409 but got 422",
+    "409 - cost edit_area sem CLI/base tem precedencia sobre o 422: expected 'marcação inexistente: c0ffee123456' to match /CLI|ausente/",
+    "409 - roteiro sem base/base_final.png (etapa 3 pendente): expected response to have status code 409 but got 200",
+    "409 - roteiro sem base/base_final.png (etapa 3 pendente): the given combination of arguments (undefined and string) is invalid for this assertion. You can use"
+   ]
+  },
+  {
+   "dominio": "studio",
+   "colecao": "docs/domains/studio/postman/prompter-presets-realismo.postman_collection.json",
+   "segundos": 0.5,
+   "requests": 18,
+   "asserts": 42,
+   "falhas": 0,
+   "erros": 0,
+   "falhas_lista": []
+  }
+ ]
+}

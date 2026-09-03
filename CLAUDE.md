@@ -140,8 +140,11 @@ Valem enquanto a wave estiver aberta (E0…E10, `docs/domains/studio/waves/wave-
    ADR-032).
 4. **Os cenários de `scripts/qa/cenarios/` não se editam.** Eles são o oráculo da migração: se um
    cenário precisou mudar para passar, o comportamento mudou — isso é bug da migração, não ajuste
-   de teste. Mesma regra para o diff de `textContent` contra o baseline da E0
-   (`docs/qa/reports/2026-09-03-react-e0/textcontent/`), que tem de ser vazio (ADR-004).
+   de teste. Mesma regra para o diff de `textContent` contra o baseline VIGENTE
+   (`docs/qa/reports/2026-09-03-react-e0-v2/textcontent/`), que tem de ser vazio (ADR-004).
+   O baseline original da E0 (`…-react-e0/`) foi **substituído** pelo `-v2`, regerado depois da
+   correção do bug real que ele apontava (C-BASE-33, card [REACT-BUG-01], ADH-OS-20260903-01):
+   o alvo agora é **375 PASSA · 5 FALHA · 2 BLOQUEADO** de 382.
 
 ### Frontend (a partir da Wave 10)
 

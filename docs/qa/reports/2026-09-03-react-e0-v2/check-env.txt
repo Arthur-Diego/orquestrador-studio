@@ -1,0 +1,21 @@
+PASS: venv em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/fix/adh-os-20260903-01-base-stepper-prompt/.venv
+PASS: fastapi/uvicorn importáveis
+PASS: playwright (python) importável
+PASS: Chromium do Playwright sobe (v151.0.7922.34)
+PASS: PIL importável (fakes/seed)
+PASS: ffmpeg no PATH
+PASS: ffprobe no PATH
+PASS: newman disponível (PATH ou frontend/node_modules)
+PASS: gh autenticado (higiene de cards por PR)
+INFO: run=react-e0-v2 modo=offline base=http://127.0.0.1:8790
+PASS: servidor responde em http://127.0.0.1:8790/api/steps
+PASS: servidor serve o frontend (/)
+PASS: STUDIO_PROJECTS isolado (fora de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/fix/adh-os-20260903-01-base-stepper-prompt/projects)
+PASS: fake higgsfield ativo no PATH
+PASS: fake claude ativo no PATH
+PASS: fake higgsfield responde (account status)
+PASS: servidor de mídia fake em http://127.0.0.1:8791
+PASS: API vê o CLI fake como logado
+INFO: git fix/adh-os-20260903-01-base-stepper-prompt @ b180673
+AVISO: árvore git limpa (alterações locais aparecem no diff da rodada)
+PRE-VOO OK

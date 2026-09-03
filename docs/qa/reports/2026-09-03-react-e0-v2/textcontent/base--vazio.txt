@@ -1,0 +1,127 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+0/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-qa-vazia
+QA Vazia
+produto de teste
+16:9 · YouTube
+vibe: definida na etapa 2
+● 9999 créditos
+Progresso
+0/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 3 · aula 009
+Imagem base
+O bot olha a referência e o seu mood e escreve o prompt do produto na
+exata mesma situação
+da referência. Cadeia: situação → limpar marca (opcional, [extensão]) → rótulo → upscale 2x.
+Resetar etapa [extensão]
+Guia
+bloqueada
+→ Antes de continuar: ≥ 1 referência escolhida em refs/brainstorming/ (etapa 1). Volte à etapa 1, escolha as referências que você gostou e salve a seleção
+01
+O prompt da aula — quem escreve é o bot
+bot: ?
+Referência (etapa 1) — clique para escolher
+Gerar prompt
+Gerar sem viés
+Preset de realismo
+[extensão]
+(sem preset)
+Documentary Street Realism — Documentário autêntico: cru, granulado, câmera na mão, contexto amplo de rua.
+ARRI Natural Narrative — Narrativa cinematográfica orgânica: pele quente e contraste suave; default seguro com pessoa.
+RED Commercial Precision — Precisão comercial: nitidez cristalina para produto, moda e tech.
+Sony Venice Night — Noturno limpo: neon e interiores escuros sem ruído.
+Anamorphic Film Look — Widescreen épico: flares horizontais e bokeh oval (indicado p/ 2.39:1).
+Volte à etapa 1 e escolha ao menos uma referência (ela vira o 'brainstorming').
+Gerar via CLI
+[extensão]
+02
+Marca do rótulo
+[extensão]
+Anexe a
+imagem da sua marca
+(a logo/rótulo que você criou, ex.: no Higgsfield). Ela é aplicada na imagem base ao gerar o rótulo — sem descrever a marca por texto.
+Arraste a imagem da marca ou
+escolha um arquivo
+Remover marca
+03
+Escolher e fechar a imagem base
+Usar como imagem base
+1
+situação
+2
+limpar marca
+3
+rótulo
+4
+upscale 2x
+Limpar a marca da embalagem antes do rótulo
+[extensão]
+Trocar pela minha marca
+A limpeza é uma aproximação por prompt (o Nano Banana não faz inpaint com máscara): gere 3 e escolha a melhor.
+Arraste o grid gerado na UI ou
+escolha arquivos
+Importar da pasta Downloads
+Importar do histórico Higgsfield
+Gerar situação via CLI
+[extensão]
+Você também pode fazer no
+Higgsfield (UI ilimitada)
+: gere lá e importe aqui. O CLI é o caminho pago (gasta crédito por passo — o upscale custa diferente).
+Escolha uma imagem por passo — a limpeza de marca é um passo opcional [extensão] entre a situação e o rótulo, e trocar a situação recomeça a cadeia. Ao fechar:
+base/base_final.png
++
+base.md
+.
