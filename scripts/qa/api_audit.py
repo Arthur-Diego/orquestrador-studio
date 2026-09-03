@@ -38,6 +38,17 @@ sys.path.insert(0, str(REPO))
 from scripts.qa import harness as H  # noqa: E402
 
 NUNCA = ("/api/pinterest/login", "/open-folder")
+
+
+def newman_bin() -> str | None:
+    """`newman` do PATH ou o do `frontend/node_modules` (devDependency, ADR-031).
+
+    O repositório passou a ter um projeto npm (`frontend/`) na Wave 10; pendurar o newman nele
+    evita exigir instalação global de Node para rodar `make qa-api`, que é critério de pronto de
+    toda frente da wave.
+    """
+    return shutil.which("newman") or next(
+        (str(p) for p in [REPO / "frontend" / "node_modules" / ".bin" / "newman"] if p.exists()), None)
 LATENCIA_MAX_S = 5.0
 
 
@@ -236,8 +247,10 @@ class Auditoria:
     # ---- 5) newman ----
     def newman(self, dominios: list[str] | None) -> list[dict]:
         out: list[dict] = []
-        if not shutil.which("newman"):
-            self.aviso("newman", "newman ausente no PATH — coleções não executadas")
+        binario = newman_bin()
+        if not binario:
+            self.aviso("newman", "newman ausente (PATH e frontend/node_modules) — coleções não executadas; "
+                                 "rode `npm ci` em frontend/")
             return out
         pid_newman = self.clonar_projeto("QA Newman")
         vivos = {s["id"] for s in self.ctx.steps if s["status"] == "ready"} | {"studio", "moodboards", "creditos", "higgsfield"}
@@ -251,7 +264,7 @@ class Auditoria:
                 continue
             envs = list(col.parent.glob("*.postman_environment.json"))
             rel = self.ctx.run_dir / f"newman-{dominio}.json"
-            cmd = ["newman", "run", str(col), "--reporters", "cli,json", "--reporter-json-export", str(rel),
+            cmd = [binario, "run", str(col), "--reporters", "cli,json", "--reporter-json-export", str(rel),
                    "--suppress-exit-code", "--timeout-request", "120000",
                    "--env-var", f"baseUrl={self.ctx.base}", "--env-var", f"base_url={self.ctx.base}",
                    "--env-var", f"pid={pid_newman}", "--env-var", f"pidVazio={self.ctx.pid_vazio}",

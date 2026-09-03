@@ -2,7 +2,29 @@
 
 **Status:** Aceita
 **Data:** 2026-08-25
-**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-002](../HIGGSFIELD/ADR-002-integracao-higgsfield-somente-via-cli-oficial.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-005](../REFS/ADR-005-scraping-pinterest-via-playwright.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md), [ADR-010](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md)
+**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-002](../HIGGSFIELD/ADR-002-integracao-higgsfield-somente-via-cli-oficial.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-005](../REFS/ADR-005-scraping-pinterest-via-playwright.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md), [ADR-010](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md), [ADR-031](./ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md) (emenda)
+
+> ## ⚠ Emenda — Wave 10, migração React (2026-09-03, [ADR-031](./ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md))
+>
+> **A DECISÃO desta ADR permanece de pé: jobs em thread, estado em memória e progresso consumido
+> por POLLING HTTP. Continua sem WebSocket e sem SSE.**
+>
+> O que cai é apenas um **driver** — a justificativa escrita, não a escolha:
+>
+> | Trecho | Situação |
+> | --- | --- |
+> | "Frontend vanilla JS sem framework: polling HTTP simples evita gerenciar conexões persistentes (WebSocket/SSE) sem uma camada de estado de UI para suportá-las" (Motivadores) | **Não vale mais como driver.** A camada de estado de UI passa a existir (TanStack Query, ADR-031). |
+> | "sem gerenciar conexões persistentes em um frontend vanilla JS sem framework" (Prós) | idem — o adjetivo "vanilla" deixa de descrever o frontend. |
+> | "exigiria gerenciar conexões persistentes no frontend vanilla JS sem framework" (Contras do WebSocket/SSE) | idem. |
+>
+> **Este registro existe precisamente para impedir a inferência errada.** Que o driver "não temos
+> camada de estado de UI" tenha caído **não reabre** a escolha do transporte: WebSocket/SSE
+> continuam rejeitados, e o contra que realmente decidiu segue intacto — *"não resolve o problema
+> de perda de estado em restart, que é ortogonal à forma de notificação"*. Quem quiser push
+> persistente precisa de uma ADR nova que trate disso, não desta emenda.
+>
+> Na prática o polling continua idêntico: `Studio.ui.poll`/`progressJob` viram `usePoll` e o hook
+> de job da E2, com os mesmos intervalos e a mesma leitura de `{state, done, total, log[]}`.
 
 ## Contexto e Problema
 

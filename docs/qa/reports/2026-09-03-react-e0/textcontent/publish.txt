@@ -1,0 +1,102 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+4/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-e2e-mock
+E2E Mock
+energético
+16:9 · YouTube
+vibe: gelo neon ciano, alto contraste
+● 9999 créditos
+Progresso
+4/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 9 · aula 015
+Publicar
+Publique à mão na interface de cada rede e registre o link. Dever de casa:
+4 vídeos publicados
+antes de prospectar — prática, exposição e validação.
+Resetar etapa [extensão]
+Guia
+concluída
+100%
+portfólio 4/4 vídeos
+→ Etapa concluída — siga para a etapa 10 (Prospecção).
+01
+Registrar uma publicação
+export/16x9.mp4
+export/1x1.mp4
+export/9x16.mp4
+Registrar publicação
+02
+Publicações e comunidade
+4 publicações · comunidade 0/3
+youtube
+example.com/p0
+“nota”
+Remover
+instagram
+example.com/p1
+“nota”
+Remover
+instagram
+example.com/p2
+“nota”
+Remover
+tiktok
+example.com/p3
+“nota”
+Remover
+postei na comunidade
+comentei no trabalho de outra pessoa
+dei feedback

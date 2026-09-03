@@ -1,5 +1,6 @@
 """Etapa 5 — contratos HTTP da animação (sem rede: CLI da Higgsfield sempre fakeado)."""
 import json
+import shutil
 
 import pytest
 
@@ -33,9 +34,17 @@ def project(studio_env):
 
 @pytest.fixture()
 def hf(studio_env, monkeypatch):
-    """CLI presente mas inerte — nenhuma chamada real de subprocess nos testes."""
+    """CLI presente mas inerte — nenhuma chamada real de subprocess nos testes.
+
+    O binário é resolvido pelo PATH: `/bin/true` existe no Linux mas NÃO no macOS (lá é
+    `/usr/bin/true`). Hardcodar o caminho fazia `hf.status()` devolver `logged_in: False` fora do
+    Linux, e o gate de login (ADR-002) respondia 409 antes da validação que o teste quer provar.
+    """
     from studio import higgsfield as hf_mod
-    monkeypatch.setattr(hf_mod, "BIN", "/bin/true")
+    inerte = shutil.which("true")
+    assert inerte, "nenhum binário `true` no PATH — ambiente sem coreutils?"
+    monkeypatch.setattr(hf_mod, "BIN", inerte)
+    hf_mod.reset_status_cache()
     return hf_mod
 
 

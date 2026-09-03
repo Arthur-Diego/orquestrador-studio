@@ -2,7 +2,49 @@
 
 **Status:** Aceito
 **Data:** 25-08-2026
-**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md)
+**ADRs relacionados:** [ADR-001](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-003](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md), [ADR-031](./ADR-031-frontend-em-react-vite-com-etapa-de-build-e-dist-versionado.md), [ADR-032](./ADR-032-plugin-de-ui-da-etapa-em-ui-index-tsx-descoberto-por-import-meta-glob.md) (emenda)
+
+> ## ⚠ Emenda — Wave 10, migração React (2026-09-03, [ADR-032](./ADR-032-plugin-de-ui-da-etapa-em-ui-index-tsx-descoberto-por-import-meta-glob.md))
+>
+> Esta é a ADR mais tocada pela migração. **Nada dela é superseded**; três pontos são reafirmados,
+> um muda de endereço e um motivador é revogado.
+>
+> **(a) REAFIRMADO — a prontidão vem sempre do backend.** `GET /api/projects/{pid}/guide` continua
+> sendo a única fonte de status de etapa. O componente React **consome** o guia e **nunca** deriva
+> status a partir de artefatos. Ter uma camada de estado de UI (TanStack Query) não é licença para
+> calcular prontidão no cliente — seria exatamente a segunda fonte de verdade que esta ADR existe
+> para impedir, e a opção "guia no frontend" foi considerada e rejeitada aqui.
+>
+> **(c) REAFIRMADO, com endereço ampliado — etapa nova cria só a sua pasta.** `studio/etapas/<id>/`
+> agora inclui `ui/index.tsx` (e `ui/*.test.tsx`) ao lado de `META`, `router.py` e `guide.py`. A
+> descoberta é por `import.meta.glob('../../etapas/*/ui/index.tsx')`, em tempo de build — **não
+> existe registry central** para nenhuma frente editar, que é o que preserva esta invariante e
+> permite às seis frentes de tela da sub-wave 5 rodarem em paralelo.
+>
+> **(b) REESCRITO — o núcleo do frontend muda de endereço.** "Tela nunca edita `studio/web/*`" passa
+> a ler **"tela nunca edita o núcleo do frontend"**, e o núcleo do frontend é `frontend/**`. Durante
+> a convivência entre vanilla e React (E3…E10) os **dois** endereços valem ao mesmo tempo; quando a
+> E10 remover o vanilla, `studio/web/` sai do recorte junto com o diretório.
+>
+> A guarda que materializa (b) também muda de casa. As duas guardas de diff que a implementavam —
+> `test_prompter_presets_view.py::test_diff_da_feature_nao_toca_o_nucleo` e
+> `test_storyboard_view.py::test_t3_13_nucleo_do_shell_intocado` — afirmavam este invariante do
+> **repositório inteiro** de dentro de arquivos de teste de **feature específica**, e hardcodavam
+> "ninguém toca o núcleo", sem prever frente que fosse legitimamente **dona** dele. Elas reprovavam
+> por construção cinco frentes desta wave. Agora existe uma guarda única,
+> `tests/test_adr010_fronteira_nucleo.py`, com **titularidade declarada explicitamente**: frente de
+> núcleo se registra com card e recorte mínimo de prefixos e passa; frente de etapa continua barrada
+> com a mesma severidade. A proteção foi preservada, não desligada — um `skip` teria liberado o
+> núcleo para toda frente de etapa, para sempre.
+>
+> **REVOGADO — o motivador sobre teste de frontend.** O motivador escrito *"Teste de frontend com
+> Node/Playwright contraria a ADR-008; a verificação do painel precisa caber em asserts HTTP e de
+> string"* **deixa de valer**. Ele conflatava Playwright (navegador real — que segue fora do CI, na
+> skill `qa-studio`) com Node (runtime, que a ADR-008 nunca proibiu). Vitest + Testing Library rodam
+> em jsdom, sem navegador e sem rede. Como consequência, a técnica que esse motivador produziu —
+> **asserts de substring sobre o fonte das telas** — deixa de ser a forma correta de cobrir
+> frontend: o substituto renderiza o componente e afirma DOM e comportamento. Os asserts que são de
+> **fidelidade ao curso** (ADR-004) continuam valendo e são os que mais importam preservar.
 
 ## Contexto e Problema
 
