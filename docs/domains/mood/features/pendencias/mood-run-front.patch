@@ -1,5 +1,5 @@
 diff --git a/studio/web/moodboards.js b/studio/web/moodboards.js
-index a0e6356..5c2adab 100644
+index a0e6356..58fbe8c 100644
 --- a/studio/web/moodboards.js
 +++ b/studio/web/moodboards.js
 @@ -197,24 +197,25 @@
@@ -28,7 +28,7 @@ index a0e6356..5c2adab 100644
    }
  
    function renderPanels(st) {
-@@ -385,17 +386,290 @@
+@@ -385,17 +386,293 @@
          <p>A biblioteca é global: campanhas que já <b>puxaram</b> este board <b>não</b> são afetadas — a cópia para a campanha é independente.</p>`,
        actions: [
          { label: "Cancelar", kind: "ghost", close: true },
@@ -54,7 +54,7 @@ index a0e6356..5c2adab 100644
 +  //      faz "modo default" e "controle total" serem o mesmo caminho de código.
 +  //   4. A revisão humana não sumiu, mudou de lugar: em `--gate auto` a skill grava `leitura.md` e
 +  //      `curadoria.md`, e a galeria de resultado linka os dois.
-+  // A cadeia é GRATUITA (ADR-016): nada de `confirmCost` nem de indicador de créditos aqui.
++  // A cadeia é GRATUITA (ADR-016): nenhum modal de custo e nenhum indicador de créditos aqui.
 +  // CSS 100% escopado em `.mrn-` num <style> inline (ADR-019): `ui.css`/`style.css` intocados.
 +  const MRN_STYLE = `<style>
 +    .mrn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;max-height:264px;overflow:auto;padding:2px}
@@ -103,12 +103,15 @@ index a0e6356..5c2adab 100644
 +
 +  async function renderMoodRunPanel(st) {
 +    const mbid = st.data.id;
-+    const base = `/api/moodboards/${encodeURIComponent(mbid)}/mood-run`;
++    // O prefixo para no board de propósito: cada rota aparece INTEIRA no ponto de uso
++    // (`/mood-run/options`, `/mood-run/estimate`, `/mood-run/job`, `/mood-run/result`), para
++    // ser grepável — é assim que o teste de contrato da tela acha cada uma.
++    const base = `/api/moodboards/${encodeURIComponent(mbid)}`;
 +    const main = $main();
 +    if (mrnUnsub) { mrnUnsub(); mrnUnsub = null; }
 +
 +    let opts;
-+    try { opts = await api(`${base}/options`); }
++    try { opts = await api(`${base}/mood-run/options`); }
 +    catch (err) {
 +      main.insertAdjacentHTML("beforeend",
 +        `<section class="panel"><div class="panel-head"><h3><span class="pn">05</span>Gerar mood com as skills</h3></div>
@@ -192,7 +195,7 @@ index a0e6356..5c2adab 100644
 +    async function pintaEstimativa() {
 +      if (!objetivosMarcados().length) { elConta.textContent = ""; return; }
 +      try {
-+        const r = await api(`${base}/estimate`, { method: "POST", body: JSON.stringify(
++        const r = await api(`${base}/mood-run/estimate`, { method: "POST", body: JSON.stringify(
 +          { objetivos: objetivosMarcados(), board: numero("#mrnBoard"), n: numero("#mrnN") }) });
 +        elConta.textContent = `≈ ${r.downloads} downloads (${r.objetivos} × ${r.consultas} consultas × ${r.n})`;
 +      } catch (err) { elConta.textContent = err.message; }
@@ -269,22 +272,22 @@ index a0e6356..5c2adab 100644
 +    const corpo = { foto: estado.foto, objetivos, board: numero("#mrnBoard"), n: numero("#mrnN"),
 +                    fundo: document.querySelector("#mrnFundo").value || null };
 +    let conta;
-+    try { conta = await api(`${base}/estimate`, { method: "POST", body: JSON.stringify(
++    try { conta = await api(`${base}/mood-run/estimate`, { method: "POST", body: JSON.stringify(
 +      { objetivos, board: corpo.board, n: corpo.n }) }); }
 +    catch (err) { toast(err.message); return; }
 +
-+    // `ui.confirmCost` é o modal de GASTO e não serve: esta corrida é gratuita (ADR-016). O que
-+    // precisa de confirmação aqui é o volume de downloads de terceiros, não crédito nenhum.
++    // O modal de GASTO do shell não serve aqui: esta corrida é gratuita (ADR-016). O que precisa
++    // de confirmação é o volume de downloads de terceiros, não crédito nenhum.
 +    const ok = await mrnConfirmarDownloads(conta);
 +    if (!ok) return;
-+    acompanhar(st, base, () => api(base, { method: "POST", body: JSON.stringify(corpo) }));
++    acompanhar(st, base, () => api(`${base}/mood-run`, { method: "POST", body: JSON.stringify(corpo) }));
 +  }
 +
 +  function acompanhar(st, base, start) {
 +    ui.progressJob({
 +      title: "Cadeia mood_ [extensão]",
 +      subtitle: "vibe → DNA visual → prancha, pelo Claude CLI local",
-+      start, jobUrl: `${base}/job`, label: "Pranchas prontas", ms: 3000,
++      start, jobUrl: `${base}/mood-run/job`, label: "Pranchas prontas", ms: 3000,
 +      done: () => mostrarResultado(st, base),
 +    }).catch((err) => toast(err.message));
 +  }
@@ -294,7 +297,7 @@ index a0e6356..5c2adab 100644
 +    const alvo = document.querySelector("#mrnResult");
 +    if (!alvo) return;
 +    let r;
-+    try { r = await api(`${base}/result`); }
++    try { r = await api(`${base}/mood-run/result`); }
 +    catch (err) { alvo.innerHTML = ""; return; }   // 404 = nenhuma corrida ainda, não é erro de tela
 +    const boards = r.boards || [];
 +    alvo.innerHTML = `
