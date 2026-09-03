@@ -46,16 +46,19 @@ def test_sync_claude_calls_open_the_progress_modal(client):
     """As ações que POSTam num endpoint do bot (Claude) abrem `Studio.ui.progress` com fases.
 
     A etapa 2 (mood) deixou de chamar o bot (etapa2-pick, ADR-014: a criação de moods migrou para
-    a biblioteca) — a chamada síncrona ao Claude na criação de moods vive agora em `moodboards.js`.
+    a biblioteca).
+
+    Wave 10 · E6 (card [REACT-07]): a biblioteca de mood boards migrou para React
+    (`frontend/src/areas/moodboards/MoodboardsArea.tsx`) e o `studio/web/moodboards.js` vanilla foi
+    removido. A chamada síncrona ao Claude na criação de moods (modal de progresso com fases + modo
+    `template` instantâneo) passa a ser afirmada pelo substituto Vitest
+    `frontend/src/areas/moodboards/MoodboardsArea.test.tsx` e pelo cenário `moodboards.py`. Aqui fica
+    só o que continua vanilla: a etapa base.
     """
     base = _view(client, "base")
     assert "ui.progress(" in base and "Consultando o Claude" in base
     # "Gerar prompt" e "Gerar sem viés" passam pela mesma função; só o modo `images` usa o bot.
     assert "usaBot" in base
-
-    boards = _static(client, "moodboards.js")
-    assert "ui.progress(" in boards and "Consultando o Claude" in boards
-    assert 'mode === "template"' in boards
 
 
 def test_jobs_use_progressjob_as_single_source(client):

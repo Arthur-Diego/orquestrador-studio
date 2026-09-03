@@ -44,6 +44,8 @@ um **componente reutilizável** de "gerar vários ângulos a partir de uma image
    antes, ADR-016; toda geração paga passa pelo `progressJob`, que atualiza o saldo) ou caminho de
    importar da UI da Higgsfield, e uma **galeria das imagens geradas** (candidatas `role=multishot`
    do dono) para ver/escolher.
+   > **Emenda de endereço — Wave 10 · E6 (card [REACT-07]):** ver a seção "Emenda" no fim deste
+   > ADR. A decisão ("existe UM componente único e reutilizável") permanece; muda só o endereço.
 
 3. **Primeiro uso — mood board (ADR-013)** — no editor do board, cada imagem candidata ganha a ação
    "▨ ângulos", que abre o componente para aquela imagem. Os ângulos gerados entram como candidatas
@@ -62,3 +64,21 @@ um **componente reutilizável** de "gerar vários ângulos a partir de uma image
 - **Fidelidade ao curso:** o multishot é a aula 011; o que é `[extensão]` é o **reuso fora da etapa
   4** (no mood board) e a geração paga por CLI — a UI ilimitada da Higgsfield continua sendo o
   caminho fiel de importação.
+
+## Emenda — Wave 10 · E6 (card [REACT-07], migração do frontend para React)
+
+O **endereço** do ponto 2 mudou; a **decisão não**. O componente de frontend reutilizável deixa de
+ser o IIFE global `studio/web/multishot.js` (exposto como `window.Studio.multishot.open`) e passa a
+ser o **componente React compartilhado `frontend/src/areas/multishot/Multishot.tsx`** (`<Multishot
+opts onClose />`), consumido hoje pela área React de mood boards
+(`frontend/src/areas/moodboards/MoodboardsArea.tsx`) e, na reescrita do storyboard (ADR-018), pela
+etapa 4. O contrato permanece idêntico: modal único com imagem de origem, quantidade de ângulos,
+"gerar via CLI" atrás do gate de custo (ADR-016) + `progressJob`, importação da UI da Higgsfield, e
+o carrossel das candidatas `role=multishot` do dono. O gate de custo/saldo (ADR-016), a ingestão como
+candidata do dono e as rotas HTTP do dono (ex.: `/api/moodboards/{mbid}/multishot/*`) seguem
+inalterados — o núcleo `studio/common/multishot.py` (ponto 1) e o backend **não** foram tocados.
+
+Esta é uma **emenda de endereço**, não um supersede: a decisão original ("existe UM componente único
+e reutilizável") continua de pé; muda a tecnologia do frontend (vanilla → React) sob a migração da
+Wave 10 (ADR-031 build React+Vite, ADR-032 estrangulamento). O `studio/web/multishot.js` foi removido
+no mesmo lote (E6); o backend `test_multishot.py` (núcleo Python + rotas) permanece intocado.

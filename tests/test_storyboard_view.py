@@ -182,7 +182,10 @@ AREA_WARN = ("Best-effort por prompt: a marcação vai como referência, não é
              "o resultado pode variar fora da área marcada (CLI sem máscara, ADR-002)")
 
 #: Núcleo que o ADR-010 congela: o componente novo é ARQUIVO NOVO, nunca edição destes.
-CORE_FILES = ["multishot.js", "ui.js", "app.js", "index.html"]
+#: Wave 10 · E6 (card [REACT-07]): `multishot.js` foi removido (a área migrou para o componente
+#: React `frontend/src/areas/multishot/Multishot.tsx`, ADR-017), então saiu desta lista — o
+#: congelamento continua valendo para os arquivos de núcleo que ainda existem.
+CORE_FILES = ["ui.js", "app.js", "index.html"]
 
 
 @pytest.fixture(scope="module")

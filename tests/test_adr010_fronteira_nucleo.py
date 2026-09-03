@@ -94,6 +94,14 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "segue intocada. O vanilla continua no default até a E10 — ADR-031/ADR-032",
         ("frontend/", "studio/app.py"),
     ),
+    "refactor/adh-os-20260903-07-react-lote-c": (
+        "Wave 10 · E6 lote C — áreas globais — card [REACT-07]; migra a biblioteca de mood boards "
+        "(ADR-013), créditos & custos (ADR-016) e o componente compartilhado multishot (ADR-017) "
+        "para React em `frontend/src/areas/*`, hospedadas pelo content-root do shell, e REMOVE os "
+        "vanilla `studio/web/{moodboards,creditos,multishot}.js` + os `<script>` correspondentes em "
+        "`studio/web/index.html`. O vanilla residual restante é cortado pela E10 — ADR-031/ADR-032",
+        ("frontend/", "studio/web/"),
+    ),
 }
 
 
