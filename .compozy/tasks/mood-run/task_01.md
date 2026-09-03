@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Runner de skill do Claude CLI com escrita em disco (`skill_runner`)
 type: backend
 complexity: medium
@@ -61,19 +61,19 @@ feature consomem este módulo; ele é a fatia que o ADR-031 registra.
 </requirements>
 
 ## Subtasks
-- [ ] 1.1 Criar `studio/common/skill_runner.py` com o docstring de módulo explicando por que ele
+- [x] 1.1 Criar `studio/common/skill_runner.py` com o docstring de módulo explicando por que ele
       não é uma alteração do `prompter._run()` (as seis diferenças da tabela 5.6 do `_techspec.md`).
-- [ ] 1.2 Declarar as constantes de módulo (`BIN`, `MODEL`, `TIMEOUT_S`, `ALLOWED_TOOLS`,
+- [x] 1.2 Declarar as constantes de módulo (`BIN`, `MODEL`, `TIMEOUT_S`, `ALLOWED_TOOLS`,
       `RUN_MANIFEST`, limites de log) e a hierarquia de exceções.
-- [ ] 1.3 Implementar `available()` e `build_command()`.
-- [ ] 1.4 Implementar `build_prompt()` com a citação de valores e a recusa de aspas duplas.
-- [ ] 1.5 Implementar `run_skill()`: execução com `cwd`/timeout, classificação das falhas, leitura
+- [x] 1.3 Implementar `available()` e `build_command()`.
+- [x] 1.4 Implementar `build_prompt()` com a citação de valores e a recusa de aspas duplas.
+- [x] 1.5 Implementar `run_skill()`: execução com `cwd`/timeout, classificação das falhas, leitura
       e validação do `_run.json`, e retorno do value object `SkillRun`.
-- [ ] 1.6 Escrever `tests/test_skill_runner.py` com o fake do CLI por duplo monkeypatch
+- [x] 1.6 Escrever `tests/test_skill_runner.py` com o fake do CLI por duplo monkeypatch
       (`skill_runner.BIN` **e** `skill_runner.subprocess.run`), no padrão de `tests/test_prompter.py`.
-- [ ] 1.7 Cobrir a leitura de env própria recarregando o módulo com as duas variáveis setadas em
+- [x] 1.7 Cobrir a leitura de env própria recarregando o módulo com as duas variáveis setadas em
       valores diferentes.
-- [ ] 1.8 Rodar `ruff check studio tests` e a suíte nova.
+- [x] 1.8 Rodar `ruff check studio tests` e a suíte nova.
 
 ## Implementation Details
 
@@ -110,34 +110,34 @@ que os testes exercitam o caminho feliz sem rede e sem `claude` real (ADR-008).
 
 Casos inline (não há `_tests.md` neste fluxo — ver `_tasks.md`).
 
-- [ ] **UT-01** `BIN = None` → `available()` devolve `False`.
-- [ ] **UT-02** `build_command("/x")` devolve argv com `BIN`, `-p`, o prompt, `--output-format text`
+- [x] **UT-01** `BIN = None` → `available()` devolve `False`.
+- [x] **UT-02** `build_command("/x")` devolve argv com `BIN`, `-p`, o prompt, `--output-format text`
       e `--allowedTools "Read,Bash,Write,WebSearch,WebFetch,Skill,Agent"`; `"--max-turns"` **não**
       está no argv.
-- [ ] **UT-03** com `MODEL = ""`, `build_command` **não** contém `--model`; com `MODEL = "m"`,
+- [x] **UT-03** com `MODEL = ""`, `build_command` **não** contém `--model`; com `MODEL = "m"`,
       contém `["--model", "m"]`.
-- [ ] **UT-04** `build_prompt("mood_orquestrador", {"foto": "/a/b.jpg", "objetivo": "ambiente",
+- [x] **UT-04** `build_prompt("mood_orquestrador", {"foto": "/a/b.jpg", "objetivo": "ambiente",
       "gate": "auto", "board": 8, "n": 3, "fundo": None})` devolve
       `/mood_orquestrador --foto "/a/b.jpg" --objetivo ambiente --gate auto --board 8 --n 3` —
       chave com valor `None` omitida, caminho entre aspas.
-- [ ] **UT-05** `build_prompt` com um valor contendo `"` levanta `ValueError` (E12).
-- [ ] **UT-06** `run_skill` chama `subprocess.run` com `cwd == studio.config.ROOT` e
+- [x] **UT-05** `build_prompt` com um valor contendo `"` levanta `ValueError` (E12).
+- [x] **UT-06** `run_skill` chama `subprocess.run` com `cwd == studio.config.ROOT` e
       `timeout == timeout_s`.
-- [ ] **UT-07** `BIN = None` → `run_skill` levanta `SkillUnavailable` (E1).
-- [ ] **UT-08** fake levanta `subprocess.TimeoutExpired` → `SkillTimeout`, e a mensagem contém o
+- [x] **UT-07** `BIN = None` → `run_skill` levanta `SkillUnavailable` (E1).
+- [x] **UT-08** fake levanta `subprocess.TimeoutExpired` → `SkillTimeout`, e a mensagem contém o
       número de segundos do limite (E2).
-- [ ] **UT-09** fake devolve `returncode=1` com `stderr="boom"` → `SkillFailed` cuja mensagem
+- [x] **UT-09** fake devolve `returncode=1` com `stderr="boom"` → `SkillFailed` cuja mensagem
       contém `boom` (E3).
-- [ ] **UT-10** fake devolve `returncode=0` sem escrever `_run.json` → `SkillManifestMissing`, e a
+- [x] **UT-10** fake devolve `returncode=0` sem escrever `_run.json` → `SkillManifestMissing`, e a
       mensagem contém o caminho de `saida` (E4).
-- [ ] **UT-11** `_run.json` com texto não-JSON → `SkillManifestInvalid` (E5).
-- [ ] **UT-12** `_run.json` contendo uma lista JSON (não objeto) → `SkillManifestInvalid` (E5).
-- [ ] **UT-13** `_run.json` com `"boards": "x"` (não lista) → `SkillManifestInvalid` (E5).
-- [ ] **UT-14** caminho feliz: fake escreve `_run.json` com um board → `SkillRun.manifesto` traz o
+- [x] **UT-11** `_run.json` com texto não-JSON → `SkillManifestInvalid` (E5).
+- [x] **UT-12** `_run.json` contendo uma lista JSON (não objeto) → `SkillManifestInvalid` (E5).
+- [x] **UT-13** `_run.json` com `"boards": "x"` (não lista) → `SkillManifestInvalid` (E5).
+- [x] **UT-14** caminho feliz: fake escreve `_run.json` com um board → `SkillRun.manifesto` traz o
       conteúdo, `seconds` é float ≥ 0 e `log` contém a cauda do stdout.
-- [ ] **UT-15** com `STUDIO_SKILL_MODEL="skill-m"` e `STUDIO_PROMPTER_MODEL="prompt-m"`, o módulo
+- [x] **UT-15** com `STUDIO_SKILL_MODEL="skill-m"` e `STUDIO_PROMPTER_MODEL="prompt-m"`, o módulo
       recarregado tem `MODEL == "skill-m"` (A9 do `_techspec.md`).
-- [ ] **UT-16** sem `STUDIO_SKILL_TIMEOUT_S`, `TIMEOUT_S == 1800`; com `"60"`, `TIMEOUT_S == 60`.
+- [x] **UT-16** sem `STUDIO_SKILL_TIMEOUT_S`, `TIMEOUT_S == 1800`; com `"60"`, `TIMEOUT_S == 60`.
 
 ## Success Criteria
 - Every assigned test case implemented and passing.
