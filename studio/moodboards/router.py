@@ -194,3 +194,9 @@ def board_multishot_generate(mbid: str, req: MultishotReq):
 @router.get("/api/moodboards/{mbid}/multishot/job")
 def board_multishot_job(mbid: str):
     return mb.multishot_job(mbid)
+
+
+# ---------- manifesto de parâmetros das skills `mood_` `[extensão]` (ADH-OS-20260902-04) ----------
+from .skills_router import router as skills_router  # noqa: E402
+
+router.include_router(skills_router)

@@ -176,5 +176,63 @@ processo_manual/moodboard/
 
 ---
 
+### Pela tela: o manifesto de parâmetros `[extensão]`
+
+Além da linha de comando, os parâmetros acima são publicados para o frontend por
+
+```
+GET /api/skills/mood/params
+```
+
+Fonte: `studio/moodboards/skills_params.py`. Contrato completo (seção "Provides") em
+`docs/domains/mood/features/manifesto-skills-mood-fdd.md`.
+
+> **O formulário ainda não está na tela.** Ele é **gerado** desse manifesto — não existe campo
+> escrito à mão no JavaScript, então parâmetro que sai de um `SKILL.md` some da tela sozinho e
+> parâmetro novo aparece assim que entra no manifesto. Mas `studio/web/*` é núcleo e pertence à
+> frente de preparo/shell de uma wave (ADR-010), então o código está empacotado em
+> `docs/domains/mood/features/pendencias/manifesto-skills-mood-front.patch`, à espera dessa
+> frente. O endpoint já responde e já pode ser consumido. Detalhes em §3.1 do FDD.
+
+**Duas regras de uso da tela:**
+
+- **campo vazio não é enviado** — a skill cai no default dela. O default aparece como *placeholder*
+  do campo, nunca como valor já preenchido. Preencher tudo ou não preencher nada são o mesmo
+  caminho de código;
+- **o front não conhece nenhum campo que não venha do manifesto.**
+
+Na tela, `Objetivos` e `Aprovação humana` ficam visíveis; o resto fica no grupo `Avançado`,
+recolhido.
+
+**O manifesto tem duas camadas.** A *declarada* (`flag`, `posicional`, `tipo`, `opcoes`,
+`agregador`, `default`) é o que o `SKILL.md` realmente declara, e `tests/test_skills_params.py`
+**falha** se ela divergir do arquivo — nos dois sentidos: parâmetro a mais no manifesto,
+parâmetro a mais na skill, default diferente ou opção de enum diferente. A camada de
+*apresentação* (`rotulo`, `ajuda`, `grupo`, `min`, `max`, `obrigatorio_em_auto`) é decisão de UI,
+mora só no manifesto e não é comparada — nenhum `SKILL.md` declara essas chaves.
+
+**Se você mexer num `SKILL.md`, o `make verify` quebra** até o manifesto ser atualizado. É de
+propósito: é o que impede as duas verdades de se separarem em silêncio.
+
+**Três diferenças entre as skills que o manifesto registra e a tela respeita:**
+
+| | |
+|---|---|
+| `mood_vibe_scout` **não tem `--gate`** | a parada humana dela é fixa: aprovar a shortlist. A tela não desenha esse controle para ela |
+| o `--n` da `mood_vibe_scout` **não tem máximo** | o `SKILL.md` declara um *aviso* acima de 8, não um teto. Vira texto de ajuda, não validação |
+| a `mood_board_builder` **não declara defaults próprios** para `--n`, `--board`, `--saida` e `--fundo` | herda do orquestrador na prática. O manifesto mostra "sem default declarado", e a tela não inventa placeholder |
+
+A `mood_visual_dna` **não entra no manifesto**: ela não tem parâmetro de linha de comando (é
+invocada como subskill com a imagem e o objetivo).
+
+#### `obrigatorio_em_auto`
+
+Com `--gate auto` a skill não tem como perguntar nada — em `claude -p` não existe
+`AskUserQuestion`. Foto e objetivo precisam vir preenchidos, senão a skill **para e diz o que
+falta**. O manifesto marca esses campos e a tela avisa antes de você gastar a corrida; quem
+valida de verdade continua sendo a skill.
+
+---
+
 Detalhe de cada skill: `.claude/skills/mood_*/SKILL.md`. A etapa 2 propriamente dita está em
 `docs/domains/mood/hld.md`.

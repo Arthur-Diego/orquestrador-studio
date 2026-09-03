@@ -1,0 +1,308 @@
+diff --git a/studio/web/moodboards.js b/studio/web/moodboards.js
+index a0e6356..a3dd953 100644
+--- a/studio/web/moodboards.js
++++ b/studio/web/moodboards.js
+@@ -206,6 +206,7 @@
+     renderPanels(st);
+     paintPalette(data.palette.colors || []);
+     if (data.prompt) showPrompt(data.prompt);
++    renderSkillsPanel();  // painel 04 · gerado do manifesto (ADH-OS-20260902-04)
+   }
+ 
+   function cardHtml(mbid, c, promotable) {
+@@ -394,6 +395,208 @@
+     if (m.actions[1]) m.actions[1].classList.add("danger");
+   }
+ 
++  // ---------- 04 · parâmetros das skills `mood_` `[extensão]` (ADH-OS-20260902-04) ----------
++  // O formulário é GERADO por `GET /api/skills/mood/params`. Zero campo hardcoded: um parâmetro
++  // que sai de um SKILL.md some da tela sem ninguém tocar neste arquivo. Duas regras fazem
++  // "controle total" e "modo default" serem o MESMO caminho de código:
++  //   1. campo vazio NÃO é enviado — a skill cai no default dela; por isso o `default` do
++  //      manifesto vira placeholder/rótulo da opção vazia, nunca valor pré-preenchido;
++  //   2. nada é desenhado fora do manifesto.
++  // O manifesto tem duas camadas: a DECLARADA (flag/posicional/tipo/opcoes/agregador/default),
++  // conferida contra os SKILL.md por tests/test_skills_params.py, e a de APRESENTAÇÃO
++  // (`apresentacao`: rotulo/ajuda/grupo/min/max/obrigatorio_em_auto), que é decisão de UI e mora
++  // só no manifesto. Este código só lê as duas; não completa nem inventa campo nenhum.
++  // CSS 100% escopado em `.msk-` num <style> inline (ADR-019): `ui.css`/`style.css` não são tocados.
++  const MSK_STYLE = `<style>
++    .msk-form{display:flex;flex-direction:column;gap:12px}
++    .msk-campo{display:flex;flex-direction:column;gap:4px}
++    .msk-campo>.eyebrow{font-size:.72rem;letter-spacing:.04em;opacity:.85}
++    .msk-ajuda{font-size:.76rem;opacity:.66;margin:0}
++    .msk-opcoes{display:flex;flex-wrap:wrap;gap:12px;padding:2px 0}
++    .msk-opcoes label{display:inline-flex;align-items:center;gap:5px;font-size:.85rem;cursor:pointer}
++    .msk-av{margin:.2rem 0 0;border-top:1px solid rgba(120,120,120,.22);padding-top:.6rem}
++    .msk-av>summary{cursor:pointer;font-size:.8rem;opacity:.82;user-select:none}
++    .msk-av[open]>summary{margin-bottom:12px}
++    .msk-payload{font-family:ui-monospace,monospace;font-size:.78rem;white-space:pre-wrap;word-break:break-word;
++      background:rgba(120,120,120,.14);border-radius:8px;padding:10px;margin:0;max-height:220px;overflow:auto}
++    .msk-falta{font-size:.82rem;margin:.4rem 0 0}
++    .msk-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
++    @media (max-width:860px){.msk-cols{grid-template-columns:minmax(0,1fr)}}
++  </style>`;
++
++  /** Desenha UM campo a partir da descrição dele no manifesto. O `tipo` (camada declarada) manda
++   * no widget; a `apresentacao` só decora. Nada aqui conhece nome de parâmetro nenhum. */
++  function mskCampoHtml(p) {
++    const a = p.apresentacao || {};
++    const dft = (p.default === null || p.default === undefined) ? "" : String(p.default);
++    const ajuda = a.ajuda ? `<p class="msk-ajuda">${esc(a.ajuda)}</p>` : "";
++    const rotulo = `${esc(a.rotulo || p.nome)}${a.obrigatorio_em_auto ? " · exigido em auto" : ""}`;
++    const attrs = `data-msk="${esc(p.nome)}" data-msk-tipo="${esc(p.tipo)}"`;
++    if (p.tipo === "multi") {
++      const caixas = (p.opcoes || []).map((o) => `<label><input type="checkbox" data-msk-op value="${esc(o)}"> ${esc(o)}</label>`).join("");
++      const todos = p.agregador ? `<label><input type="checkbox" data-msk-todos> <b>${esc(p.agregador)}</b></label>` : "";
++      return `<div class="msk-campo"><span class="eyebrow">${rotulo}</span>
++        <div class="msk-opcoes" ${attrs}>${caixas}${todos}</div>${ajuda}</div>`;
++    }
++    if (p.tipo === "enum") {
++      const vazio = dft ? `— default da skill: ${dft} —` : "— não definir —";
++      const ops = (p.opcoes || []).map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join("");
++      return `<div class="msk-campo"><span class="eyebrow">${rotulo}</span>
++        <select ${attrs}><option value="">${esc(vazio)}</option>${ops}</select>${ajuda}</div>`;
++    }
++    if (p.tipo === "booleano") {
++      return `<div class="msk-campo">
++        <label class="inline"><input type="checkbox" ${attrs}> ${rotulo}</label>${ajuda}</div>`;
++    }
++    if (p.tipo === "inteiro") {
++      const lim = `${a.min === null || a.min === undefined ? "" : ` min="${esc(String(a.min))}"`}` +
++        `${a.max === null || a.max === undefined ? "" : ` max="${esc(String(a.max))}"`}`;
++      return `<div class="msk-campo"><span class="eyebrow">${rotulo}</span>
++        <input type="number" ${attrs}${lim} placeholder="${esc(dft)}">${ajuda}</div>`;
++    }
++    // texto, caminho e lista compartilham o input de texto; a diferença aparece na serialização.
++    return `<div class="msk-campo"><span class="eyebrow">${rotulo}</span>
++      <input type="text" ${attrs} placeholder="${esc(dft)}">${ajuda}</div>`;
++  }
++
++  /** Formulário completo de uma skill: `principal` visível, `avancado` recolhido. */
++  function mskFormHtml(sk) {
++    const params = sk.params || [];
++    const principais = params.filter((p) => (p.apresentacao || {}).grupo === "principal");
++    const avancados = params.filter((p) => (p.apresentacao || {}).grupo !== "principal");
++    const av = avancados.length
++      ? `<details class="msk-av"><summary>Avançado · ${avancados.length} parâmetro(s)</summary>
++           <div class="msk-form">${avancados.map(mskCampoHtml).join("")}</div></details>`
++      : "";
++    const vazio = params.length ? "" : `<div class="empty">Esta skill não expõe parâmetros.</div>`;
++    return `<div class="msk-form" data-msk-skill="${esc(sk.nome)}">${vazio}${principais.map(mskCampoHtml).join("")}${av}</div>`;
++  }
++
++  /** Lê o formulário e devolve SÓ o que foi preenchido — o resto fica com o default da skill. */
++  function mskColetar(root, sk) {
++    const enviado = {};
++    (sk.params || []).forEach((p) => {
++      const el = root.querySelector(`[data-msk="${p.nome}"]`);
++      if (!el) return;
++      if (p.tipo === "multi") {
++        const marcados = [...el.querySelectorAll("[data-msk-op]")].filter((c) => c.checked).map((c) => c.value);
++        if (marcados.length) enviado[p.nome] = marcados;
++        return;
++      }
++      if (p.tipo === "booleano") { if (el.checked) enviado[p.nome] = true; return; }
++      const bruto = (el.value || "").trim();
++      if (!bruto) return;
++      if (p.tipo === "inteiro") { const n = Number(bruto); if (Number.isFinite(n)) enviado[p.nome] = n; return; }
++      if (p.tipo === "lista") {
++        const itens = bruto.split(",").map((s) => s.trim()).filter(Boolean);
++        if (itens.length) enviado[p.nome] = itens;
++        return;
++      }
++      enviado[p.nome] = bruto;
++    });
++    return enviado;
++  }
++
++  /** Rótulos dos parâmetros que a skill vai cobrar quando o gate estiver em `auto`.
++   * Em `claude -p` não existe AskUserQuestion: a skill não tem como perguntar e para dizendo o
++   * que falta. A tela avisa antes. Skill sem parâmetro `gate` (mood_vibe_scout) fica de fora. */
++  function mskFaltandoEmAuto(root, sk) {
++    const gate = (sk.params || []).find((p) => p.nome === "gate");
++    if (!gate) return [];
++    const el = root.querySelector('[data-msk="gate"]');
++    if (!el || el.value !== "auto") return [];
++    const enviado = mskColetar(root, sk);
++    return (sk.params || [])
++      .filter((p) => (p.apresentacao || {}).obrigatorio_em_auto && !(p.nome in enviado))
++      .map((p) => (p.apresentacao || {}).rotulo || p.nome);
++  }
++
++  async function mskCarregar() { return api("/api/skills/mood/params"); }
++
++  /** Painel 04 do editor: seletor de skill + formulário gerado + o payload que seria enviado.
++   * O disparo em si é da feature ADH-OS-20260902-01, que reusa `Studio.moodSkillsForm`. */
++  async function renderSkillsPanel() {
++    const main = $main();
++    if (!main) return;
++    const cabeca = `<div class="panel-head"><h3><span class="pn">04</span>Parâmetros das skills <code>mood_</code> <span class="ext">[extensão]</span></h3></div>`;
++    let manifesto;
++    try { manifesto = await mskCarregar(); }
++    catch (err) {
++      main.insertAdjacentHTML("beforeend",
++        `<section class="panel" id="mskPanel">${cabeca}<div class="empty">Não foi possível carregar o manifesto: ${esc(err.message)}</div></section>`);
++      return;
++    }
++    const skills = manifesto.skills || [];
++    if (!skills.length) {
++      main.insertAdjacentHTML("beforeend", `<section class="panel" id="mskPanel">${cabeca}<div class="empty">Nenhuma skill parametrizável no manifesto.</div></section>`);
++      return;
++    }
++    const opcoes = skills.map((s) => `<option value="${esc(s.nome)}">${esc(s.rotulo || s.nome)}</option>`).join("");
++    main.insertAdjacentHTML("beforeend", `
++      <section class="panel" id="mskPanel">
++        ${MSK_STYLE}
++        ${cabeca}
++        <p class="fine">Este formulário é <b>gerado</b> pelo manifesto (<code>GET /api/skills/mood/params</code>): nenhum campo existe fora dele. O que você deixar vazio <b>não é enviado</b> — a skill usa o default dela.</p>
++        <div class="row wrap"><select id="mskSkill">${opcoes}</select><span id="mskResumo" class="fine"></span></div>
++        <div class="msk-cols">
++          <div id="mskForm"></div>
++          <div class="col g10">
++            <span class="eyebrow">O que seria enviado à skill</span>
++            <pre class="msk-payload" id="mskPayload">{}</pre>
++            <p class="msk-falta" id="mskFalta"></p>
++          </div>
++        </div>
++      </section>`);
++
++    const sel = document.querySelector("#mskSkill");
++    const host = document.querySelector("#mskForm");
++    const resumo = document.querySelector("#mskResumo");
++    const payload = document.querySelector("#mskPayload");
++    const falta = document.querySelector("#mskFalta");
++    let atual = skills[0];
++
++    const repintar = () => {
++      payload.textContent = JSON.stringify(mskColetar(host, atual), null, 2);
++      const pendentes = mskFaltandoEmAuto(host, atual);
++      falta.innerHTML = pendentes.length
++        ? ui.chip(`em auto a skill vai parar: falta ${pendentes.join(", ")}`, "warn")
++        : "";
++    };
++
++    const desenhar = () => {
++      host.innerHTML = mskFormHtml(atual);
++      resumo.textContent = atual.resumo || "";
++      repintar();
++    };
++
++    sel.onchange = () => { atual = skills.find((s) => s.nome === sel.value) || skills[0]; desenhar(); };
++    host.addEventListener("input", repintar);
++    host.addEventListener("change", (ev) => {
++      // O agregador é atalho de UI: marca/desmarca as opções e o envio continua explícito.
++      const todos = ev.target.closest("[data-msk-todos]");
++      if (todos) {
++        const grupo = todos.closest("[data-msk-tipo='multi']");
++        grupo.querySelectorAll("[data-msk-op]").forEach((c) => { c.checked = todos.checked; });
++      } else if (ev.target.closest("[data-msk-op]")) {
++        const grupo = ev.target.closest("[data-msk-tipo='multi']");
++        const caixa = grupo.querySelector("[data-msk-todos]");
++        if (caixa) caixa.checked = [...grupo.querySelectorAll("[data-msk-op]")].every((c) => c.checked);
++      }
++      repintar();
++    });
++    desenhar();
++  }
++
++  // Exposto para a feature ADH-OS-20260902-01 (painel de disparo) montar o mesmo formulário sem
++  // duplicar regra: `carregar()` traz o manifesto, `montar()` devolve o HTML de uma skill,
++  // `coletar()` serializa só o preenchido e `faltandoEmAuto()` lista o que a skill vai cobrar.
++  window.Studio.moodSkillsForm = {
++    carregar: mskCarregar,
++    montar: mskFormHtml,
++    coletar: mskColetar,
++    faltandoEmAuto: mskFaltandoEmAuto,
++  };
++
+   // ---------- entrada da área (chamada por app.js applyRoute) ----------
+   function open(mbid) { if (mbid) renderEditor(mbid); else renderList(); }
+ 
+diff --git a/tests/test_skills_params_front.py b/tests/test_skills_params_front.py
+new file mode 100644
+index 0000000..bab0f43
+--- /dev/null
++++ b/tests/test_skills_params_front.py
+@@ -0,0 +1,81 @@
++"""Auditoria do formulário gerado do manifesto em `studio/web/moodboards.js`.
++
++**Este arquivo faz par com `docs/domains/mood/features/pendencias/manifesto-skills-mood-front.patch`
++e só passa depois que a frente de preparo/shell aplicar aquele patch** — `studio/web/*` é núcleo e
++pertence à frente de shell (ADR-010), então a frente ADH-OS-20260902-04 não pôde entregá-lo.
++Ver §3.1 e §14 de `docs/domains/mood/features/manifesto-skills-mood-fdd.md`.
++
++Testa a tela como texto, sem navegador, no precedente de `tests/test_mood_view.py` (ADR-008).
++"""
++from __future__ import annotations
++
++import re
++
++from studio.moodboards import skills_params as sp
++
++ROTA = "/api/skills/mood/params"
++
++# Os dois únicos literais de manifesto que o front pode conhecer: a regra do
++# `obrigatorio_em_auto` é "quando o parâmetro `gate` vale `auto`".
++LITERAIS_PERMITIDOS = {"gate", "auto"}
++
++
++def _front(client) -> str:
++    r = client.get("/static/moodboards.js")
++    assert r.status_code == 200
++    return r.text
++
++
++def _bloco_do_formulario(client) -> str:
++    """Só o bloco 04 de `moodboards.js` — o resto do arquivo é de outras features."""
++    js = _front(client)
++    inicio = js.index("// ---------- 04 · parâmetros das skills")
++    fim = js.index("// ---------- entrada da área", inicio)
++    return js[inicio:fim]
++
++
++def test_o_front_busca_o_manifesto_e_desenha_o_painel(client):
++    js = _front(client)
++    assert ROTA in js
++    assert "renderSkillsPanel()" in js
++    assert "window.Studio.moodSkillsForm" in js
++
++
++def test_o_front_nao_tem_nenhum_campo_hardcoded(client):
++    """Nenhum nome de parâmetro nem valor de enum aparece como literal no JS.
++
++    É o que garante o critério de aceite "nenhum campo do formulário existe fora do manifesto":
++    se o front citasse um nome, o parâmetro sobreviveria à própria remoção do manifesto.
++    """
++    js = _bloco_do_formulario(client)
++    literais = {p.nome for s in sp.SKILLS for p in s.params}
++    literais |= {o for s in sp.SKILLS for p in s.params for o in p.opcoes}
++    literais |= {p.agregador for s in sp.SKILLS for p in s.params if p.agregador}
++    vazados = sorted(
++        alvo
++        for alvo in literais - LITERAIS_PERMITIDOS
++        if re.search(rf"""["'`]{re.escape(alvo)}["'`]""", js)
++    )
++    assert not vazados, f"o front cita literais do manifesto: {vazados}"
++
++
++def test_o_front_so_envia_o_que_foi_preenchido(client):
++    """A regra "campo vazio não é enviado" precisa estar no código, não só na documentação."""
++    js = _bloco_do_formulario(client)
++    assert "if (!bruto) return;" in js
++    assert "if (marcados.length)" in js
++
++
++def test_o_css_novo_e_escopado_e_inline(client):
++    """ADR-019: `<style>` inline com prefixo próprio; `ui.css` e `style.css` ficam intactos."""
++    js = _front(client)
++    assert "<style>" in js and ".msk-" in js
++    for folha in ("/static/style.css", "/static/ui.css"):
++        r = client.get(folha)
++        assert r.status_code == 200 and ".msk-" not in r.text
++
++
++def test_o_grupo_avancado_nasce_recolhido(client):
++    js = _front(client)
++    assert '<details class="msk-av">' in js
++    assert "<details open" not in js
