@@ -318,17 +318,22 @@ def test_wave4_helpers_aditivos_do_studio_ui(client):
 
 # ---------- biblioteca de mood boards [extensão] (ADR-013): shell e telas ----------
 def test_shell_area_global_de_moodboards(client):
-    """A área/rota global da biblioteca e o item de sidebar existem (ADR-013)."""
+    """A área/rota global da biblioteca e o item de sidebar existem (ADR-013).
+
+    Wave 10 · E6 (card [REACT-07]): a área migrou para React
+    (`frontend/src/areas/moodboards/MoodboardsArea.tsx`) e o `studio/web/moodboards.js` vanilla foi
+    removido. O contrato de DOM/comportamento (`Studio.moodboards.open`, biblioteca/editor,
+    `/api/moodboards`, `/mbfiles/`) passa a ser afirmado pelo substituto Vitest
+    `frontend/src/areas/moodboards/MoodboardsArea.test.tsx` e pelos cenários
+    `scripts/qa/cenarios/moodboards.py` (rodados no shell React). Aqui fica só o que continua sendo
+    do shell vanilla ainda servido por `/` até a E10: o item de sidebar e o roteamento reservado em
+    `app.js`.
+    """
     index = client.get("/").text
     assert 'id="btnMoodboards"' in index, "item de sidebar da biblioteca"
-    assert "/static/moodboards.js" in index and client.get("/static/moodboards.js").status_code == 200
     app_js = client.get("/static/app.js").text
     assert '"moodboards"' in app_js and "#/moodboards" in app_js and "MB_ROUTE" in app_js
     assert 'area === "moodboards"' in app_js, "a área global é reconhecida no roteamento"
-    mbjs = client.get("/static/moodboards.js").text
-    for tok in ("Studio.moodboards", "renderList", "renderEditor", "Novo mood board",
-                "/api/moodboards", "/mbfiles/"):
-        assert tok in mbjs, tok
 
 
 def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
