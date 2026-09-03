@@ -42,23 +42,12 @@ def test_progress_styles_use_catalog_tokens(client):
     assert "prog-spin" in css, "spinner do passo em andamento"
 
 
-def test_sync_claude_calls_open_the_progress_modal(client):
-    """As ações que POSTam num endpoint do bot (Claude) abrem `Studio.ui.progress` com fases.
-
-    A etapa 2 (mood) deixou de chamar o bot (etapa2-pick, ADR-014: a criação de moods migrou para
-    a biblioteca).
-
-    Wave 10 · E6 (card [REACT-07]): a biblioteca de mood boards migrou para React
-    (`frontend/src/areas/moodboards/MoodboardsArea.tsx`) e o `studio/web/moodboards.js` vanilla foi
-    removido. A chamada síncrona ao Claude na criação de moods (modal de progresso com fases + modo
-    `template` instantâneo) passa a ser afirmada pelo substituto Vitest
-    `frontend/src/areas/moodboards/MoodboardsArea.test.tsx` e pelo cenário `moodboards.py`. Aqui fica
-    só o que continua vanilla: a etapa base.
-    """
-    base = _view(client, "base")
-    assert "ui.progress(" in base and "Consultando o Claude" in base
-    # "Gerar prompt" e "Gerar sem viés" passam pela mesma função; só o modo `images` usa o bot.
-    assert "usaBot" in base
+# Wave 10: `test_sync_claude_calls_open_the_progress_modal` foi removido — os DOIS consumidores da
+# chamada síncrona ao Claude com o modal `Studio.ui.progress` migraram para React e são afirmados
+# por substitutos Vitest: a biblioteca de mood boards (E6 · [REACT-07] →
+# `frontend/src/areas/moodboards/MoodboardsArea.test.tsx`) e a etapa 3 · base (E7 · [REACT-08] →
+# `studio/etapas/base/ui/index.test.tsx`, teste "Gerar prompt … Consultando o Claude"). Não resta
+# consumidor vanilla para este assert de fonte.
 
 
 def test_jobs_use_progressjob_as_single_source(client):

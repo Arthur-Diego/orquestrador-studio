@@ -346,13 +346,10 @@ def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
 
 
 def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
-    """Etapa 3 tem seletor + galeria. (Etapa 2 — etapa2-pick, ADR-014 — migrou para React na Wave 10
-    · E4: seu contrato de tela é coberto por `studio/etapas/mood/ui/index.test.tsx`, casos C-MOOD-03
-    e C-MOOD-06, que asseveram `#btnApplyBoard`/"Aplicar a esta campanha" e o POST `/mood/pull`.)"""
-    base_html = client.get("/steps/base/view.html").text
-    base_js = client.get("/steps/base/view.js").text
-    # wave 5 · ponto 1: o seletor de fonte do mood e o mosaico vivem DENTRO da junção (#baseJunction),
-    # renderizados pelo view.js — o painel "M" separado deixou de existir.
-    assert 'id="baseJunction"' in base_html
-    assert 'id="moodSource"' in base_js and "moodMosaic" in base_js
-    assert "board: boardSel" in base_js and "mood-sources" in base_js
+    """Etapas 2 (mood, etapa2-pick/ADR-014) e 3 (base) migraram para React na Wave 10 (E4/E7): o
+    contrato de tela — `#btnApplyBoard`/"Aplicar a esta campanha", `/mood/pull`, a junção
+    `#baseJunction`/`#moodSource` e o mosaico — é coberto pelos substitutos Vitest
+    `studio/etapas/{mood,base}/ui/index.test.tsx`. Aqui só confirmamos que os `view.*` vanilla dessas
+    etapas deixaram de ser servidos (o corte da rota `/steps/<id>/view.*` do `app.py` é da E10)."""
+    assert client.get("/steps/mood/view.html").status_code == 404
+    assert client.get("/steps/base/view.html").status_code == 404
