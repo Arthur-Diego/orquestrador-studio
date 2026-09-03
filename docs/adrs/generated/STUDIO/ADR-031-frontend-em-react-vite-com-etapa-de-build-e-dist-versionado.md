@@ -201,5 +201,6 @@ ADR-010, tratada na ADR-032.
 - `docs/domains/studio/waves/wave-10.md` — contratos provides/consumes, sub-waves, §6.1 e §6.3
 - `docs/domains/studio/recon-wave-10.md` — superfície da `Studio.ui`, contrato DOM por tela,
   mapeamento de ADRs, testes que quebram por construção
-- `docs/qa/reports/2026-09-03-react-e0/` — baseline QA de referência e dump de `textContent`
+- `docs/qa/reports/2026-09-03-react-e0-v2/` — baseline QA **vigente** e dump de `textContent`
+  (substitui `…-react-e0/`, regerado após a correção do C-BASE-33 — ADH-OS-20260903-01)
 - `scripts/qa/cenarios/` — os 382 casos que são o oráculo da migração

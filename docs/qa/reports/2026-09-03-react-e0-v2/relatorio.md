@@ -1,41 +1,34 @@
-# QA E2E — BASELINE DE REFERÊNCIA da Wave 10 (migração React) — 2026-09-03 — react-e0
+# QA E2E — BASELINE DE REFERÊNCIA VIGENTE da Wave 10 (migração React) — 2026-09-03 — react-e0-v2
 
-> ## ⛔ SUPERSEDIDO — não compare contra este relatório
->
-> O baseline **vigente** da Wave 10 é `docs/qa/reports/2026-09-03-react-e0-v2/`.
-> Esta rodada apontou, no AP-05, um **bug real de produto** (`C-BASE-33`). O dono decidiu
-> corrigi-lo ANTES da largada da E1, para que as dez frentes nasçam sobre código correto
-> (card [REACT-BUG-01] · `ADH-OS-20260903-01`). Com a correção, os números mudaram
-> (**375 PASSA · 5 FALHA · 2 BLOQUEADO**, contra 374/6/2 aqui) e o dump de `textContent`
-> ganhou duas linhas novas em `base.txt` — logo **o oráculo do ADR-004 é o do `-v2`**.
-> Este arquivo fica como registro do retrato de `develop` @ `7b6f3b7` e da análise que
-> produziu os apontamentos AP-01…AP-06 (as §7.1, §7.2 e §7.3 continuam válidas, exceto o AP-05,
-> que foi corrigido).
-
-> **Esta rodada não é uma rodada de QA comum: é o ORÁCULO da Wave 10.**
-> As dez frentes seguintes (E1…E10) comparam contra os números aqui. Rodada **completa**:
-> 14 telas, 382 casos, 56 auditorias (2 temas × 2 viewports), auditoria de API e newman.
-> Nenhum código de aplicação foi tocado pela E0 — só ferramental de teste, scaffold e docs.
+> **Esta rodada é o ORÁCULO da Wave 10 e substitui o baseline `2026-09-03-react-e0/`.**
+> Aquele baseline apontou, no AP-05, um bug real de produto (`C-BASE-33`). O dono decidiu
+> corrigi-lo ANTES da largada da E1, para que as dez frentes de migração nasçam sobre código
+> correto (card [REACT-BUG-01] · `ADH-OS-20260903-01`). Esta rodada é o retrato de `develop`
+> @ `b180673` **mais** essa correção: rodada **completa**, 14 telas, 382 casos, 56 auditorias,
+> auditoria de API e newman. Nenhuma outra mudança de comportamento foi feita.
+> **É contra estes números que E1…E10 comparam.**
 
 ## 1. Identificação
 
 | Campo | Valor |
 | --- | --- |
-| Card-pai (Trello) | https://trello.com/c/vIRHoJ81 — [REACT-01] · agregador https://trello.com/c/Bngd5Vwi |
-| Task-Id | ADH-OS-20260902-08 |
-| Branch / worktree | `refactor/adh-os-20260902-08-react-fundacao` · `orquestrador-studio-worktrees/refactor/adh-os-20260902-08-react-fundacao` |
-| Commit base (develop) | `7b6f3b7` |
+| Card (Trello) | https://trello.com/c/TUbd7fgX — [REACT-BUG-01] |
+| Task-Id | ADH-OS-20260903-01 |
+| Branch / worktree | `fix/adh-os-20260903-01-base-stepper-prompt` · `orquestrador-studio-worktrees/fix/adh-os-20260903-01-base-stepper-prompt` |
+| Commit base (develop) | `b180673` |
 | Modo | offline |
 | Base URL | http://127.0.0.1:8790 |
 | Telas pedidas / executadas | shell, overview, refs, mood, base, storyboard, animate, music, edit, export, publish, prospect, moodboards, creditos |
 | Rodadas executadas | 1 (rodada completa, sem revalidação) |
-| Executado por | Wave 10 · E0 (frente de fundação) |
+| Executado por | frente de bug `/dd-parallel-bug` |
 | Máquina | macOS 25.6 (Darwin), Python 3.12.14, Chromium 151.0.7922.34 |
+| Baseline substituído | `docs/qa/reports/2026-09-03-react-e0/` (374/6/2) |
+
 
 ## 2. Ambiente (saída real do check-env.sh)
 
 ```text
-PASS: venv em <WORKTREE>/.venv
+PASS: venv em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/fix/adh-os-20260903-01-base-stepper-prompt/.venv
 PASS: fastapi/uvicorn importáveis
 PASS: playwright (python) importável
 PASS: Chromium do Playwright sobe (v151.0.7922.34)
@@ -44,17 +37,17 @@ PASS: ffmpeg no PATH
 PASS: ffprobe no PATH
 PASS: newman disponível (PATH ou frontend/node_modules)
 PASS: gh autenticado (higiene de cards por PR)
-INFO: run=react-e0 modo=offline base=http://127.0.0.1:8790
+INFO: run=react-e0-v2 modo=offline base=http://127.0.0.1:8790
 PASS: servidor responde em http://127.0.0.1:8790/api/steps
 PASS: servidor serve o frontend (/)
-PASS: STUDIO_PROJECTS isolado (fora de <WORKTREE>/projects)
+PASS: STUDIO_PROJECTS isolado (fora de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/fix/adh-os-20260903-01-base-stepper-prompt/projects)
 PASS: fake higgsfield ativo no PATH
 PASS: fake claude ativo no PATH
 PASS: fake higgsfield responde (account status)
 PASS: servidor de mídia fake em http://127.0.0.1:8791
 PASS: API vê o CLI fake como logado
-INFO: git refactor/adh-os-20260902-08-react-fundacao @ 64a8bcb
-PASS: árvore git limpa (alterações locais aparecem no diff da rodada)
+INFO: git fix/adh-os-20260903-01-base-stepper-prompt @ b180673
+AVISO: árvore git limpa (alterações locais aparecem no diff da rodada)
 PRE-VOO OK
 ```
 
@@ -139,10 +132,10 @@ PRE-VOO OK
 | C-BASE-10 | base | 'Gerar sem viés' usa sessão nova e registra no_bias no histórico | PASSA | evidencias/light-1440x900-base-gerar-sem-vies.png |
 | C-BASE-11 | base | a instrução digitada vai junto ao bot e fica registrada no histórico | PASSA | instrução gravada no histórico |
 | C-BASE-12 | base | botão 'Copiar' do card de prompt confirma a cópia na própria linha | PASSA | evidencias/light-1440x900-base-copiar-prompt.png |
-| C-BASE-13 | base | histórico de prompts guarda referência, modo e proveniência de cada geração | PASSA | 3 entradas; topo={'ref_id': 'c864a2ed2313', 'mode': 'images', 'source': 'claude', 'created': '2026-09-03T00:09:54'} |
+| C-BASE-13 | base | histórico de prompts guarda referência, modo e proveniência de cada geração | PASSA | 3 entradas; topo={'ref_id': 'c864a2ed2313', 'mode': 'images', 'source': 'claude', 'created': '2026-09-03T08:42:52'} |
 | C-BASE-14 | base | 'Salvar marca' persiste nome e descrição da marca do rótulo | FALHA | evidencias/light-1440x900-C-BASE-14-excecao.png — exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded. Call log:   - waiting for locator("#brandName")  Traceback (most recent call last):   Fil |
 | C-BASE-15 | base | 'Salvar marca' sem nome mostra o erro da aula e não grava nada | FALHA | evidencias/light-1440x900-C-BASE-15-excecao.png — exceção no caso: TimeoutError: Locator.fill: Timeout 15000ms exceeded. Call log:   - waiting for locator("#brandName")  Traceback (most recent call last):   Fil |
-| C-BASE-16 | base | no passo 'rótulo' o card de prompt vira a instrução de troca de rótulo | FALHA | evidencias/light-1440x900-C-BASE-16-excecao.png — exceção no caso: KeyError: 'label_prompt_ready' Traceback (most recent call last):   File "<WORKTREE>/orquestrador-studio-worktre |
+| C-BASE-16 | base | no passo 'rótulo' o card de prompt vira a instrução de troca de rótulo | FALHA | evidencias/light-1440x900-C-BASE-16-excecao.png — exceção no caso: KeyError: 'label_prompt_ready' Traceback (most recent call last):   File "/Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktre |
 | C-BASE-17 | base | stepper tem os 3 passos da aula, com 'done' no escolhido e 'on' no ativo | FALHA | evidencias/light-1440x900-base-stepper.png — passos=[{'k': 'situation', 'c': 'st done'}, {'k': 'clean', 'c': 'st'}, {'k': 'label', 'c': 'st on'}, {'k': 'upscale', 'c': 'st'}] escolhidos_api=['situation'] a |
 | C-BASE-18 | base | clicar num passo do stepper troca o passo ativo e o rótulo do botão do CLI | PASSA | 'Gerar upscale via CLI' → 'Gerar situação via CLI' |
 | C-BASE-19 | base | Enter num passo focado do stepper também troca o passo ativo (teclado) | PASSA | Enter trocou o passo ativo |
@@ -158,8 +151,8 @@ PRE-VOO OK
 | C-BASE-29 | base | 'Gerar via CLI' do painel 01 gera a situação e mostra o antes → depois | PASSA | evidencias/light-1440x900-base-gerar-cli.png |
 | C-BASE-30 | base | sem referência da etapa 1, o CLI avisa em vez de estourar erro cru | PASSA | evidencias/light-1440x900-base-cli-sem-insumo.png |
 | C-BASE-31 | base | campanha sem referência mostra o gate da etapa 1 no painel do prompt | PASSA | evidencias/light-1440x900-base-gate-etapa1.png |
-| C-BASE-32 | base | o botão de Downloads informa a pasta e a janela de tempo no tooltip | PASSA | tooltip='Últimos 120 min de <WORKTREE>/adh-os-2026 |
-| C-BASE-33 | base | ao abrir a etapa, o card de prompt e o passo ativo do stepper concordam | FALHA | evidencias/light-1440x900-base-card-x-stepper.png — o stepper abre em 'label' (load() avança para o 1º passo sem escolha) mas o card do painel 01 continua no prompt de situação: rótulo='Prompt · situação · editáv |
+| C-BASE-32 | base | o botão de Downloads informa a pasta e a janela de tempo no tooltip | PASSA | tooltip='Últimos 120 min de /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/fix/adh-os-20260903- |
+| C-BASE-33 | base | ao abrir a etapa, o card de prompt e o passo ativo do stepper concordam | PASSA | evidencias/light-1440x900-base-card-x-stepper.png |
 | C-STORYBOARD-01 | storyboard | painel 01 mostra a imagem base e o chip de contagem bate com a API | PASSA | evidencias/light-1440x900-sb-painel01.png |
 | C-STORYBOARD-02 | storyboard | #sbKind lista os modos de ideação de /instructions e o title segue o modo | PASSA | 4 modos, title do multishot ok |
 | C-STORYBOARD-03 | storyboard | #sbPreset preenche modo e texto com a fórmula da aula | PASSA | preset 'Inpaint: corda proporcional' aplicado |
@@ -231,7 +224,7 @@ PRE-VOO OK
 | C-ANIMATE-18 | animate | ▶ do tile abre o mp4 do take em nova aba | PASSA | abriu http://127.0.0.1:8790/files/2026-09-e2e-mock/videos/cena01/shot01_take1.mp4 |
 | C-ANIMATE-19 | animate | chip do CLI fica oculto com o CLI logado e o contador reflete /candidates | PASSA | contador='1 vídeos' chip oculto=True |
 | C-ANIMATE-20 | animate | upload de mp4 pelo #anUpload importa o vídeo e atualiza o contador | PASSA | evidencias/light-1440x900-animate-upload.png |
-| C-ANIMATE-21 | animate | 'Importar da pasta Downloads' varre a pasta configurada e importa os mp4 recentes | PASSA | toast='1 novos de 1 vídeos recentes' · candidato importado da pasta <WORKTREE>/orquestrad |
+| C-ANIMATE-21 | animate | 'Importar da pasta Downloads' varre a pasta configurada e importa os mp4 recentes | PASSA | toast='1 novos de 1 vídeos recentes' · candidato importado da pasta /Users/arthursantana/senhor_da_tecnologia/orquestrad |
 | C-ANIMATE-22 | animate | 'Importar do histórico Higgsfield' lê o histórico do CLI e reporta jobs e vídeos | PASSA | toast='1 vídeos de 3 jobs' · 1→2 candidatos |
 | C-ANIMATE-23 | animate | 'Gerar via CLI' mostra o custo antes; Cancelar não gera nem gasta | PASSA | evidencias/light-1440x900-animate-custo.png |
 | C-ANIMATE-24 | animate | gerar 1 take via CLI: modal de progresso, take em takes.json e mp4 em videos/ | PASSA | evidencias/light-1440x900-animate-gerado.png |
@@ -513,14 +506,14 @@ Timers órfãos: —.
 **56 auditorias, 0 com problema** — claro e escuro, 1440×900 e 1024×768, nas 14 telas. Zero
 overflow horizontal, zero imagem quebrada, zero botão sem nome acessível, zero input sem rótulo,
 zero controle coberto por overlay, zero texto cortado, zero erro de console/pageerror/HTTP 4xx-5xx.
+Idêntico ao baseline anterior — a correção não mexeu em layout.
 
 | Tela | Tema | Observação | Severidade | Print |
 | --- | --- | --- | --- | --- |
-| todas (14) | claro e escuro | nenhum problema visual detectado nas 56 combinações | — | `.qa/runs/react-e0/evidencias/` |
+| todas (14) | claro e escuro | nenhum problema visual detectado nas 56 combinações | — | `.qa/runs/react-e0-v2/evidencias/` |
 
 Os prints ficam fora do git (`.qa/` é gitignored). Para regerá-los:
-`make qa-up qa-seed qa-run RUN=react-e0`.
-
+`make qa-up qa-seed qa-run RUN=react-e0-v2`.
 
 ## 6. Backend
 
@@ -544,7 +537,7 @@ Os prints ficam fora do git (`.qa/` é gitignored). Para regerá-los:
 | contratos | pid reservado ('moodboards') é recusado | PASSA | → 409 |
 | disco | project.json do seed cheio continua íntegro após a auditoria | PASSA | {'id': '2026-09-e2e-mock', 'name': 'E2E Mock', 'product': 'energético', 'vibe': 'gelo neon ciano, alto contraste', 'crea |
 | offline | fakes foram chamados (higgsfield/claude passam pelos fakes) | PASSA | fakes.log sem chamadas de higgsfield — o servidor pode estar usando o binário real |
-| server.log | sem Traceback no log do servidor | PASSA | 0 traceback(s) em <WORKTREE>/.qa/run |
+| server.log | sem Traceback no log do servidor | PASSA | 0 traceback(s) em /Users/arthursantana/senhor_da_tecnologia/orquestrador-studio-worktrees/fix/adh-os-20260903-01-base-stepper-prompt/.qa/run |
 | server.log | sem respostas 500 / linhas ERROR | PASSA | — |
 
 ### 6.2 Newman
@@ -554,129 +547,168 @@ Os prints ficam fora do git (`.qa/` é gitignored). Para regerá-los:
 | docs/domains/animate/postman/animate.postman_collection.json | 25 | 8 | coleção defasada — ADR-015 (numeração das etapas) e ADR-023 (modelo default) | GET /api/steps — etapa 6 pronta: expected 5 to deeply equal 6; GET animate/shots — plano na ordem do storyboard: expected 'kling2_6' to deep |
 | docs/domains/base/postman/base-etapa3-imagem-base.postman_collection.json | 45 | 6 | coleção defasada — ADR-026 (marca por imagem, `label_prompt_ready` fora do contrato) | GET prompts da aula (contrato 1): expected { model: 'nano_banana_2', …(15) } to have property 'label_prompt_ready'; GET brand (contrato 2):  |
 | docs/domains/edit/postman/edit.postman_collection.json | 30 | 0 | — | — |
-| docs/domains/export/postman/export.postman_collection.json | 42 | 2 | coleção defasada — mensagem de 404 mudou (`Not Found` sem citar `master.mp4`) | POST render — projeto sem edit/master.mp4 (404): expected 'Not Found' to include 'master.mp4'; POST qa — projeto sem edit/master.mp4 (404):  |
+| docs/domains/export/postman/export.postman_collection.json | 42 | 2 | — | POST render — projeto sem edit/master.mp4 (404): expected 'Not Found' to include 'master.mp4'; POST qa — projeto sem edit/master.mp4 (404):  |
 | docs/domains/mood/postman/mood-vibes.postman_collection.json | 20 | 0 | — | — |
 | docs/domains/music/postman/music.postman_collection.json | 40 | 23 | coleção defasada + fixture — assume `candidates` vazio, mas o seed já traz candidatas | GET candidates — lista vazia antes de importar: expected [ { id: '7bd90956856a', …(12) } ] to be empty; POST import/upload — 2 wav (added 2) |
 | docs/domains/prospect/postman/prospect.postman_collection.json | 26 | 10 | coleção defasada — rota de DM devolve 404; leve sensibilidade a ordem (12↔10) | Lead: obter: expected undefined to deeply equal ''; DM: ver o texto para copiar: expected response to have status code 200 but got 404 |
 | docs/domains/publish/postman/publish.postman_collection.json | 22 | 0 | — | — |
-| docs/domains/refs/postman/refs-import-url.postman_collection.json | 59 | 4 | fixture — o polling do job dá mais voltas que o teto assumido pela coleção | GET job — polling do import de seção: expected 20 to be at most 1; GET job — polling do import de pin: expected 20 to be at most 1 |
+| docs/domains/refs/postman/refs-import-url.postman_collection.json | 56 | 4 | fixture — o polling do job dá mais voltas que o teto assumido pela coleção | GET job — polling do import de seção: expected 20 to be at most 1; GET job — polling do import de pin: expected 20 to be at most 1 |
 | docs/domains/storyboard/postman/storyboard.postman_collection.json | 80 | 10 | coleção defasada — o payload de estado da etapa ganhou/perdeu chaves | GET storyboard - estado da etapa: expected { …(13) } to have keys 'base_image', 'has_base', 'ideas', 'selected', 'scenes', 'scenes_wit; POST |
 | docs/domains/studio/postman/prompter-presets-realismo.postman_collection.json | 18 | 0 | — | — |
 | docs/domains/shots/postman/shots.postman_collection.json | — | — | legado | shots: domínio legado sem plugin — coleção não executada |
 
 ## 7. Apontamentos
 
-> **Nenhum apontamento é da E0.** Esta frente não tocou comportamento de aplicação. Tudo abaixo já
-> existia em `develop` @ `7b6f3b7` e está registrado aqui porque **muda o plano das frentes
-> seguintes**.
+> **Só há um apontamento novo, e ele é sobre esta própria rodada (AP-07).** Os cinco vermelhos
+> restantes são exatamente os cenários defasados de ADR mergeado já catalogados no baseline
+> anterior — **decisão do dono: ficam como estão**, rastreados no card [REACT-SYNC-01]. Corrigi-los
+> aqui mudaria o oráculo da wave no meio do voo.
 
-### 7.1 ⚠ O baseline NÃO é 382/382 — e a regra da wave assume que era
-
-A regra que governa a Wave 10 é *"os cenários passam sem uma linha editada"*. Ela nasceu da
-premissa de que os 382 cenários estavam verdes. **Não estão: 6 falham em `develop` antes de existir
-uma linha de React.** Cinco deles falham porque o **cenário ficou para trás de um ADR mergeado** —
-não porque a aplicação esteja errada.
+### 7.1 O baseline continua não sendo 382/382 — 5 cenários defasados de ADR
 
 | # | Caso | Causa raiz | Classe | Dono |
 | --- | --- | --- | --- | --- |
-| AP-01 | `C-BASE-14` · 'Salvar marca' persiste nome e descrição | `#brandName`/`#brandDesc`/`#btnBrand` **não existem mais**: a marca do rótulo virou IMAGEM anexada (**ADR-026**, supersede da marca-texto). O `view.html` só tem `#btnBrandClear`/`#brandPreview`/`#brandDrop`. | cenário defasado | E7 |
+| AP-01 | `C-BASE-14` · 'Salvar marca' persiste nome e descrição | `#brandName`/`#brandDesc`/`#btnBrand` **não existem mais**: a marca do rótulo virou IMAGEM anexada (**ADR-026**, supersede da marca-texto). | cenário defasado | E7 |
 | AP-02 | `C-BASE-15` · 'Salvar marca' sem nome mostra o erro da aula | idem AP-01 | cenário defasado | E7 |
-| AP-03 | `C-BASE-16` · card de prompt vira a instrução de rótulo | a chave `label_prompt_ready` **saiu do contrato** da etapa 3 (ADR-026). Zero ocorrências em `studio/`. | cenário defasado | E7 |
+| AP-03 | `C-BASE-16` · card de prompt vira a instrução de rótulo | a chave `label_prompt_ready` **saiu do contrato** da etapa 3 (ADR-026); o cenário estoura `KeyError` antes de olhar o DOM. | cenário defasado | E7 |
 | AP-04 | `C-BASE-17` · stepper tem os 3 passos da aula | o stepper tem **4** passos (`situation`, `clean`, `label`, `upscale`); `clean` é `[extensão]` e o cenário só conhece a `COURSE_CHAIN` de 3. | cenário defasado | E7 |
-| AP-05 | `C-BASE-33` · card de prompt e passo ativo do stepper concordam | **bug real da aplicação, e o cenário está certo**: `load()` avança `step` para o 1º passo sem escolha, mas não chama `renderPrompt()`. O stepper abre em `label` e o card do painel 01 continua no prompt de `situação`. | **bug de produto** | decisão do dono |
-| AP-06 | `C-STORYBOARD-11` · importar do histórico do CLI traz os jobs | `#sbBtnHistory` deixou de importar direto e passou a abrir o **seletor de histórico** (`historyModal()`, **ADR-029**). O cenário ainda espera o import direto e o toast `jobs`. Confirmado em isolamento, em estado recém-semeado: `1→1 ideias`, `toast=''`, mas `generate list` **foi** chamado. | cenário defasado | E8 |
+| AP-06 | `C-STORYBOARD-11` · importar do histórico do CLI traz os jobs | `#sbBtnHistory` deixou de importar direto e passou a abrir o **seletor de histórico** (`historyModal()`, **ADR-029**). | cenário defasado | E8 |
+
+**O AP-05 do baseline anterior (`C-BASE-33`) está CORRIGIDO** — é o que esta frente entregou.
+Ver §7.2. A numeração AP-01…AP-06 foi preservada do baseline anterior de propósito, para que as
+referências cruzadas dos cards continuem valendo.
 
 Os 2 BLOQUEADO são **por desenho**, documentados nos próprios cenários, e não são falha:
 `C-REFS-10` (scrape real do Pinterest usa rede externa e sessão do usuário) e `C-MOODBOARDS-30`
 (`Abrir pasta` abre o explorador do SO).
 
-### 7.2 ⚠ O recon §3 herdou a defasagem — E7 e E8 leiam com cuidado
+### 7.2 ✅ AP-05 (`C-BASE-33`) corrigido — e a causa NÃO era a que o baseline anterior apontava
 
-O contrato DOM por tela do `recon-wave-10.md` §3 foi extraído **dos cenários**. Onde o cenário está
-defasado, o recon também está. Concretamente: **§3.12 lista `#brandName`, `#brandDesc` e `#btnBrand`
-como parte do contrato da tela `base`, e esses ids não existem no `view.html` atual.** Uma E7 que
-seguisse o recon ao pé da letra reconstruiria fielmente um DOM que não está lá — e passaria a
-falhar um cenário que já falha, agora por um motivo novo.
+O baseline anterior atribuiu o bug a *"`load()` avança `step` sem chamar `renderPrompt()`"*. **Esse
+defeito já não existia**: ele foi corrigido em `3385bac` (`ADH-OS-20260829-36`, apontamento AP-17 da
+rodada `2026-08-29-smoke`), que passou a repintar o card junto com a troca de passo.
 
-**Regra prática para E7 e E8:** onde cenário e código divergirem, **o código em `develop` é a
-verdade** (a wave é refatoração pura: o alvo é reproduzir o que existe, não o que o cenário
-esperava). Portar o comportamento atual, deixar o cenário falhando exatamente como falha hoje, e
-não editar o cenário.
+A causa real é **uma segunda guarda, dentro do próprio `renderPrompt()`**:
 
-### 7.3 ⚠ `make qa-api`: contratos verdes, 7 coleções Postman defasadas
+```js
+} else if (step === "label" && labelPrompt !== null) {   // labelPrompt = r.label_ready ? … : null
+```
 
-`newman` não estava instalado nesta máquina, então `make qa-api` **não rodava** — e por isso a
-defasagem passou despercebida. Com o newman resolvido pela E0, o quadro real aparece:
+Na campanha do seed não há imagem de marca anexada (`label_ready: false`), então `labelPrompt` era
+`null`, o ramo do rótulo não era tomado e o card **caía silenciosamente no prompt de situação** —
+com o stepper já em `label`. O repintar acontecia; ele só não tinha o que pintar.
 
-- **As 18 checagens de contrato/OpenAPI passam** (219 operações, nenhum GET 5xx, nenhum acima de
-  5 s, `{pid}` inexistente sempre 404, corpo inválido nunca 5xx, catálogo coerente com o guia,
-  zero Traceback e zero 500 no `server.log`). O backend está saudável.
-- **7 de 12 coleções Postman falham**, somando **63 asserções**: `animate` 8, `base` 6, `export` 2,
-  `music` 23, `prospect` 10, `refs` 4, `storyboard` 10. Verdes: `edit`, `mood`, `publish`, `studio`.
-  `shots` não roda (domínio legado sem plugin).
-- Amostras que mostram a natureza do problema — é a mesma defasagem da §7.1, não regressão:
-  `animate` afirma *"etapa 6 pronta: expected 5 to deeply equal 6"* (numeração anterior à **ADR-015**,
-  que fundiu a etapa 5 na 4) e *"expected 'kling2_6' to deeply equal 'kling3_0'"* (**ADR-023**
-  mudou o default); `base` cobra `label_prompt_ready` (**ADR-026**), a mesma chave do AP-03.
-- Reproduzido **duas vezes**, em estado usado e em estado recém-semeado: mesmo resultado
-  (23 ok / 7 falhas). Não é poluição de estado. Duas coleções têm leve sensibilidade a ordem
-  (`prospect` 12↔10, `refs` polling 21↔20), então **a comparação estável é a contagem de falhas por
-  coleção, não o total de asserções.**
-- Evidência das duas execuções: `api.json` (estado limpo, é o baseline) e `api-apos-cenarios.json`
-  (depois dos 382 cenários).
+Essa guarda era **herança da marca-texto**: naquele desenho o texto do rótulo era gerado a partir do
+nome da marca (`label_prompt(brand)`) e realmente não existia sem ela. A **ADR-026** (marca por
+imagem) trocou isso por um prompt **fixo** (`LABEL_IMAGE_PROMPT`), que não depende da marca, e moveu
+a exigência da marca para a **geração**, no backend (`"Anexe a imagem da marca antes de trocar o
+rótulo."`). A guarda do frontend ficou para trás.
 
-**Consequência para a definição de pronto.** O critério 2 (*"`make qa-api` sem diferença de
-contrato"*) não pode significar "verde": significa **idêntico a este baseline**. E a wave dá uma
-garantia forte aqui — ela **não toca `service.py`, `router.py` nem `guide.py`** —, então qualquer
-mudança nestes números é regressão real, e o sinal é limpo apesar do vermelho de partida.
+**Correção (classe: implementação — código divergindo de decisão já registrada; nenhum FDD/ADR
+mudou):** no passo `label` o card é sempre o card do rótulo, com o texto fixo. 12 linhas em
+`studio/etapas/base/view.js`, nenhuma linha de cenário tocada.
+
+Coerência com o resto da tela: o comentário de `importPrompt()` já pressupunha este comportamento
+("*se o stepper estiver noutro passo (o card exibe o rótulo), cai no prompt salvo da referência*") —
+o caminho de fallback do botão "Gerar via CLI" do painel 01 foi escrito para o estado que só agora
+passa a existir de fato. `C-BASE-29` segue verde.
+
+### 7.3 ⚠ O recon §3.12 continua defasado — E7 leia com cuidado
+
+Inalterado em relação ao baseline anterior: **`recon-wave-10.md` §3.12 lista `#brandName`,
+`#brandDesc` e `#btnBrand` como parte do contrato DOM da tela `base`, e esses ids não existem no
+`view.html` atual** (ADR-026). Onde recon/cenário e código divergirem, **`develop` é a verdade**.
+
+### 7.4 ⚠ `make qa-api`: contratos verdes, 7 coleções Postman defasadas — igual ao baseline
+
+**23 ok / 7 falhas**, exatamente como no baseline anterior, nos **dois** estados (limpo e depois dos
+382 cenários). As 18 checagens de contrato/OpenAPI passam (219 operações, nenhum GET 5xx, nenhum
+acima de 5 s, catálogo coerente com o guia, zero Traceback e zero 500 no `server.log`). As 7
+coleções vermelhas (`animate`, `base`, `export`, `music`, `prospect`, `refs`, `storyboard`) falham
+por defasagem preexistente, não por regressão — a correção não tocou `service.py`, `router.py` nem
+`guide.py`. Duas coleções têm leve sensibilidade a ordem (`prospect` 12↔10, `refs` polling 21↔20),
+então **a comparação estável é a contagem de falhas por coleção, não o total de asserções.**
+
+### 7.5 ⚠ Ordem de execução importa — o `qa-api` contamina os cenários
+
+Registrado porque custou uma rodada inteira: rodar `make qa-api` **antes** de `make qa-run` faz
+`C-PROSPECT-03` e `C-PROSPECT-04` falharem. A auditoria clona campanhas (`QA Newman`), e o gate da
+prospecção lê o agregado **global** `/api/portfolio` — o próprio `seed.sh` avisa disso no
+comentário do passo 0. **A ordem correta é `qa-up → qa-seed → qa-run → qa-api`.** O dump de
+`textContent` tem a mesma sensibilidade pela tela `creditos`, que lê o livro-caixa: ele precisa ser
+gerado logo depois do `qa-seed`, com a pilha recém-subida (o `seed.sh` limpa `STUDIO_PROJECTS`, mas
+não o ledger de créditos).
 
 
 ## 8. Veredito
 
-- **Casos: 374 PASSA, 6 FALHA, 2 BLOQUEADO de 382.**
+- **Casos: 375 PASSA, 5 FALHA, 2 BLOQUEADO de 382.** (baseline anterior: 374/6/2)
 - **Auditorias: 0 com problema de 56** (14 telas × claro/escuro × 1440×900/1024×768).
-- **Timers órfãos: 0** em todas as etapas (janela de 6 s após trocar de tela).
-- **Auditoria de API: 18 checagens de contrato verdes**; 7 de 12 coleções Postman com 63 asserções
-  falhando, todas por defasagem preexistente (§7.3).
-- **Pré-voo: 20 PASS, 0 FAIL, 0 AVISO** — a frio, na primeira execução.
-- **Apontamentos:** 6, **nenhum causado pela E0**. 5 são cenário defasado de ADR mergeado
-  (ADR-026, ADR-029) e 1 é bug real de produto (AP-05).
-- **Situação: APROVADA COM RESSALVAS** — aprovada como baseline (é o retrato fiel de `develop`
-  @ `7b6f3b7`); as ressalvas são as §7.1, §7.2 e §7.3, que mudam o plano de E7, E8 e da integração.
+- **Timers órfãos: 0** em todas as etapas.
+- **Auditoria de API: 23 ok, 7 falhas** — idêntica ao baseline anterior, nos dois estados.
+- **Pré-voo: 20 PASS, 0 FAIL** (o único AVISO é "árvore git limpa", esperado numa branch com a
+  correção não commitada no momento do pré-voo).
+- **Dump de `textContent`: 25 arquivos, 3.212 nós** — mesma contagem do baseline anterior, com
+  **exatamente 2 linhas diferentes**, ambas em `base.txt` (ver §8.1). Provado determinístico:
+  gerado duas vezes com `qa-down --purge` + `qa-up` + `qa-seed` completos entre as duas, `diff -ru`
+  vazio.
+- **Apontamentos:** 5 abertos (AP-01…AP-04, AP-06), todos preexistentes e de cenário defasado,
+  rastreados em [REACT-SYNC-01]; 1 corrigido (AP-05).
+- **Situação: APROVADA COM RESSALVAS** — aprovada como baseline vigente da Wave 10; as ressalvas
+  são as §7.1, §7.3, §7.4 e §7.5.
+
+### 8.1 O que mudou no oráculo do ADR-004
+
+Duas linhas de `textcontent/base.txt` (campanha cheia; `base--vazio.txt` e as outras 23 telas estão
+byte a byte idênticas):
+
+```diff
+-Prompt · situação · editável
++Prompt · rótulo · editável
+ Copiar
+-The product (energético) in the exact same situation as the reference image, with the campaign mood: gelo neon ciano, alto contraste, palette #002050 #102050. Photorealistic.
++Apply the attached brand/logo image onto the product label. Keep the product colors, shape and everything else identical, realistic.
+```
+
+É precisamente o texto que o bug escondia: no estado de repouso o stepper abre em `rótulo`, e agora
+o card concorda. Nenhum texto foi criado, reescrito ou removido — o `LABEL_PROMPT` exibido já
+existia no código e é o espelho do `LABEL_IMAGE_PROMPT` do backend (ADR-026). O `sha256` de
+`base.txt` muda de `5b76c66e…` para `76e50a20…`; todos os outros 24 arquivos mantêm o hash.
 
 ### Como as frentes E1…E10 comparam contra este baseline
 
 ```bash
-# 1) cenários — o alvo é 374 PASSA / 6 FALHA / 2 BLOQUEADO, com os MESMOS 6 casos falhando
-make qa-up qa-seed qa-run RUN=<nome-da-frente>          # nunca RUN=local
+# 1) cenários — o alvo é 375 PASSA / 5 FALHA / 2 BLOQUEADO, com os MESMOS 5 casos falhando
+make qa-up qa-seed RUN=<nome-da-frente>          # nunca RUN=local
+make qa-run RUN=<nome-da-frente>                 # ANTES do qa-api (§7.5)
 
 # 2) contrato de backend — o alvo é 23 ok / 7 falhas, com as MESMAS coleções vermelhas
 make qa-api RUN=<nome-da-frente>
 
 # 3) texto visível (ADR-004) — o alvo é diff VAZIO
+#    gere logo depois do qa-seed, com a pilha recém-subida (§7.5)
 . .qa/runs/<nome-da-frente>/env.sh
 python scripts/qa/textcontent.py --run <nome-da-frente> --saida /tmp/tc-<frente>
-diff -ru docs/qa/reports/2026-09-03-react-e0/textcontent /tmp/tc-<frente>
+diff -ru docs/qa/reports/2026-09-03-react-e0-v2/textcontent /tmp/tc-<frente>
 ```
 
-O item 3 é o critério 5 da definição de pronto. O dump foi **provado determinístico**: gerado duas
-vezes, com `stack-down --purge` + `stack-up` + `seed` completos entre as duas, e `diff -ru` vazio.
-São 25 arquivos (14 telas; cada tela de etapa capturada com a campanha cheia **e** com a vazia,
-porque empty-state também é texto de aula), 3.212 nós de texto no total, um por linha, em ordem de
-documento e com espaço em branco normalizado. `MANIFEST.txt` traz sha256 e contagem por arquivo.
+`MANIFEST.txt` traz sha256 e contagem de linhas por arquivo, para conferência rápida sem rodar o
+diff inteiro.
 
 
 ## 9. Histórico de rodadas
 
-### Rodada 1 — 2026-09-03, baseline de referência da Wave 10
+### Rodada 1 — 2026-09-03, baseline vigente (pós-correção do C-BASE-33)
 
-- **Pré-voo:** 20 PASS, 0 FAIL, 0 AVISO, a frio. Foi preciso consertar três bugs de portabilidade
-  do harness antes (o harness nasceu em Linux/WSL2 e nunca havia rodado em macOS): detecção do
-  Chromium por caminho do Linux, servidor de mídia fake sem readiness wait, e o CLI inerte fixado
-  em `/bin/true` — que não existe no macOS. Sem eles o baseline nasceria contaminado.
+- **Pré-voo:** 20 PASS, 0 FAIL. Foi preciso `npm ci` em `frontend/` para ter o `newman`
+  (devDependency, ADR-031) — sem ele o `qa-api` não roda as coleções e o pré-voo acusa AVISO.
 - **Executado:** 14 telas, 382 casos, 56 auditorias, timers órfãos, auditoria de API e newman.
-- **Resultado:** 374 PASSA, 6 FALHA, 2 BLOQUEADO; 0 auditoria com problema; 0 timer órfão.
+- **Resultado:** 375 PASSA, 5 FALHA, 2 BLOQUEADO; 0 auditoria com problema; 0 timer órfão;
+  API 23 ok / 7 falhas.
 - **Artefatos:** `resultados.json` (cenários), `api.json` (auditoria de API em estado limpo),
-  `api-apos-cenarios.json` (a mesma auditoria depois dos cenários, para mostrar o que é
-  sensibilidade a ordem), `check-env.txt` (pré-voo) e `textcontent/` (o oráculo do ADR-004).
-- **Apontamentos abertos:** AP-01…AP-06, todos preexistentes, nenhum da E0.
+  `api-apos-cenarios.json` (a mesma auditoria depois dos 382 cenários), `check-env.txt` (pré-voo)
+  e `textcontent/` (o oráculo do ADR-004).
+- **Rodada descartada:** houve uma primeira execução com `qa-api` ANTES do `qa-run`, que deu
+  373/7/2 — as duas falhas extras (`C-PROSPECT-03/04`) eram contaminação de estado, não regressão.
+  Refeita do zero com `qa-down --purge`. Registrado na §7.5 para as frentes não repetirem.
+- **Apontamentos abertos:** AP-01, AP-02, AP-03, AP-04, AP-06 (todos preexistentes).

@@ -30,7 +30,7 @@ exatamente ao que o ADR-004 protege.
     make qa-up qa-seed RUN=<frente>
     . .qa/runs/<frente>/env.sh
     python scripts/qa/textcontent.py --run <frente> --saida /tmp/tc-<frente>
-    diff -ru docs/qa/reports/2026-09-03-react-e0/textcontent /tmp/tc-<frente>
+    diff -ru docs/qa/reports/2026-09-03-react-e0-v2/textcontent /tmp/tc-<frente>
 
 Saída vazia = critério 5 da definição de pronto atendido. Qualquer linha de diferença é um texto
 que mudou e precisa de justificativa — ou é bug da migração.
