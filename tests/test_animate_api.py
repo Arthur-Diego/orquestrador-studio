@@ -62,81 +62,12 @@ def test_step_is_registered_as_ready(client):
     steps = {s["id"]: s for s in client.get("/api/steps").json()}
     assert steps["animate"]["status"] == "ready" and steps["animate"]["n"] == 5
     assert steps["animate"]["aula"] == "012" and steps["animate"]["title"] == "Animação"
-    assert client.get("/steps/animate/view.html").status_code == 200
-    assert client.get("/steps/animate/view.js").status_code == 200
 
 
-def test_view_follows_the_screen_contract(client):
-    """Convenção das waves 2–4: painel do guia na tela, `Studio.ui` e `destroy()` sem timer órfão."""
-    html = client.get("/steps/animate/view.html").text
-    assert "Etapa 5 · aula 012" in html, "string fixada: não mexer"
-    assert '<section id="guide" class="guide">' in html
-    js = client.get("/steps/animate/view.js").text
-    assert 'Studio.register("animate"' in js
-    assert "destroy()" in js and "job.stop()" in js, "o polling não pode sobreviver à troca de tela"
-    assert "Studio.ui" in js and 'ui.renderGuide("animate")' in js
-    assert "an-end" in js, "campo de end frame do modo start/end (correção 6.1)"
-    assert "endrow.style.display" in js, "`.field {display:flex}` vence o atributo `hidden`"
-
-
-def test_view_matches_the_wave_4_prototype(client):
-    """Wave 4 (`_wave4-ref/proto/06-animate.html`): a tela tem só o que o protótipo desenha."""
-    html = client.get("/steps/animate/view.html").text
-    js = client.get("/steps/animate/view.js").text
-    # painel 01: cabeçalho com título + "Recarregar plano", nada mais.
-    assert '<span class="pn">01</span>Takes por shot' in html
-    assert '<span class="pn">02</span>Importar os vídeos que você gerou na UI' in html
-    assert 'id="anShots" class="rowlist"' in html
-    assert '<button id="anReload" class="ghost">Recarregar plano</button>' in html
-    # painel 02: `.import-row` com drop + uma coluna de 2 botões + a dica sem negrito.
-    assert 'class="import-row"' in html
-    assert ("<p class=\"note\">Dica da aula: enquanto um take gera, dispare os outros shots "
-            "em paralelo na UI e importe os mp4 depois.</p>") in html
-    # linha do shot: thumb + nome | input do prompt + `.takes` + nota única.
-    assert 'class="shot-row"' in js and '.shot-row[data-k=' in js
-    assert 'class="an-prompt prompt-inline"' in js and "<input" in js
-    assert '<div class="takes">' in js, "faixa de takes usa a classe do shell (gap 10)"
-    assert 'class="take an-like' in js and '"take empty an-gen"' in js
-    assert 'class="like-lbl"' in js, "`♥ like` no take escolhido"
-    assert '"falha" : "falhas"' in js, "nota do protótipo no singular: `1 falha — na 3ª…`"
-    assert "na 3ª, troque de modelo" in js
-
-
-def test_view_dropped_what_the_prototype_does_not_draw(client):
-    """§(c) da auditoria: o que saiu da tela não pode voltar (chips, `details`, notas, campos)."""
-    html = client.get("/steps/animate/view.html").text
-    js = client.get("/steps/animate/view.js").text
-    for foi in ('id="anReady"', 'id="anModelNote"', 'id="anWarnings"', 'id="anDlFolder"',
-                'id="anDlMinutes"', 'id="anParallel"', 'details class="lesson"',
-                'id="anGallery"'):
-        assert foi not in html, f"removido pela wave 4, voltou ao view.html: {foi}"
-    for foi in ("an-save", "an-aspect", "an-climode", "an-takes", "an-foot", "an-file",
-                "an-opts", "<summary>", "Opções de geração", "ui.chip("):
-        assert foi not in js, f"removido pela wave 4, voltou ao view.js: {foi}"
-
-
-def test_view_integrates_every_action_the_lesson_requires(client):
-    """Regra 2 da wave 4: nada de ação some — modal, hover e autosave assumem o que saiu."""
-    html = client.get("/steps/animate/view.html").text
-    for anchor in ("anReload", "anShots", "anHfState", "anCandCount", "anDrop", "anUpload",
-                   "anBtnDownloads", "anBtnHistory"):
-        assert f'id="{anchor}"' in html, f"id do contrato DOM sumiu: #{anchor}"
-    js = client.get("/steps/animate/view.js").text
-    assert 'id="anGallery" class="gallery sm"' in js, "a galeria de candidatos vive no modal"
-    assert "ui.tile(" in js, "galeria de candidatos usa o helper do shell"
-    assert "ui.modal(" in js and "Gerar take ${n}" in js, "o slot `+ gerar take N` abre o modal"
-    assert 'ui.drop($("#anDrop")' in js and "ui.confirmCost(" in js
-    assert 'addEventListener("blur", onBlur, true)' in js, "autosave do prompt no lugar do Salvar"
-    assert "DL_MINUTES = 120" in js, "janela da pasta Downloads fixa (o campo saiu da tela)"
-    assert '#anBtnDownloads").title' in js and '#anBtnHistory").title' in js, \
-        "caminho da pasta e a nota do CLI viraram `title`"
-    assert "Atribuir selecionado" in js, "o botão do rodapé do modal atribui o vídeo importado"
-    # todo controle da geração continua existindo — agora dentro do modal.
-    for cls in ("an-left", "an-prompt", "an-like", "an-rej", "an-play", "an-x", "an-gen",
-                "an-mode", "an-camera", "an-action", "an-slow", "an-suggest", "an-endrow",
-                "an-end", "an-example", "an-tips", "an-duration", "an-black", "an-model",
-                "an-count", "an-cli"):
-        assert cls in js, f"controle do contrato DOM sumiu: .{cls}"
+# Wave 10 · E5 (card [REACT-06]): a tela migrou para React (`studio/etapas/animate/ui/index.tsx`);
+# os antigos `test_view_*` que liam `animate/view.{html,js}` — inclusive as guardas "removido pela
+# wave 4, não pode voltar" — viraram substituto Vitest em `.../ui/index.test.tsx` (recon §7.2). Os
+# testes de backend/API abaixo continuam intocados.
 
 
 # ---------- plano ----------

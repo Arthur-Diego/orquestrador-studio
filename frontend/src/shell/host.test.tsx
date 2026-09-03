@@ -21,16 +21,23 @@ function ctxFalso(over: Partial<StudioCtx> = {}): StudioCtx {
 }
 
 describe("host de plugin React — contrato de E4…E9", () => {
-  it("em E3 nenhuma etapa tem tela React (todas são vanilla pela ponte)", () => {
-    // O glob real resolve para {} — nenhuma `studio/etapas/*/ui/index.tsx` existe ainda.
-    expect(temTelaReact("mood")).toBe(false);
-    expect(temTelaReact("edit")).toBe(false);
+  it("o glob real enxerga as telas do lote A (E4) e ignora as ainda-vanilla", () => {
+    // Wave 10 · E4: as 4 telas do lote A já têm `studio/etapas/<id>/ui/index.tsx`, descobertas pelo
+    // glob real (`import.meta.glob`), sem registry central (ADR-032).
+    expect(temTelaReact("mood")).toBe(true);
+    expect(temTelaReact("publish")).toBe(true);
+    expect(temTelaReact("export")).toBe(true);
+    expect(temTelaReact("music")).toBe(true);
+    // Uma etapa sem `ui/index.tsx` (vanilla na ponte, ou inexistente) não é vista como React — o
+    // glob não alucina. Usamos um id inexistente para o teste ser robusto às migrações seguintes
+    // (na integração da wave, `edit`/`storyboard`/etc. deixam de ser vanilla um a um).
+    expect(temTelaReact("etapa-inexistente")).toBe(false);
   });
 
   it("temTelaReact enxerga um módulo descoberto pelo glob", () => {
     const modulos = { "../../../studio/etapas/mood/ui/index.tsx": async () => ({ default: () => null }) };
     expect(temTelaReact("mood", modulos)).toBe(true);
-    expect(temTelaReact("edit", modulos)).toBe(false);
+    expect(temTelaReact("etapa-inexistente", modulos)).toBe(false);
   });
 
   it("PluginHost monta a tela e entrega o ctx via useStudio()", async () => {

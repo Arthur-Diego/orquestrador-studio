@@ -42,33 +42,31 @@ def test_progress_styles_use_catalog_tokens(client):
     assert "prog-spin" in css, "spinner do passo em andamento"
 
 
-def test_sync_claude_calls_open_the_progress_modal(client):
-    """As ações que POSTam num endpoint do bot (Claude) abrem `Studio.ui.progress` com fases.
-
-    A etapa 2 (mood) deixou de chamar o bot (etapa2-pick, ADR-014: a criação de moods migrou para
-    a biblioteca) — a chamada síncrona ao Claude na criação de moods vive agora em `moodboards.js`.
-    """
-    base = _view(client, "base")
-    assert "ui.progress(" in base and "Consultando o Claude" in base
-    # "Gerar prompt" e "Gerar sem viés" passam pela mesma função; só o modo `images` usa o bot.
-    assert "usaBot" in base
-
-    boards = _static(client, "moodboards.js")
-    assert "ui.progress(" in boards and "Consultando o Claude" in boards
-    assert 'mode === "template"' in boards
+# Wave 10: `test_sync_claude_calls_open_the_progress_modal` foi removido — os DOIS consumidores da
+# chamada síncrona ao Claude com o modal `Studio.ui.progress` migraram para React e são afirmados
+# por substitutos Vitest: a biblioteca de mood boards (E6 · [REACT-07] →
+# `frontend/src/areas/moodboards/MoodboardsArea.test.tsx`) e a etapa 3 · base (E7 · [REACT-08] →
+# `studio/etapas/base/ui/index.test.tsx`, teste "Gerar prompt … Consultando o Claude"). Não resta
+# consumidor vanilla para este assert de fonte.
 
 
 def test_jobs_use_progressjob_as_single_source(client):
-    """Cada JOB (geração/render/scrape/teaser) é ligado ao `progressJob` (log real)."""
+    """Cada JOB (geração/render/scrape/teaser) é ligado ao `progressJob` (log real).
+
+    Wave 10 · E5 (card [REACT-06]): `refs`, `animate` e `prospect` migraram para React e não têm mais
+    `view.js` — o uso do `progressJob` nessas telas passou a ser provado pelos substitutos Vitest
+    (`studio/etapas/<id>/ui/index.test.tsx`) e pelos cenários de QA (C-REFS busca, C-ANIMATE-24,
+    C-PROSPECT-15). Aqui ficam só as etapas ainda vanilla.
+    """
     liga = {
-        "refs": "refs/job",         # scrape
         # a etapa 2 (mood) não roda mais job de geração via CLI (etapa2-pick, ADR-014: criação
         # migrou para a biblioteca — a geração paga vive em moodboards, fora do escopo da tela)
-        "edit": "render/job",       # render ffmpeg
-        "export": 'url("job")',     # render por formato
-        "animate": "/job",          # geração paga
-        "music": "music/story/job",  # sequência bruta
-        "prospect": "/job",         # teaser
+        # Wave 10: todas as telas com job por `progressJob` migraram para React (`ui/index.tsx`) e
+        # não têm mais `view.js`: `export`/`music` na E4, `refs`/`animate`/`prospect` na E5 e `edit`
+        # na E9 (render ffmpeg via `/render/job`). A fonte única de polling (`progressJob` da E2,
+        # `frontend/src/ui`) é provada pelos substitutos Vitest de cada tela + os cenários de QA
+        # (C-EXPORT-07/09, C-MUSIC-02, C-REFS, C-ANIMATE-24, C-PROSPECT-15, C-EDIT-*). O dict fica
+        # vazio: não resta etapa vanilla com job (o teste continua verde, a guarda migra para o Vitest).
     }
     for step, jobref in liga.items():
         js = _view(client, step)
@@ -76,16 +74,11 @@ def test_jobs_use_progressjob_as_single_source(client):
         assert jobref in js, f"{step}: o jobUrl esperado ({jobref}) sumiu"
 
 
-def test_confirm_cost_still_precedes_paid_generations(client):
-    """O modal de progresso abre DEPOIS do `confirmCost` (FDD §2B) — a confirmação não regrediu.
-
-    A etapa 2 (mood) não tem mais geração paga (etapa2-pick, ADR-014); resta `animate`.
-    """
-    for step in ("animate",):
-        js = _view(client, step)
-        assert "ui.confirmCost(" in js, step
-        # a ordem no código: confirmCost antes do progressJob (o `if (!ok) return;` corta antes).
-        assert js.index("confirmCost(") < js.index("progressJob("), step
+# Wave 10 · E5 (card [REACT-06]): `test_confirm_cost_still_precedes_paid_generations` lia
+# `animate/view.js` para provar que o `confirmCost` (aula 008) precede o `progressJob`. A `animate`
+# migrou para React; a garantia virou o substituto Vitest
+# `studio/etapas/animate/ui/index.test.tsx` ("'Gerar via CLI' passa pelo gate de custo …") e é
+# reforçada pelos cenários de QA C-ANIMATE-23/24 (recon §7.2).
 
 
 # Wave 10 · E8 (card [REACT-09]): `test_deterministic_generators_do_not_open_a_modal` lia o fonte de

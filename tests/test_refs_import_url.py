@@ -387,18 +387,9 @@ def test_url_candidates_behave_like_any_other_candidate(client, studio_env, monk
 # ---------------------------------------------------------------- 5. tela da etapa 1
 
 
-def test_view_offers_the_url_import_with_the_tos_warning(client):
-    """Critério 7: campo, botão, aviso de ToS e a marca de extensão do Studio na tela."""
-    html = client.get("/steps/refs/view.html").text
-    assert 'id="refsUrl"' in html and 'id="btnImportUrl"' in html and "Importar URL" in html
-    assert 'id="maxPins"' in html and 'max="100"' in html, "o teto do board é editável na tela"
-    assert "Extensão do Studio" in html, "a tela diz que import por URL não é da aula 009"
-    assert "conta secundária" in html and "termos do Pinterest" in html, "aviso de ToS (ADR-005)"
-    assert html.count('<span class="pn">') == 2, "sem painel novo: o import entra no painel 01"
-
-    js = client.get("/steps/refs/view.js").text
-    assert "refs/import/url" in js and "[extensão]" in js
-    assert "ui.progressJob(" in js and js.count("refs/job") >= 2, "progresso no job existente"
+# Wave 10 · E5 (card [REACT-06]): `test_view_offers_the_url_import_with_the_tos_warning` lia
+# `refs/view.{html,js}` (campo/botão/aviso de ToS do import por URL) e virou substituto Vitest em
+# `studio/etapas/refs/ui/index.test.tsx` (recon §7.2). O teste de guia abaixo é backend e fica.
 
 
 def test_guide_mentions_the_url_import_as_an_extension(client):

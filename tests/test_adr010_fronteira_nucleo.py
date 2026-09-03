@@ -85,6 +85,14 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "(cópia byte-a-byte de style.css/ui.css). O vanilla segue intocado até a E10 — ADR-031/ADR-032",
         ("frontend/",),
     ),
+    "refactor/adh-os-20260903-05-react-lote-a": (
+        "Wave 10 · E4 lote A (mood/publish/export/music) + correções de integração do shell E2/E3 que "
+        "destravam as frentes de tela (resolução de `studio/etapas/*/ui` no tsconfig/vite/eslint, "
+        "`Guide.tsx`/`PluginHost` para o diff de textContent do ADR-004, `useUpload` `.over` síncrono) "
+        "— card [REACT-05]. A pasta das etapas (`studio/etapas/`) não é prefixo do núcleo e não entra "
+        "no recorte; só `frontend/` precisa de titularidade.",
+        ("frontend/",),
+    ),
     "refactor/adh-os-20260903-04-react-shell-ponte": (
         "Wave 10 · E3 shell React + ponte strangler — card [REACT-04]; acrescenta o shell React em "
         "`frontend/src/shell/` (sidebar, rail, topbar, visão geral, wizard, roteamento por hash, "
@@ -93,6 +101,21 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "shell é a exceção sancionada (recon §1.1/§6.3), a lógica de backend (service/router/guide) "
         "segue intocada. O vanilla continua no default até a E10 — ADR-031/ADR-032",
         ("frontend/", "studio/app.py"),
+    ),
+    "refactor/adh-os-20260903-07-react-lote-c": (
+        "Wave 10 · E6 lote C — áreas globais — card [REACT-07]; migra a biblioteca de mood boards "
+        "(ADR-013), créditos & custos (ADR-016) e o componente compartilhado multishot (ADR-017) "
+        "para React em `frontend/src/areas/*`, hospedadas pelo content-root do shell, e REMOVE os "
+        "vanilla `studio/web/{moodboards,creditos,multishot}.js` + os `<script>` correspondentes em "
+        "`studio/web/index.html`. O vanilla residual restante é cortado pela E10 — ADR-031/ADR-032",
+        ("frontend/", "studio/web/"),
+    ),
+    "refactor/adh-os-20260903-10-react-lote-f": (
+        "Wave 10 · E9 lote F — etapa edit — card [REACT-10]; migra a etapa 7 (Studio de vídeo) para "
+        "`studio/etapas/edit/ui/`. Toca `frontend/` só na INTEGRAÇÃO da wave: torna a guarda de "
+        "`frontend/src/shell/host.test.tsx` robusta a novas migrações (id inexistente no lugar de "
+        "`edit`, que deixou de ser vanilla). Recorte `frontend/` — ADR-031/ADR-032",
+        ("frontend/",),
     ),
     "refactor/adh-os-20260903-09-react-lote-e": (
         "Wave 10 · E8 lote E storyboard + canvas de marcação — card [REACT-09]; porta a etapa 4 para "

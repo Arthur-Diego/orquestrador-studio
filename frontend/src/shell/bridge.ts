@@ -7,9 +7,12 @@
 // próprios assets vanilla, que seguem servidos por `/static` e intocados até a E10:
 //
 //   /static/ui.js         → cria `window.Studio.ui` (biblioteca imperativa) + o listener de data-copy
-//   /static/multishot.js  → `window.Studio.multishot` (ADR-017)
-//   /static/moodboards.js → `window.Studio.moodboards` (ADR-013) — renderiza em `#main`
-//   /static/creditos.js   → `window.Studio.creditos` (ADR-016) — renderiza em `#main`
+//
+// Wave 10 · E6 (card [REACT-07]): as áreas globais mood boards (ADR-013), créditos (ADR-016) e o
+// componente multishot (ADR-017) foram migradas para React (`frontend/src/areas/*`) e não são mais
+// hospedadas pela ponte — os scripts `moodboards.js`/`creditos.js`/`multishot.js` deixaram de ser
+// carregados. Os componentes React reinstalam `window.Studio.{moodboards,creditos}.open` como escape
+// hatch imperativo para os cenários de QA.
 //
 // O shell React assume o papel do `app.js`: monta `window.Studio.{register, go, onGuide, ctx,
 // steps}` e reproduz `showView`. `ui.js` faz `window.Studio = window.Studio || {}`, então montar o
@@ -46,7 +49,9 @@ interface StudioGlobal {
     hfChip: (elOrSel: string | Element) => Promise<unknown>;
     refreshCredits: (refresh?: boolean) => Promise<unknown>;
   };
-  moodboards?: { open: (mbid: string | null) => void };
+  /** Instalado pela `MoodboardsArea` React (E6), não mais pelo `moodboards.js` vanilla. */
+  moodboards?: { open: (mbid: string | null) => void; goList: () => void; goEditor: (mbid: string) => void };
+  /** Instalado pela `CreditosArea` React (E6), não mais pelo `creditos.js` vanilla. */
   creditos?: { open: (pid: string | null) => void };
   register?: (id: string, factory: FabricaVanilla) => void;
   go?: (target: string) => void;
@@ -74,7 +79,9 @@ export interface BridgeDeps {
   confirmResetStep: (stepId: string) => void;
 }
 
-const VANILLA_SCRIPTS = ["/static/ui.js", "/static/multishot.js", "/static/moodboards.js", "/static/creditos.js"];
+// Só `ui.js` continua servindo as 10 telas de etapa ainda vanilla (biblioteca imperativa +
+// listener de data-copy). As áreas globais (moodboards/creditos/multishot) são React desde a E6.
+const VANILLA_SCRIPTS = ["/static/ui.js"];
 
 function carregarScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -186,23 +193,6 @@ export class Bridge {
       )}</div>`;
       this.deps.toast((err as Error).message);
     }
-  }
-
-  /**
-   * Área global de mood boards (ADR-013): `window.Studio.moodboards.open(mbid)`, que escreve no
-   * `#main`. O vanilla chama `destroyCurrent()` antes (applyRoute), então fazemos o mesmo.
-   */
-  async openMoodboards(sub: string | null): Promise<void> {
-    this.destroyCurrent();
-    await this.pronto;
-    window.Studio?.moodboards?.open(sub);
-  }
-
-  /** Área global de créditos & custos (ADR-016): `window.Studio.creditos.open(pid)` no `#main`. */
-  async openCreditos(pid: string | null): Promise<void> {
-    this.destroyCurrent();
-    await this.pronto;
-    window.Studio?.creditos?.open(pid);
   }
 
   /** `ensureGuideSlot` do vanilla: `<section id="guide" class="guide">` após o `header.stephead`. */

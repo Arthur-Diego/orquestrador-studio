@@ -318,17 +318,22 @@ def test_wave4_helpers_aditivos_do_studio_ui(client):
 
 # ---------- biblioteca de mood boards [extensão] (ADR-013): shell e telas ----------
 def test_shell_area_global_de_moodboards(client):
-    """A área/rota global da biblioteca e o item de sidebar existem (ADR-013)."""
+    """A área/rota global da biblioteca e o item de sidebar existem (ADR-013).
+
+    Wave 10 · E6 (card [REACT-07]): a área migrou para React
+    (`frontend/src/areas/moodboards/MoodboardsArea.tsx`) e o `studio/web/moodboards.js` vanilla foi
+    removido. O contrato de DOM/comportamento (`Studio.moodboards.open`, biblioteca/editor,
+    `/api/moodboards`, `/mbfiles/`) passa a ser afirmado pelo substituto Vitest
+    `frontend/src/areas/moodboards/MoodboardsArea.test.tsx` e pelos cenários
+    `scripts/qa/cenarios/moodboards.py` (rodados no shell React). Aqui fica só o que continua sendo
+    do shell vanilla ainda servido por `/` até a E10: o item de sidebar e o roteamento reservado em
+    `app.js`.
+    """
     index = client.get("/").text
     assert 'id="btnMoodboards"' in index, "item de sidebar da biblioteca"
-    assert "/static/moodboards.js" in index and client.get("/static/moodboards.js").status_code == 200
     app_js = client.get("/static/app.js").text
     assert '"moodboards"' in app_js and "#/moodboards" in app_js and "MB_ROUTE" in app_js
     assert 'area === "moodboards"' in app_js, "a área global é reconhecida no roteamento"
-    mbjs = client.get("/static/moodboards.js").text
-    for tok in ("Studio.moodboards", "renderList", "renderEditor", "Novo mood board",
-                "/api/moodboards", "/mbfiles/"):
-        assert tok in mbjs, tok
 
 
 def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
@@ -341,16 +346,10 @@ def test_shell_catalogo_segue_intacto_com_a_biblioteca(client):
 
 
 def test_step2_pull_e_step3_galeria_visual_nas_telas(client):
-    """Etapa 2 escolhe/aplica um board (etapa2-pick, ADR-014); etapa 3 tem seletor + galeria."""
-    mood_html = client.get("/steps/mood/view.html").text
-    mood_js = client.get("/steps/mood/view.js").text
-    # etapa2-pick: a etapa 2 escolhe da biblioteca e aplica via pull_board
-    assert 'id="btnApplyBoard"' in mood_html and "Aplicar a esta campanha" in mood_html
-    assert '"/api/moodboards"' in mood_js and "/mood/pull/" in mood_js
-    base_html = client.get("/steps/base/view.html").text
-    base_js = client.get("/steps/base/view.js").text
-    # wave 5 · ponto 1: o seletor de fonte do mood e o mosaico vivem DENTRO da junção (#baseJunction),
-    # renderizados pelo view.js — o painel "M" separado deixou de existir.
-    assert 'id="baseJunction"' in base_html
-    assert 'id="moodSource"' in base_js and "moodMosaic" in base_js
-    assert "board: boardSel" in base_js and "mood-sources" in base_js
+    """Etapas 2 (mood, etapa2-pick/ADR-014) e 3 (base) migraram para React na Wave 10 (E4/E7): o
+    contrato de tela — `#btnApplyBoard`/"Aplicar a esta campanha", `/mood/pull`, a junção
+    `#baseJunction`/`#moodSource` e o mosaico — é coberto pelos substitutos Vitest
+    `studio/etapas/{mood,base}/ui/index.test.tsx`. Aqui só confirmamos que os `view.*` vanilla dessas
+    etapas deixaram de ser servidos (o corte da rota `/steps/<id>/view.*` do `app.py` é da E10)."""
+    assert client.get("/steps/mood/view.html").status_code == 404
+    assert client.get("/steps/base/view.html").status_code == 404
