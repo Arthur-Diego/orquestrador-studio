@@ -1,15 +1,29 @@
 /**
- * Esqueleto do app React (Wave 10 · E0).
+ * App React do Orquestrador Studio — Wave 10 · E3 (card [REACT-04]).
  *
- * NÃO existe tela aqui, de propósito: a E0 entrega só a fundação que compila, passa no lint e roda
- * um teste de fumaça. O shell (rail, topbar, visão geral, roteamento por hash) é da E3; as telas
- * das etapas viram `studio/etapas/<id>/ui/index.tsx` a partir da E4 (ADR-032).
+ * Substitui o esqueleto da E0 pelo shell de verdade (`shell/Shell.tsx`): sidebar, rail das 11
+ * etapas, topbar, visão geral, wizard e roteamento por hash, com a ponte strangler para as 10
+ * etapas ainda vanilla. Continua NÃO sendo o default: o `studio/web/index.html` vanilla responde
+ * até a E10; este shell só responde sob a flag `STUDIO_UI=react` (ver `studio/app.py`).
  *
- * Nada aqui é servido ao usuário: o `studio/web/index.html` vanilla segue sendo a aplicação até a
- * E10 trocar o default.
+ * O `QueryClient` é o da E1 (`criarQueryClient` — sem retry, sem refetch ao focar; os defaults do
+ * vanilla). O mesmo cliente é compartilhado com o content-root do `#main` dentro do `Shell`.
  */
+import { QueryClientProvider } from "@tanstack/react-query";
+import { useRef } from "react";
+import type { QueryClient } from "@tanstack/react-query";
+
+import { criarQueryClient } from "./api";
+import { Shell } from "./shell/Shell";
+
 export function App() {
-  return <div className="app" data-studio-ui="react" />;
+  const qc = useRef<QueryClient | null>(null);
+  if (qc.current === null) qc.current = criarQueryClient();
+  return (
+    <QueryClientProvider client={qc.current}>
+      <Shell />
+    </QueryClientProvider>
+  );
 }
 
 export default App;
