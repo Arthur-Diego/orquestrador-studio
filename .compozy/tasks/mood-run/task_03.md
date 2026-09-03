@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Painel `05 · Gerar mood com as skills` — entregue como **patch**
 type: frontend
 complexity: medium

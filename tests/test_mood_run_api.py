@@ -440,3 +440,49 @@ def test_nenhum_gasto_nem_higgsfield_nos_modulos_novos():
         codigo = _codigo_sem_prosa(raiz / rel)
         for termo in proibidos:
             assert termo not in codigo, f"{rel} usa {termo}"
+
+
+# ---------- FT-01/FT-02: a pendência do front não pode apodrecer em silêncio ----------
+# `studio/web/*` é núcleo (ADR-010) e esta frente NÃO o edita: o painel sai como patch em
+# `docs/domains/mood/features/pendencias/`, para a frente de preparo/shell aplicar. Sem estes dois
+# testes, o patch envelheceria contra um `moodboards.js` que muda e ninguém perceberia até a
+# integração. Eles não tocam `studio/web/` — leem o arquivo e trabalham numa cópia em `tmp_path`.
+PENDENCIAS = Path(__file__).resolve().parent.parent / "docs/domains/mood/features/pendencias"
+PATCH_FRONT = PENDENCIAS / "mood-run-front.patch"
+
+
+def test_o_patch_do_front_ainda_aplica_no_moodboards_js_atual():
+    """FT-01: `git apply --check` do patch contra a árvore atual."""
+    git = shutil.which("git")
+    if not git:
+        pytest.skip("git não disponível no ambiente")
+    raiz = Path(__file__).resolve().parent.parent
+    r = subprocess.run([git, "-C", str(raiz), "apply", "--check", str(PATCH_FRONT)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, f"o patch do front não aplica mais: {r.stderr}"
+
+
+def test_o_front_com_o_patch_aplicado_e_javascript_valido(tmp_path):
+    """FT-02: o resultado da aplicação passa `node --check` (equivalente ao teste do `base/view.js`)."""
+    git, node = shutil.which("git"), shutil.which("node")
+    if not git or not node:
+        pytest.skip("git ou node não disponíveis no ambiente")
+    raiz = Path(__file__).resolve().parent.parent
+    destino = tmp_path / "studio" / "web"
+    destino.mkdir(parents=True)
+    shutil.copy(raiz / "studio/web/moodboards.js", destino / "moodboards.js")
+    aplicado = subprocess.run([git, "apply", str(PATCH_FRONT)], cwd=tmp_path,
+                              capture_output=True, text=True)
+    assert aplicado.returncode == 0, aplicado.stderr
+    checado = subprocess.run([node, "--check", str(destino / "moodboards.js")],
+                             capture_output=True, text=True)
+    assert checado.returncode == 0, checado.stderr
+
+
+def test_os_testes_de_tela_acompanham_o_patch():
+    """FT-05: o patch sem os testes de tela viraria código não verificado na integração."""
+    testes = PENDENCIAS / "mood-run-front-tests.py.txt"
+    assert testes.is_file(), "os testes de tela do painel 05 precisam viajar junto com o patch"
+    texto = testes.read_text(encoding="utf-8")
+    for token in ("Studio.moodRun", "mrn-", "confirmCost"):
+        assert token in texto, token

@@ -343,7 +343,8 @@ def read_result(mbid: str) -> dict:
     except json.JSONDecodeError as e:
         raise MoodRunResultInvalid(f"{skill_runner.RUN_MANIFEST} inválido: não é JSON ({e.msg})") from e
     except OSError as e:
-        raise MoodRunResultInvalid(f"{skill_runner.RUN_MANIFEST} inválido: não deu para ler ({e})") from e
+        # Falha de LEITURA não é conteúdo inválido — a mensagem não pode acusar o arquivo.
+        raise MoodRunResultInvalid(f"não deu para ler {skill_runner.RUN_MANIFEST} ({e})") from e
     if not isinstance(dados, dict):
         raise MoodRunResultInvalid(
             f"{skill_runner.RUN_MANIFEST} inválido: a raiz precisa ser um objeto, veio {type(dados).__name__}")

@@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from studio.config import ROOT
+from ..config import ROOT
 
 #: Binário do Claude CLI. Símbolo de módulo de propósito: é por ele que os testes trocam o CLI
 #: real por um fake (`monkeypatch.setattr(skill_runner, "BIN", ...)`), como já faz `prompter.BIN`.
@@ -182,7 +182,8 @@ def run_skill(prompt: str, *, saida: Path, cwd: Path = ROOT, timeout_s: int = TI
     Raises:
         SkillUnavailable: Se o CLI `claude` não estiver no PATH (E1).
         SkillTimeout: Se a corrida passar de `timeout_s` (E2).
-        SkillFailed: Se o processo sair com `returncode` diferente de 0 (E3).
+        SkillFailed: Se o processo sair com `returncode` diferente de 0, ou se o `_run.json`
+            existir mas não puder ser lido (E3).
         SkillManifestMissing: Se a corrida terminar sem gravar o `_run.json` (E4).
         SkillManifestInvalid: Se o `_run.json` não for um objeto JSON, ou se `boards` não for
             lista (E5).
@@ -205,7 +206,8 @@ def run_skill(prompt: str, *, saida: Path, cwd: Path = ROOT, timeout_s: int = TI
     except json.JSONDecodeError as e:
         raise SkillManifestInvalid(f"{RUN_MANIFEST} inválido: não é JSON ({e.msg})") from e
     except OSError as e:
-        raise SkillManifestInvalid(f"{RUN_MANIFEST} inválido: não deu para ler {manifesto_path} ({e})") from e
+        # Falha de LEITURA não é conteúdo inválido: o arquivo pode estar perfeito e o disco, não.
+        raise SkillFailed(f"não deu para ler {RUN_MANIFEST} em {manifesto_path} ({e})") from e
     # Shape mínimo, de propósito: o arquivo é de um produtor externo que evolui, e validar o
     # conteúdo dos boards quebraria a cada versão da skill (R1 da seção 10 do FDD).
     if not isinstance(dados, dict):

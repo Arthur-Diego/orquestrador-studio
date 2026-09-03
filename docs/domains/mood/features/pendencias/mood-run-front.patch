@@ -1,0 +1,321 @@
+diff --git a/studio/web/moodboards.js b/studio/web/moodboards.js
+index a0e6356..5c2adab 100644
+--- a/studio/web/moodboards.js
++++ b/studio/web/moodboards.js
+@@ -197,24 +197,25 @@
+     // (volta ao painel 01). A seleção só é persistida em "Salvar seleção".
+     const gal = document.querySelector("#mbGallery");
+     gal.addEventListener("click", (e) => {
+       const msb = e.target.closest(".ms-btn");
+       if (msb) { e.stopPropagation(); openMultishot(st, msb.dataset.ms); return; }
+       const card = e.target.closest(".card"); if (!card) return;
+       st.sel.delete(card.dataset.id); renderPanels(st);
+     });
+ 
+     renderPanels(st);
+     paintPalette(data.palette.colors || []);
+     if (data.prompt) showPrompt(data.prompt);
++    renderMoodRunPanel(st);  // painel 05 · corrida das skills `mood_` (ADH-OS-20260902-01)
+   }
+ 
+   function cardHtml(mbid, c, promotable) {
+     return `<div class="card msc-card ${promotable ? "" : "sel"}" data-id="${esc(c.id)}" tabindex="0" title="${esc(c.name || "")}">
+        <img loading="lazy" src="${esc(mb(mbid, "candidates/" + c.thumb))}" alt="">
+        ${c.role === "multishot" ? `<span class="src">multishot</span>` : ""}
+        <button class="ms-btn" type="button" data-ms="${esc(c.id)}" title="Gerar multishot (outros ângulos) desta imagem [extensão]">▨ ângulos</button>
+        ${promotable ? `<button class="use-btn" type="button" data-use="${esc(c.id)}" title="Adicionar esta imagem ao board (painel 02)">usar no board</button>` : ""}
+        <span class="term">${esc(`${c.source || ""} · ${c.name || ""}`)}</span></div>`;
+   }
+ 
+   function renderPanels(st) {
+@@ -385,17 +386,290 @@
+         <p>A biblioteca é global: campanhas que já <b>puxaram</b> este board <b>não</b> são afetadas — a cópia para a campanha é independente.</p>`,
+       actions: [
+         { label: "Cancelar", kind: "ghost", close: true },
+         { label: "Apagar", kind: "primary", onClick: async () => {
+           try { await api(`/api/moodboards/${encodeURIComponent(st.data.id)}`, { method: "DELETE" }); toast("Mood board apagado"); goList(); }
+           catch (err) { toast(err.message); }
+         } },
+       ],
+     });
+     if (m.actions[1]) m.actions[1].classList.add("danger");
+   }
+ 
++  // ---------- 05 · corrida das skills `mood_` `[extensão]` (ADH-OS-20260902-01) ----------
++  // Dispara a cadeia `mood_` (vibe → DNA visual → prancha) pelo Claude CLI local, sem sair da tela.
++  // Quatro regras que este painel não negocia:
++  //   1. NADA é hardcoded. Objetivos, fundos, defaults e pisos vêm de `GET .../mood-run/options`,
++  //      que os deriva do manifesto das skills (ADH-OS-20260902-04). Um parâmetro que saia de um
++  //      SKILL.md some da tela sem ninguém tocar neste arquivo.
++  //   2. A CONTA de downloads é obrigatória antes do disparo. A corrida baixa dezenas de imagens de
++  //      terceiros e é irreversível em tempo e em disco; não existe caminho de código que chame o
++  //      POST de disparo sem passar por `/estimate` e pela confirmação.
++  //   3. Campo vazio NÃO é enviado (vai `null`) e o servidor aplica o default declarado — é o que
++  //      faz "modo default" e "controle total" serem o mesmo caminho de código.
++  //   4. A revisão humana não sumiu, mudou de lugar: em `--gate auto` a skill grava `leitura.md` e
++  //      `curadoria.md`, e a galeria de resultado linka os dois.
++  // A cadeia é GRATUITA (ADR-016): nada de `confirmCost` nem de indicador de créditos aqui.
++  // CSS 100% escopado em `.mrn-` num <style> inline (ADR-019): `ui.css`/`style.css` intocados.
++  const MRN_STYLE = `<style>
++    .mrn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;max-height:264px;overflow:auto;padding:2px}
++    .mrn-ph{position:relative;border-radius:8px;overflow:hidden;cursor:pointer;border:2px solid transparent;aspect-ratio:1}
++    .mrn-ph img{width:100%;height:100%;object-fit:cover;display:block}
++    .mrn-ph.on{border-color:rgba(60,150,90,.95)}
++    .mrn-ph .mrn-tag{position:absolute;left:4px;bottom:4px;font-size:.64rem;background:rgba(0,0,0,.62);color:#fff;padding:1px 5px;border-radius:999px}
++    .mrn-opts{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
++    .mrn-num{width:5.5rem}
++    .mrn-conta{font-size:.82rem;opacity:.82}
++    .mrn-boards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
++    .mrn-board img{width:100%;border-radius:8px;display:block}
++    .mrn-docs{display:flex;gap:10px;flex-wrap:wrap;font-size:.78rem;margin-top:5px}
++  </style>`;
++
++  /** Desinscrição do contador de escolhidas do painel anterior (o editor repinta a cada `open`). */
++  let mrnUnsub = null;
++
++  /** Total de fotos escolhidas. Usa `Studio.vibes` quando o painel da frente 03 está na página e
++   * cai no próprio endpoint quando não está — os dois leem a MESMA fonte autoritativa. */
++  async function mrnTotalEscolhidas(fallback) {
++    const vibes = window.Studio.vibes;
++    if (vibes && vibes.refreshCount) {
++      try { return await vibes.refreshCount(); } catch (err) { /* o endpoint abaixo decide */ }
++    }
++    try { return (await api("/api/escolhidas?per_page=1")).total; }
++    catch (err) { return fallback || 0; }
++  }
++
++  /** Assina as mudanças da peneira. `Studio.vibes.onChange` quando existe; senão o evento DOM que
++   * a frente 03 dispara — sempre DEPOIS de o estado já estar gravado em disco. */
++  function mrnOnEscolhidasChange(cb) {
++    const vibes = window.Studio.vibes;
++    if (vibes && vibes.onChange) return vibes.onChange(cb);
++    const handler = (ev) => cb((ev.detail && ev.detail.total) || 0);
++    document.addEventListener("studio:escolhidas", handler);
++    return () => document.removeEventListener("studio:escolhidas", handler);
++  }
++
++  function mrnPhotoHtml(item) {
++    const nome = item.arquivo || item.id || "";
++    return `<div class="mrn-ph" data-foto="${esc(item.caminho || "")}" title="${esc(nome)}" tabindex="0" role="button">
++      <img loading="lazy" src="${esc(item.url || "")}" alt="">
++      <span class="mrn-tag">${esc(item.origem || "")}</span></div>`;
++  }
++
++  async function renderMoodRunPanel(st) {
++    const mbid = st.data.id;
++    const base = `/api/moodboards/${encodeURIComponent(mbid)}/mood-run`;
++    const main = $main();
++    if (mrnUnsub) { mrnUnsub(); mrnUnsub = null; }
++
++    let opts;
++    try { opts = await api(`${base}/options`); }
++    catch (err) {
++      main.insertAdjacentHTML("beforeend",
++        `<section class="panel"><div class="panel-head"><h3><span class="pn">05</span>Gerar mood com as skills</h3></div>
++         <div class="empty">Não foi possível carregar as opções da corrida: ${esc(err.message)}</div></section>`);
++      return;
++    }
++
++    const objetivos = opts.objetivos || [];
++    const fundosLista = opts.fundos || [];
++    const padroes = opts.defaults || {};
++    const lim = opts.limites || {};
++
++    main.insertAdjacentHTML("beforeend", `
++      ${MRN_STYLE}
++      <section class="panel" id="mrnPanel">
++        <div class="panel-head">
++          <h3><span class="pn">05</span>Gerar mood com as skills <span class="ext">[extensão]</span></h3>
++          <div class="row wrap">
++            <span id="mrnClaude" class="chip mode">bot: ?</span>
++            <span id="mrnEscolhidas" class="chip mode">escolhidas: ?</span>
++          </div>
++        </div>
++        <p class="fine">A cadeia <b>mood_</b> lê a foto que você escolheu, extrai o DNA visual dela e monta uma prancha por objetivo. Roda com o Claude CLI local (sua assinatura, sem chave de API) e <b>não gera imagem com IA nem gasta crédito</b> — ela busca e baixa referências. As paradas humanas viram <b>leitura.md</b> e <b>curadoria.md</b>, que aparecem aqui no fim.</p>
++
++        <div class="col g10">
++          <div>
++            <span class="eyebrow">Foto-semente — uma das escolhidas no painel de vibes</span>
++            <div id="mrnFotos" class="mrn-grid"></div>
++          </div>
++
++          <div>
++            <span class="eyebrow">Objetivos — um board por objetivo marcado</span>
++            <div id="mrnObjetivos" class="mrn-opts">
++              ${objetivos.map((o) => `<label class="inline"><input type="checkbox" class="mrn-obj" value="${esc(o)}"> ${esc(o)}</label>`).join("")}
++              ${opts.agregador ? `<label class="inline"><input type="checkbox" id="mrnTodos"> <b>${esc(opts.agregador)}</b></label>` : ""}
++            </div>
++          </div>
++
++          <div class="mrn-opts">
++            <label class="inline">imagens por prancha
++              <input id="mrnBoard" class="mrn-num" type="number" min="${esc(String(lim.board_min || 1))}" placeholder="${esc(String(padroes.board != null ? padroes.board : ""))}"></label>
++            <label class="inline">candidatas por consulta
++              <input id="mrnN" class="mrn-num" type="number" min="${esc(String(lim.n_min || 1))}" placeholder="${esc(String(padroes.n != null ? padroes.n : ""))}"></label>
++            <label class="inline">fundo da prancha
++              <select id="mrnFundo">
++                <option value="">padrão${padroes.fundo ? ` (${esc(padroes.fundo)})` : ""}</option>
++                ${fundosLista.map((f) => `<option value="${esc(f)}">${esc(f)}</option>`).join("")}
++              </select></label>
++            <span class="mrn-conta" id="mrnConta"></span>
++          </div>
++
++          <div class="row opts wrap">
++            <button id="btnMrnRun" class="primary" disabled>Gerar mood com as skills</button>
++            <span class="fine">gate <b>auto</b> — a tela não tem como responder às perguntas da skill</span>
++          </div>
++        </div>
++
++        <div id="mrnResult"></div>
++      </section>`);
++
++    const btn = document.querySelector("#btnMrnRun");
++    const chipClaude = document.querySelector("#mrnClaude");
++    const chipEsc = document.querySelector("#mrnEscolhidas");
++    const elFotos = document.querySelector("#mrnFotos");
++    const elConta = document.querySelector("#mrnConta");
++    const estado = { foto: "", total: (opts.escolhidas || {}).total || 0 };
++
++    chipClaude.textContent = opts.available_claude ? "bot: claude ok" : "bot: sem claude";
++    chipClaude.className = "chip " + (opts.available_claude ? "ok" : "warn");
++
++    const objetivosMarcados = () => [...document.querySelectorAll(".mrn-obj:checked")].map((c) => c.value);
++    const numero = (sel) => { const v = document.querySelector(sel).value.trim(); return v === "" ? null : Number(v); };
++
++    /** O botão só habilita com claude, com ao menos uma escolhida, com foto e com objetivo. */
++    function sincronizaGate() {
++      chipEsc.textContent = `escolhidas: ${estado.total}`;
++      chipEsc.className = "chip " + (estado.total ? "ok" : "warn");
++      btn.disabled = !opts.available_claude || !estado.total || !estado.foto || !objetivosMarcados().length;
++    }
++
++    async function pintaEstimativa() {
++      if (!objetivosMarcados().length) { elConta.textContent = ""; return; }
++      try {
++        const r = await api(`${base}/estimate`, { method: "POST", body: JSON.stringify(
++          { objetivos: objetivosMarcados(), board: numero("#mrnBoard"), n: numero("#mrnN") }) });
++        elConta.textContent = `≈ ${r.downloads} downloads (${r.objetivos} × ${r.consultas} consultas × ${r.n})`;
++      } catch (err) { elConta.textContent = err.message; }
++    }
++
++    async function carregaFotos() {
++      try {
++        const r = await api("/api/escolhidas?per_page=20");
++        estado.total = r.total;
++        elFotos.innerHTML = r.items.length
++          ? r.items.map(mrnPhotoHtml).join("")
++          : `<div class="empty">Nenhuma foto escolhida ainda — abra <b>Fotos de vibe</b>, rode <code>/mood_vibe_scout</code> e escolha as que servem.</div>`;
++      } catch (err) {
++        elFotos.innerHTML = `<div class="empty">Não foi possível ler as escolhidas: ${esc(err.message)}</div>`;
++      }
++      sincronizaGate();
++    }
++
++    elFotos.addEventListener("click", (ev) => {
++      const card = ev.target.closest("[data-foto]"); if (!card) return;
++      const jaEra = card.classList.contains("on");
++      elFotos.querySelectorAll(".mrn-ph.on").forEach((c) => c.classList.remove("on"));
++      if (!jaEra) { card.classList.add("on"); estado.foto = card.dataset.foto; } else { estado.foto = ""; }
++      sincronizaGate();
++    });
++
++    document.querySelector("#mrnObjetivos").addEventListener("change", (ev) => {
++      const todos = document.querySelector("#mrnTodos");
++      if (todos && ev.target === todos) {
++        document.querySelectorAll(".mrn-obj").forEach((c) => { c.checked = todos.checked; });
++      } else if (todos) {
++        todos.checked = objetivosMarcados().length === objetivos.length;
++      }
++      sincronizaGate(); pintaEstimativa();
++    });
++    document.querySelector("#mrnBoard").addEventListener("change", pintaEstimativa);
++    document.querySelector("#mrnN").addEventListener("change", pintaEstimativa);
++
++    btn.onclick = () => dispararMoodRun(st, base, estado, objetivosMarcados(), numero);
++    mrnUnsub = mrnOnEscolhidasChange((total) => { estado.total = total; carregaFotos(); });
++
++    await carregaFotos();
++    await mostrarResultado(st, base);
++    // Corrida já em andamento (recarregou a página no meio): reata o modal sem disparar nada.
++    if (opts.job && opts.job.state === "running") acompanhar(st, base, null);
++    estado.total = await mrnTotalEscolhidas(estado.total);
++    sincronizaGate();
++  }
++
++  /** Confirmação da CONTA de downloads (não de custo). Montada sobre o `ui.modal` público, porque
++   * o `_confirmModal` do shell é privado e traz o subtítulo "Custo antes de gerar" — mentira de UI
++   * numa cadeia que não gasta crédito. */
++  function mrnConfirmarDownloads(conta) {
++    return new Promise((resolve) => {
++      let decidido = false;
++      const fim = (v) => { if (decidido) return; decidido = true; resolve(v); };
++      ui.modal({
++        title: "Rodar a cadeia mood_ [extensão]",
++        subtitle: "Downloads de terceiros — sem geração de IA e sem crédito",
++        html: `<p>A corrida vai baixar cerca de <b>${esc(String(conta.downloads))} imagens</b> de terceiros:
++               ${esc(String(conta.objetivos))} objetivo(s) × ${esc(String(conta.consultas))} consultas × ${esc(String(conta.n))} candidatas.</p>
++               <p>Ela <b>não</b> gera imagem com IA e <b>não</b> gasta crédito, mas leva minutos e escreve na pasta do board.</p>`,
++        actions: [
++          { label: "Cancelar", kind: "ghost", onClick: () => fim(false) },
++          { label: `Baixar ~${conta.downloads} e montar`, kind: "primary", onClick: () => fim(true) },
++        ],
++        onClose: () => fim(false),
++      });
++    });
++  }
++
++  /** A barreira: `/estimate` + confirmação explícita ANTES do POST que baixa as imagens. */
++  async function dispararMoodRun(st, base, estado, objetivos, numero) {
++    const corpo = { foto: estado.foto, objetivos, board: numero("#mrnBoard"), n: numero("#mrnN"),
++                    fundo: document.querySelector("#mrnFundo").value || null };
++    let conta;
++    try { conta = await api(`${base}/estimate`, { method: "POST", body: JSON.stringify(
++      { objetivos, board: corpo.board, n: corpo.n }) }); }
++    catch (err) { toast(err.message); return; }
++
++    // `ui.confirmCost` é o modal de GASTO e não serve: esta corrida é gratuita (ADR-016). O que
++    // precisa de confirmação aqui é o volume de downloads de terceiros, não crédito nenhum.
++    const ok = await mrnConfirmarDownloads(conta);
++    if (!ok) return;
++    acompanhar(st, base, () => api(base, { method: "POST", body: JSON.stringify(corpo) }));
++  }
++
++  function acompanhar(st, base, start) {
++    ui.progressJob({
++      title: "Cadeia mood_ [extensão]",
++      subtitle: "vibe → DNA visual → prancha, pelo Claude CLI local",
++      start, jobUrl: `${base}/job`, label: "Pranchas prontas", ms: 3000,
++      done: () => mostrarResultado(st, base),
++    }).catch((err) => toast(err.message));
++  }
++
++  /** Galeria do resultado. `leitura.md`/`curadoria.md` são a revisão humana que o gate auto adiou. */
++  async function mostrarResultado(st, base) {
++    const alvo = document.querySelector("#mrnResult");
++    if (!alvo) return;
++    let r;
++    try { r = await api(`${base}/result`); }
++    catch (err) { alvo.innerHTML = ""; return; }   // 404 = nenhuma corrida ainda, não é erro de tela
++    const boards = r.boards || [];
++    alvo.innerHTML = `
++      <p class="eyebrow" style="margin-top:14px">Última corrida · ${esc(String(r.downloads || 0))} downloads · semente ${esc((r.semente || "").split("/").pop())}</p>
++      <div class="mrn-boards">${boards.map((b) => `
++        <figure class="mrn-board">
++          ${b.prancha_url ? `<a href="${esc(b.prancha_url)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(b.prancha_url)}" alt=""></a>`
++                          : `<div class="empty">prancha não encontrada no disco</div>`}
++          <figcaption>
++            <b>${esc(b.objetivo || "")}</b> · ${esc(String(b.imagens || 0))} imagens
++            <div class="mrn-docs">
++              ${b.leitura_url ? `<a href="${esc(b.leitura_url)}" target="_blank" rel="noopener">leitura.md</a>` : ""}
++              ${b.curadoria_url ? `<a href="${esc(b.curadoria_url)}" target="_blank" rel="noopener">curadoria.md</a>` : ""}
++            </div>
++          </figcaption>
++        </figure>`).join("")}</div>`;
++  }
++
+   // ---------- entrada da área (chamada por app.js applyRoute) ----------
+   function open(mbid) { if (mbid) renderEditor(mbid); else renderList(); }
+ 
+   window.Studio.moodboards = { open, goList, goEditor };
++  window.Studio.moodRun = { open: renderMoodRunPanel };
+ })();
