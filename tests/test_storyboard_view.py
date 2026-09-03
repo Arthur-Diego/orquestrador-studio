@@ -113,12 +113,13 @@ def test_load_cands_reidrata_a_escolha_salva_da_cena(js):
 
 # ---------- `[extensão]` preset de REALISMO (feature prompter-presets-realismo, task_04) ----------
 def test_preset_de_realismo_usa_identificador_proprio(js, html):
-    """Amenda A3: `sbPreset` é das FÓRMULAS DA AULA e não pode ser reusado nem renomeado — o preset
-    de realismo entra com identificador próprio, prefixado por `realism`."""
+    """Amenda A3: o preset de realismo entra com identificador próprio, prefixado por `realism`,
+    sem reusar o vocabulário das fórmulas da aula."""
     assert "sbRealismPreset" in js, "o seletor de preset de realismo sumiu da etapa 4"
-    # o conceito antigo continua de pé, intacto, nos dois arquivos
-    assert 'id="sbPreset"' in html and "— fórmulas da aula —" in html
-    assert "$(\"#sbPreset\")" in js and "— fórmulas da aula —" in js
+    # ADR-033: o combo `#sbPreset` (fórmulas da aula) foi removido a pedido do dono; o preset de
+    # realismo não pode ter herdado nem o id nem o rótulo dele.
+    assert 'id="sbPreset"' not in html and "— fórmulas da aula —" not in html
+    assert "$(\"#sbPreset\")" not in js
 
 
 def test_preset_de_realismo_marcado_como_extensao_com_rota_de_fuga(js):
@@ -395,7 +396,7 @@ def test_t3_3_default_do_roteiro_vem_da_acao_storyboard_script(js):
 
 # ---------- T3.4: sem colisão com as FÓRMULAS DA AULA (amenda A4) ----------
 def test_t3_4_sem_colisao_de_vocabulario_com_as_formulas_da_aula(js, html):
-    assert html.count('id="sbPreset"') == 1, "`#sbPreset` (fórmulas da aula) continua único e intocado"
+    assert html.count('id="sbPreset"') == 0, "`#sbPreset` (fórmulas da aula) foi removido (ADR-033)"
     bloco, painel = bloco_roteiro(js), painel_roteiro(html)
     assert "sbPreset" not in painel and "#sbPreset" not in bloco, \
         "o bloco do roteiro nunca reaproveita o seletor das fórmulas da aula"

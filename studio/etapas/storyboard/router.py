@@ -88,8 +88,8 @@ class VideoPromptReq(BaseModel):
     scene_id: str
     description: str = ""
     frames: VideoFrames = VideoFrames()
-    #: `[extensão]` preset de realismo (FDD §5) — NÃO confundir com o `sbPreset` das fórmulas da
-    #: aula (amenda A3). Três estados: campo AUSENTE = o serviço resolve o default da ação
+    #: `[extensão]` preset de realismo (FDD §5) — NÃO confundir com as fórmulas da aula (o combo
+    #: `sbPreset` que as expunha foi removido, ADR-033). Três estados: campo AUSENTE = o serviço resolve o default da ação
     #: `motion`; `null` = sem preset; `"<id>"` = usar esse. Id fora do catálogo → 422 aqui, pelo
     #: validador, ou seja antes de o endpoint rodar e chamar o Claude CLI.
     preset: str | None = None
@@ -130,8 +130,8 @@ class VideoGenerateReq(BaseModel):
 # `generate`/`job` da ideação (que geram IMAGENS pagas): o roteiro é Claude CLI, zero crédito, e
 # por isso não tem rota de `cost` nem `confirmCost` na tela.
 class ScriptGenerateReq(BaseModel):
-    #: `[extensão]` preset de REALISMO (provedora) — não confundir com o `sbPreset` das fórmulas da
-    #: aula (amenda A4). Três estados: ausente = o serviço resolve o default da ação
+    #: `[extensão]` preset de REALISMO (provedora) — não confundir com as fórmulas da aula (o combo
+    #: `sbPreset` que as expunha foi removido, ADR-033). Três estados: ausente = o serviço resolve o default da ação
     #: `storyboard.script`; `null` = sem rig; `"<id>"` = usar esse (id fora do catálogo → 422).
     preset: str | None = None
     count: int = sb.DEFAULT_SCENES

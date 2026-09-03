@@ -788,3 +788,16 @@ levanta `hf.CliUnavailable` (com `installed`) quando o CLI está ausente OU desl
 mood/animate/moodboards-multishot, que não checavam login e deixavam o job estourar no subprocess.
 Relaciona ADR-002 (só via CLI), ADR-004 (troca de implementação, não de processo), ADR-016 (ordem
 custo→gerar e livro-caixa intactos) e ADR-008 (CLI sempre fake nos testes).
+
+**ADR nova: ADR-033** (STUDIO) — remoção do combo de "fórmulas da aula" (`#sbPreset`) do painel 01
+do storyboard, a pedido explícito do dono (card Trello fNXeZRx9, WhatsApp 31/08). O combo era açúcar
+de UI puro: um atalho que preenchia `#sbKind`+`#sbText` com quatro frases literais da aula 010
+(`PRESETS`), publicadas na chave `presets` do `GET .../storyboard/instructions`. O valor nunca ia
+separado ao backend — o texto entrava literal no campo de instrução, que segue digitável à mão.
+Removidos: o `<select id="sbPreset">` (view.html), o populate + handler `onchange` (view.js), o
+catálogo `PRESETS` e a chave `presets` do endpoint (service.py). Impacto = só UI; a montagem de
+instrução (`build_instruction`, `MULTISHOT_INSTRUCTION`/ADR-027) não depende do combo. **Primeiro
+desvio consciente de fidelidade à aula por remoção**: a ADR-004 não torna a aula intocável — exige
+aprovação ad-hoc do dono + ADR, ambos presentes. NÃO toca o preset de REALISMO (`#sbRealismPreset`,
+`/api/prompter/presets`) nem o check `v57_formula_do_angulo` (multishot, aula 011). Relaciona ADR-004
+(desvio aprovado e registrado), ADR-027 (montagem de instrução intacta), ADR-028 e ADR-015.
