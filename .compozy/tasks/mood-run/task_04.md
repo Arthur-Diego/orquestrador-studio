@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: ADR-031, diagrama do fluxo e coleção Postman
 type: docs
 complexity: low
