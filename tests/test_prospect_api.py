@@ -48,8 +48,6 @@ def responde(client, pid, lid):
 def test_etapa_aparece_no_catalogo(client):
     step = next(s for s in client.get("/api/steps").json() if s["id"] == "prospect")
     assert step["n"] == 10 and step["aula"] == "001" and step["status"] == "ready"
-    assert client.get("/steps/prospect/view.html").status_code == 200
-    assert client.get("/steps/prospect/view.js").status_code == 200
 
 
 def test_gate_fechado_bloqueia_escrita_e_libera_leitura(client, project):
@@ -236,44 +234,10 @@ def test_leads_expoe_segmentos_e_sugestao_de_offset(client, project):
     assert body["teaser_hint"]["music_offset"] == 2.5 and body["teaser_hint"]["impact"] == 3.0
 
 
-def test_view_esconde_o_teaser_ate_a_resposta_e_mostra_os_segmentos(client):
-    html = client.get("/steps/prospect/view.html").text
-    js = client.get("/steps/prospect/view.js").text
-    assert "Etapa 10 · aula 001" in html
-    # 11.4: esta é a única tela sem `#guide` — a faixa do gate ocupa a posição dele.
-    assert 'id="guide"' not in html
-    assert 'document.querySelector("#guide")' in js, "o slot que o shell injeta é removido no init"
-    # 11.17: os seis segmentos do mar azul viraram o `<select>` do formulário de novo lead.
-    assert 'id="lfSegment"' in html
-    for segmento in ("clínicas", "academias", "advogados", "estética", "dentistas", "comércios"):
-        assert f'<option value="{segmento}">' in html, segmento
-    assert "l.replied" in js and 'data-act="teaser"' in js, "o botão do teaser depende de replied"
-    assert "destroy()" in js
-
-
-def test_view_segue_o_catalogo_do_redesign(client):
-    """Wave 4: gate como `.strip.warn` com `.pipe`, leads em `.lead-row` e pitch em `.pitch-table`."""
-    html = client.get("/steps/prospect/view.html").text
-    js = client.get("/steps/prospect/view.js").text
-    assert 'class="strip warn" id="gatePanel"' in html and 'id="gatePipe"' in html
-    assert '<span class="pn">01</span>Leads' in html
-    assert '<span class="pn">02</span>Pitch da call' in html
-    assert "lesson" not in html, "wave 4 regra 4: `details.lesson` só na etapa 1"
-    # 11.10/11.11: a lista "Projetos que já contam" e o rodapé do gate saíram.
-    assert "gateProjects" not in html and "gateProjects" not in js
-    # 11.12: o painel de leads fica visível com o gate fechado (quem recusa é o backend).
-    assert '<section class="panel" id="leadsPanel">' in html
-    assert '<div class="pitch">' in html and 'id="pitchBox" class="script"' in html
-    assert 'class="lead-row"' in js and '"pitch-table"' in js
-    assert "Studio.ui.pipe(" in js, "o gate desenha as quatro obras no .pipe do shell"
-    # 11.13/11.21: o chip de status e o botão "detalhes" saíram; a linha abre pelo clique.
-    assert "statusChip" not in html and "statusChip" not in js
-    assert 'class="link toggle"' not in js
-    # 11.28/11.30/11.32: valores como texto editável, total sem o valor do desconto, script com
-    # as quatro frases da aula.
-    assert 'class="v" type="number"' in js and "mini wide num" not in js
-    assert " · 50% off no 1º" in js and "pitch.discount" not in js
-    assert "pitch.reminders" in js and "→ prospect/pitch.md" in js
+# Wave 10 · E5 (card [REACT-06]): a tela migrou para React (`studio/etapas/prospect/ui/index.tsx`);
+# os antigos `test_view_esconde_o_teaser_ate_a_resposta_e_mostra_os_segmentos` e
+# `test_view_segue_o_catalogo_do_redesign` liam `prospect/view.{html,js}` e viraram substituto Vitest
+# em `.../ui/index.test.tsx` (recon §7.2). Os testes de backend/API abaixo continuam intocados.
 
 
 def test_lead_guarda_o_segmento_do_mar_azul(client, project):
