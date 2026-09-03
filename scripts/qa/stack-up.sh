@@ -85,10 +85,21 @@ EOF
 source "$RUN/env.sh"
 
 # ---- servidor de mídia fake (offline) ----
+# Espera de readiness no MESMO padrão do Studio (abaixo). Sem ela o script seguia direto para o
+# pré-voo e o `check-env.sh` batia num socket que ainda não escutava: FAIL a frio, PASS a quente —
+# corrida clássica, e o único item do pré-voo que dependia da ordem de agendamento do SO.
 if [[ $MODE == offline ]]; then
   ( cd "$RUN/fakes" && exec "$VENV/bin/python" -m http.server "$MPORT" --bind 127.0.0.1 ) \
     >"$RUN/media.log" 2>&1 &
   echo $! > "$RUN/media.pid"
+  media_ok=0
+  for _ in $(seq 1 30); do
+    if curl -sf "$QA_FAKE_MEDIA_URL/" >/dev/null; then media_ok=1; break; fi
+    alive "$RUN/media.pid" || { echo "FAIL: servidor de mídia fake morreu — veja $RUN/media.log" >&2; tail -20 "$RUN/media.log" >&2; exit 1; }
+    sleep 1
+  done
+  [[ $media_ok -eq 1 ]] || { echo "FAIL: servidor de mídia fake não respondeu em 30 s — veja $RUN/media.log" >&2; exit 1; }
+  echo "mídia fake no ar: $QA_FAKE_MEDIA_URL (pid $(cat "$RUN/media.pid"))"
 fi
 
 # ---- Studio ----
