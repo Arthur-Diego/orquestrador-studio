@@ -14,6 +14,15 @@ node_modules/
 # (`docs/domains/studio/waves/wave-10.md` §6.1 e ADR-031).
 studio/web/dist/
 
+# Dump do `/openapi.json` (Wave 10, E1 — `scripts/gen_openapi.py`). É INSUMO da geração do
+# `frontend/src/api/schema.ts`, não artefato de entrega: o que vai para o git é o `schema.ts`, e ter
+# duas cópias geradas do mesmo contrato versionadas seria duas coisas para dessincronizar. Quem
+# regenera roda `make frontend-schema`, que reconstrói este arquivo do app antes de chamar o
+# openapi-typescript.
+frontend/openapi.json
+# Cópia recém-gerada com que `npm run schema:check` compara o `schema.ts` versionado.
+frontend/.schema-drift.ts
+
 # dados de projetos de vídeo (locais)
 projects/
 # biblioteca global de mood boards reutilizáveis [extensão] (ADR-013) — imagens ficam só locais
