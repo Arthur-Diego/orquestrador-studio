@@ -110,6 +110,13 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "`studio/web/index.html`. O vanilla residual restante é cortado pela E10 — ADR-031/ADR-032",
         ("frontend/", "studio/web/"),
     ),
+    "refactor/adh-os-20260903-10-react-lote-f": (
+        "Wave 10 · E9 lote F — etapa edit — card [REACT-10]; migra a etapa 7 (Studio de vídeo) para "
+        "`studio/etapas/edit/ui/`. Toca `frontend/` só na INTEGRAÇÃO da wave: torna a guarda de "
+        "`frontend/src/shell/host.test.tsx` robusta a novas migrações (id inexistente no lugar de "
+        "`edit`, que deixou de ser vanilla). Recorte `frontend/` — ADR-031/ADR-032",
+        ("frontend/",),
+    ),
 }
 
 

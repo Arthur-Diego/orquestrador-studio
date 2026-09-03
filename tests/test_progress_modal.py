@@ -61,12 +61,12 @@ def test_jobs_use_progressjob_as_single_source(client):
     liga = {
         # a etapa 2 (mood) não roda mais job de geração via CLI (etapa2-pick, ADR-014: criação
         # migrou para a biblioteca — a geração paga vive em moodboards, fora do escopo da tela)
-        "edit": "render/job",       # render ffmpeg
-        # Wave 10 · E4 (ADR-032): `export` e `music` migraram para React (`ui/index.tsx`) e não têm
-        # mais `view.js`. As duas telas usam o `progressJob` da E2 (`frontend/src/ui`, fonte única de
-        # polling) — export no render por formato, music na sequência bruta —, verificado pelos
-        # substitutos Vitest + cenários de QA C-EXPORT-07/09 e C-MUSIC-02.
-        # E `animate`/`prospect`/`refs` migraram na E5 (ver docstring). Resta só `edit` (vanilla até E9).
+        # Wave 10: todas as telas com job por `progressJob` migraram para React (`ui/index.tsx`) e
+        # não têm mais `view.js`: `export`/`music` na E4, `refs`/`animate`/`prospect` na E5 e `edit`
+        # na E9 (render ffmpeg via `/render/job`). A fonte única de polling (`progressJob` da E2,
+        # `frontend/src/ui`) é provada pelos substitutos Vitest de cada tela + os cenários de QA
+        # (C-EXPORT-07/09, C-MUSIC-02, C-REFS, C-ANIMATE-24, C-PROSPECT-15, C-EDIT-*). O dict fica
+        # vazio: não resta etapa vanilla com job (o teste continua verde, a guarda migra para o Vitest).
     }
     for step, jobref in liga.items():
         js = _view(client, step)
