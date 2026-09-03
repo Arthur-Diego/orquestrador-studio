@@ -8,6 +8,19 @@
     "skipLibCheck": true,
 
     "moduleResolution": "bundler",
+    // Wave 10 · E4 (ADR-032): os plugins de tela vivem FORA de `frontend/` (`studio/etapas/*/ui/`),
+    // então a busca de `node_modules` subindo a partir do arquivo não alcança `frontend/node_modules`.
+    // Mapa explícito das dependências que as telas (e seus testes) importam — sem catch-all `"*"`,
+    // que quebraria a augmentation de `expect` do `@testing-library/jest-dom`.
+    "baseUrl": ".",
+    "paths": {
+      "react": ["./node_modules/@types/react", "./node_modules/react"],
+      "react/*": ["./node_modules/@types/react/*", "./node_modules/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom", "./node_modules/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*", "./node_modules/react-dom/*"],
+      "vitest": ["./node_modules/vitest"],
+      "@testing-library/*": ["./node_modules/@testing-library/*"]
+    },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,

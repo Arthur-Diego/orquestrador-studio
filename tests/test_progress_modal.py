@@ -68,9 +68,12 @@ def test_jobs_use_progressjob_as_single_source(client):
         # a etapa 2 (mood) não roda mais job de geração via CLI (etapa2-pick, ADR-014: criação
         # migrou para a biblioteca — a geração paga vive em moodboards, fora do escopo da tela)
         "edit": "render/job",       # render ffmpeg
-        "export": 'url("job")',     # render por formato
+        # Wave 10 · E4 (ADR-032): `export` e `music` migraram para React (`ui/index.tsx`) e não têm
+        # mais `view.js`. As duas telas usam o `progressJob` da E2 (`frontend/src/ui`, fonte única de
+        # polling) — export no render por formato, music na sequência bruta —, e isso é verificado
+        # pelos substitutos Vitest + pelos cenários de QA C-EXPORT-07/09 e C-MUSIC-02 (o modal de
+        # progresso real aparece e o `/job` é pollado até `done`).
         "animate": "/job",          # geração paga
-        "music": "music/story/job",  # sequência bruta
         "prospect": "/job",         # teaser
     }
     for step, jobref in liga.items():

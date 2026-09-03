@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint .",
+    "lint": "eslint . && ( cd .. && eslint --config eslint.config.js \"studio/etapas/*/ui/**/*.{ts,tsx}\" )",
     "schema:gen": "openapi-typescript openapi.json --default-non-nullable false -o src/api/schema.ts",
     "schema:check": "openapi-typescript openapi.json --default-non-nullable false -o .schema-drift.ts && diff -u src/api/schema.ts .schema-drift.ts && rm -f .schema-drift.ts"
   },

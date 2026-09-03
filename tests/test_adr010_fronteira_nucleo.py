@@ -85,6 +85,14 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "(cópia byte-a-byte de style.css/ui.css). O vanilla segue intocado até a E10 — ADR-031/ADR-032",
         ("frontend/",),
     ),
+    "refactor/adh-os-20260903-05-react-lote-a": (
+        "Wave 10 · E4 lote A (mood/publish/export/music) + correções de integração do shell E2/E3 que "
+        "destravam as frentes de tela (resolução de `studio/etapas/*/ui` no tsconfig/vite/eslint, "
+        "`Guide.tsx`/`PluginHost` para o diff de textContent do ADR-004, `useUpload` `.over` síncrono) "
+        "— card [REACT-05]. A pasta das etapas (`studio/etapas/`) não é prefixo do núcleo e não entra "
+        "no recorte; só `frontend/` precisa de titularidade.",
+        ("frontend/",),
+    ),
     "refactor/adh-os-20260903-04-react-shell-ponte": (
         "Wave 10 · E3 shell React + ponte strangler — card [REACT-04]; acrescenta o shell React em "
         "`frontend/src/shell/` (sidebar, rail, topbar, visão geral, wizard, roteamento por hash, "

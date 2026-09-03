@@ -21,9 +21,14 @@ function ctxFalso(over: Partial<StudioCtx> = {}): StudioCtx {
 }
 
 describe("host de plugin React — contrato de E4…E9", () => {
-  it("em E3 nenhuma etapa tem tela React (todas são vanilla pela ponte)", () => {
-    // O glob real resolve para {} — nenhuma `studio/etapas/*/ui/index.tsx` existe ainda.
-    expect(temTelaReact("mood")).toBe(false);
+  it("o glob real enxerga as telas do lote A (E4) e ignora as ainda-vanilla", () => {
+    // Wave 10 · E4: as 4 telas do lote A já têm `studio/etapas/<id>/ui/index.tsx`, descobertas pelo
+    // glob real (`import.meta.glob`), sem registry central (ADR-032).
+    expect(temTelaReact("mood")).toBe(true);
+    expect(temTelaReact("publish")).toBe(true);
+    expect(temTelaReact("export")).toBe(true);
+    expect(temTelaReact("music")).toBe(true);
+    // As etapas ainda não migradas continuam na ponte vanilla (ex.: `edit`, E9).
     expect(temTelaReact("edit")).toBe(false);
   });
 

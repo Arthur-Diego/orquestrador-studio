@@ -60,10 +60,18 @@ def test_shell_destroys_the_previous_view_and_exposes_go(client):
 
 
 def test_plugins_serve_their_assets(client):
+    """Wave 10 (ADR-031/ADR-032): uma etapa é OU vanilla (`view.{html,js}` servidos por
+    `/steps/<id>/<asset>`) OU React (`ui/index.tsx`, descoberto por `import.meta.glob` e servido pelo
+    bundle). As duas formas convivem atrás da ponte strangler até a E10. Uma etapa migrada não serve
+    mais `view.*`; o contrato da tela dela vive no substituto Vitest `ui/index.test.tsx`."""
     from studio.etapas import discover
-    for sid in discover():
-        assert client.get(f"/steps/{sid}/view.html").status_code == 200, sid
-        assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
+    for sid, plugin in discover().items():
+        if (plugin["dir"] / "ui" / "index.tsx").exists():
+            assert client.get(f"/steps/{sid}/view.html").status_code == 404, \
+                f"{sid} migrou para React (ui/index.tsx): não deve mais servir view.html"
+        else:
+            assert client.get(f"/steps/{sid}/view.html").status_code == 200, sid
+            assert client.get(f"/steps/{sid}/view.js").status_code == 200, sid
     assert client.get("/steps/nao-existe/view.html").status_code == 404
     assert client.get("/steps/refs/secret.txt").status_code == 404
 

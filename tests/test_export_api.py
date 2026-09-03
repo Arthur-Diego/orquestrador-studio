@@ -210,5 +210,6 @@ def test_unknown_project_is_404_on_every_export_route(client, svc):
 def test_step_nine_is_served_as_a_plugin(client, svc):
     steps = {s["id"]: s for s in client.get("/api/steps").json()}
     assert steps["export"]["status"] == "ready" and steps["export"]["n"] == 8 and steps["export"]["aula"] == "014"
-    assert client.get("/steps/export/view.html").status_code == 200
-    assert client.get("/steps/export/view.js").status_code == 200
+    # Wave 10 · E4 (ADR-032): a tela migrou para React (`studio/etapas/export/ui/index.tsx`); os
+    # `view.{html,js}` saíram. DOM/comportamento e textos de aula → substituto Vitest
+    # `studio/etapas/export/ui/index.test.tsx` (C-EXPORT-*).

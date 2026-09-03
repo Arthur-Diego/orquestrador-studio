@@ -78,12 +78,13 @@ def test_etapa3_falha_graciosa_no_carregamento_do_catalogo(base_js):
 
 
 # ---------- T4.5: a etapa 2 fica intocada (amenda A4 / ADR-014) ----------
-def test_etapa2_fica_fora_da_ui_de_preset(client):
-    js = _view(client, "mood", "view.js")
-    assert "mood/prompts/generate" not in js, \
-        "a etapa 2 não gera prompt desde a ADR-014 — `tests/test_mood_view.py` trava isso"
-    assert "/api/prompter/presets" not in js, \
-        "a UI de preset da etapa 2 saiu do escopo pela amenda A4 (pendência P4)"
+# Wave 10 · E4 (ADR-032): `test_etapa2_fica_fora_da_ui_de_preset` lia o fonte de `mood/view.js` para
+# garantir que a etapa 2 não chama `mood/prompts/generate` nem `/api/prompter/presets`. A tela virou
+# React (`mood/ui/index.tsx`) e os `view.{html,js}` saíram; o invariante passa a ser coberto pelo
+# substituto Vitest `studio/etapas/mood/ui/index.test.tsx` (C-MOOD-18: a etapa só escolhe/aplica um
+# board, sem importar, curar nem gerar prompt) e pelo diff de `textContent` do baseline da E0.
+# (Este arquivo é da feature de presets da etapa 3 — os testes de `base/view.*` seguem intactos até
+# a E7 migrar aquela tela.)
 
 
 # ---------- T4.6: o diff da feature não toca o núcleo ----------
