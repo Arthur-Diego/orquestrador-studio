@@ -1,0 +1,93 @@
+Orquestrador
+Studio
+Campanha
+E2E Mock
+E2E Portfolio 1
+E2E Portfolio 2
+E2E Portfolio 3
+QA Vazia
++
+◫
+Visão geral da campanha
+Biblioteca
+▦
+Mood boards
+[extensão]
+◈
+Créditos & Custos
+[extensão]
+Etapas do curso
+0/10
+01
+Referências
+aula 009
+02
+Mood board
+aula 009
+03
+Imagem base
+aula 009
+04
+Storyboard
+aula 010+011
+05
+Animação
+aula 012
+06
+Trilha
+aula 013
+07
+Studio de vídeo
+aula 014
+08
+Export e QA
+aula 014
+09
+Publicar
+aula 015
+10
+Prospecção
+aula 001
+● CLI · qa-fake · 9999 créditos
+◐
+tema: claro
+Campanha · 2026-09-qa-vazia
+QA Vazia
+produto de teste
+16:9 · YouTube
+vibe: definida na etapa 2
+● 9999 créditos
+Progresso
+0/10 etapas
+Editar
+Continuar de onde parei →
+Etapa 6 · aula 013
+Trilha
+Primeiro assista a história inteira, sem cortes. Depois ouça várias músicas e escolha
+sentindo a energia
+— a música define ritmo, emoção e impacto.
+Resetar etapa [extensão]
+Guia
+bloqueada
+→ Antes de continuar: storyboard/storyboard.json com a ordem das cenas (etapa 4). Volte à etapa 4 e escolha um ângulo por cena
+01
+Assistir a história inteira
+a etapa 5 (animação) ainda não gerou animate/takes.json
+Montar sequência bruta
+▶
+audio/rough_sequence.mp4 · sem música, sem corte
+A história fecha, ou falta uma cena?
+A história fecha
+Falta cena / encerramento mais forte
+Se faltar encerramento comercial, a saída é a cena do produto (etapas 5 e 6).
+Salvar decisão
+02
+Ouvir e escolher
+0 candidatas
+Arraste músicas aqui ou
+escolha arquivos
+Ouça cada faixa inteira; escolha pelo sentimento, não pelo bpm. Ao escolher: audio/music.* + batidas em audio/beats.json.
+03
+Batidas da trilha escolhida
+nenhuma trilha escolhida
+Riscos altos são os impactos — é neles que a etapa 7 propõe os cortes.
