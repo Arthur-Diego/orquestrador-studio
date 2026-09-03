@@ -81,8 +81,9 @@
 <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <script src="/static/ui.js"></script>
 <script src="/static/app.js"></script>
-<script src="/static/multishot.js"></script>
-<script src="/static/moodboards.js"></script>
-<script src="/static/creditos.js"></script>
+<!-- Wave 10 · E6 (card [REACT-07]): as áreas globais mood boards (ADR-013), créditos (ADR-016) e o
+     componente multishot (ADR-017) foram migradas para React (frontend/src/areas/*). Os scripts
+     multishot.js/moodboards.js/creditos.js foram removidos; sob STUDIO_UI=react o shell React as
+     hospeda. O corte final do vanilla residual é da E10 (card [REACT-11]). -->
 </body>
 </html>
