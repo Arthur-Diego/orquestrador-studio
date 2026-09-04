@@ -1,18 +1,15 @@
-// Shell React — Wave 10 · E3 (card [REACT-04]).
+// Shell React — Wave 10 · E3 (card [REACT-04]) · corte final E10 (card [REACT-11]).
 //
 // O papel do `studio/web/app.js`: junta o roteamento por hash, as queries da E1 (fonte única de
-// prontidão — ADR-010 a), os modais do wizard/edição/reset e a ponte vanilla (`bridge.ts`) num só
+// prontidão — ADR-010 a), os modais do wizard/edição/reset e a hospedagem das telas React num só
 // lugar. O chrome (sidebar + topbar) é React reativo; o `#main` é gerenciado por um content-root
-// dedicado quando o conteúdo é do shell (overview/sem-campanha/tela React) e CEDIDO à ponte
-// quando é uma tela vanilla ou uma área global (que escrevem `#main.innerHTML` direto).
+// dedicado que renderiza a visão geral, o estado sem-campanha, as áreas globais (moodboards/
+// créditos) ou a tela React da etapa (via `PluginHost` + `import.meta.glob`).
 //
-// Por que um content-root separado no `#main`: telas/áreas vanilla escrevem `#main.innerHTML`
-// imperativamente. Misturar isso com filhos React no MESMO nó gera DOM duplicado na transição. O
-// content-root deixa a troca de posse determinística: `render(null)` (síncrono via `flushSync`)
-// limpa o conteúdo React antes da tela vanilla escrever; ao voltar, limpamos o resíduo vanilla
-// antes de renderizar React de novo.
+// A ponte strangler `window.Studio` (`bridge.ts`) e a flag `STUDIO_UI` foram removidas na E10: não
+// resta tela vanilla para hospedar (as 10 etapas migraram nas E4…E9 e as 3 áreas globais na E6).
+// O `#main` é 100% React; o content-root existe só para isolar a subárvore de conteúdo do chrome.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 
@@ -23,8 +20,7 @@ import { CR_ROUTE, MB_ROUTE } from "./constants";
 import { useHashRouter } from "./router";
 import { aplicarTema, proximoTema, temaSalvo, type Tema } from "./theme";
 import { toast } from "./toast";
-import { Bridge } from "./bridge";
-import { PluginHost, temTelaReact } from "./host";
+import { PluginHost } from "./host";
 import type { StudioCtx } from "./plugin";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -69,54 +65,21 @@ export function Shell() {
   const [modal, setModal] = useState<ModalState>(null);
   const [resetNonce, setResetNonce] = useState(0);
 
-  // ----- refs de estado vivo para a ponte -----
+  // ----- refs de estado vivo para o ctx do plugin React -----
   const pidRef = useRef<string | null>(pid);
   const projectRef = useRef<Project | null>(project);
   const stepsRef = useRef(stepsList);
-  const navigateRef = useRef(rota.navigate);
   const onGuideRef = useRef(onGuide);
   pidRef.current = pid;
   projectRef.current = project;
   stepsRef.current = stepsList;
-  navigateRef.current = rota.navigate;
   onGuideRef.current = onGuide;
 
   const confirmResetStep = useCallback((stepId: string) => setModal({ kind: "resetStep", stepId }), []);
-  const confirmResetStepRef = useRef(confirmResetStep);
-  confirmResetStepRef.current = confirmResetStep;
 
-  // ----- ponte vanilla (criada uma vez) -----
-  const bridgeRef = useRef<Bridge | null>(null);
-  if (bridgeRef.current === null) {
-    bridgeRef.current = new Bridge({
-      getPid: () => pidRef.current,
-      getProject: () => projectRef.current,
-      getSteps: () => stepsRef.current,
-      toast,
-      navigate: (t, o) => navigateRef.current(t, o),
-      onGuide: (id, g) => onGuideRef.current(id, g),
-      confirmResetStep: (id) => confirmResetStepRef.current(id),
-    });
-  }
-  const bridge = bridgeRef.current;
-  useEffect(() => {
-    bridge.atualizarSteps(stepsList);
-  }, [bridge, stepsList]);
-
-  // Chip do CLI e chip de créditos: geridos imperativamente pela `Studio.ui` vanilla (recon §6.4),
-  // disparados no boot como o `app.js` faz.
-  useEffect(() => {
-    if (!booted) return;
-    let vivo = true;
-    void bridge.pronto.then(() => {
-      if (!vivo) return;
-      void window.Studio?.ui?.hfChip("#hfChipSide");
-      void window.Studio?.ui?.refreshCredits(false);
-    });
-    return () => {
-      vivo = false;
-    };
-  }, [bridge, booted]);
+  // O chip do CLI (`#hfChipSide`, `<HfChip>`) e o chip de créditos (`#btnCredits`, na Topbar) são
+  // componentes React da E2 (`frontend/src/ui`) desde o corte da ponte na E10 — não há mais fill
+  // imperativo via `Studio.ui` vanilla.
 
   // ----- ações do shell -----
   const navigate = rota.navigate;
@@ -200,11 +163,9 @@ export function Shell() {
     [view],
   );
 
-  // ----- content-root do #main -----
+  // ----- content-root do #main (100% React desde o corte da ponte na E10) -----
   const mainRef = useRef<HTMLElement>(null);
   const contentRootRef = useRef<Root | null>(null);
-  const ownerRef = useRef<"react" | "vanilla" | null>(null);
-  const vanillaKeyRef = useRef<string>("");
 
   useEffect(() => {
     const el = mainRef.current;
@@ -213,27 +174,12 @@ export function Shell() {
     const root = contentRootRef.current;
 
     const reactNode = computeReactNode({ booted, area, view, studioCtx, sub, pid, refreshKey: resetNonce, onResetStep: confirmResetStep });
-
-    if (reactNode !== null) {
-      if (ownerRef.current === "vanilla") el.innerHTML = ""; // remove resíduo vanilla
-      ownerRef.current = "react";
-      root.render(
-        <QueryClientProvider client={qc}>
-          <ShellProvider value={shellApi}>{reactNode}</ShellProvider>
-        </QueryClientProvider>,
-      );
-      return;
-    }
-
-    // Conteúdo vanilla (tela de etapa ainda não migrada, hospedada pela ponte strangler).
-    const key = `${area}|${view}|${sub}|${pid}|${resetNonce}`;
-    if (ownerRef.current === "react") flushSync(() => root.render(null));
-    if (ownerRef.current !== "vanilla" || vanillaKeyRef.current !== key) {
-      ownerRef.current = "vanilla";
-      vanillaKeyRef.current = key;
-      if (view) void bridge.showView(view, el);
-    }
-  }, [booted, area, view, sub, pid, resetNonce, shellApi, studioCtx, qc, bridge]);
+    root.render(
+      <QueryClientProvider client={qc}>
+        <ShellProvider value={shellApi}>{reactNode}</ShellProvider>
+      </QueryClientProvider>,
+    );
+  }, [booted, area, view, sub, pid, resetNonce, shellApi, studioCtx, qc, confirmResetStep]);
 
   useEffect(() => {
     return () => {
@@ -281,7 +227,7 @@ export function Shell() {
   );
 }
 
-/** O que o shell renderiza no `#main`, ou `null` quando a posse é da ponte vanilla. */
+/** O que o shell renderiza no `#main`. Sempre React desde o corte da ponte na E10. */
 function computeReactNode(args: {
   booted: boolean;
   area: string;
@@ -294,14 +240,14 @@ function computeReactNode(args: {
 }): React.ReactNode {
   const { booted, area, view, studioCtx, sub, pid, refreshKey, onResetStep } = args;
   if (!booted) return <div className="empty">Carregando…</div>;
-  // Áreas globais em React (Wave 10 · E6): moodboards e créditos deixam de passar pela ponte vanilla.
+  // Áreas globais em React (Wave 10 · E6): moodboards e créditos.
   if (area === MB_ROUTE) return <MoodboardsArea sub={sub} refreshKey={refreshKey} />;
   if (area === CR_ROUTE) return <CreditosArea pid={pid} refreshKey={refreshKey} />;
   if (view === "overview") return <Overview />;
   if (view === null) return <NoProject />; // sem campanhas (router zera view)
-  if (view && temTelaReact(view))
-    return <PluginHost stepId={view} ctx={studioCtx} onResetStep={onResetStep} />;
-  return null; // tela de etapa vanilla → ponte
+  // Tela da etapa: todas as 10 são React (E4…E9), descobertas por `import.meta.glob`. O `PluginHost`
+  // já degrada com um empty-state se algum id não tiver `ui/index.tsx`.
+  return <PluginHost stepId={view} ctx={studioCtx} onResetStep={onResetStep} />;
 }
 
 /** `stepsFromHere` do vanilla: a etapa + as seguintes (a cascata que o reset apaga). */

@@ -7,12 +7,11 @@ __pycache__/
 .compozy/tasks/*/memory/
 node_modules/
 
-# Bundle do frontend React (Wave 10). DURANTE a wave fica fora do git: seis frentes paralelas
-# commitando bundles minificados rivais conflitariam em todo merge, em código que ninguém revisa.
-# O commit único do `dist/` — versionado de propósito, porque o usuário desta ferramenta local não
-# tem Node — acontece na E10, junto com a guarda de CI que rebuilda e falha em divergência
-# (`docs/domains/studio/waves/wave-10.md` §6.1 e ADR-031).
-studio/web/dist/
+# Bundle do frontend React (Wave 10). A partir da E10 (card [REACT-11]) o `dist/` é VERSIONADO de
+# propósito — o usuário desta ferramenta local não tem Node, então o repositório carrega o bundle
+# pronto (ADR-031). A guarda de CI rebuilda e falha se o commitado divergir do rebuild
+# (`.github/workflows/ci.yml`, `docs/domains/studio/waves/wave-10.md` §6.1). Durante a wave o `dist/`
+# ficava aqui, fora do git, para não conflitar entre as seis frentes paralelas; a E10 o removeu.
 
 # Dump do `/openapi.json` (Wave 10, E1 — `scripts/gen_openapi.py`). É INSUMO da geração do
 # `frontend/src/api/schema.ts`, não artefato de entrega: o que vai para o git é o `schema.ts`, e ter

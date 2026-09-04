@@ -3575,26 +3575,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/steps/{step_id}/{asset}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Step Asset
-         * @description view.html / view.js de uma etapa implementada.
-         */
-        get: operations["step_asset_steps__step_id___asset__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/": {
         parameters: {
             query?: never;
@@ -12252,38 +12232,6 @@ export interface operations {
                 "application/json": components["schemas"]["PitchIn"] | null;
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    step_asset_steps__step_id___asset__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                step_id: string;
-                asset: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -4,9 +4,7 @@
 // (`studio/web/app.js`): seletor de campanha, atalhos de visão geral e biblioteca, o rail das
 // etapas com o pipeline segmentado, e o rodapé com o chip do CLI e o botão de tema. Ids e classes
 // são contrato dos cenários `shell.py` (recon §3.1).
-import { useEffect, useRef } from "react";
-
-import { STATUS_LABEL } from "../ui";
+import { HfChip, STATUS_LABEL } from "../ui";
 import { useShell } from "./context";
 import { estadosDasEtapas, indicePorId, titulosDoPipe } from "./estado";
 import { rotuloTema } from "./theme";
@@ -17,13 +15,6 @@ export function Sidebar() {
   const titulos = titulosDoPipe(s.steps, estados);
   const feitas = estados.filter((st) => st === "done").length;
   const idx = indicePorId(s.guideAll);
-
-  // #hfChipSide é gerenciado imperativamente pela `Studio.ui.hfChip` do vanilla (carregada pela
-  // ponte), como no `app.js`. React o renderiza como nó vazio para não disputar o textContent.
-  const hfRef = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (hfRef.current && !hfRef.current.textContent) hfRef.current.textContent = "CLI: verificando…";
-  }, []);
 
   return (
     <aside className="side">
@@ -153,7 +144,9 @@ export function Sidebar() {
       </nav>
 
       <div className="side-foot">
-        <span className="chip mode" id="hfChipSide" ref={hfRef} />
+        {/* Chip do CLI da Higgsfield: componente React da E2 (E10 removeu o fill imperativo do
+            vanilla). Mesmo id/contrato de `#hfChipSide` (recon §3.1, C-SHELL-14). */}
+        <HfChip id="hfChipSide" className="mode" />
         <button
           id="btnTheme"
           className="themebtn"

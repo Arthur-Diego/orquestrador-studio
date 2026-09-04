@@ -8,9 +8,9 @@
 //
 // O host descobre as telas por `import.meta.glob('../../etapas/*/ui/index.tsx')` (ver `host.tsx`),
 // exatamente como o vanilla as descobria por `/steps/<id>/view.js`. Criar etapa nova continua sendo
-// criar SÓ a pasta dela; ninguém edita o shell (ADR-010 c). Em E3 nenhuma tela React existe ainda:
-// todas as 10 telas são vanilla, hospedadas pela ponte (`bridge.ts`). Este contrato é o terreno
-// pronto para E4+.
+// criar SÓ a pasta dela; ninguém edita o shell (ADR-010 c). Desde o corte da ponte na E10 (card
+// [REACT-11]) as 10 telas migradas são servidas EXCLUSIVAMENTE por este contrato — não resta tela
+// vanilla nem ponte `window.Studio`.
 //
 // ## O ciclo `init / onProject / destroy` em React
 //

@@ -117,6 +117,15 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "`edit`, que deixou de ser vanilla). Recorte `frontend/` — ADR-031/ADR-032",
         ("frontend/",),
     ),
+    "refactor/adh-os-20260903-11-react-corte-final": (
+        "Wave 10 · E10 corte e fechamento — card [REACT-11]; React vira o DEFAULT. REMOVE a flag "
+        "`STUDIO_UI` e a rota `/steps/<id>/view.{html,js}` de `studio/app.py` (única mudança de "
+        "backend da wave), o resíduo vanilla `studio/web/{index.html,app.js,ui.js,ui.css,style.css}` "
+        "e a ponte strangler `window.Studio` do shell React (`frontend/src/shell/bridge.ts`), e "
+        "COMMITA o bundle `studio/web/dist/`. Recorte: `frontend/`, `studio/web/`, `studio/app.py`. "
+        "ADR-031/ADR-032, ADR-001/ADR-004/ADR-006/ADR-008/ADR-010/ADR-017.",
+        ("frontend/", "studio/web/", "studio/app.py"),
+    ),
     "refactor/adh-os-20260903-09-react-lote-e": (
         "Wave 10 · E8 lote E storyboard + canvas de marcação — card [REACT-09]; porta a etapa 4 para "
         "React em `studio/etapas/storyboard/ui/` (com o canvas `Annotate` CO-LOCALIZADO na própria "

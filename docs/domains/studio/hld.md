@@ -1,7 +1,7 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.7 (fechamento da Wave 9: presets de realismo do prompter, roteiro por LLM na etapa 4 e canvas de marcação — todos `[extensão]`)
-Data: 2026-08-31
+Versão: 1.8 (fechamento da Wave 10 · migração integral do frontend para React: `frontend/` Vite + React + TypeScript estrito constrói o bundle versionado `studio/web/dist/`; o vanilla `studio/web/*` e a rota `/steps/<id>/view.*` foram removidos — card [REACT-11], ADR-031/ADR-032)
+Data: 2026-09-03
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
 ---
@@ -9,9 +9,9 @@ Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, apr
 ### Objetivo técnico
 Servir, em um único processo local, a API e a interface que conduzem o usuário pelas etapas do
 curso "O Orquestrador — Iniciante" na ordem das aulas. O módulo `studio` é a casca: catálogo de
-etapas (`steps.py`), caminhos e layout de projeto (`config.py`), roteamento HTTP (`app.py`) e a
-SPA estática (`web/`). A lógica de cada etapa vive nos domínios `refs`, `mood` e, futuramente,
-um domínio por etapa.
+etapas (`steps.py`), caminhos e layout de projeto (`config.py`), roteamento HTTP (`app.py`) e o
+frontend React servido como bundle estático (`studio/web/dist/`, construído por `frontend/`). A
+lógica de cada etapa vive nos domínios `refs`, `mood` e, futuramente, um domínio por etapa.
 
 Desde a wave 2 o núcleo responde também **o que fazer em cada etapa**: o guia (`common/guide.py`)
 calcula, lendo os artefatos do projeto, o que a aula manda fazer, o que falta, o que as validações
@@ -37,7 +37,7 @@ Ambiente de implantação
 
 Tecnologias principais
 - Python 3.12, FastAPI, Uvicorn, Pydantic (validação de corpo), Pillow, numpy (batidas), ffmpeg 7 estático (montagem/export/thumbs/teaser).
-- Frontend: HTML/CSS/JS vanilla, sem build; fontes via Google Fonts.
+- Frontend: React + Vite + TypeScript estrito + TanStack Query + Vitest (`frontend/`, Wave 10), com etapa de build para `studio/web/dist/` (bundle **versionado** — o usuário local não tem Node, ADR-031). Fontes via Google Fonts. `make verify` (Python) NÃO depende de Node; o job `frontend` do CI é paralelo (`npm ci` · tsc · vitest · build · guarda de dist).
 
 Padrões adotados
 - Serviços por domínio em `studio/<dominio>/service.py`; `app.py` só traduz HTTP ↔ serviço.
@@ -52,21 +52,24 @@ Padrões adotados
 | `app.py` | Rotas, validação de entrada (Pydantic), tradução de exceções em HTTP (404/409/413/422/502), estáticos | `refs.service`, `mood.service`, `higgsfield` |
 | `config.py` | `PROJECTS_DIR`, `STATE_DIR`, `PINTEREST_PROFILE`, `WEB_DIR`, `PROJECT_LAYOUT`; overrides por env | os, pathlib |
 | `steps.py` | Catálogo das 11 etapas: id, ordem, aula, status `ready`/`soon`, descrição | nenhuma |
-| `etapas/` (plugins) | Uma pasta por etapa implementada: `META` (id, n, aula), `router.py` (APIRouter com as rotas da etapa), `view.html` e `view.js`; descobertas por `etapas.discover()` e montadas pelo `app.py`; servidas em `/steps/<id>/view.{html,js}` | serviços do domínio da etapa |
+| `etapas/` (plugins) | Uma pasta por etapa implementada: `META` (id, n, aula), `router.py` (APIRouter com as rotas da etapa) e a UI React `ui/index.tsx` (descoberta pelo shell por `import.meta.glob`, sem registry central — ADR-032). O backend descobre o router por `etapas.discover()`; a rota `/steps/<id>/view.{html,js}` do vanilla foi removida na Wave 10 · E10 | serviços do domínio da etapa |
 | `common/` | Ingestão de mídia por etapa com dedupe e thumbs; `JobRegistry` (um job por projeto por serviço); ffmpeg (`run`, `probe`, `last_frame`, `video_thumb`) | Pillow, ffmpeg, `higgsfield.py` |
 | `common/guide.py` | Contrato do **guia por etapa**: `Guide(META)` (`.text`, `.input`, `.output`, `.check`, `.build`), helpers de leitura pura (`exists`, `read_json`, `count_files`), derivação de `status`/`progress`/`missing` e `generic_guide` (fallback `unknown`) | `refs.service.project_dir`, `steps.SOON` |
 | `higgsfield.py` | Ponte com o CLI; `status()` cacheado por 60 s (`STATUS_TTL`), `reset_status_cache()` para descartar | subprocess |
-| `web/` | Shell da SPA: campanha atual, menu das 11 etapas **com estado real**, topo com progresso da campanha, visão geral (`#/<pid>/overview`), wizard de campanha, roteamento por hash, carregamento sob demanda do `view.html`/`view.js` da etapa, `destroy()` na troca de tela, `Studio.go(target)` e contexto (`Studio.ctx`: `api`, `toast`, `pid()`, `project()`, `files()`, `guide()`) | API `/api/*`, `/steps/*`, `localStorage` |
-| `web/ui.js` + `web/ui.css` | `Studio.ui`: componentes compartilhados das telas — `esc`, `chip`, `hfChip`, `drop`, `upload`, `confirmCost`, `poll`, `guide`, `renderGuide` (+ `modal`, `fmtPct`, `STATUS_KIND` desde a v1.3; + `tile`, `pipe`, `beats`, `copyBtn`, `copy` desde a v1.4; + `moodMosaic` — grade quadricular 2×2 com "+N" para representar um mood por suas imagens — desde a wave 5 `[extensão]`). Carregados antes do `app.js` e dos plugins | `/api/*`, `style.css` |
-| `web/style.css` | Design system **dark-first** (v1.4, handoff `design_handoff_redesign_frontend`): tokens de superfície/ink/linha/accent + ok/gate/fail/info, glows, anéis e listras de placeholder; tema claro derivado dos mesmos hues; aliases dos nomes da v1.3; controles, layout de 264 px, rail e topbar com pipeline segmentado; e o **catálogo de classes** que as telas de etapa consomem (contrato — ver `features/shell-redesign-fdd.md` §5) | fontes do Google |
+| `web/dist/` | Bundle React **versionado** (saída de `frontend/`, `make frontend-build`): `index.html` + `assets/*` servidos em `/static/dist/`. É o único conteúdo que resta em `studio/web/` desde a E10 — o vanilla `index.html`/`app.js`/`ui.js`/`ui.css`/`style.css` foi removido | servido por `/` e `/static` |
+| `frontend/src/shell/` | Shell React (Wave 10 · E3): campanha atual, rail das 11 etapas **com estado real** (ADR-010 a, do guia do backend), topbar com progresso, visão geral (`#/<pid>/overview`), wizard, roteamento por hash com a mesma gramática e chaves de `localStorage`, e o **contrato de host do plugin** (`ctx`: `api`, `apiUpload`, `toast`, `pid()`, `project()`, `files()`, `guide()`, `onGuide`) que monta cada `etapas/<id>/ui/index.tsx` via `PluginHost`. Áreas globais moodboards/créditos em `frontend/src/areas/*` | API `/api/*`, `localStorage` |
+| `frontend/src/ui/` + `frontend/src/styles/` | Biblioteca de UI React (Wave 10 · E2): componentes/hooks equivalentes a 100% da superfície do antigo `Studio.ui` (28 membros — `Modal`, `ProgressModal`+`useProgress`/`progressJob`, `CostSheet`+`useCostConfirm`, `Guide`/`StepGuide`, `MoodMosaic`, `Tile`, `Pipe`, `Beats`, `HfChip`, `CreditsChip`, `Chip`, `CopyButton`, `useUpload`, `usePoll`, `useAutosize`, `esc`, `fmtPct`, `STATUS_LABEL`/`ITEM_LABEL`/`STATUS_KIND`…), com os MESMOS ids/classes/atributos ARIA. `styles/style.css` + `styles/ui.css` são cópias byte-a-byte do design system **dark-first** e mantêm o **catálogo de classes** que as telas consomem (contrato — `features/shell-redesign-fdd.md` §5) | `/api/*`, fontes do Google |
 
-Regra de extensão (desde 2026-08-25): uma etapa nova **cria só `studio/etapas/<id>/`** e sua
-pasta de serviço; nunca edita `app.py`, `index.html`, `app.js` nem `steps.py` (o catálogo
-`SOON` já lista as 11 etapas e a descoberta promove a etapa a `ready`). Isso permite frentes
-paralelas sem conflito nos arquivos únicos.
+Regra de extensão (desde 2026-08-25; endereço atualizado na Wave 10 · E10): uma etapa nova
+**cria só `studio/etapas/<id>/`** — o `router.py` e a UI `ui/index.tsx` (descoberta por
+`import.meta.glob`) — e sua pasta de serviço; nunca edita `app.py`, `steps.py` nem o núcleo do
+frontend (`frontend/src/**`, e o bundle `studio/web/dist/`). O catálogo `SOON` já lista as 11
+etapas e a descoberta promove a etapa a `ready`. Isso permite frentes paralelas sem conflito nos
+arquivos únicos.
 
-**Quem pode editar o núcleo (v1.2):** os arquivos únicos `studio/app.py`, `studio/steps.py`,
-`studio/config.py`, `studio/higgsfield.py`, `studio/etapas/__init__.py` e `studio/web/*` são
+**Quem pode editar o núcleo (v1.2; frontend re-endereçado na Wave 10):** os arquivos únicos
+`studio/app.py`, `studio/steps.py`, `studio/config.py`, `studio/higgsfield.py`,
+`studio/etapas/__init__.py`, `studio/web/*` e `frontend/**` são
 editados **somente** pelas frentes de *preparo* e *shell* de uma wave. Uma frente de etapa que
 precise de algo no núcleo pede à frente de preparo — nunca edita esses arquivos, nem para
 "uma linha só". Simetricamente, a frente shell nunca edita plugins (`studio/etapas/<id>/`,
@@ -89,6 +92,22 @@ três endpoints de geração de prompt aceitam o campo aditivo `preset`.
 **criado** — não editado — por frente de etapa, servido pela montagem `/static` existente e
 carregado dinamicamente pelo `view.js` do storyboard; segue o precedente de `multishot.js`/
 `creditos.js`/`moodboards.js` sem violar a regra de núcleo da v1.2 (nada existente foi tocado).
+
+**Wave 10 (v1.8) — migração integral do frontend para React (refatoração pura; ADR-031, ADR-032):**
+o frontend deixou de ser HTML/CSS/JS vanilla sem build e passou a `frontend/` (Vite + React +
+TypeScript estrito + TanStack Query + Vitest), construído para o bundle **versionado**
+`studio/web/dist/` e servido pelo MESMO processo em `/static/dist/` (ADR-001 intacto — nada de
+segundo runtime). Cortada em 11 frentes (E0…E10) com o oráculo dos 382 cenários Playwright
+inalterados e o diff de `textContent` vazio (ADR-004). **Contrato preservado**: mesmas classes/ids/
+ARIA (o `style.css`/`ui.css` são cópias byte-a-byte em `frontend/src/styles/`), mesma gramática de
+hash e chaves de `localStorage`, prontidão sempre do guia do backend (ADR-010 a). O **E10 (card
+[REACT-11])** fechou a wave: React vira o default, removidos a flag `STUDIO_UI`, a ponte strangler
+`window.Studio` e o vanilla residual `studio/web/{index.html,app.js,ui.js,ui.css,style.css}`; a rota
+`/steps/<id>/view.{html,js}` saiu de `studio/app.py` (única mudança de backend da wave); o `dist/`
+passou a ser commitado com a guarda de CI invertida (rebuild deve bater com o commitado). Cada
+etapa é uma tela React em `etapas/<id>/ui/index.tsx` descoberta por `import.meta.glob`; criar etapa
+nova continua sendo criar só a pasta dela (ADR-032). ADR-006 (polling), ADR-008 (job Node paralelo,
+Vitest em jsdom) e ADR-017 (multishot) emendados no endereço, não na decisão.
 
 **Shell (v1.3):** `studio/web/` deixou de ser um menu e virou o painel de condução da
 campanha. (1) **Roteamento**: o hash é a fonte de verdade — `#/<pid>/<step>` e
@@ -284,6 +303,7 @@ Dashboards e alertas
 - `PROJECT_LAYOUT` (v1.2) cobre todas as pastas de etapa (`base`, `storyboard`, `storyboard/ideas`, `shots`, `animate`, `publish`, `prospect`, `mood/vibe`), para o guia ler o projeto inteiro sem precisar criar nada. `candidates`, `assets`, `jobs`, `edit` e `export` são infraestrutura do Studio `[extensão]` — a aula 009 não nomeia essas pastas.
 - Próximos passos: FDD por etapa nova (domínio próprio), `JobRegistry` único, logging estruturado.
 - Redesign (v1.4): não contraria nenhuma decisão vigente (não há ADR sobre design tokens ou tema) — nenhuma ADR nova; o catálogo de classes do shell é o contrato consumido pelas frentes de tela da wave 3.
+- Migração React (v1.8, Wave 10): **ADR-031** (frontend em React + Vite com etapa de build e `dist/` versionado) e **ADR-032** (plugin de UI da etapa em `ui/index.tsx` descoberto por `import.meta.glob`), ambos em `STUDIO/`. Eles **emendam** ADR-001 (§stack: cai "SPA vanilla sem build"; a rede single-process/loopback permanece), ADR-006 (driver: agora há camada de estado com TanStack Query; a decisão de polling permanece), ADR-008 (ganha o job `frontend` do CI; Vitest+jsdom mantêm "sem navegador") e ADR-010 (endereço do núcleo do frontend passa a `frontend/src/**`; revoga o motivador anti-Node) e **citam** ADR-004 como gate. ADR-017 (multishot) emendado no endereço (componente React compartilhado). Guarda da fronteira do núcleo em `tests/test_adr010_fronteira_nucleo.py`.
 - Verificação de UI (v1.3): o CI continua sem navegador (ADR-008) — a tela é coberta por asserts
   HTTP/strings; a checagem visual (Playwright 1440×900, claro e escuro) é ferramenta do
   desenvolvedor e fica registrada por prints no PR.
