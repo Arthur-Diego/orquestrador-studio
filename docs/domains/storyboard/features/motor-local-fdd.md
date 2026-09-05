@@ -38,7 +38,8 @@ crédito (local é grátis).
 2. Usuário escreve prompt (inglês, aula 007), escolhe `count` (4|1) e modelo (schnell|dev) → `POST /local/generate`.
 3. Backend abre job (`_local_registry`, key=pid, mode=`generate`); em thread, roda
    `localengine.generate_image` `count` vezes e ingere cada PNG como candidato `source:"local"`,
-   meta `{kind:"keyframe_local", model, prompt}`. UI faz poll em `GET /local/job` (ProgressModal).
+   meta `{local_kind:"keyframe_local", model}` (o prompt vira o campo `prompt` do candidato; a meta
+   usa `local_kind` para não colidir com o `kind:"image"` da mídia). UI faz poll em `GET /local/job`.
 4. Resultados aparecem na galeria de ideias (fluxo de seleção inalterado).
 
 **F2 — Inpaint real por máscara**
@@ -51,7 +52,8 @@ crédito (local é grátis).
 4. Backend abre job (mode=`inpaint`); em thread: resolve a imagem-fonte, chama
    `localengine.inpaint(base_bytes, mask_bytes, instruction, ...)` → sobe base+máscara ao ComfyUI
    (`/upload/image`), monta o grafo Flux inpaint, roda, baixa o resultado; ingere como candidato
-   `source:"local"`, meta `{kind:"inpaint_local", parent, instruction, model}`.
+   `source:"local"`, meta `{local_kind:"inpaint_local", parent, model}` (a instrução vira o `prompt`
+   do candidato). O job expõe `result`/`result_id` (o candidato gerado) para o antes/depois da UI.
 5. UI mostra antes/depois. **Aceitar** (fica na galeria) ou **Refinar**: reabre o `MaskEditor`
    com o resultado como nova fonte (itera sobre a própria saída, grátis).
 
@@ -66,14 +68,16 @@ SamplerCustomAdvanced(latent=Inpaint.slot2) → VAEDecode → SaveImage`. Másca
 ### 5. Contratos públicos (endpoints)
 Base: `/api/projects/{pid}/storyboard/local`. Todos 404 se o projeto não existe.
 
-- `GET /status` → `200 {engine_installed, comfy_up, ready, detail, models:[{id,label,default}]}`.
+- `GET /status` → `200 {engine_installed, comfy_up, ready, detail, gen_models:[{id,label,default}],
+  inpaint_models:[{id,label,default}]}` (duas listas: geração e inpaint têm catálogos distintos).
   Nunca 5xx: motor offline é `ready:false` com `detail`, não erro.
-- `POST /generate` → `202 {state,done,total,added,error,log,mode:"generate"}` (forma de job).
+- `POST /generate` → `200 {state,done,total,added,error,log,mode:"generate",result,result_id}` (forma
+  de job; start-de-job devolve 200, convenção do studio — igual à ideação paga).
   Body `{prompt:str, count:int=4, model:str="flux-schnell", steps?:int, seed?:int}`.
   `409` se motor offline (gate) ou job local em andamento; `422` prompt vazio / count ∉ {1,4} /
   modelo desconhecido; `403`/precondição se base ausente NÃO se aplica (generate não exige base).
-- `GET /job` → `200` estado do job local (mesmo formato de `job_status`, + `mode`).
-- `POST /inpaint` → `202` job (multipart). Campos: `mask` (file PNG), `instruction` (form),
+- `GET /job` → `200` estado do job local (mesmo formato de `job_status`, + `mode`, `result`, `result_id`).
+- `POST /inpaint` → `200` job (multipart). Campos: `mask` (file PNG), `instruction` (form),
   `source_id?` (form), `model` (form="flux-dev"), `steps?`,`guidance?`,`denoise?` (form).
   `409` motor offline / job em andamento; `422` instrução vazia / máscara inválida / fonte
   inexistente / modelo desconhecido.
@@ -93,8 +97,8 @@ Convenção de erro do studio preservada: `EngineUnavailable`→409 (com `detail
 - **Higgsfield offline** não afeta o caminho local e vice-versa (pontes independentes).
 
 ### 7. Observabilidade
-- `log.info("local_job", {...})` com pid, mode, model, count/instrução, state, seconds (espelha o
-  `cli_job`). `localengine` loga `engine doctor`/ping em nível debug.
+- `log.info("local_job", {...})` com `pid`, `mode`, `model` e o `count` (generate) ou `parent`
+  (inpaint). O gate/health não gera log de nível info.
 - Sem livro-caixa (grátis): registra apenas evento informativo `settings.record_generation` com
   custo zero? **Não** — para não poluir o livro-caixa de créditos pagos; apenas `log.info`.
 
@@ -118,10 +122,10 @@ Convenção de erro do studio preservada: `EngineUnavailable`→409 (com `detail
 1. `GET /local/status` responde 200 com `ready` refletindo engine+ComfyUI; offline → `ready:false`
    sem 5xx. (evidência: teste com fakes)
 2. `POST /local/generate` com fake engine ingere `count` candidatos `source:"local"`,
-   `meta.kind=="keyframe_local"`; job termina `state:"done"`, `added==count`. (teste)
+   `local_kind=="keyframe_local"`; job termina `state:"done"`, `added==count`. (teste)
 3. `POST /local/inpaint` com fake ComfyClient sobe base+máscara, monta o grafo esperado
    (nós-chave: `InpaintModelConditioning`, `ImageToMask`, `FluxGuidance`) e ingere 1 candidato
-   `meta.kind=="inpaint_local"`, `meta.parent==source_id|base`. (teste)
+   `local_kind=="inpaint_local"`, `parent==source_id|base`. (teste)
 4. Motor offline → 409 em generate/inpaint; a UI desabilita os botões locais. (teste + verificação)
 5. Caminho pago Higgsfield (`edit`/`multishot`/`edit_area`) inalterado: suíte existente verde. (`make verify`)
 6. `MaskEditor.tsx`: pinta → exporta máscara binária correta (branco na região, resolução natural);

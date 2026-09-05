@@ -77,7 +77,7 @@ Estes casos existem no FDD mas **não** viram request com asserção de status H
 estado assíncrono do job, de ambiente externo ou não são uma rota:
 
 - **Timeout/erro do ComfyUI** (sec.6, L88-89): o job vai a `state:"error"` dentro de um corpo
-  `202`/`200`; não é um status HTTP de erro. Só observável com ComfyUI real falhando durante o job.
+  `200`; não é um status HTTP de erro. Só observável com ComfyUI real falhando durante o job.
 - **Dedupe / "sem mudança"** (sec.6, L91-92): `ingest_bytes` devolve `None` e `added` não
   incrementa — estado dentro do corpo do job, não status HTTP; exige geração real repetida.
 - **Higgsfield offline / independência das pontes** (sec.6, L93): não é uma rota da feature.
@@ -87,5 +87,5 @@ estado assíncrono do job, de ambiente externo ou não são uma rota:
 ## Ambiente-dependentes (na pasta `erros/`)
 
 Os casos **409 motor offline** (generate e inpaint) só retornam 409 com o motor de fato offline;
-com o motor no ar retornam 202. Os demais casos de `erros/` (404 projeto inexistente e os 422 de
+com o motor no ar retornam 200 (start-de-job, convencao do studio). Os demais casos de `erros/` (404 projeto inexistente e os 422 de
 validação) são determinísticos assim que as rotas existirem.

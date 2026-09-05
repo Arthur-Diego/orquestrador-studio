@@ -94,7 +94,7 @@
                 "generate"
               ]
             },
-            "description": "FDD motor-local sec.5 (L71-74) e Fluxo F1 (L36-42). Body: {prompt:str, count:int=4, model:str='flux-schnell', steps?:int, seed?:int}. steps/seed sao opcionais no FDD — nao enviados por default. 202 = job aberto; 409 se motor offline ou job em andamento (pasta erros).",
+            "description": "FDD motor-local sec.5 (L71-74) e Fluxo F1 (L36-42). Body: {prompt:str, count:int=4, model:str='flux-schnell', steps?:int, seed?:int}. steps/seed sao opcionais no FDD — nao enviados por default. 200 = job aberto (start-de-job, convencao do studio); 409 se motor offline ou job em andamento (pasta erros).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"prompt\": \"a cinematic wide shot of a neon city at night\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\"\n}",
@@ -111,7 +111,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"generate -> 202 (job aberto)\", function () { pm.response.to.have.status(202); });",
+                  "pm.test(\"generate -> 200 (job aberto)\", function () { pm.response.to.have.status(200); });",
                   "// Se o motor estiver offline, o FDD (sec.5 L73) manda 409 (gate). Ver pasta erros.",
                   "pm.test(\"corpo tem forma de job\", function () {",
                   "    var j = pm.response.json();",
@@ -245,7 +245,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"inpaint -> 202 (job aberto)\", function () { pm.response.to.have.status(202); });",
+                  "pm.test(\"inpaint -> 200 (job aberto)\", function () { pm.response.to.have.status(200); });",
                   "// 409 se motor offline / job em andamento (FDD sec.5 L78). Ver pasta erros.",
                   "pm.test(\"corpo tem forma de job\", function () {",
                   "    var j = pm.response.json();",
