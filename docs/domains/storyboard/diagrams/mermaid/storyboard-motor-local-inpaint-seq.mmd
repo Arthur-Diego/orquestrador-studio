@@ -1,0 +1,77 @@
+%% Diagrama de sequência do inpaint real headless (F2) — feature motor-local [extensão]
+%% Fonte: docs/domains/storyboard/features/motor-local-fdd.md, seção 4 (F2 + Grafo ComfyUI headless), seções 5/6
+%% Task ADH-OS-20260905-01 · Domínio storyboard (etapa 4) · ADR-033 (supera parcialmente ADR-004)
+%% Fluxo: UI (MaskEditor) -> router -> studio/storyboard/local.py -> studio/localengine.py -> ComfyUI HTTP -> ingest_bytes
+sequenceDiagram
+    autonumber
+    actor U as Usuário (etapa 4)
+    participant ME as MaskEditor.tsx (UI)
+    participant R as router.py (etapa 4)
+    participant L as studio/storyboard/local.py (serviço)
+    participant J as _local_registry (thread do job)
+    participant E as studio/localengine.py (ponte)
+    participant C as ComfyUI (HTTP :8188)
+    participant I as ingest_bytes
+
+    U->>ME: escolhe a fonte (candidato ou base), pinta a máscara,<br/>escreve a instrução e a qualidade → "Rodar (grátis)"
+    ME->>ME: exporta máscara binária na resolução natural<br/>(branco = mudar, preto = preserva)
+    ME->>R: POST /api/projects/{pid}/storyboard/local/inpaint<br/>(multipart: mask, instruction, source_id?, model, steps?, guidance?, denoise?)
+
+    R->>L: start_inpaint(pid, mask_bytes, instruction, source_id, model, ...)
+    L->>E: require() — gate de saúde (engine + ComfyUI)
+
+    alt motor offline (EngineUnavailable)
+        E-->>L: levanta EngineUnavailable(detail, installed)
+        L-->>R: erro mapeado
+        R-->>ME: 409 (detail) — UI desabilita botões locais
+    else instrução vazia / máscara inválida / fonte inexistente / modelo desconhecido
+        L-->>R: Invalid (validação Pillow, antes de tocar o ComfyUI)
+        R-->>ME: 422
+    else motor pronto e entrada válida
+        L->>L: resolve a imagem-fonte (source_id ou base) → base_bytes
+        L->>J: abre job (mode='inpaint', key=pid)<br/>409 se já houver job local em andamento
+        R-->>ME: 202 (forma de job)
+
+        Note over J,E: execução em thread — UI faz poll GET /local/job (ProgressModal)
+
+        J->>E: inpaint(base_bytes, mask_bytes, instruction, model, steps?, guidance?, denoise?)
+
+        E->>C: POST /upload/image (base)
+        C-->>E: nome do arquivo base
+        E->>C: POST /upload/image (máscara)
+        C-->>E: nome do arquivo da máscara
+
+        E->>E: monta o grafo Flux inpaint<br/>UnetLoaderGGUF + DualCLIPLoaderGGUF + VAELoader(ae)<br/>LoadImage(base) + LoadImage(mask)→ImageToMask(channel=red)<br/>InpaintModelConditioning(pixels=base, mask, noise_mask=true)<br/>→ FluxGuidance → BasicGuider + RandomNoise + KSamplerSelect(euler)<br/>+ BasicScheduler(simple, steps, denoise) → SamplerCustomAdvanced<br/>→ VAEDecode → SaveImage
+
+        E->>C: POST /prompt (grafo InpaintModelConditioning)
+        C-->>E: {prompt_id}
+
+        loop poll até concluir (respeitando STUDIO_LOCAL_ENGINE_TIMEOUT)
+            E->>C: GET /history/{prompt_id}
+            C-->>E: status da execução, com outputs quando pronto
+        end
+
+        alt timeout ou erro do ComfyUI
+            E-->>J: erro
+            J->>J: job state:'error' com error (nada é ingerido, sem crédito gasto)
+        else concluído
+            E->>C: GET /view (filename, subfolder, type)
+            C-->>E: bytes do PNG resultante
+            E-->>J: base_bytes de saída (candidato do inpaint)
+
+            J->>I: ingest_bytes(root, "storyboard", bytes, source:'local',<br/>meta {kind:'inpaint_local', parent: source_id|base, instruction, model})
+            alt resultado idêntico a candidato existente (SHA-1)
+                I-->>J: None (deduped) — added não incrementa
+                J->>J: UI avisa "sem mudança"
+            else resultado novo
+                I-->>J: {id, file, thumb}
+                J->>J: added += 1, job state:'done'
+            end
+        end
+
+        ME->>R: GET /local/job (polling)
+        R->>L: job()
+        L-->>R: {state, done, total, added, error, log, mode:'inpaint'}
+        R-->>ME: 200 (estado do job)
+        ME->>U: antes/depois → "Aceitar" (fica na galeria)<br/>ou "Refinar" (reabre com o resultado como nova fonte)
+    end

@@ -70,6 +70,15 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-01-storyboard-motor-local": (
+        "`[extensão]` motor de imagem LOCAL na etapa 4 (ADR-033), card ADH-OS-20260905-01: rotas "
+        "novas `/storyboard/local/*` mudam o `/openapi.json`, exigindo REGERAR `frontend/src/api/"
+        "schema.ts` (guarda de drift do CI), e a UI nova (`studio/etapas/storyboard/ui/MaskEditor.tsx` "
+        "+ painel local no `Ideation.tsx`, ambos co-localizados na etapa) exige RECONSTRUIR o bundle "
+        "versionado `studio/web/dist/`. A lógica das outras etapas e do shell (`frontend/src/**`) fica "
+        "intocada — só os dois artefatos gerados. ADR-033, ADR-031/ADR-032.",
+        ("frontend/", "studio/web/"),
+    ),
     "refactor/adh-os-20260902-08-react-fundacao": (
         "Wave 10 · E0 fundação — card [REACT-01]; cria o scaffold `frontend/` (ADR-031)",
         ("frontend/",),

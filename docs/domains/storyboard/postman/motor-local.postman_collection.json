@@ -1,0 +1,843 @@
+{
+  "info": {
+    "name": "storyboard - motor-local (ADH-OS-20260905-01) - Etapa 4 [extensao]",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Coleção gerada a partir da SEÇÃO 5 (Contratos públicos) do FDD\n`docs/domains/storyboard/features/motor-local-fdd.md`\n\nFeature 'motor-local': geração local de keyframes (Flux) e inpaint real por máscara via ComfyUI headless, como opção ADICIONAL ao caminho pago Higgsfield.\n\nBase das rotas: /api/projects/{pid}/storyboard/local. Requer {{pid}} de um projeto existente e o serviço FastAPI no ar (PORT=8766). O motor local (binário `engine` + ComfyUI) é externo: com ele offline, generate/inpaint retornam 409 (gate), não 5xx.\n\nNÃO sobrescreve a coleção `storyboard.postman_collection.json` (OS-004)."
+  },
+  "variable": [
+    {
+      "key": "pid",
+      "value": "",
+      "description": "id de um projeto existente (path param {pid})"
+    },
+    {
+      "key": "pidInexistente",
+      "value": "projeto-que-nao-existe",
+      "description": "para o caso 404"
+    },
+    {
+      "key": "sourceId",
+      "value": "",
+      "description": "id de candidato-fonte para /inpaint (opcional)"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 status (saude do motor)",
+      "item": [
+        {
+          "name": "GET status (saude do motor local)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "status"
+              ]
+            },
+            "description": "FDD motor-local sec.5 (L68-69). Motor offline e ready:false com detail, nunca 5xx."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status -> 200 (nunca 5xx)\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"expoe ready/detail/models\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"ready\");",
+                  "    pm.expect(j).to.have.property(\"detail\");",
+                  "    pm.expect(j).to.have.property(\"models\");",
+                  "});",
+                  "// FDD sec.5 L68-69: {engine_installed, comfy_up, ready, detail, models:[{id,label,default}]}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 generate — keyframes locais (F1)",
+      "item": [
+        {
+          "name": "POST generate (keyframes locais, job 202)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD motor-local sec.5 (L71-74) e Fluxo F1 (L36-42). Body: {prompt:str, count:int=4, model:str='flux-schnell', steps?:int, seed?:int}. steps/seed sao opcionais no FDD — nao enviados por default. 202 = job aberto; 409 se motor offline ou job em andamento (pasta erros).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"a cinematic wide shot of a neon city at night\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"generate -> 202 (job aberto)\", function () { pm.response.to.have.status(202); });",
+                  "// Se o motor estiver offline, o FDD (sec.5 L73) manda 409 (gate). Ver pasta erros.",
+                  "pm.test(\"corpo tem forma de job\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "    pm.expect(j).to.have.property(\"mode\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET job (poll do job de generate)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "job"
+              ]
+            },
+            "description": "FDD motor-local sec.5 (L75). Job local e keyed por pid (unico por projeto) — sem id encadeado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"job -> 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"estado do job + mode\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "    pm.expect(j).to.have.property(\"mode\");",
+                  "});",
+                  "// FDD sec.5 L75 + F1 passo 3: ProgressModal faz poll aqui ate state=done."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 inpaint — mascara real (F2)",
+      "item": [
+        {
+          "name": "POST inpaint (mascara real, job 202)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/inpaint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "inpaint"
+              ]
+            },
+            "description": "FDD motor-local sec.5 (L76-79) e Fluxo F2 (L44-56). Multipart: mask (file PNG), instruction (form), source_id? (form), model (form='flux-dev'), steps?/guidance?/denoise? (form). Campos opcionais desabilitados por default. source_id vazio => inpaint sobre a base. Reanexe fixtures/mask-a.png no Postman.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "mask",
+                  "type": "file",
+                  "src": "fixtures/mask-a.png",
+                  "description": "PNG binario: branco=mudar, preto=preserva (FDD F2 passo 3, L48-49)"
+                },
+                {
+                  "key": "instruction",
+                  "type": "text",
+                  "value": "replace the sky with a golden sunset",
+                  "description": "instrucao textual (form)"
+                },
+                {
+                  "key": "source_id",
+                  "type": "text",
+                  "value": "{{sourceId}}",
+                  "disabled": true,
+                  "description": "opcional: id do candidato-fonte; se ausente, usa a base (FDD F2 passo 4)"
+                },
+                {
+                  "key": "model",
+                  "type": "text",
+                  "value": "flux-dev",
+                  "description": "form, default flux-dev"
+                },
+                {
+                  "key": "steps",
+                  "type": "text",
+                  "value": "",
+                  "disabled": true,
+                  "description": "opcional"
+                },
+                {
+                  "key": "guidance",
+                  "type": "text",
+                  "value": "",
+                  "disabled": true,
+                  "description": "opcional"
+                },
+                {
+                  "key": "denoise",
+                  "type": "text",
+                  "value": "",
+                  "disabled": true,
+                  "description": "opcional"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"inpaint -> 202 (job aberto)\", function () { pm.response.to.have.status(202); });",
+                  "// 409 se motor offline / job em andamento (FDD sec.5 L78). Ver pasta erros.",
+                  "pm.test(\"corpo tem forma de job\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET job (poll do job de inpaint)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "job"
+              ]
+            },
+            "description": "FDD motor-local sec.5 (L75). Mesmo /job (por pid); mode=inpaint quando o job corrente e de inpaint."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"job -> 200\", function () { pm.response.to.have.status(200); });",
+                  "// FDD F2 passo 5: UI mostra antes/depois quando state=done; meta.kind=inpaint_local."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "erros",
+      "item": [
+        {
+          "name": "GET status projeto inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/local/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "local",
+                "status"
+              ]
+            },
+            "description": "FDD sec.5 L67. Usa {{pidInexistente}}. Deterministica."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"projeto inexistente -> 404\", function () { pm.response.to.have.status(404); });",
+                  "// FDD sec.5 L67: todas as rotas 404 se o projeto nao existe."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST generate prompt vazio -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 L73: 422 prompt vazio. Validacao deterministica.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST generate prompt vazio -> 422 -> 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// FDD sec.5 L73: 422 prompt vazio. Validacao deterministica."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST generate count invalido -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 L73: 422 count nao em {1,4}. Validacao deterministica.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"x\",\n  \"count\": 3,\n  \"model\": \"flux-schnell\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST generate count invalido -> 422 -> 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// FDD sec.5 L73: 422 count nao em {1,4}. Validacao deterministica."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST generate modelo desconhecido -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 L73: 422 modelo desconhecido. Validacao deterministica.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"x\",\n  \"count\": 4,\n  \"model\": \"modelo-inexistente\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST generate modelo desconhecido -> 422 -> 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// FDD sec.5 L73: 422 modelo desconhecido. Validacao deterministica."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST generate motor offline -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 L73 + sec.6 L85-87: 409 quando engine/ComfyUI offline (gate EngineUnavailable). AMBIENTE-DEPENDENTE: so 409 com o motor de fato offline; com motor no ar retorna 202.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"x\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST generate motor offline -> 409 -> 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// FDD sec.5 L73 + sec.6 L85-87: 409 quando engine/ComfyUI offline (gate EngineUnavailable). AMBIENTE-DEPENDENTE: so 409 com o motor de fato offline; com motor no ar retorna 202."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST inpaint instrucao vazia -> 422",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/inpaint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "inpaint"
+              ]
+            },
+            "description": "FDD sec.5 L78-79: 422 instrucao vazia (validacao antes do ComfyUI, sec.6 L90).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "mask",
+                  "type": "file",
+                  "src": "fixtures/mask-a.png"
+                },
+                {
+                  "key": "instruction",
+                  "type": "text",
+                  "value": ""
+                },
+                {
+                  "key": "model",
+                  "type": "text",
+                  "value": "flux-dev"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"instrucao vazia -> 422\", function () { pm.response.to.have.status(422); });",
+                  "// FDD sec.5 L78-79: 422 instrucao vazia."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST inpaint mascara invalida -> 422",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/inpaint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "inpaint"
+              ]
+            },
+            "description": "FDD sec.5 L78-79 e sec.6 L90: mascara vazia/invalida => 422 antes de tocar o ComfyUI.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "mask",
+                  "type": "file",
+                  "src": "fixtures/nao-mascara.txt"
+                },
+                {
+                  "key": "instruction",
+                  "type": "text",
+                  "value": "change the sky"
+                },
+                {
+                  "key": "model",
+                  "type": "text",
+                  "value": "flux-dev"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"mascara invalida -> 422\", function () { pm.response.to.have.status(422); });",
+                  "// FDD sec.5 L78-79 + sec.6 L90: mascara invalida => 422 (validacao Pillow)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST inpaint modelo desconhecido -> 422",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/inpaint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "inpaint"
+              ]
+            },
+            "description": "FDD sec.5 L78-79: modelo desconhecido => 422.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "mask",
+                  "type": "file",
+                  "src": "fixtures/mask-a.png"
+                },
+                {
+                  "key": "instruction",
+                  "type": "text",
+                  "value": "change the sky"
+                },
+                {
+                  "key": "model",
+                  "type": "text",
+                  "value": "modelo-inexistente"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"modelo desconhecido -> 422\", function () { pm.response.to.have.status(422); });",
+                  "// FDD sec.5 L78-79: modelo desconhecido => 422."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST inpaint fonte inexistente -> 422",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/inpaint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "inpaint"
+              ]
+            },
+            "description": "FDD sec.5 L78-79: fonte (source_id) inexistente => 422.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "mask",
+                  "type": "file",
+                  "src": "fixtures/mask-a.png"
+                },
+                {
+                  "key": "instruction",
+                  "type": "text",
+                  "value": "change the sky"
+                },
+                {
+                  "key": "source_id",
+                  "type": "text",
+                  "value": "candidato-que-nao-existe"
+                },
+                {
+                  "key": "model",
+                  "type": "text",
+                  "value": "flux-dev"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"fonte inexistente -> 422\", function () { pm.response.to.have.status(422); });",
+                  "// FDD sec.5 L78-79: source_id inexistente => 422."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST inpaint motor offline -> 409",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/inpaint",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "inpaint"
+              ]
+            },
+            "description": "FDD sec.5 L78 e sec.6 L85-87: 409 gate motor offline. Ambiente-dependente.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "mask",
+                  "type": "file",
+                  "src": "fixtures/mask-a.png"
+                },
+                {
+                  "key": "instruction",
+                  "type": "text",
+                  "value": "change the sky"
+                },
+                {
+                  "key": "model",
+                  "type": "text",
+                  "value": "flux-dev"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"motor offline -> 409\", function () { pm.response.to.have.status(409); });",
+                  "// FDD sec.5 L78 + sec.6 L85-87: 409 (gate) quando engine/ComfyUI offline.",
+                  "// AMBIENTE-DEPENDENTE: so 409 com motor offline."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+%% Fluxograma F1 (geração local de keyframes) + F2 (inpaint real por máscara) — feature motor-local [extensão]
+%% Fonte: docs/domains/storyboard/features/motor-local-fdd.md, seção 4 (F1, F2) e seção 6 (erros/gate 409)
+%% Task ADH-OS-20260905-01 · Domínio storyboard (etapa 4) · ADR-033
+flowchart TD
+    start(["Usuário na etapa 4 (Ideation.tsx)"]) --> status["UI consulta GET /local/status"]
+
+    status --> ready{"ready == true?<br/>(engine + ComfyUI no ar)"}
+    ready -- "não" --> disabled["Desabilita botões locais<br/>e mostra o detail<br/>(Higgsfield segue funcionando)"]
+    ready -- "sim" --> pick{"Qual caminho?"}
+
+    %% ============================================================
+    %% F1 — Geração local de keyframes
+    %% ============================================================
+    subgraph F1["F1 — Geração local de keyframes (grátis)"]
+        direction TB
+        f1Prompt["Escreve prompt em inglês (aula 007),<br/>escolhe count (4 ou 1) e modelo (schnell ou dev)"]
+        f1Post["POST /local/generate<br/>{prompt, count, model, steps?, seed?}"]
+        f1Valida{"Validação"}
+        f1Gate409g["409 EngineUnavailable<br/>(motor offline ou job em andamento)"]
+        f1_422["422 Invalid<br/>(prompt vazio, count ∉ {1,4}, modelo desconhecido)"]
+        f1Job["Abre job (_local_registry, key=pid, mode='generate')<br/>responde 202 (forma de job)"]
+        f1Thread["Em thread: roda localengine.generate_image count vezes<br/>(subprocess 'engine image', Flux schnell/dev)"]
+        f1Ingest["ingest_bytes de cada PNG como candidato<br/>source:'local', meta {kind:'keyframe_local', model, prompt}"]
+        f1Poll["UI faz poll em GET /local/job (ProgressModal)"]
+
+        f1Prompt --> f1Post --> f1Valida
+        f1Valida -- "motor offline / job ativo" --> f1Gate409g
+        f1Valida -- "prompt/count/modelo inválido" --> f1_422
+        f1Valida -- "ok" --> f1Job --> f1Thread --> f1Ingest
+        f1Job -.-> f1Poll
+    end
+
+    %% ============================================================
+    %% F2 — Inpaint real por máscara (MaskEditor)
+    %% ============================================================
+    subgraph F2["F2 — Inpaint real por máscara (MaskEditor)"]
+        direction TB
+        f2Src["Escolhe a fonte (candidato ou base)<br/>e abre o MaskEditor (imagem ao fundo + overlay)"]
+        f2Paint["Pinta a máscara (pincel, borracha, desfazer, limpar),<br/>escreve a instrução, escolhe qualidade<br/>(dev ≈ 3-4 min | schnell ≈ 40 s)"]
+        f2Export["Exporta máscara binária na resolução natural<br/>(branco = mudar, preto = preserva)"]
+        f2Post["POST /local/inpaint (multipart)<br/>{mask, instruction, source_id?, model, steps?, guidance?, denoise?}"]
+        f2Valida{"Validação"}
+        f2Gate409i["409 EngineUnavailable<br/>(motor offline ou job em andamento)"]
+        f2_422["422 Invalid<br/>(instrução vazia, máscara inválida/vazia via Pillow,<br/>fonte inexistente, modelo desconhecido)"]
+        f2Job["Abre job (mode='inpaint'), responde 202"]
+        f2Thread["Em thread: resolve a imagem-fonte e chama<br/>localengine.inpaint(base_bytes, mask_bytes, instruction, ...)"]
+        f2Comfy["Sobe base+máscara ao ComfyUI, monta o grafo Flux inpaint,<br/>roda e baixa o resultado (ver diagrama de sequência)"]
+        f2Err{"ComfyUI OK?"}
+        f2ErrState["job state:'error' com error<br/>nada é ingerido; fonte mantida; sem crédito gasto"]
+        f2Ingest["ingest_bytes do resultado como candidato source:'local',<br/>meta {kind:'inpaint_local', parent, instruction, model}"]
+        f2Dedupe{"ingest_bytes retornou None?<br/>(SHA-1 idêntico a candidato existente)"}
+        f2NoChange["added não incrementa;<br/>UI avisa 'sem mudança'"]
+        f2Diff["UI mostra antes/depois"]
+        f2Decide{"Aceitar ou Refinar?"}
+        f2Accept["Aceitar: candidato fica na galeria"]
+        f2Refine["Refinar: reabre o MaskEditor<br/>com o resultado como nova fonte (itera, grátis)"]
+
+        f2Src --> f2Paint --> f2Export --> f2Post --> f2Valida
+        f2Valida -- "motor offline / job ativo" --> f2Gate409i
+        f2Valida -- "instrução/máscara/fonte/modelo inválido" --> f2_422
+        f2Valida -- "ok" --> f2Job --> f2Thread --> f2Comfy --> f2Err
+        f2Err -- "timeout / erro" --> f2ErrState
+        f2Err -- "sim" --> f2Ingest --> f2Dedupe
+        f2Dedupe -- "sim" --> f2NoChange
+        f2Dedupe -- "não" --> f2Diff --> f2Decide
+        f2Decide -- "Aceitar" --> f2Accept
+        f2Decide -- "Refinar" --> f2Refine
+    end
+
+    pick -- "Gerar keyframes" --> f1Prompt
+    pick -- "Inpaint por máscara" --> f2Src
+
+    f1Ingest --> gallery["Galeria de ideias<br/>(fluxo de seleção inalterado)"]
+    f2Accept --> gallery
+    f2Refine -.-> f2Paint
+
+    %% ============================================================
+    %% Estilos
+    %% ============================================================
+    classDef gate fill:#fde2e2,stroke:#c0392b,color:#7b241c;
+    classDef ok fill:#e8f6ef,stroke:#1e8449,color:#145a32;
+    classDef ui fill:#eaf2fb,stroke:#2471a3,color:#1a5276;
+
+    class f1Gate409g,f1_422,f2Gate409i,f2_422,f2ErrState,disabled gate;
+    class f1Ingest,f2Accept,gallery ok;
+    class status,f1Poll,f2Diff,f2Paint ui;

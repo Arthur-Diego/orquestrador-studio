@@ -16,6 +16,7 @@ from ... import higgsfield as hf
 from ...common import prompter, settings
 from ...refs import service as refs
 from ...storyboard import angles
+from ...storyboard import local as sblocal
 from ...storyboard import service as sb
 
 router = APIRouter(tags=["storyboard"])
@@ -275,6 +276,52 @@ def storyboard_job(pid: str):
 def storyboard_script_generate(pid: str, req: ScriptGenerateReq):
     return _guard(sb.script_generate, pid, req.preset_arg(), req.count, req.model_target,
                   req.instruction)
+
+
+# ---------- `[extensão]` motor de imagem LOCAL (grátis) — ADR-033 ----------
+# Caminho ADICIONAL ao lado do pago (Higgsfield permanece). Geração local de keyframes + inpaint
+# REAL por máscara headless (ComfyUI). Namespace `local` para não colidir com a ideação paga.
+class LocalGenerateReq(BaseModel):
+    prompt: str
+    count: int = 4
+    model: str = "flux-schnell"
+    steps: int | None = None
+    seed: int | None = None
+
+
+@router.get("/api/projects/{pid}/storyboard/local/status")
+def storyboard_local_status(pid: str):
+    return _guard(sblocal.status, pid)
+
+
+@router.post("/api/projects/{pid}/storyboard/local/generate")
+def storyboard_local_generate(pid: str, req: LocalGenerateReq):
+    return _guard(sblocal.start_generate, pid, req.prompt, req.count, req.model, req.steps, req.seed)
+
+
+@router.get("/api/projects/{pid}/storyboard/local/job")
+def storyboard_local_job(pid: str):
+    refs.project_dir(pid)
+    return sblocal.job_status(pid)
+
+
+@router.post("/api/projects/{pid}/storyboard/local/inpaint")
+async def storyboard_local_inpaint(  # noqa: PLR0913
+    pid: str,
+    mask: UploadFile = File(...),  # noqa: B008
+    instruction: str = Form(...),  # noqa: B008
+    source_id: str = Form(""),  # noqa: B008
+    model: str = Form("flux-dev"),  # noqa: B008
+    steps: int | None = Form(None),  # noqa: B008
+    guidance: float | None = Form(None),  # noqa: B008
+    denoise: float | None = Form(None),  # noqa: B008
+):
+    refs.project_dir(pid)
+    data = await mask.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "máscara acima de 25 MB")
+    return _guard(sblocal.start_inpaint, pid, data, instruction, source_id or None, model,
+                  steps, guidance, denoise)
 
 
 @router.get("/api/projects/{pid}/storyboard/script/job")
