@@ -804,3 +804,13 @@ inpaint real local). Relaciona ADR-001 (single-process — ComfyUI é ferramenta
 runtime), ADR-006 (jobs em thread + polling), ADR-008 (fakes, sem rede), ADR-010 (só artefatos
 gerados do núcleo tocados, com titularidade declarada) e ADR-016 (local é grátis: livro-caixa
 inalterado).
+
+---
+
+**ADR nova: ADR-035** (STORYBOARD) — remoção do combo de fórmulas da aula (`#sbPreset`) do
+Storyboard, a pedido do dono. Apaga `PRESETS` e a chave `presets` de `GET .../storyboard/instructions`
+no backend e o `<select id="sbPreset">` + o tipo `PresetMeta` no React; a instrução passa a ser sempre
+autoral. Reconcilia o antigo PR #103 (ADH-OS-20260831-16), escrito antes do corte React (Wave 10) e
+que reivindicava o ADR-033 (já do motor local) — reimplementado na versão React e renumerado para 035.
+NÃO toca o preset de REALISMO (`REALISM_PRESETS`), que é outra feature. Relaciona ADR-004 (fidelidade:
+a aula manda escrever a instrução; o combo era só conveniência), ADR-015/ADR-031/ADR-032.

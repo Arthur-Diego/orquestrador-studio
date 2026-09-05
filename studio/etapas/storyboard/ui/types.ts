@@ -8,11 +8,6 @@ export interface KindMeta {
   label: string;
   ui_hint: string;
 }
-export interface PresetMeta {
-  label: string;
-  kind: string;
-  text: string;
-}
 export interface ModelMeta {
   id: string;
   label: string;
@@ -25,7 +20,6 @@ export interface ArcMeta {
 }
 export interface InstructionsMeta {
   kinds: KindMeta[];
-  presets: PresetMeta[];
   models: ModelMeta[];
   arc: ArcMeta[];
   counts: { uncertain: number; tweak: number };

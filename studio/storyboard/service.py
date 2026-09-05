@@ -126,14 +126,8 @@ KINDS = [
 KIND_IDS = {k["kind"] for k in KINDS}
 CLI_KINDS = {k["kind"] for k in KINDS if k["cli"]}
 
-# Fórmulas literais da aula 010, em inglês (aula 007); o pt-BR fica no label.
-PRESETS = [
-    {"kind": "edit", "label": "Menor e mais realista", "text": "Make the climber even smaller and more realistic"},
-    {"kind": "edit", "label": "Eliminar personagem da direita", "text": "Remove the small character on the right side"},
-    {"kind": "edit", "label": "Inpaint: corda proporcional",
-     "text": "There is a rope hanging from the top of the can down to the ground; make it thinner, proportional to the character and realistic"},
-    {"kind": "multishot", "label": "Close no personagem", "text": "a close-up on the character"},
-]
+# O combo de fórmulas da aula (`PRESETS`/`#sbPreset`) foi REMOVIDO a pedido do dono (ADR-035):
+# a instrução é escrita à mão, sem atalho de fórmula pronta.
 
 _registry = JobRegistry()
 _NUMBERED = re.compile(r"\b\d+[.)]\s")
@@ -238,7 +232,7 @@ def scene_arc(n: int, total: int) -> dict:
 
 def presets() -> dict:
     return {"kinds": [{k: v for k, v in kind.items() if k != "cli"} for kind in KINDS],
-            "presets": PRESETS, "suffix": SUFFIX, "counts": dict(COUNTS),
+            "suffix": SUFFIX, "counts": dict(COUNTS),
             "models": MODELS, "arc": SCENE_ARC, "upscale_note": UPSCALE_NOTE}
 
 

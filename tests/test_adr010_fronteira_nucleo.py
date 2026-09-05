@@ -70,6 +70,13 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-02-remove-combo-formulas": (
+        "Remoção do combo de fórmulas da aula (`#sbPreset`) do Storyboard, ADR-035 (reconcilia o "
+        "PR #103 pré-Wave-10 na versão React): a UI da etapa muda, exigindo RECONSTRUIR o bundle "
+        "versionado `studio/web/dist/`. O backend e a UI da etapa (`studio/etapas/storyboard/**`) "
+        "não são núcleo; `schema.ts` não muda (a chave `presets` não era tipada). ADR-035, ADR-032.",
+        ("studio/web/",),
+    ),
     "feature/adh-os-20260905-01-storyboard-motor-local": (
         "`[extensão]` motor de imagem LOCAL na etapa 4 (ADR-033), card ADH-OS-20260905-01: rotas "
         "novas `/storyboard/local/*` mudam o `/openapi.json`, exigindo REGERAR `frontend/src/api/"
