@@ -70,9 +70,79 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-01-storyboard-motor-local": (
+        "`[extensão]` motor de imagem LOCAL na etapa 4 (ADR-033), card ADH-OS-20260905-01: rotas "
+        "novas `/storyboard/local/*` mudam o `/openapi.json`, exigindo REGERAR `frontend/src/api/"
+        "schema.ts` (guarda de drift do CI), e a UI nova (`studio/etapas/storyboard/ui/MaskEditor.tsx` "
+        "+ painel local no `Ideation.tsx`, ambos co-localizados na etapa) exige RECONSTRUIR o bundle "
+        "versionado `studio/web/dist/`. A lógica das outras etapas e do shell (`frontend/src/**`) fica "
+        "intocada — só os dois artefatos gerados. ADR-033, ADR-031/ADR-032.",
+        ("frontend/", "studio/web/"),
+    ),
     "refactor/adh-os-20260902-08-react-fundacao": (
         "Wave 10 · E0 fundação — card [REACT-01]; cria o scaffold `frontend/` (ADR-031)",
         ("frontend/",),
+    ),
+    "refactor/adh-os-20260903-02-react-contrato-api": (
+        "Wave 10 · E1 contrato tipado da API — card [REACT-02]; acrescenta `frontend/src/api/` "
+        "(tipos gerados do /openapi.json, client HTTP e hooks TanStack Query) — ADR-031/ADR-032",
+        ("frontend/",),
+    ),
+    "refactor/adh-os-20260903-03-react-design-system": (
+        "Wave 10 · E2 design system e biblioteca de UI — card [REACT-03]; acrescenta "
+        "`frontend/src/ui/` (componentes/hooks equivalentes ao `Studio.ui`) e `frontend/src/styles/` "
+        "(cópia byte-a-byte de style.css/ui.css). O vanilla segue intocado até a E10 — ADR-031/ADR-032",
+        ("frontend/",),
+    ),
+    "refactor/adh-os-20260903-05-react-lote-a": (
+        "Wave 10 · E4 lote A (mood/publish/export/music) + correções de integração do shell E2/E3 que "
+        "destravam as frentes de tela (resolução de `studio/etapas/*/ui` no tsconfig/vite/eslint, "
+        "`Guide.tsx`/`PluginHost` para o diff de textContent do ADR-004, `useUpload` `.over` síncrono) "
+        "— card [REACT-05]. A pasta das etapas (`studio/etapas/`) não é prefixo do núcleo e não entra "
+        "no recorte; só `frontend/` precisa de titularidade.",
+        ("frontend/",),
+    ),
+    "refactor/adh-os-20260903-04-react-shell-ponte": (
+        "Wave 10 · E3 shell React + ponte strangler — card [REACT-04]; acrescenta o shell React em "
+        "`frontend/src/shell/` (sidebar, rail, topbar, visão geral, wizard, roteamento por hash, "
+        "contrato de host do plugin React e a ponte `window.Studio` para as 10 etapas vanilla) e "
+        "serve o índice React sob a flag `STUDIO_UI=react` em `studio/app.py` — o serving estático do "
+        "shell é a exceção sancionada (recon §1.1/§6.3), a lógica de backend (service/router/guide) "
+        "segue intocada. O vanilla continua no default até a E10 — ADR-031/ADR-032",
+        ("frontend/", "studio/app.py"),
+    ),
+    "refactor/adh-os-20260903-07-react-lote-c": (
+        "Wave 10 · E6 lote C — áreas globais — card [REACT-07]; migra a biblioteca de mood boards "
+        "(ADR-013), créditos & custos (ADR-016) e o componente compartilhado multishot (ADR-017) "
+        "para React em `frontend/src/areas/*`, hospedadas pelo content-root do shell, e REMOVE os "
+        "vanilla `studio/web/{moodboards,creditos,multishot}.js` + os `<script>` correspondentes em "
+        "`studio/web/index.html`. O vanilla residual restante é cortado pela E10 — ADR-031/ADR-032",
+        ("frontend/", "studio/web/"),
+    ),
+    "refactor/adh-os-20260903-10-react-lote-f": (
+        "Wave 10 · E9 lote F — etapa edit — card [REACT-10]; migra a etapa 7 (Studio de vídeo) para "
+        "`studio/etapas/edit/ui/`. Toca `frontend/` só na INTEGRAÇÃO da wave: torna a guarda de "
+        "`frontend/src/shell/host.test.tsx` robusta a novas migrações (id inexistente no lugar de "
+        "`edit`, que deixou de ser vanilla). Recorte `frontend/` — ADR-031/ADR-032",
+        ("frontend/",),
+    ),
+    "refactor/adh-os-20260903-11-react-corte-final": (
+        "Wave 10 · E10 corte e fechamento — card [REACT-11]; React vira o DEFAULT. REMOVE a flag "
+        "`STUDIO_UI` e a rota `/steps/<id>/view.{html,js}` de `studio/app.py` (única mudança de "
+        "backend da wave), o resíduo vanilla `studio/web/{index.html,app.js,ui.js,ui.css,style.css}` "
+        "e a ponte strangler `window.Studio` do shell React (`frontend/src/shell/bridge.ts`), e "
+        "COMMITA o bundle `studio/web/dist/`. Recorte: `frontend/`, `studio/web/`, `studio/app.py`. "
+        "ADR-031/ADR-032, ADR-001/ADR-004/ADR-006/ADR-008/ADR-010/ADR-017.",
+        ("frontend/", "studio/web/", "studio/app.py"),
+    ),
+    "refactor/adh-os-20260903-09-react-lote-e": (
+        "Wave 10 · E8 lote E storyboard + canvas de marcação — card [REACT-09]; porta a etapa 4 para "
+        "React em `studio/etapas/storyboard/ui/` (com o canvas `Annotate` CO-LOCALIZADO na própria "
+        "etapa, não no shell) e REMOVE `studio/web/annotate.js`. O ÚNICO arquivo de núcleo tocado é "
+        "`studio/web/annotate.js` (deleção); como o guard granulariza por prefixo de `NUCLEO_PREFIXOS`, "
+        "o recorte mínimo declarável é `studio/web/`. Não toca o shell (`frontend/src/**`), que é da E4. "
+        "ADR-031/ADR-032, ADR-004/ADR-017/ADR-021.",
+        ("studio/web/",),
     ),
 }
 

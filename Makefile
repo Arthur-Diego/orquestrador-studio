@@ -1,4 +1,4 @@
-.PHONY: help setup hooks run test lint verify frontend-setup frontend-verify frontend-build qa-up qa-seed qa-run qa-api qa-down
+.PHONY: help setup hooks run test lint verify frontend-setup frontend-verify frontend-build frontend-schema frontend-schema-check qa-up qa-seed qa-run qa-api qa-down
 
 help: ## Lista os alvos
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-10s %s\n", $$1, $$2}'
@@ -32,6 +32,15 @@ frontend-verify: ## Typecheck + lint + testes do frontend (o job `frontend` do C
 	cd frontend && npm run typecheck && npm run lint && npm test
 frontend-build: ## Constrói o bundle em studio/web/dist/
 	cd frontend && npm run build
+
+# Contrato tipado da API (Wave 10, E1 — card [REACT-02]). O `schema.ts` é GERADO do `/openapi.json`
+# que o FastAPI publica; regenerar exige Python (para despejar o contrato) e Node (para tipá-lo).
+frontend-schema: ## Regenera frontend/src/api/schema.ts a partir do /openapi.json do app
+	. .venv/bin/activate && python scripts/gen_openapi.py
+	cd frontend && npm run schema:gen
+frontend-schema-check: ## Falha se o schema.ts versionado divergir do /openapi.json (guarda de drift)
+	. .venv/bin/activate && python scripts/gen_openapi.py
+	cd frontend && npm run schema:check
 
 # ---- QA E2E fora do CI (skill qa-studio, ADR-008). RUN=<run-id> (padrão: local) ----
 RUN ?= local

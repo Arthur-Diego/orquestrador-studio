@@ -1,0 +1,1963 @@
+/* eslint-disable */
+// @ts-nocheck
+// Editor de vídeo (Etapa 7 · aula 014) — porte imperativo 1:1 do vanilla
+// `studio/etapas/edit/view.js` para a Wave 10 · E9 (card [REACT-10], ADR-031/ADR-032).
+//
+// Esta é a maior e mais imperativa tela do Studio (timeline, drag por ponteiro, palco por
+// reconciliação de nós por `data-uid`, karaokê pintado por frame): TODO o DOM é gerado por JS. O
+// recon §6.2 é explícito — "encapsular em componente com ref, NÃO reescrever a lógica de desenho".
+// Logo, a lógica abaixo é o vanilla verbatim; só o CONTRATO DE HOST muda:
+//   `Studio.register("edit", ctx => ...)` -> `export function createEditor(ctx, ui)`
+//   `const ui = Studio.ui`                -> `ui` injetado (frontend/src/ui + shim de modal/drop)
+//   `Studio.go("music")`                  -> `ctx.go("music")`
+// O `index.tsx` monta isto num ref no mount (init) e chama `destroy()` no unmount; a troca de
+// projeto remonta por `key={pid}` (recon §1.3).
+//
+// A checagem de tipos é suprimida DE PROPÓSITO neste arquivo (`@ts-nocheck`): ela é o equivalente
+// exato do `node --check view.js` (só sintaxe) que o vanilla tinha — o `tsc --noEmit` continua
+// validando a SINTAXE, e o COMPORTAMENTO é provado pelo oráculo da wave (a suíte QA inalterada
+// `scripts/qa/cenarios/edit.py` + o diff de `textContent`, ADR-004), não por tipos. A cola nova e
+// tipada (`index.tsx`, `helpers.ts`) passa no strict integralmente.
+export function createEditor(ctx, ui) {
+  const { api, toast } = ctx;
+  const esc = (s) => ui.esc(s);
+  const base = () => `/api/projects/${ctx.pid()}/edit`;
+  const root = () => document.getElementById("ved");
+
+  // ------------------------------------------------------------ constantes (protótipo)
+  const FPS_CHOICES = [24, 25, 30, 60];
+  const ASPECTS = { "16:9": 16 / 9, "9:16": 9 / 16, "1:1": 1, "4:5": 4 / 5, "4:3": 4 / 3, "21:9": 21 / 9 };
+  const RES = [["720p", 1280, 720], ["1080p", 1920, 1080], ["1440p", 2560, 1440], ["4K", 3840, 2160]];
+  const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
+  const PPS_BASE = 46;                        // px por segundo em zoom 1 (protótipo)
+  const CATS = [
+    ["media", "▦", "Mídia"], ["text", "T", "Texto"], ["captions", "CC", "Legendas"],
+    ["audio", "♪", "Áudio"], ["transitions", "⧓", "Transições"], ["effects", "✦", "Efeitos"],
+    ["filters", "◑", "Filtros"], ["elements", "◈", "Elementos"], ["adjust", "⚙", "Ajustes"],
+    ["library", "▤", "Biblioteca"],
+  ];
+  // TYPECOL: [fill, borda, acento] por tipo de track (protótipo)
+  const COL = {
+    video: ["#16303a", "#2f6d7a", "#4FC8D9"], text: ["#2a2010", "#7a5a1f", "#E4A64F"],
+    caption: ["#1e1836", "#4a3f8a", "#93AAF7"], overlay: ["#241a2e", "#5a3f7a", "#C79BEA"],
+    music: ["#0e2a20", "#2f7a5a", "#50CF9E"], sfx: ["#2e1420", "#7a2f4a", "#E86A8E"],
+  };
+  const TRANSITIONS = ["Fade", "Dissolve", "Slide", "Zoom", "Wipe", "Blur", "Flash", "Glitch", "Spin", "Push", "Pull", "Directional"];
+  const EFFECTS = ["Blur", "Sharpen", "Glow", "Vignette", "Grain", "Noise", "Shake", "Chromatic", "Glitch", "Pixelate", "RGB Split", "Motion Blur", "Zoom", "Lens"];
+  // Tipos de camada que cada efeito aceita. Vignette/Pixelate/Lens dependem dos pixels do quadro:
+  // em texto/legenda a linha do painel fica desabilitada com a sublegenda "só vídeo".
+  const FX_TODOS = ["video", "overlay", "text", "caption"], FX_MIDIA = ["video", "overlay"];
+  const EFFECT_APPLIES = {
+    Blur: FX_TODOS, Sharpen: FX_TODOS, Glow: FX_TODOS, Vignette: FX_MIDIA, Grain: FX_TODOS,
+    Noise: FX_TODOS, Shake: FX_TODOS, Chromatic: FX_TODOS, Glitch: FX_TODOS, Pixelate: FX_MIDIA,
+    "RGB Split": FX_TODOS, "Motion Blur": FX_TODOS, Zoom: FX_TODOS, Lens: FX_MIDIA,
+  };
+  // Efeitos que NÃO cabem em `filter:` viram classe `fx-*` (keyframes ou pseudo-elemento).
+  // Glow/Chromatic/RGB Split são classe SÓ em texto/legenda — em vídeo/overlay eles são `filter:`.
+  const FX_CLASSES = {
+    glow: { cls: "fx-glow", kinds: ["text", "caption"] },
+    vignette: { cls: "fx-vignette" }, grain: { cls: "fx-grain" }, noise: { cls: "fx-noise" },
+    shake: { cls: "fx-shake", dur: (i) => .6 - i * .4 },
+    chromatic: { cls: "fx-chromatic", kinds: ["text", "caption"] },
+    glitch: { cls: "fx-glitch", dur: (i) => 1.2 - i * .8 },
+    pixelate: { cls: "fx-pixelate" }, rgbsplit: { cls: "fx-rgbsplit", kinds: ["text", "caption"] },
+    motionblur: { cls: "fx-motion" }, zoom: { cls: "fx-zoom", dur: (i) => 2 - i }, lens: { cls: "fx-lens" },
+  };
+  const FX_CLS = Object.values(FX_CLASSES).map((f) => f.cls);
+  // ordem em que as regras de animação estão declaradas no `view.html`: com mais de uma ativa, a
+  // ÚLTIMA ganha o shorthand `animation` da cascata — e é dela que sai o `--fx-dur`.
+  const FX_ANIM = ["shake", "glitch", "zoom"];
+  const FILTERS = [["cinetico", "Cinético", "contrast(1.1) saturate(1.15)"], ["frost", "Frost", "hue-rotate(-10deg) brightness(1.05) saturate(1.1)"], ["neon", "Neon", "saturate(1.6) contrast(1.1)"], ["mono", "Mono", "grayscale(1) contrast(1.1)"], ["warm", "Warm", "sepia(.25) saturate(1.2)"], ["cool", "Cool", "hue-rotate(-14deg) saturate(1.1)"], ["vivid", "Vivid", "saturate(1.5) contrast(1.08)"], ["fade", "Fade", "contrast(.9) brightness(1.08) saturate(.85)"]];
+  const ELEMENTS = [["rect", "Retângulo", "▭"], ["circle", "Círculo", "●"], ["arrow", "Seta", "➜"], ["bar", "Barra inferior", "▬"], ["ice", "Sticker gelo", "❄"], ["bolt", "Ícone raio", "⚡"], ["bg", "Background", "▩"], ["lower", "Lower third", "▤"]];
+  // formas do painel Elementos desenhadas em CSS no preview (as demais continuam glifo)
+  const SHAPES_CSS = ["rect", "circle", "bar", "lower", "bg"];
+  const GLIFO = Object.fromEntries(ELEMENTS.map(([id, , ic]) => [id, ic]));
+  const TEXT_PRESETS = [["title", "Título", "display 64px", { size: 64, weight: 800 }], ["subtitle", "Subtítulo", "medium 34px", { size: 34, weight: 600 }], ["body", "Texto simples", "body 22px", { size: 22, weight: 400 }], ["headline", "Headline", "bold 48px", { size: 48, weight: 800, uppercase: true }], ["lower", "Lower third", "nome + cargo", { size: 30, weight: 700, align: "left" }], ["cta", "CTA", "botão", { size: 34, weight: 800, bg: "#4FC8D9" }], ["custom", "Customizado", "em branco", { size: 40, weight: 500 }]];
+  const ADJ = [["exposure", "Exposição"], ["brightness", "Brilho"], ["contrast", "Contraste"], ["saturation", "Saturação"], ["temperature", "Temperatura"], ["hue", "Matiz"], ["highlights", "Highlights"], ["shadows", "Shadows"], ["sharpen", "Nitidez"], ["vignette", "Vinheta"]];
+  // ordem fixa das 6 tracks (topo→base) e a track do editor (não-backbone) por tipo
+  const ET = [{ id: "t_txt", type: "text", name: "TEXTO", h: 52 }, { id: "t_cap", type: "caption", name: "LEGENDAS", h: 30 }, { id: "v2", type: "overlay", name: "VÍDEO 2", h: 52, col: "video" }];
+
+  // ---------- legendas com karaokê [extensão] ----------
+  // ESPELHO de `studio/edit/captions/__init__.py` (contrato congelado da wave 8). Os valores
+  // existem nos dois lados porque o palco re-fatia e pinta as janelas sem ida ao servidor:
+  // divergir aqui faz o preview e o `master.mp4` mostrarem coisas diferentes. Qualquer mudança
+  // é feita nos dois arquivos, no mesmo PR.
+  const WPS = 2.4;                                    // palavras por segundo faladas
+  const CAPTION_MODES = ["karaoke", "linha", "bloco"];
+  const HI_COLORS = ["#C8F751", "#57E2F0", "#F2B544", "#A78BFA"];
+  const CHUNK_OPTS = [0, 6, 4, 2];                    // 0 = uma janela por linha de LARGURA (só o servidor mede)
+  const CHUNK_LABEL = { 0: "tudo (uma janela por linha)", 6: "6 palavras", 4: "4 palavras", 2: "2 palavras" };
+  const MODE_LABEL = { karaoke: "Karaokê", linha: "Linha", bloco: "Bloco" };
+  const CAP_PRESETS = [
+    { id: "karaoke", label: "Karaokê", size: 40, position: "bottom", hi: "#C8F751", uppercase: true, weight: 800, bg: "transparent" },
+    { id: "linha", label: "Linha limpa", size: 30, position: "bottom", hi: "#A78BFA", uppercase: false, weight: 600, bg: "transparent" },
+    { id: "bloco", label: "Bloco editorial", size: 26, position: "middle", hi: "#57E2F0", uppercase: false, weight: 600, bg: "rgba(0,0,0,.55)" },
+  ];
+  const NARRATION_ACCEPT = ".wav,.mp3,.m4a,.ogg,.mp4,.mov,.webm";
+  const CAP_SCENES_HINT = "descrição das cenas, não é fala";
+
+  // ------------------------------------------------------------ utilidades
+  const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+  const num = (v, d = 0) => { const n = parseFloat(v); return isNaN(n) ? d : n; };
+  const newId = (p) => `${p}_${Math.random().toString(36).slice(2, 10)}`;
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const fmtTC = (s) => { s = Math.max(0, s || 0); const f = fps(); const mm = Math.floor(s / 60), ss = Math.floor(s % 60), ff = Math.floor((s - Math.floor(s)) * f); return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`; };
+  const clipLen = (c) => (num(c.out) - num(c.in)) / Math.max(num(c.speed, 1), 0.05);
+  const nameOf = (c) => (c.file ? c.file.split("/").pop().replace(/\.[^.]+$/, "") : `${c.scene}_${c.shot}_${c.take}`);
+  const isVideoFile = (s) => /\.(mp4|webm|mov)$/i.test(s || "");
+  // chave estável do efeito (o nome tem espaço: "RGB Split" → "rgbsplit") e a regra por tipo
+  const fxSlug = (t) => (t || "").toLowerCase().replace(/[^a-z]/g, "");
+  const FX_BY_SLUG = Object.fromEntries(Object.entries(EFFECT_APPLIES).map(([k, v]) => [fxSlug(k), v]));
+  const fxAplica = (type, kind) => !kind || (FX_BY_SLUG[fxSlug(type)] || FX_TODOS).includes(kind);
+  const fxInt = (ef) => clamp(num(ef && ef.intensity, .5), 0, 1);
+
+  // ---------- helpers de legenda (puros) ----------
+  /** Modo utilizável do item. Valor fora do domínio (front antigo, campo torto) cai em `bloco` —
+   *  a MESMA regra do `effective_mode` do servidor: legenda é enfeite e não derruba a tela. */
+  const capMode = (o) => (CAPTION_MODES.includes((o || {}).mode) ? o.mode : "bloco");
+  const capHi = (o) => (/^#[0-9A-Fa-f]{6}$/.test((o || {}).hi || "") ? o.hi : HI_COLORS[0]);
+  const capBase = (o) => ((o || {}).style || {}).color || "#fff";
+  const capText = (o) => (((o || {}).style || {}).uppercase ? (o.text || "").toUpperCase() : (o.text || ""));
+  /** A palavra pertence à janela `[a, b)` pelo CENTRO — espelho de `word_in_window`. Testar o
+   *  início faria uma palavra a cavalo entre duas janelas aparecer nas duas (ou em nenhuma). */
+  function wordsInWindow(words, a, b) {
+    return (words || []).filter((w) => { const c = (num(w.start_s) + num(w.end_s)) / 2; return c >= a && c < b; });
+  }
+  /** Fatia de `chunk` palavras que contém o índice `wi` (`{ws, off}`); `chunk` 0 = tudo. Espelha o
+   *  `chunkOf` do ContentFlow e é o que o re-fatiar local usa para não ir ao servidor. */
+  function chunkOf(words, chunk, wi) {
+    if (!chunk || words.length <= chunk) return { ws: words, off: 0 };
+    const s = Math.floor(wi / chunk) * chunk;
+    return { ws: words.slice(s, s + chunk), off: s };
+  }
+  /** Desloca as palavras do item pelo mesmo delta do item. `words` são tempos ABSOLUTOS da
+   *  timeline: mover o item sem mover as palavras faria o karaokê acender fora de hora. */
+  function shiftWords(o, delta) {
+    if (!o || !Array.isArray(o.words) || !delta) return;
+    o.words.forEach((w) => { w.start_s = +(num(w.start_s) + delta).toFixed(3); w.end_s = +(num(w.end_s) + delta).toFixed(3); });
+  }
+  const capWarned = new Set();          // um `console.warn` por item, não um por frame
+  /** Palavras VÁLIDAS do item que caem na janela dele. Palavra sem texto ou com tempo não
+   *  numérico é descartada (e avisada uma vez): uma legenda torta não pode quebrar o palco. */
+  function capWords(o) {
+    const raw = (o || {}).words;
+    if (!Array.isArray(raw) || !raw.length) return [];
+    const ok = raw.filter((w) => w && String(w.w || "").trim() && isFinite(num(w.start_s, NaN)) && isFinite(num(w.end_s, NaN)));
+    if (ok.length !== raw.length && !capWarned.has(o.id)) {
+      capWarned.add(o.id);
+      console.warn("[captions] palavras descartadas por tempo inválido", o.id, raw.length - ok.length);
+    }
+    return wordsInWindow(ok, num(o.start), num(o.end));
+  }
+  /** `POST` cru para as rotas de legenda. O `api()` do shell lança `Error(detail)` sem o status,
+   *  e o modal precisa distinguir 422 (destaca o campo) de 404, 409 e 502. */
+  async function capPost(path, body) {
+    const r = await fetch(base() + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    let data = null;
+    try { data = await r.json(); } catch (e) { /* corpo vazio ou não-JSON */ }
+    return { status: r.status, body: data || {} };
+  }
+  /** `detail` legível. O 422 do serviço é a string do contrato (`"text: obrigatório em script"`);
+   *  o 422 do Pydantic (valor fora do enum) é uma LISTA — dela extraímos campo e mensagem. */
+  function capDetail(body, fallback) {
+    const d = (body || {}).detail;
+    if (typeof d === "string" && d) return d;
+    if (Array.isArray(d) && d.length) { const e = d[0] || {}; return `${(e.loc || []).slice(-1)[0] || "campo"}: ${e.msg || "valor inválido"}`; }
+    return fallback || "falha na geração de legendas";
+  }
+
+  // ------------------------------------------------------------ STORE
+  const St = {
+    timeline: null, beats: null, hasFfmpeg: true, sfxLib: [],
+    selection: [], playhead: 0, playing: false, loop: false, muted: false, vol: 80,
+    zoom: 1, snap: true, panel: "media", rightTab: "basico", search: "", autosave: true,
+    saveStatus: "saved", history: [], future: [], hLabel: "",
+  };
+  let saveTimer = null, raf = null, playClock = 0;
+
+  function ed() {
+    if (!St.timeline.editor) St.timeline.editor = { version: 1, project: { width: 1920, height: 1080, fps: 30, aspect: "16:9" }, tracks: [], clip_fx: {}, transitions: [], markers: [], ui: { zoom: 1, snap: true } };
+    const e = St.timeline.editor;
+    e.project = e.project || { width: 1920, height: 1080, fps: 30, aspect: "16:9" };
+    e.tracks = e.tracks || []; e.clip_fx = e.clip_fx || {}; e.transitions = e.transitions || []; e.markers = e.markers || [];
+    e.ui = e.ui || { zoom: 1, snap: true };
+    return e;
+  }
+  const proj = () => ed().project;
+  const fps = () => (St.timeline ? proj().fps || 30 : 30);
+  const pps = () => Math.round(PPS_BASE * St.zoom);
+
+  /** Toda ação de edição passa por aqui. `opts` (opcional) diz o que mais precisa ser re-renderizado
+   *  além de timeline/preview/props/header: `{panel:true}` para o painel esquerdo, `{audio:true}`
+   *  para os elementos de áudio/overlay do palco. NUNCA cai em `renderRoot()` — era ele que jogava
+   *  fora altura da timeline, larguras dos painéis, scroll e thumbnails a cada clique. */
+  function commit(label, mutator, opts) {
+    St.history.push(clone(St.timeline)); if (St.history.length > 40) St.history.shift();
+    St.future = []; St.hLabel = label; mutator(); setStatus("dirty"); scheduleSave(); renderDirty(opts);
+  }
+  function snapshot(label) { St.history.push(clone(St.timeline)); if (St.history.length > 40) St.history.shift(); St.future = []; St.hLabel = label; }
+  // undo/redo trocam a timeline inteira: painel e áudio podem ter mudado junto.
+  function undo() { if (!St.history.length) return; St.future.push(clone(St.timeline)); St.timeline = St.history.pop(); St.selection = []; setStatus("dirty"); scheduleSave(); renderDirty({ panel: true, audio: true }); }
+  function redo() { if (!St.future.length) return; St.history.push(clone(St.timeline)); St.timeline = St.future.pop(); St.selection = []; setStatus("dirty"); scheduleSave(); renderDirty({ panel: true, audio: true }); }
+
+  // ------------------------------------------------------------ MODEL (backbone → 6 tracks)
+  function segments() {
+    const clips = St.timeline.clips || [], blacks = St.timeline.blacks || [];
+    clips.forEach((c) => { if (!c.id) c.id = newId("c"); });
+    const positional = clips.some((c) => c.start != null);
+    const segs = []; let cursor = 0;
+    if (positional) {
+      // [extensão] posicional: cada clipe no seu `start` livre (gaps = pretos). Mesma regra do
+      // backend (_positional_layout): ordena por start, clipe sem start vai para o fim.
+      const order = clips.map((c, i) => i).sort((a, b) => (clips[a].start != null ? num(clips[a].start) : 1e9 + a) - (clips[b].start != null ? num(clips[b].start) : 1e9 + b));
+      order.forEach((i) => {
+        const c = clips[i], len = clipLen(c), st = c.start != null ? num(c.start) : cursor, place = Math.max(st, cursor);
+        if (place > cursor + 0.02) segs.push({ kind: "black", start: cursor, dur: +(place - cursor).toFixed(3) });
+        segs.push({ kind: "clip", clip: c, i, start: place, dur: len });
+        cursor = +(place + len).toFixed(3);
+      });
+    } else {
+      clips.forEach((c, i) => {
+        const len = clipLen(c);
+        segs.push({ kind: "clip", clip: c, i, start: cursor, dur: len });
+        cursor = +(cursor + len).toFixed(3);
+        const b = blacks.find((b) => Math.abs(num(b.at) - cursor) <= 0.25 && num(b.dur) > 0);
+        if (b) { segs.push({ kind: "black", black: b, start: cursor, dur: num(b.dur) }); cursor = +(cursor + num(b.dur)).toFixed(3); }
+      });
+    }
+    return segs;
+  }
+  /** Passa a timeline para o modo posicional: fixa o `start` de cada clipe onde ele está hoje. */
+  function ensurePositions() {
+    const clips = St.timeline.clips || [];
+    if (!clips.length || clips.some((c) => c.start != null)) return;
+    segments().filter((s) => s.kind === "clip").forEach((s) => { s.clip.start = s.start; });
+  }
+  function duration() { const s = segments(); let d = s.length ? s[s.length - 1].start + s[s.length - 1].dur : 0; (ed().tracks || []).forEach((t) => (t.items || []).forEach((it) => { d = Math.max(d, num(it.end)); })); return +Math.max(d, 0).toFixed(3); }
+
+  function etrack(id, create) {
+    const spec = ET.find((x) => x.id === id); if (!spec) return null;
+    let t = ed().tracks.find((x) => x.id === id);
+    if (!t && create) { t = { id, type: spec.type, name: spec.name, items: [], visible: true, locked: false, muted: false, height: spec.h }; ed().tracks.push(t); }
+    return t;
+  }
+  function tracks() {
+    const tl = St.timeline, segs = segments();
+    const out = [];
+    ET.forEach((spec) => {
+      const t = etrack(spec.id, false);
+      out.push({ id: spec.id, type: spec.type, col: spec.col || spec.type, name: spec.name, height: spec.h,
+        visible: t ? t.visible !== false : true, locked: t ? !!t.locked : false, muted: t ? !!t.muted : false, etrack: t,
+        items: (t ? t.items : []).map((it) => ({ uid: it.id, kind: spec.type, item: it, track: t, start: num(it.start), dur: Math.max(num(it.end) - num(it.start), 0.2) })) });
+    });
+    // VÍDEO 1 (backbone)
+    out.push({ id: "v1", type: "video", col: "video", name: "VÍDEO 1", height: 52, backbone: true, visible: true, locked: false, muted: false,
+      items: segs.filter((s) => s.kind === "clip").map((s) => ({ uid: s.clip.id, kind: "video", clip: s.clip, start: s.start, dur: s.dur, i: s.i })),
+      blacks: segs.filter((s) => s.kind === "black").map((s) => ({ start: s.start, dur: s.dur, black: s.black })) });
+    // MÚSICA (backbone: 1 faixa)
+    const mf = (tl.music || {}).file;
+    out.push({ id: "t_mus", type: "music", col: "music", name: "MÚSICA", height: 38, backbone: true, visible: true, locked: false, muted: (tl.music || {}).muted,
+      items: mf ? [{ uid: "music", kind: "music", music: tl.music, start: 0, dur: duration() }] : [] });
+    // SFX (backbone)
+    out.push({ id: "t_sfx", type: "sfx", col: "sfx", name: "SFX", height: 38, backbone: true, visible: true, locked: false, muted: false,
+      items: (tl.sfx || []).map((s, i) => ({ uid: `sfx_${i}`, kind: "sfx", sfx: s, i, start: num(s.at), dur: sfxDur(s) })) });
+    return out;
+  }
+  function sfxDur(s) { const lib = St.sfxLib.find((x) => x.file === s.file); return lib && lib.duration ? lib.duration : 1.2; }
+  function findItem(uid) { for (const t of tracks()) { const it = t.items.find((x) => x.uid === uid); if (it) return { ...it, track: t }; } return null; }
+  const isSel = (uid) => St.selection.includes(uid);
+  function clipFx(cid) { const m = ed().clip_fx; return (m[cid] = m[cid] || { transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }); }
+  function itemType(uid) { const it = findItem(uid); return it ? it.kind : null; }
+
+  // ------------------------------------------------------------ PLAYBACK
+  const videoPool = new Map();
+  const sfxPool = new Map();          // file → <audio> do SFX (um por arquivo)
+  let musicAudio = null;              // <audio id="edMusic"> — guardado aqui porque o re-render
+                                      // do palco descarta o elemento e a trilha ficava muda
+  // MP4 na faixa VÍDEO 2: um <video> por ITEM (`item.id`), não por arquivo como o `videoPool` —
+  // dois overlays do mesmo MP4 tocam em instantes diferentes e não podem dividir o elemento.
+  const overlayPool = new Map();
+  /** `<video>` do overlay `o`, criado uma única vez e reaproveitado enquanto o item existir. */
+  function overlayVideoFor(o) {
+    const uid = String(o.id);
+    let v = overlayPool.get(uid);
+    if (!v) {
+      v = document.createElement("video");
+      v.preload = "auto"; v.muted = true; v.playsInline = true; v.setAttribute("playsinline", "");
+      v.dataset.ovid = uid;
+      v.addEventListener("error", () => { v.dataset.err = "1"; renderPreview(); });
+      // `currentTime` antes do metadata rebobina para 0 a cada frame: posicionar só quando dá.
+      v.addEventListener("loadedmetadata", () => {
+        const it = overlayItem(uid); if (!it) return;
+        try { v.currentTime = Math.max(St.playhead - num(it.start), 0); } catch (e) {}
+      });
+      overlayPool.set(uid, v);
+    }
+    const want = ctx.files(o.src);
+    if (v.getAttribute("src") !== want) { v.src = want; delete v.dataset.err; }
+    return v;
+  }
+  function overlayItem(uid) { const t = etrack("v2", false); return t ? (t.items || []).find((x) => String(x.id) === uid) : null; }
+  /** Overlay ativo em `t` toca e persegue o playhead; o que saiu da janela pausa. Tolerância de
+   *  0,3 s — a mesma de `syncMusic`. Pausado, só posiciona com o metadata já carregado. */
+  function syncOverlays(t) {
+    if (!overlayPool.size) return;
+    const tr = etrack("v2", false), ativos = new Map();
+    if (tr && tr.visible !== false) (tr.items || []).forEach((o) => {
+      if (o.src && t >= num(o.start) - 1e-3 && t <= num(o.end) + 1e-3) ativos.set(String(o.id), o);
+    });
+    overlayPool.forEach((v, uid) => {
+      const o = ativos.get(uid);
+      if (!o || v.dataset.err) { if (!v.paused) v.pause(); return; }
+      const want = Math.max(t - num(o.start), 0);
+      if (St.playing) {
+        if (v.paused) v.play().catch(() => {});
+        if (v.readyState >= 2 && Math.abs(v.currentTime - want) > 0.3) { try { v.currentTime = want; } catch (e) {} }
+      } else {
+        if (!v.paused) v.pause();
+        if (v.readyState >= 1 && Math.abs(v.currentTime - want) > 0.3) { try { v.currentTime = want; } catch (e) {} }
+      }
+    });
+  }
+  /** Tira do pool (e do DOM) os `<video>` de overlays que não existem mais na faixa VÍDEO 2 —
+   *  mesmo padrão do `sfxPool` em `mountAudio`. Chamado pelo `renderDirty({audio:true})`. */
+  function pruneOverlayPool() {
+    const tr = etrack("v2", false);
+    const vivos = new Set((tr ? tr.items || [] : []).map((o) => String(o.id)));
+    overlayPool.forEach((v, uid) => { if (!vivos.has(uid)) { v.pause(); v.remove(); overlayPool.delete(uid); } });
+  }
+  function videoFor(file) {
+    if (!file) return null;
+    if (videoPool.has(file)) return videoPool.get(file);
+    const v = document.createElement("video");
+    v.preload = "metadata"; v.muted = true; v.playsInline = true; v.src = ctx.files(file); v.style.display = "none";
+    v.addEventListener("error", () => v.dataset.err = "1");
+    videoPool.set(file, v); attachPool();
+    return v;
+  }
+  /** `renderRoot` recria o innerHTML do editor: os <video>/<audio> do pool ficam órfãos e o
+   *  preview zera (e a trilha emudece). Reancorá-los no palco a cada render. */
+  function attachPool() {
+    const stage = document.getElementById("edStage"); if (!stage) return;
+    videoPool.forEach((v) => { if (v.parentNode !== stage) stage.appendChild(v); });
+    sfxPool.forEach((a) => { if (a.parentNode !== stage) stage.appendChild(a); });
+    if (musicAudio && musicAudio.parentNode !== stage) stage.appendChild(musicAudio);
+  }
+  /** Cria/atualiza os elementos de áudio da timeline (trilha + um por SFX) no palco. */
+  function mountAudio() {
+    if (!St.timeline || !document.getElementById("edStage")) return;
+    musicEl();
+    const files = new Set((St.timeline.sfx || []).map((s) => s.file).filter(Boolean));
+    sfxPool.forEach((a, f) => { if (!files.has(f)) { a.pause(); a.remove(); sfxPool.delete(f); } });
+    files.forEach((f) => sfxEl(f));
+    // a poda mora aqui (e não só no ramo `audio` do renderDirty): trocar de projeto passa por
+    // `renderRoot` → `mountAudio`, e sem isso os <video> do projeto anterior ficavam no pool
+    pruneOverlayPool();
+    attachPool();
+  }
+  function musicEl() {
+    const mf = (St.timeline.music || {}).file;
+    if (!mf) { if (musicAudio) { musicAudio.pause(); musicAudio.remove(); musicAudio = null; } return null; }
+    if (!musicAudio) { musicAudio = document.createElement("audio"); musicAudio.id = "edMusic"; musicAudio.preload = "auto"; }
+    const stage = document.getElementById("edStage"); if (stage && musicAudio.parentNode !== stage) stage.appendChild(musicAudio);
+    const want = ctx.files(mf); if (musicAudio.dataset.src !== want) { musicAudio.src = want; musicAudio.dataset.src = want; }
+    return musicAudio;
+  }
+  function sfxEl(file) {
+    if (!file) return null;
+    let a = sfxPool.get(file);
+    if (!a) { a = document.createElement("audio"); a.preload = "auto"; a.dataset.sfx = file; sfxPool.set(file, a); }
+    const want = ctx.files(file); if (a.dataset.src !== want) { a.src = want; a.dataset.src = want; }
+    const stage = document.getElementById("edStage"); if (stage && a.parentNode !== stage) stage.appendChild(a);
+    return a;
+  }
+  /** Ganho do SFX é dB (painel: −40…+12) — o <audio> quer 0…1. */
+  const gainVol = (db) => clamp(Math.pow(10, num(db, 0) / 20), 0, 1);
+  function sfxVolume(s) { return St.muted ? 0 : clamp((St.vol / 100) * gainVol(s.gain), 0, 1); }
+  /** Dispara cada SFX quando o playhead cruza o seu `at` (respeitando mudo/volume global). */
+  function syncSfx(de, ate) {
+    (St.timeline.sfx || []).forEach((s) => {
+      const a = sfxEl(s.file); if (!a) return;
+      a.volume = sfxVolume(s);
+      const at = num(s.at);
+      if (St.playing && at >= de - 1e-3 && at <= ate + 1e-3 && (a.paused || a.ended)) {
+        try { a.currentTime = 0; } catch (e) {}
+        a.play().catch(() => {});
+      }
+    });
+  }
+  function pauseSfx(rebobinar) {
+    sfxPool.forEach((a) => { a.pause(); if (rebobinar) { try { a.currentTime = 0; } catch (e) {} } });
+  }
+  /** Mudo/volume global e volume da trilha valem para tudo que está soando agora. */
+  function syncVolumes() {
+    syncMusic();
+    (St.timeline.sfx || []).forEach((s) => { const a = sfxPool.get(s.file); if (a) a.volume = sfxVolume(s); });
+  }
+  function segAt(t) { const segs = segments(); for (const s of segs) if (t >= s.start - 1e-4 && t < s.start + s.dur - 1e-4) return s; return segs[segs.length - 1] || null; }
+
+  function play() {
+    if (St.playing || duration() <= 0) return;
+    St.playing = true; if (St.playhead >= duration() - 0.02) St.playhead = 0; playClock = performance.now();
+    const mu = musicEl(); if (mu) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} mu.volume = musicVolume(); mu.play().catch(() => {}); }
+    setPlayIcon(); loopTick();
+  }
+  function pause() { St.playing = false; if (raf) cancelAnimationFrame(raf), raf = null; videoPool.forEach((v) => v.pause()); overlayPool.forEach((v) => v.pause()); if (musicAudio) musicAudio.pause(); pauseSfx(false); setPlayIcon(); }
+  function togglePlay() { St.playing ? pause() : play(); }
+  function setPlayIcon() { const b = document.getElementById("pcPlay"); if (b) b.textContent = St.playing ? "❚❚" : "▶"; }
+
+  function loopTick() {
+    const now = performance.now(), dt = (now - playClock) / 1000; playClock = now;
+    const antes = St.playhead;
+    const seg = segAt(St.playhead);
+    if (seg && seg.kind === "clip") {
+      const v = videoFor(seg.clip.file);
+      if (v && !v.dataset.err) {
+        if (v.paused) { try { v.currentTime = num(seg.clip.in) + (St.playhead - seg.start) * num(seg.clip.speed, 1); } catch (e) {} v.playbackRate = clamp(num(seg.clip.speed, 1), 0.25, 4); v.play().catch(() => {}); }
+        St.playhead = seg.start + (v.currentTime - num(seg.clip.in)) / Math.max(num(seg.clip.speed, 1), 0.05);
+        if (v.currentTime >= num(seg.clip.out) - 0.03 || v.ended) { v.pause(); St.playhead = seg.start + seg.dur + 0.001; }
+      } else St.playhead += dt;
+    } else St.playhead += dt;
+    if (St.playhead >= duration() - 0.01) { if (St.loop) { seekTo(0); if (St.playing) playClock = performance.now(); } else { St.playhead = duration(); pause(); } }
+    syncMusic(); syncOverlays(St.playhead); syncSfx(Math.min(antes, St.playhead), Math.max(antes, St.playhead));
+    paintPlayhead(); renderPreview();
+    if (St.playing) raf = requestAnimationFrame(loopTick);
+  }
+  function musicVolume() { const m = St.timeline.music || {}; return (St.muted || m.muted) ? 0 : clamp((St.vol / 100) * num(m.volume, 1), 0, 1); }
+  function syncMusic() {
+    const mu = musicAudio; if (!mu) return;
+    const want = num((St.timeline.music || {}).offset) + St.playhead;
+    // só ressincronizar com o arquivo já decodificável: forçar `currentTime` durante o load
+    // rebobina a trilha a cada frame e ela nunca sai do zero.
+    if (St.playing && mu.readyState >= 2 && Math.abs(mu.currentTime - want) > 0.3) mu.currentTime = clamp(want, 0, 1e6);
+    mu.volume = musicVolume();
+  }
+  function seekTo(t) {
+    const was = St.playing; if (was) pause();
+    St.playhead = clamp(t, 0, duration()); const seg = segAt(St.playhead);
+    if (seg && seg.kind === "clip") { const v = videoFor(seg.clip.file); if (v) { try { v.currentTime = num(seg.clip.in) + (St.playhead - seg.start) * num(seg.clip.speed, 1); } catch (e) {} } }
+    const mu = musicEl(); if (mu && mu.readyState >= 1) { try { mu.currentTime = clamp(num((St.timeline.music || {}).offset) + St.playhead, 0, 1e6); } catch (e) {} }
+    pauseSfx(true); syncOverlays(St.playhead);
+    paintPlayhead(); renderPreview(); if (was) play();
+  }
+  function step(frames) { seekTo(St.playhead + frames / fps()); }
+
+  // ------------------------------------------------------------ PREVIEW
+  function stageBox() {
+    const wrap = document.getElementById("edStageWrap"), stage = document.getElementById("edStage"); if (!wrap || !stage) return;
+    const p = proj(), ar = ASPECTS[p.aspect] || (p.width / p.height);
+    const aw = wrap.clientWidth - 4, ah = wrap.clientHeight - 4;
+    let w = aw, h = w / ar; if (h > ah) { h = ah; w = h * ar; }
+    stage.style.width = Math.max(80, w) + "px"; stage.style.height = Math.max(80, h) + "px";
+  }
+  /** Parte `filter:` do preview: preset + os 10 ajustes + os efeitos que são filtro CSS. `kind` é o
+   *  tipo da camada (`video` por padrão): Glow/Chromatic/RGB Split só são `filter:` em vídeo e
+   *  overlay — em texto/legenda eles viram `text-shadow` por classe (ver `applyEffectClasses`). */
+  function cssFilterFor(fx, kind) {
+    kind = kind || "video";
+    const f = (fx && fx.filters) || {}; const p = [];
+    if (fx && fx.presetCss) p.push(fx.presetCss);
+    if (f.brightness) p.push(`brightness(${1 + f.brightness / 100})`);
+    if (f.exposure) p.push(`brightness(${1 + f.exposure / 120})`);
+    if (f.contrast) p.push(`contrast(${1 + f.contrast / 100})`);
+    if (f.saturation) p.push(`saturate(${1 + f.saturation / 100})`);
+    if (f.hue) p.push(`hue-rotate(${f.hue * 1.8}deg)`);
+    if (f.temperature) p.push(`sepia(${clamp(Math.abs(f.temperature) / 100, 0, .6)}) hue-rotate(${f.temperature > 0 ? -10 : 10}deg)`);
+    const midia = kind !== "text" && kind !== "caption";
+    (fx && fx.effects || []).forEach((ef) => {
+      if (ef.enabled === false || !fxAplica(ef.type, kind)) return;   // efeito fora do tipo é ignorado
+      const n = fxSlug(ef.type), i = fxInt(ef);
+      if (n === "blur") p.push(`blur(${(i * 6).toFixed(2)}px)`);
+      else if (n === "sharpen") p.push(`contrast(${(1 + i * .4).toFixed(3)})`);
+      else if (n === "motionblur") p.push(`blur(${(i * 3).toFixed(2)}px)`);
+      else if (n === "glow" && midia) p.push(`brightness(${(1 + i * .3).toFixed(3)}) saturate(${(1 + i).toFixed(3)})`);
+      else if (n === "chromatic" && midia) p.push(`drop-shadow(${(-i * 3).toFixed(2)}px 0 rgba(255,0,0,.6)) drop-shadow(${(i * 3).toFixed(2)}px 0 rgba(0,255,255,.6))`);
+      else if (n === "rgbsplit" && midia) p.push(`drop-shadow(0 ${(-i * 3).toFixed(2)}px rgba(255,0,0,.6)) drop-shadow(0 ${(i * 3).toFixed(2)}px rgba(0,255,255,.6))`);
+      else if (n === "lens") p.push(`contrast(${(1 + i * .2).toFixed(3)}) saturate(${(1 + i * .3).toFixed(3)})`);
+    });
+    return p.join(" ");
+  }
+  /** Os efeitos que não são `filter:` (keyframes e pseudo-elementos) viram classe `fx-*` no nó, com
+   *  `--fx-i` (intensidade) e `--fx-dur` (duração da animação). As classes que saíram são sempre
+   *  REMOVIDAS: o nó sobrevive entre renders (reconciliação por `data-uid`). Efeito que não se
+   *  aplica ao tipo é ignorado mesmo se vier persistido, e a animação é do compositor (nunca JS por
+   *  frame). `--fx-i` segue a maior intensidade ativa — é uma custom property por nó, não por efeito. */
+  function applyEffectClasses(el, fx, kind) {
+    if (!el) return;
+    const ativos = new Map(); let imax = 0;
+    ((fx && fx.effects) || []).forEach((ef) => {
+      const n = fxSlug(ef.type), spec = FX_CLASSES[n];
+      if (ef.enabled === false || !spec || !fxAplica(ef.type, kind)) return;
+      if (spec.kinds && !spec.kinds.includes(kind)) return;           // Glow/Chromatic/RGB só em texto
+      const i = fxInt(ef); ativos.set(n, i); imax = Math.max(imax, i);
+    });
+    const cls = new Set([...ativos.keys()].map((n) => FX_CLASSES[n].cls));
+    FX_CLS.forEach((c) => el.classList.toggle(c, cls.has(c)));
+    if (!ativos.size) { el.style.removeProperty("--fx-i"); el.style.removeProperty("--fx-dur"); return; }
+    el.style.setProperty("--fx-i", imax.toFixed(3));
+    const anim = FX_ANIM.filter((n) => ativos.has(n)).pop();
+    if (anim) el.style.setProperty("--fx-dur", Math.max(FX_CLASSES[anim].dur(ativos.get(anim)), .08).toFixed(2) + "s");
+    else el.style.removeProperty("--fx-dur");
+  }
+  function tfCss(t) { if (!t) return ""; return `translate(${(t.x - .5) * 100}%,${(t.y - .5) * 100}%) scale(${(t.scaleX || 1) * (t.flipX ? -1 : 1)},${(t.scaleY || 1) * (t.flipY ? -1 : 1)}) rotate(${t.rotation || 0}deg)`; }
+  function renderPreview() {
+    const stage = document.getElementById("edStage"); if (!stage) return;
+    const seg = segAt(St.playhead);
+    videoPool.forEach((v) => { v.style.display = "none"; });
+    let black = stage.querySelector(".ved-black"); if (!black) { black = document.createElement("div"); black.className = "ved-black"; stage.appendChild(black); }
+    black.style.display = "none";
+    let empty = stage.querySelector(".ved-ph-empty"); if (!empty) { empty = document.createElement("div"); empty.className = "ved-ph-empty"; stage.appendChild(empty); }
+    let label = stage.querySelector(".ved-cliplabel"); if (!label) { label = document.createElement("div"); label.className = "ved-cliplabel"; stage.appendChild(label); }
+    if (seg && seg.kind === "clip") {
+      const v = videoFor(seg.clip.file);
+      if (v && !v.dataset.err) {
+        v.style.display = "block"; empty.style.display = "none";
+        if (!St.playing) { try { v.currentTime = num(seg.clip.in) + (St.playhead - seg.start) * num(seg.clip.speed, 1); } catch (e) {} }
+        // no clipe da VÍDEO 1 as classes `fx-*` vão no próprio <video> (ele não é uma `.ved-layer`)
+        const fx = ed().clip_fx[seg.clip.id]; v.style.filter = fx ? cssFilterFor(fx, "video") : ""; v.style.transform = fx ? tfCss(fx.transform) : ""; v.style.opacity = fx && fx.transform ? (fx.transform.opacity != null ? fx.transform.opacity : 1) : 1;
+        applyEffectClasses(v, fx, "video");
+        label.style.display = "block"; label.textContent = nameOf(seg.clip);
+      } else { empty.style.display = "block"; black.style.display = "none"; label.style.display = "block"; label.textContent = nameOf(seg.clip) + " (mídia indisponível)"; }
+    } else if (seg && seg.kind === "black") { black.style.display = "block"; empty.style.display = "none"; label.style.display = "none"; }
+    else { empty.style.display = "block"; label.style.display = St.timeline && (St.timeline.clips || []).length ? "none" : "block"; if (label.style.display === "block") label.textContent = "sem clipes"; }
+    renderLayers(stage);
+    // karaokê no fim, com as camadas já reconciliadas. `loopTick()` e `seekTo()` chegam aqui por
+    // dentro do próprio `renderPreview()` — a pintura é uma só, e nunca re-renderiza nada.
+    paintKaraoke(St.playhead);
+    const tc = document.getElementById("pcTime"); if (tc) tc.textContent = `${fmtTC(St.playhead)} / ${fmtTC(duration())}`;
+  }
+  /** Camadas do palco (TEXTO, LEGENDAS, VÍDEO 2): um hook por tipo. `create(el, item, stage)` roda
+   *  UMA vez na vida do nó (a reconciliação por `data-uid` preserva a identidade do `<div>` de um
+   *  item que continua no palco); `update(el, item, stage, t)` roda a cada render e mexe só em
+   *  estilo/conteúdo. [cross-feature] contrato 3: a frente de legendas sobrescreve
+   *  `LAYER_HOOKS.caption.{create,update}` para montar spans por palavra sem tocar na reconciliação. */
+  const LAYER_HOOKS = {
+    text: { create: textLayerCreate, update: textLayerUpdate },
+    caption: { create: textLayerCreate, update: capLayerUpdate },
+    overlay: { create: overlayLayerCreate, update: overlayLayerUpdate },
+  };
+  /** Assinatura do conteúdo do nó: muda ⇒ o nó é recriado (o `<img>` de uma imagem não vira o
+   *  `<video>` de um MP4 por atualização de estilo). Para texto/legenda é constante. */
+  function layerSig(o, type) {
+    if (type !== "overlay") return type;
+    if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) return "overlay:img";
+    if (o.src) return "overlay:video";
+    if (SHAPES_CSS.includes(o.shape)) return "overlay:shape-" + o.shape;
+    return "overlay:glifo";
+  }
+  /** Posição/escala/opacidade da camada — comum a todos os tipos, aplicado no `update`. */
+  function layerBase(el, o) {
+    const tf = o.transform || { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+    el.style.left = (tf.x * 100) + "%"; el.style.top = (tf.y * 100) + "%";
+    // a centralização vai na propriedade individual `translate`, que a cascata aplica ANTES de
+    // `scale` e de `transform`. Com ela dentro do `transform`, o `scale:` das classes de efeito
+    // (fx-zoom/fx-motion/fx-pixelate) multiplicava o offset de -50% e a camada saía do lugar.
+    el.style.translate = "-50% -50%";
+    el.style.transform = tfCss({ ...tf, x: .5, y: .5 }).replace(/^translate\([^)]*\)\s*/, "");
+    el.style.opacity = tf.opacity != null ? tf.opacity : 1;
+  }
+  function textLayerCreate(el, o, stage) { el.style.padding = "2px 8px"; el.style.maxWidth = "80%"; }
+  function textLayerUpdate(el, o, stage) {
+    textLayerStyle(el, o, stage);
+    const txt = capText(o);
+    if (el.textContent !== txt) el.textContent = txt;
+  }
+  /** Posição, tipografia, fundo e sombra da camada de texto/legenda — tudo MENOS o conteúdo. A
+   *  legenda com karaokê (spans por palavra) reusa exatamente esta regra e monta o conteúdo por
+   *  conta própria; sem a separação, escrever o `textContent` aqui apagaria os spans a cada frame. */
+  function textLayerStyle(el, o, stage) {
+    layerBase(el, o);
+    const s = o.style || {};
+    el.style.fontFamily = `"${s.font || "Bricolage Grotesque"}",sans-serif`;
+    el.style.fontSize = ((s.size || 40) / 1080 * stage.clientHeight) + "px"; el.style.fontWeight = s.weight || 700;
+    el.style.textAlign = s.align || "center"; el.style.lineHeight = s.lineHeight || 1.2;
+    // o nó sobrevive entre renders: o que é condicional precisa ser DESFEITO quando desliga
+    const comFundo = s.bg && s.bg !== "transparent";
+    el.style.background = comFundo ? s.bg : ""; el.style.borderRadius = comFundo ? "6px" : "";
+    el.style.color = comFundo ? (el.classList.contains("caption") ? "#fff" : (s.color || "#04222a")) : (s.color || "#fff");
+    // a sombra base vai por custom property (e não em `style.textShadow`) para que as classes de
+    // efeito com `text-shadow` — Glow, Chromatic, RGB Split — consigam vencer a cascata
+    el.style.setProperty("--tx-shadow", s.shadow !== false ? "0 2px 12px rgba(0,0,0,.6)" : "none");
+  }
+  /** Camada de LEGENDA. Item com `words` e modo `karaoke`/`linha` vira uma linha de spans (um por
+   *  palavra da janela); `bloco` — e legenda manual, sem `words` — segue o caminho de texto de
+   *  sempre. Os spans são montados só quando a ASSINATURA muda (`data-sig`): durante o play quem
+   *  trabalha é o `paintKaraoke`, que troca apenas `style.color`. Nenhum `innerHTML` por frame. */
+  function capLayerUpdate(el, o, stage, t) {
+    textLayerStyle(el, o, stage);
+    const ws = capWords(o), mode = capMode(o);
+    if (!ws.length || mode === "bloco") {
+      // sair do karaokê é DESMONTAR os spans: `textContent` de uma linha de spans já devolve o
+      // texto da legenda, então comparar as duas strings jamais acusaria a diferença — a camada
+      // ficaria com os spans para sempre depois de trocar o modo para `bloco`.
+      if (el.querySelector("[data-cap-karaoke]")) el.textContent = "";
+      const txt = capText(o);
+      if (el.textContent !== txt) el.textContent = txt;
+      return;
+    }
+    // `linha` mostra a janela inteira sem destacar palavra: o "aceso" é a própria cor base.
+    const base = capBase(o), hi = mode === "linha" ? base : capHi(o), upper = !!(o.style || {}).uppercase;
+    const sig = [mode, hi, base, o.chunk, o.start, o.end, ws.length, upper ? 1 : 0].join("|");
+    let k = el.querySelector("[data-cap-karaoke]");
+    if (!k || k.dataset.sig !== sig) {
+      el.textContent = "";
+      k = document.createElement("span");
+      k.className = "ved-cap-k";
+      k.setAttribute("data-cap-karaoke", "");
+      k.dataset.sig = sig;
+      ws.forEach((w, i) => {
+        if (i) k.appendChild(document.createTextNode(" "));
+        const s = document.createElement("span");
+        s.setAttribute("data-cap-widx", String(i));
+        s.setAttribute("data-a", String(num(w.start_s)));
+        s.setAttribute("data-b", String(num(w.end_s)));
+        s.textContent = upper ? String(w.w).toUpperCase() : String(w.w);
+        s.style.color = base;
+        k.appendChild(s);
+      });
+      el.appendChild(k);
+    }
+    k.dataset.hi = hi; k.dataset.base = base;
+    paintKaraokeIn(k, t);              // primeira pintura logo após reconciliar
+  }
+  /** Pinta a palavra corrente em TODA legenda karaokê do palco. Custo O(palavras visíveis) e só
+   *  `style.color`: nunca cria, remove nem reordena nó — é isto que deixa o play fluido. */
+  function paintKaraoke(t) {
+    const stage = document.getElementById("edStage"); if (!stage) return;
+    stage.querySelectorAll("[data-cap-karaoke]").forEach((k) => paintKaraokeIn(k, t));
+  }
+  function paintKaraokeIn(k, t) {
+    const hi = k.dataset.hi || "#fff", base = k.dataset.base || "#fff";
+    // o `data-on` evita reescrever a cor a cada frame (o browser normaliza `style.color` para
+    // `rgb(...)`, então comparar com o hexa daria sempre diferente e sujaria o recálculo de estilo)
+    k.querySelectorAll("[data-cap-widx]").forEach((s) => {
+      const on = t >= num(s.getAttribute("data-a")) && t < num(s.getAttribute("data-b")) ? "1" : "";
+      if (s.dataset.on !== on) { s.dataset.on = on; s.style.color = on ? hi : base; }
+    });
+  }
+  function overlayLayerCreate(el, o, stage) {
+    if (o.src && /\.(png|jpe?g|webp|gif)$/i.test(o.src)) { const img = document.createElement("img"); img.src = ctx.files(o.src); img.style.maxWidth = "60vw"; img.style.display = "block"; el.appendChild(img); }
+    else if (o.src) el.appendChild(overlayVideoFor(o));
+    else if (SHAPES_CSS.includes(o.shape)) el.classList.add("shape", "shape-" + o.shape);
+    else { el.style.color = "#fff"; }
+  }
+  function overlayLayerUpdate(el, o, stage, t) {
+    layerBase(el, o);
+    const img = el.querySelector("img"), v = el.querySelector("video");
+    if (img) { const want = ctx.files(o.src); if (img.getAttribute("src") !== want) img.src = want; }
+    else if (v) {
+      // teto em px contra o PALCO (o `%` do <video> resolveria contra o tamanho do arquivo)
+      el.style.maxWidth = Math.round(stage.clientWidth * 0.6) + "px";
+      el.style.maxHeight = Math.round(stage.clientHeight * 0.6) + "px";
+      const want = ctx.files(o.src); if (v.getAttribute("src") !== want) { v.src = want; delete v.dataset.err; }
+      if (v.parentNode !== el) el.appendChild(v);
+      // src quebrado: a camada rotula e o pool nunca tenta tocar (mesmo padrão de `videoFor`)
+      const falta = v.dataset.err === "1";
+      v.style.display = falta ? "none" : "";
+      let miss = el.querySelector(".ved-ovmiss");
+      if (falta && !miss) { miss = document.createElement("span"); miss.className = "ved-ovmiss"; miss.textContent = "mídia indisponível"; el.appendChild(miss); }
+      else if (!falta && miss) miss.remove();
+      // durante o play quem persegue o playhead é `syncOverlays`; parado, reposiciona aqui — e
+      // só com o metadata carregado, senão o quadro volta para o zero a cada render
+      const em = Math.max(t - num(o.start), 0);
+      if (!falta && !St.playing && v.readyState >= 1 && Math.abs(v.currentTime - em) > 0.3) { try { v.currentTime = em; } catch (e) {} }
+    } else if (!el.classList.contains("shape")) {
+      const g = GLIFO[o.shape] || o.shape || "▦";
+      if (el.textContent !== g) el.textContent = g;
+      el.style.fontSize = (stage.clientHeight * 0.12) + "px";
+    }
+  }
+  /** Reconciliação do palco por `data-uid`: cria o que entrou, atualiza o que ficou (mesmo nó DOM)
+   *  e remove o que saiu da janela do playhead. Falha de um hook não derruba a tela nem volta ao
+   *  `renderRoot()` — o item problemático é pulado com um aviso. */
+  function renderLayers(stage) {
+    const t = St.playhead;
+    const alvo = new Map();
+    // z-index pela ordem das faixas (ET: TEXTO > LEGENDAS > VÍDEO 2), fixado no `create` para não
+    // depender da ordem de inserção no DOM — com reconciliação os nós não nascem mais em ordem.
+    const camadas = tracks().filter((tr) => ["text", "caption", "overlay"].includes(tr.type));
+    camadas.forEach((tr, i) => {
+      if (!tr.visible) return;
+      tr.items.forEach((it) => {
+        const o = it.item; if (!o || t < num(o.start) - 1e-3 || t > num(o.end) + 1e-3) return;
+        alvo.set(String(o.id), { item: o, type: tr.type, z: camadas.length - i });
+      });
+    });
+    stage.querySelectorAll(".ved-bbox,.ved-guide").forEach((n) => n.remove());
+    const vivos = new Map();
+    stage.querySelectorAll(".ved-layer[data-uid]").forEach((el) => {
+      const uid = el.dataset.uid, a = alvo.get(uid);
+      if (a && !vivos.has(uid) && el.dataset.sig === layerSig(a.item, a.type)) vivos.set(uid, el);
+      else dropLayer(el);
+    });
+    alvo.forEach((a, uid) => {
+      const hook = LAYER_HOOKS[a.type]; if (!hook) return;
+      try {
+        let el = vivos.get(uid);
+        if (!el) {
+          el = document.createElement("div"); el.className = "ved-layer " + a.type;
+          el.dataset.uid = uid; el.dataset.sig = layerSig(a.item, a.type); el.style.zIndex = a.z;
+          hook.create(el, a.item, stage);
+          stage.appendChild(el);
+        }
+        hook.update(el, a.item, stage, t);
+        // efeitos e ajustes valem para TODA camada (texto, legenda e overlay), não só para clipe
+        el.style.filter = cssFilterFor(a.item, a.type);
+        applyEffectClasses(el, a.item, a.type);
+        if (isSel(uid)) drawBBox(stage, el);
+      } catch (err) { console.warn("[edit] layer", uid, err); }
+    });
+  }
+  function dropLayer(el) { el.querySelectorAll("video").forEach((v) => v.pause()); el.remove(); }
+  function drawBBox(stage, el) {
+    const bb = document.createElement("div"); bb.className = "ved-bbox";
+    const r = el.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    bb.style.left = (r.left - sr.left) + "px"; bb.style.top = (r.top - sr.top) + "px"; bb.style.width = r.width + "px"; bb.style.height = r.height + "px";
+    ["nw", "ne", "sw", "se", "rot"].forEach((c) => { const h = document.createElement("div"); h.className = "h " + c; h.dataset.h = c; bb.appendChild(h); });
+    stage.appendChild(bb);
+  }
+  function paintPlayhead() { const ph = document.getElementById("edPlayhead"); if (ph) ph.style.left = (St.playhead * pps()) + "px"; const tc = document.getElementById("pcTime"); if (tc) tc.textContent = `${fmtTC(St.playhead)} / ${fmtTC(duration())}`; }
+
+  // ------------------------------------------------------------ PERSISTENCE
+  function setStatus(s) { St.saveStatus = s; const el = document.getElementById("edSave"); if (el) { el.dataset.s = s; el.textContent = { saved: "Salvo", saving: "Salvando…", dirty: "Alterações não salvas", error: "Erro ao salvar" }[s]; } }
+  function scheduleSave() { if (!St.autosave) { setStatus("dirty"); return; } if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(() => save(true), 900); }
+  async function save(silent) {
+    if (!St.timeline || !ctx.pid()) return; setStatus("saving");
+    try {
+      const r = await api(`${base()}/timeline`, { method: "PUT", body: JSON.stringify(serialize()) });
+      adopt(St.timeline, r.timeline);        // NUNCA `St.timeline = r.timeline` (ver adopt)
+      setStatus("saved"); if (!silent) toast(`Salvo · ${r.duration}s`); ctx.guide();
+      renderTimeline(); renderPreview();
+    } catch (err) { setStatus("error"); if (!silent) toast(err.message); }
+  }
+  /** Copia a timeline normalizada devolvida pelo PUT sobre a que está na tela, PRESERVANDO a
+   *  identidade dos objetos que os handlers já montados capturaram (clipe, item de faixa, entrada
+   *  de `clip_fx`…). Trocar a referência fazia a edição seguinte cair numa cópia órfã e sumir. */
+  function adopt(dst, src) {
+    if (dst === src || src === undefined) return dst;
+    if (Array.isArray(src)) {
+      if (!Array.isArray(dst)) return src;
+      const porId = new Map();
+      dst.forEach((x) => { if (x && typeof x === "object" && x.id != null && !porId.has(x.id)) porId.set(x.id, x); });
+      const novo = src.map((s, i) => {
+        if (!s || typeof s !== "object") return s;
+        const atual = (s.id != null && porId.get(s.id))
+          || (s.id == null && dst[i] && typeof dst[i] === "object" && !Array.isArray(dst[i]) === !Array.isArray(s) ? dst[i] : null);
+        return atual ? adopt(atual, s) : s;
+      });
+      dst.length = 0; novo.forEach((x) => dst.push(x)); return dst;
+    }
+    if (src && typeof src === "object") {
+      if (!dst || typeof dst !== "object" || Array.isArray(dst)) return src;
+      Object.keys(dst).forEach((k) => { if (!(k in src)) delete dst[k]; });
+      Object.keys(src).forEach((k) => { dst[k] = adopt(dst[k], src[k]); });
+      return dst;
+    }
+    return src;
+  }
+  function serialize() {
+    const tl = St.timeline;
+    return { clips: (tl.clips || []).map((c) => ({ id: c.id, scene: c.scene, shot: c.shot, take: c.take, file: c.file, in: num(c.in), out: num(c.out), speed: num(c.speed, 1), blend: c.blend !== false, zoom: num(c.zoom, 1), ...(c.start != null ? { start: num(c.start) } : {}) })),
+      blacks: tl.blacks || [], music: tl.music || { file: null, offset: 0 }, sfx: tl.sfx || [], fade_out: num(tl.fade_out, 1.5), loudnorm: tl.loudnorm !== false, editor: ed() };
+  }
+  async function load() {
+    if (!ctx.pid()) { St.timeline = null; renderRoot(); return; }
+    try { const r = await api(`${base()}/timeline`); St.timeline = r.timeline; }
+    catch (err) { St.timeline = null; renderRoot(); toast(err.message); return; }
+    ed(); St.zoom = clamp(num(ed().ui.zoom, 1), 0.25, 4); St.snap = ed().ui.snap !== false;
+    try { St.beats = await api(`/api/projects/${ctx.pid()}/music/beats`); } catch (e) { St.beats = null; }
+    St.history = []; St.future = []; St.selection = []; St.playhead = 0;
+    renderRoot(); seekTo(0);              // montar do zero só aqui, em resetTimeline e em onProject
+  }
+  /** Render INCREMENTAL: o editor já montado é atualizado no lugar, sem recriar o `innerHTML`.
+   *  Sempre: timeline, preview (camadas reconciliadas), propriedades e header. Sob demanda:
+   *  painel esquerdo (`panel`) e áudio/pool de overlays (`audio`). [cross-feature] contrato 2. */
+  function renderDirty(opts) {
+    const o = opts || {};
+    renderTimeline(); renderPreview(); renderProps();
+    if (o.panel) renderPanel();
+    if (o.audio) mountAudio();          // `mountAudio` já poda o pool de overlays
+
+    syncHeader();
+  }
+
+  // ============================================================ ROOT
+  function renderRoot() {
+    const r = root(); if (!r) return;
+    if (!ctx.pid()) return void (r.innerHTML = `<div class="ved-empty"><h3>Selecione uma campanha</h3><p>Abra um projeto para montar o vídeo.</p></div>`);
+    if (!St.timeline) return void (r.innerHTML = `<div class="ved-empty"><h3>Sem timeline</h3><p>Não foi possível carregar a montagem. Tente reabrir a etapa.</p></div>`);
+    // O editor abre SEMPRE que há timeline — mesmo vazia (sem takes com like). O usuário adiciona
+    // mídia/texto pela lateral; "recriar dos takes" fica no painel Mídia quando a timeline está vazia.
+    r.innerHTML = headerHTML() + bodyHTML() + timelineHTML();
+    bindHeader(); bindLeft(); bindPreview(); bindTimeline(); bindPointer();
+    mountAudio();
+    fit(); stageBox(); renderPanel(); renderProps(); renderTimeline(); renderPreview(); paintPlayhead(); setStatus(St.saveStatus); setPlayIcon();
+  }
+
+  // ============================================================ HEADER
+  function headerHTML() {
+    const p = proj();
+    const opt = (arr, sel, fn) => arr.map((a) => { const [v, l] = fn(a); return `<option value="${v}"${v == sel ? " selected" : ""}>${l}</option>`; }).join("");
+    const title = ctx.project() ? (ctx.project().name || "Montagem") : "Montagem";
+    // o header nasce depois do `toggleSide` do `onProject`: o botão já reflete a preferência
+    const app = document.querySelector(".app"), escondido = !!app && app.classList.contains("side-hidden");
+    return `<div class="ved-top">
+      <a class="ved-back" title="Voltar" href="#" id="edBack">‹</a>
+      <div class="ved-titleblock"><span class="kick">Etapa 7 · Studio de vídeo</span><span class="ved-title" title="${esc(title)}">${esc(title)}</span></div>
+      <span class="ved-save" id="edSave" data-s="saved">Salvo</span>
+      <button class="ved-ib" id="edUndo" title="Desfazer (Ctrl+Z)">↺</button>
+      <button class="ved-ib" id="edRedo" title="Refazer (Ctrl+Shift+Z)">↻</button>
+      <div class="ved-spacer"></div>
+      <div class="ved-hgroup">
+        <label class="ved-check"><input type="checkbox" id="edAuto" ${St.autosave ? "checked" : ""}>autosave</label>
+        <div class="ved-selwrap"><span class="kick">Proporção</span><select id="edAspect" aria-label="Proporção do projeto">${opt(Object.keys(ASPECTS), p.aspect, (a) => [a, a])}</select></div>
+        <div class="ved-selwrap"><span class="kick">Resolução</span><select id="edRes" aria-label="Resolução do projeto">${opt(RES, p.width, (a) => [a[1], a[0]])}</select></div>
+        <div class="ved-selwrap"><span class="kick">FPS</span><select id="edFps" aria-label="FPS do projeto">${opt(FPS_CHOICES, p.fps, (a) => [a, a])}</select></div>
+        <button class="ved-ib" id="edGuide" title="Guia da aula 014">?</button>
+        <button class="ved-ib${escondido ? " on" : ""}" id="edSide" title="${escondido ? "Mostrar" : "Esconder"} o menu lateral do Studio" style="width:auto;padding:0 8px;font-size:11px">⇤ Menu</button>
+        <button class="ved-ib" id="edFull" title="Tela cheia">⛶</button>
+        <button class="ved-btn" id="edSaveBtn">Salvar</button>
+        <button class="ved-btn pri" id="edExport">Exportar ↗</button>
+      </div></div>`;
+  }
+  function bindHeader() {
+    document.getElementById("edBack").onclick = (e) => { e.preventDefault(); ctx.go("music"); };
+    document.getElementById("edUndo").onclick = undo; document.getElementById("edRedo").onclick = redo;
+    document.getElementById("edSaveBtn").onclick = () => save(false);
+    document.getElementById("edExport").onclick = openExport;
+    document.getElementById("edGuide").onclick = openGuide;
+    document.getElementById("edSide").onclick = () => toggleSide();
+    document.getElementById("edFull").onclick = toggleFullscreen;
+    document.getElementById("edAuto").onchange = (e) => { St.autosave = e.target.checked; if (St.autosave && St.saveStatus === "dirty") scheduleSave(); };
+    document.getElementById("edAspect").onchange = (e) => { commit("proporção", () => proj().aspect = e.target.value); stageBox(); };
+    document.getElementById("edRes").onchange = (e) => commit("resolução", () => { const r = RES.find((x) => x[1] == e.target.value); if (r) { proj().width = r[1]; proj().height = r[2]; } });
+    document.getElementById("edFps").onchange = (e) => commit("fps", () => proj().fps = num(e.target.value, 30));
+  }
+  /** Re-sincroniza o header com o estado SEM recriá-lo (os handlers de `bindHeader` continuam
+   *  válidos): os 3 selects do projeto e o status de salvamento. É o que faz undo/redo de
+   *  proporção/resolução/fps aparecer no header sem `renderRoot()`. */
+  function syncHeader() {
+    const p = proj();
+    const set = (id, v) => { const el = document.getElementById(id); if (el && el.value !== String(v)) el.value = String(v); };
+    set("edAspect", p.aspect); set("edRes", p.width); set("edFps", p.fps);
+    setStatus(St.saveStatus);
+  }
+  function toggleFullscreen() { const r = root(); if (!document.fullscreenElement) r.requestFullscreen && r.requestFullscreen(); else document.exitFullscreen && document.exitFullscreen(); }
+  /** Esconde o menu lateral do Studio para o editor ocupar a tela inteira. A PREFERÊNCIA é do
+   *  usuário e sobrevive à troca de etapa (localStorage); a CLASSE não — `destroy()` a remove para
+   *  `.app.side-hidden` não vazar para as outras etapas. Servida fora do shell (sem `.app`) ou com
+   *  o localStorage indisponível, a função não faz nada e não quebra (FDD §6). */
+  const SIDE_KEY = "studio.edit.sideHidden";
+  function sidePref() { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch (e) { return false; } }
+  function toggleSide(force) {
+    const app = document.querySelector(".app"); if (!app) return;
+    const alvo = force === undefined ? !app.classList.contains("side-hidden") : !!force;
+    app.classList.toggle("side-hidden", alvo);
+    try { localStorage.setItem(SIDE_KEY, alvo ? "1" : "0"); } catch (e) {}
+    const b = document.getElementById("edSide");
+    if (b) { b.classList.toggle("on", alvo); b.title = alvo ? "Mostrar o menu lateral do Studio" : "Esconder o menu lateral do Studio"; }
+    fit();
+  }
+  function openGuide() {
+    ui.modal({ title: "Studio de vídeo · aula 014", subtitle: "O que a aula ensina", html: `<div id="edGuideBody" class="guide">Carregando…</div>` });
+    const body = document.getElementById("edGuideBody");
+    try { if (ui.renderGuide) { ui.renderGuide("edit", body); return; } } catch (e) {}
+    ctx.guide(); const g = document.getElementById("guide"); if (g && body) body.innerHTML = g.innerHTML || "Veja o guia na etapa.";
+  }
+
+  // ============================================================ BODY
+  /** Medidas de layout do editor: default de exibição (o CSS), faixa aceita pelo backend
+   *  (`normalize_ui`) e valor gravado em `editor.ui` — é o que faz a altura escolhida da timeline
+   *  e as larguras dos painéis sobreviverem ao F5. Chave ausente = default do CSS. */
+  const UI_SIZES = { tlHeight: [345, 150, 700], leftW: [236, 180, 420], rightW: [280, 220, 460] };
+  function uiSize(key) { const [d, lo, hi] = UI_SIZES[key]; return clamp(num(ed().ui[key], d), lo, hi); }
+  function uiStyle(key, prop) { return ed().ui[key] == null ? "" : ` style="${prop}:${uiSize(key)}px"`; }
+
+  function bodyHTML() {
+    return `<div class="ved-body">
+      <nav class="ved-rail" id="edRail">${CATS.map(([id, ic, lb]) => `<button data-panel="${id}"${id == St.panel ? " class=on" : ""}><span class="ic">${ic}</span>${lb}</button>`).join("")}</nav>
+      <div class="ved-left" id="edLeft"${uiStyle("leftW", "width")}><div class="ved-panel" id="edPanel"></div></div>
+      <div class="ved-resize" data-resize="left"></div>
+      <div class="ved-center">
+        <div class="ved-stage-wrap" id="edStageWrap"><div class="ved-stage" id="edStage"></div></div>
+        <div class="ved-pctl" id="edPctl">
+          <button class="pb" id="pcStart" title="Início">⇤</button>
+          <button class="pb" id="pcPrev" title="Frame anterior (←)">◂◂</button>
+          <button class="pb play" id="pcPlay" title="Play/Pause (Espaço)">▶</button>
+          <button class="pb" id="pcNext" title="Próximo frame (→)">▸▸</button>
+          <button class="pb" id="pcEnd" title="Fim">⇥</button>
+          <span class="tc" id="pcTime">00:00:00 / 00:00:00</span>
+          <button class="loop${St.loop ? " on" : ""}" id="pcLoop" title="Loop">⟲ loop</button>
+          <div class="ved-spacer"></div>
+          <button class="pb" id="pcMute" title="Mudo">🔊</button>
+          <input type="range" id="pcVol" aria-label="Volume do preview" min="0" max="100" value="${St.vol}">
+          <button class="pb" id="pcFs" title="Tela cheia">⛶</button>
+        </div>
+      </div>
+      <div class="ved-resize" data-resize="right"></div>
+      <div class="ved-right" id="edRight"${uiStyle("rightW", "width")}><div class="ved-props" id="edProps"></div></div>
+    </div>`;
+  }
+  function bindPreview() {
+    document.getElementById("pcPlay").onclick = togglePlay;
+    document.getElementById("pcStart").onclick = () => seekTo(0);
+    document.getElementById("pcEnd").onclick = () => seekTo(duration());
+    document.getElementById("pcPrev").onclick = () => step(-1);
+    document.getElementById("pcNext").onclick = () => step(1);
+    document.getElementById("pcLoop").onclick = () => { St.loop = !St.loop; document.getElementById("pcLoop").classList.toggle("on", St.loop); };
+    document.getElementById("pcMute").onclick = () => { St.muted = !St.muted; document.getElementById("pcMute").textContent = St.muted ? "🔈" : "🔊"; syncVolumes(); };
+    document.getElementById("pcVol").oninput = (e) => { St.vol = num(e.target.value, 80); syncVolumes(); };
+    document.getElementById("pcFs").onclick = toggleFullscreen;
+    document.getElementById("edStage").addEventListener("pointerdown", (e) => {
+      const h = e.target.closest(".h"); if (h) return startBBox(e, h.dataset.h);
+      const layer = e.target.closest(".ved-layer");
+      if (layer) { selectOnly(layer.dataset.uid, e); startLayerDrag(e, layer.dataset.uid); }
+      else if (!e.target.closest(".ved-bbox")) { St.selection = []; renderProps(); renderPreview(); renderTimeline(); }
+    });
+  }
+  function bindLeft() { document.getElementById("edRail").addEventListener("click", (e) => { const b = e.target.closest("button[data-panel]"); if (!b) return; St.panel = b.dataset.panel; document.querySelectorAll("#edRail button").forEach((x) => x.classList.toggle("on", x.dataset.panel == St.panel)); renderPanel(); }); }
+
+  // ============================================================ PANELS (esquerda)
+  function phead(title, n) { return `<div class="ved-phead"><h4>${title}</h4><span class="cnt">${n} ${n === 1 ? "item" : "itens"}</span></div>`; }
+  function renderPanel() {
+    const el = document.getElementById("edPanel"); if (!el) return;
+    ({ media: pMedia, text: pText, captions: pCaptions, audio: pAudio, transitions: pTransitions, effects: pEffects, filters: pFilters, elements: pElements, adjust: pAdjust, library: pLibrary }[St.panel] || pMedia)(el);
+    rotular(el);
+  }
+  function pMedia(el) {
+    const clips = St.timeline.clips || [], media = St.mediaLib || [];
+    el.innerHTML = phead("Mídia", clips.length + media.length) + `<input class="ved-search" id="mSearch" placeholder="Buscar…">
+      ${clips.length ? "" : `<button class="ved-btn" id="mReset" style="width:100%;margin-bottom:10px">↺ Montar a partir dos takes com like</button>`}
+      <label class="drop sm" id="mDrop" style="display:block;margin-bottom:10px;padding:9px;border:1px dashed var(--vbd3);border-radius:8px;text-align:center;color:var(--vtx4);font-size:11px">Arraste imagens/vídeos aqui<input id="mUp" type="file" accept="video/*,image/*" multiple hidden></label>
+      <div class="ved-mgrid" id="mList"></div>`;
+    if (!clips.length) { const b = document.getElementById("mReset"); if (b) b.onclick = resetTimeline; }
+    const list = document.getElementById("mList");
+    const clipCards = clips.map((c) => `<div class="ved-mcard" draggable="true" data-cid="${c.id}" title="${esc(nameOf(c))}"><div class="th">${/\.(mp4|webm|mov)$/i.test(c.file || "") ? `<video preload="metadata" muted src="${ctx.files(c.file)}#t=0.1"></video><span class="ov">▶</span><button class="mv2" data-v2c="${c.id}" title="Enviar para a faixa VÍDEO 2">→ VÍDEO 2</button>` : `<img src="${ctx.files(c.file)}">`}</div><div class="cap"><div class="nm">${esc(nameOf(c))}</div><div class="mt">${(clipLen(c)).toFixed(1)}s</div></div></div>`).join("");
+    const mediaCards = media.map((m) => `<div class="ved-mcard" draggable="true" data-mid="${m.id}" title="${esc(m.name)}"><div class="th">${m.kind === "video" ? `<video preload="metadata" muted src="${ctx.files(m.file)}#t=0.1"></video><span class="ov">▶</span><button class="mv2" data-v2="${m.id}" title="Enviar para a faixa VÍDEO 2">→ VÍDEO 2</button>` : `<img src="${ctx.files(m.file)}">`}</div><div class="cap"><div class="nm">${esc(m.name)}</div><div class="mt">${m.kind === "video" ? (m.duration || 0).toFixed(1) + "s" : "img"}</div></div></div>`).join("");
+    list.innerHTML = clipCards + mediaCards + `<div class="ved-mcard add" id="mUpload"><span style="font-size:18px">⬆</span>upload +<span class="mt">novo</span></div>`;
+    document.getElementById("mSearch").oninput = (e) => { const q = e.target.value.toLowerCase(); list.querySelectorAll(".ved-mcard[data-cid],.ved-mcard[data-mid]").forEach((t) => { t.style.display = t.title.toLowerCase().includes(q) ? "" : "none"; }); };
+    document.getElementById("mUpload").onclick = () => document.getElementById("mUp").click();
+    document.getElementById("mUp").onchange = (e) => { if (e.target.files.length) uploadMedia([...e.target.files]); };
+    ui.drop(document.getElementById("mDrop"), uploadMedia);
+    list.querySelectorAll("[data-cid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "clip:" + t.dataset.cid)); t.addEventListener("dblclick", (e) => addPipelineClip(t.dataset.cid, e)); });
+    list.querySelectorAll("[data-v2c]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); clipParaV2(b.dataset.v2c); });
+    list.querySelectorAll("[data-v2]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); addMediaItem(media.find((m) => m.id === b.dataset.v2), "v2"); });
+    list.querySelectorAll("[data-mid]").forEach((t) => { t.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "media:" + t.dataset.mid)); t.addEventListener("dblclick", (e) => addMediaItem(media.find((m) => m.id === t.dataset.mid), null, e)); });
+  }
+  /** Com evento (dblclick no card) o take pergunta a faixa antes de entrar; sem evento (drop numa
+   *  lane, que já disse a faixa) vai direto para a VÍDEO 1. */
+  function addPipelineClip(cid, ev) {
+    const c = (St.timeline.clips || []).find((x) => x.id === cid); if (!c) return;
+    if (ev) return openTrackMenu(ev.clientX, ev.clientY, (dest) => { if (dest === "v2") clipParaV2(cid); else addPipelineClip(cid); });
+    commit("adicionar clipe", () => { const nc = clone(c); nc.id = newId("c"); St.timeline.clips.push(nc); }, { panel: true });
+  }
+  /** `faixa === "v2"` manda o vídeo para a faixa VÍDEO 2 (overlay com `src` de vídeo); `"v1"` para
+   *  o backbone. Vídeo SEM faixa definida abre o menu de escolha — imagem continua indo direto
+   *  para a VÍDEO 2, que é a única faixa que a recebe. */
+  function addMediaItem(m, faixa, ev) {
+    if (!m) return;
+    if (m.kind === "video" && faixa !== "v1" && faixa !== "v2") {
+      const x = ev ? ev.clientX : innerWidth / 2, y = ev ? ev.clientY : innerHeight / 2;
+      return openTrackMenu(x, y, (dest) => addMediaItem(m, dest));
+    }
+    if (m.kind === "video" && faixa === "v2") return addOverlayVideo(m.file, num(m.duration, 3), m.name);
+    if (m.kind === "video") commit("adicionar vídeo", () => St.timeline.clips.push({ id: newId("c"), scene: "upload", shot: (m.name || "media").replace(/\W+/g, "_"), take: "1", file: m.file, in: 0, out: Math.max(num(m.duration, 3), 0.5), speed: 1, blend: true, zoom: 1 }), { panel: true });
+    else commit("adicionar imagem", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), src: m.file, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
+  }
+  async function uploadMedia(files) { try { const r = await ui.upload(`${base()}/media/upload`, files); St.mediaLib = await api(`${base()}/media`); toast(`${r.added} mídia(s) importada(s)`); renderPanel(); } catch (err) { toast(err.message); } }
+  function pText(el) {
+    el.innerHTML = phead("Texto", TEXT_PRESETS.length) + `<div class="ved-list">${TEXT_PRESETS.map(([id, nm, sub]) => `<div class="ved-row" data-t="${id}"><span class="ric">T</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${sub}</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
+    el.querySelectorAll("[data-t]").forEach((b) => b.onclick = () => { const p = TEXT_PRESETS.find((x) => x[0] == b.dataset.t); addText(p[1] === "Customizado" ? "Texto" : p[1], p[3], "text"); });
+  }
+  function pCaptions(el) {
+    const t = etrack("t_cap", false), items = t ? t.items : [];
+    el.innerHTML = phead("Legendas", items.length) + `<button class="ved-feature" id="capGen">✨ Gerar legendas</button><button class="ved-btn" id="capAdd" style="width:100%;margin-bottom:10px">＋ legenda manual</button><div class="ved-list">${items.map((it) => `<div class="ved-row" data-uid="${it.id}"><span class="ric">CC</span><div class="rmid"><div class="rn">${esc(it.text)}</div><div class="rs">${fmtTC(num(it.start))} · ${(num(it.end) - num(it.start)).toFixed(1)}s</div></div><button class="radd ic" data-del="${it.id}">✕</button></div>`).join("") || `<p class="ved-hint">Nenhuma legenda ainda.</p>`}`;
+    document.getElementById("capGen").onclick = () => openCapModal({});
+    document.getElementById("capAdd").onclick = () => addText("Legenda", { size: 34, weight: 600, align: "center" }, "caption");
+    el.querySelector(".ved-phead").insertAdjacentHTML("beforeend", "");
+    el.querySelectorAll(".ved-row[data-uid]").forEach((r) => r.onclick = (e) => { if (e.target.dataset.del) return deleteItems([e.target.dataset.del]); selectOnly(r.dataset.uid, {}); });
+  }
+
+  // ---------- modal "Gerar legendas" [extensão] ----------
+  /** Abre o modal de geração. `pre` (opcional) já vem preenchido — é o que o botão
+   *  "re-sincronizar com áudio" das Propriedades usa para reabrir o modal no áudio da última vez.
+   *  Uma chamada `POST /captions/generate` e UM `commit`: nada de `renderRoot()`. */
+  function openCapModal(pre) {
+    pre = pre || {};
+    const preset0 = CAP_PRESETS.find((p) => p.id === pre.mode) || CAP_PRESETS[0];
+    const audio = pre.source === "audio";
+    const inicio = pre.start != null ? num(pre.start) : St.playhead;
+    const hi0 = /^#[0-9A-Fa-f]{6}$/.test(pre.hi || "") ? pre.hi : preset0.hi;
+    const chunk0 = pre.chunk != null ? num(pre.chunk, 6) : 6;
+    const pos0 = ["top", "middle", "bottom"].includes(pre.position) ? pre.position : preset0.position;
+    const rad = (v, lb) => `<label class="ved-check"><input type="radio" name="capSrc" value="${v}"${(v === "audio") === audio ? " checked" : ""}>${lb}</label>`;
+    const m = ui.modal({
+      title: "Gerar legendas",
+      subtitle: "Roteiro ou áudio/vídeo · karaokê, linha ou bloco [extensão]",
+      html: `<div class="ved-inrow"><label>Fonte</label><span class="ved-radios">${rad("script", "Roteiro")}${rad("audio", "Áudio/vídeo")}</span></div>
+        <div id="capPaneScript"${audio ? " hidden" : ""}>
+          <textarea class="ved-txtarea" id="capScript" rows="4" placeholder="Cole aqui o roteiro falado…" aria-label="Roteiro falado"></textarea>
+          <p class="ved-cap-src">${CAP_SCENES_HINT}</p>
+          <button class="ved-btn" id="capScenes" style="width:100%;margin-bottom:8px">usar descrições das cenas</button>
+        </div>
+        <div id="capPaneAudio"${audio ? "" : " hidden"}>
+          <div class="ved-inrow"><label for="capFile">Arquivo</label><select id="capFile"><option value="">carregando…</option></select></div>
+          <button class="ved-btn" id="capUp" style="width:100%;margin-bottom:8px">⇪ enviar narração</button>
+          <input type="file" id="capUpIn" accept="${NARRATION_ACCEPT}" multiple hidden>
+          <textarea class="ved-txtarea" id="capAlign" rows="2" placeholder="roteiro para alinhar (opcional)" aria-label="Roteiro para alinhar (opcional)"></textarea>
+        </div>
+        <div class="ved-inrow"><label for="capPreset">Preset</label><select id="capPreset">${CAP_PRESETS.map((p) => `<option value="${p.id}"${p.id === preset0.id ? " selected" : ""}>${esc(p.label)}</option>`).join("")}</select></div>
+        <div class="ved-inrow"><label for="capChunk">Palavras por linha</label><select id="capChunk">${CHUNK_OPTS.map((c) => `<option value="${c}"${c === chunk0 ? " selected" : ""}>${esc(CHUNK_LABEL[c])}</option>`).join("")}</select></div>
+        <div class="ved-kick" style="margin:10px 0 2px">Cor de destaque</div>
+        <div class="ved-swatches" id="capSw">${HI_COLORS.map((c) => `<button type="button" class="ved-swatch${c === hi0 ? " on" : ""}" data-hi="${c}" style="background:${c}" title="${c}" aria-label="Cor ${c}"></button>`).join("")}</div>
+        <div class="ved-inrow"><label for="capHi">Cor</label><input type="color" id="capHi" value="${hi0}"></div>
+        <div class="ved-inrow"><label for="capPos">Posição</label><select id="capPos">${["top", "middle", "bottom"].map((p) => `<option value="${p}"${p === pos0 ? " selected" : ""}>${p}</option>`).join("")}</select></div>
+        <div class="ved-grid2">${nf("capStart", "Início", inicio.toFixed(2), "")}${nf("capDur", "Duração", "", "")}</div>
+        <label class="ved-check" style="margin-top:8px"><input type="checkbox" id="capReplace">Substituir legendas existentes</label>
+        <p class="ved-hint" style="margin-top:8px">Duração em branco usa o padrão do servidor (a do arquivo, ou palavras ÷ ${WPS} no roteiro). Sem chave OpenAI os tempos são estimados. No mp4 a quebra por largura é calculada no render.</p>`,
+      actions: [{ label: "Cancelar" }, { label: "Gerar", kind: "primary", close: false, onClick: (ref) => capGerar(ref) }],
+    });
+    rotular(m.el);
+    const preencher = () => {
+      const p = CAP_PRESETS.find((x) => x.id === document.getElementById("capPreset").value) || CAP_PRESETS[0];
+      document.getElementById("capHi").value = p.hi;
+      document.getElementById("capPos").value = p.position;
+      capMarcaSwatch(p.hi);
+    };
+    document.getElementById("capPreset").onchange = preencher;
+    document.getElementById("capHi").oninput = (e) => capMarcaSwatch(e.target.value);
+    document.getElementById("capSw").onclick = (e) => {
+      const b = e.target.closest("[data-hi]"); if (!b) return;
+      document.getElementById("capHi").value = b.dataset.hi; capMarcaSwatch(b.dataset.hi);
+    };
+    document.getElementById("capScenes").onclick = capCenas;
+    document.getElementById("capUp").onclick = () => document.getElementById("capUpIn").click();
+    document.getElementById("capUpIn").onchange = (e) => { if (e.target.files.length) capUpload([...e.target.files]); e.target.value = ""; };
+    m.el.querySelectorAll('input[name="capSrc"]').forEach((r) => r.onchange = () => {
+      const ehAudio = m.el.querySelector('input[name="capSrc"]:checked').value === "audio";
+      document.getElementById("capPaneScript").hidden = ehAudio;
+      document.getElementById("capPaneAudio").hidden = !ehAudio;
+      if (ehAudio) capFontes(pre.file || (St.capLast || {}).file);
+    });
+    if (audio) capFontes(pre.file || (St.capLast || {}).file);
+    return m;
+  }
+  function capMarcaSwatch(cor) {
+    const box = document.getElementById("capSw"); if (!box) return;
+    box.querySelectorAll("[data-hi]").forEach((b) => b.classList.toggle("on", b.dataset.hi.toLowerCase() === String(cor).toLowerCase()));
+  }
+  const capErrCampo = (id, on) => { const el = document.getElementById(id); if (el) el.classList.toggle("ved-field-err", !!on); };
+  function capLimpaErros() { ["capScript", "capAlign", "capFile", "capHi", "capPreset"].forEach((id) => capErrCampo(id, false)); }
+  /** Pré-preenche o roteiro com as descrições das cenas do storyboard, na ordem de `n`. Elas NÃO
+   *  são fala (o Studio não tem roteiro falado): o rótulo fixo abaixo da textarea diz isso. */
+  async function capCenas() {
+    const ta = document.getElementById("capScript"); if (!ta) return;
+    if (ta.value.trim() && !confirm("Substituir o texto colado pelas descrições das cenas?")) return;
+    try {
+      const r = await api(`/api/projects/${ctx.pid()}/storyboard/scenes`);
+      const txt = (r.scenes || []).slice().sort((a, b) => num(a.n) - num(b.n)).map((s) => String(s.text || "").trim()).filter(Boolean).join("\n");
+      if (!txt) return toast("sem cenas do storyboard");
+      ta.value = txt; capErrCampo("capScript", false);
+    } catch (err) { toast("sem cenas do storyboard"); }
+  }
+  /** Popula o select de áudio: takes da timeline, trilha, uploads de vídeo e narrações. As duas
+   *  listas remotas vão em paralelo e uma falha só remove o grupo dela (`console.warn`). */
+  async function capFontes(selecionar) {
+    const sel = document.getElementById("capFile"); if (!sel) return;
+    const grupos = [];
+    const takes = [...new Set((St.timeline.clips || []).map((c) => c.file).filter(Boolean))];
+    if (takes.length) grupos.push(["Takes da timeline", takes.map((f) => [f, nameOf({ file: f })])]);
+    const mf = (St.timeline.music || {}).file;
+    if (mf) grupos.push(["Trilha", [[mf, mf.split("/").pop()]]]);
+    const [media, narr] = await Promise.allSettled([api(`${base()}/media`), api(`${base()}/captions/narration`)]);
+    if (media.status === "fulfilled") {
+      const vids = (media.value || []).filter((x) => x.kind === "video");
+      if (vids.length) grupos.push(["Uploads", vids.map((x) => [x.file, x.name])]);
+    } else console.warn("[captions] lista de mídia indisponível", media.reason);
+    if (narr.status === "fulfilled") {
+      const ns = narr.value || [];
+      if (ns.length) grupos.push(["Narrações", ns.map((n) => [n.file, `${n.name} · ${num(n.duration).toFixed(1)}s`])]);
+    } else console.warn("[captions] lista de narração indisponível", narr.reason);
+    const alvo = selecionar || sel.value;
+    sel.innerHTML = grupos.length
+      ? grupos.map(([nome, opts]) => `<optgroup label="${esc(nome)}">${opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</optgroup>`).join("")
+      : `<option value="">nenhum áudio no projeto — envie uma narração</option>`;
+    if (alvo) sel.value = alvo;
+    if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+  }
+  async function capUpload(files) {
+    try {
+      const r = await ui.upload(`${base()}/captions/narration/upload`, files);
+      toast(`${r.added} narração(ões) enviada(s)`);
+      const novo = (r.files || []).slice(-1)[0];
+      await capFontes(novo ? novo.file : null);
+    } catch (err) { toast(err.message); }
+  }
+  /** Valida, chama o servidor e insere os itens na faixa LEGENDAS. Erro nunca insere nada: o modal
+   *  fica aberto para o usuário corrigir o campo destacado e tentar de novo. */
+  async function capGerar(m) {
+    if (!St.timeline) return;
+    const btn = m.actions[m.actions.length - 1];
+    const src = m.el.querySelector('input[name="capSrc"]:checked').value;
+    const preset = CAP_PRESETS.find((p) => p.id === document.getElementById("capPreset").value) || CAP_PRESETS[0];
+    const texto = (document.getElementById("capScript").value || "").trim();
+    const alinhar = (document.getElementById("capAlign").value || "").trim();
+    const file = document.getElementById("capFile").value;
+    capLimpaErros();
+    if (src === "script" && !texto) { capErrCampo("capScript", true); return toast("Cole o roteiro"); }
+    if (src === "audio" && !file) { capErrCampo("capFile", true); return toast("Escolha um arquivo de áudio ou vídeo"); }
+    const start = Math.max(num(document.getElementById("capStart").value), 0);
+    const dur = num(document.getElementById("capDur").value);
+    const body = {
+      source: src, start: +start.toFixed(3), mode: preset.id,
+      chunk: num(document.getElementById("capChunk").value, 6),
+      hi: (document.getElementById("capHi").value || preset.hi).toUpperCase(),
+      position: document.getElementById("capPos").value,
+      style: { size: preset.size, weight: preset.weight, align: "center", color: "#FFFFFF", bg: preset.bg },
+    };
+    if (src === "script") body.text = texto;
+    else { body.file = file; if (alinhar) body.text = alinhar; }
+    if (dur > 0) body.duration = dur;
+    const rotulo = btn.textContent;
+    btn.disabled = true; btn.textContent = "Gerando…";
+    let r;
+    try { r = await capPost("/captions/generate", body); }
+    catch (err) { return toast("Falha ao gerar legendas: " + (err.message || err)); }
+    finally { btn.disabled = false; btn.textContent = rotulo; }
+    if (r.status !== 200) return capFalhou(r, file);
+    const items = Array.isArray(r.body.items) ? r.body.items : [];
+    if (!items.length) return toast("nenhuma legenda gerada para este trecho");
+    const substituir = document.getElementById("capReplace").checked;
+    commit("gerar legendas", () => {
+      const t = etrack("t_cap", true);
+      if (substituir) t.items = [];
+      // `uppercase` é campo do editor (não viaja no `style` do contrato): aplicá-lo aqui deixa o
+      // preset completo, e o `PUT /timeline` normal o persiste junto com o resto do item.
+      items.forEach((it) => { it.style = { ...(it.style || {}), uppercase: preset.uppercase }; t.items.push(it); });
+      St.selection = [items[0].id];
+    }, { panel: true });
+    if (src === "audio") St.capLast = { file, start: body.start };
+    m.close();
+    // o `toast` do shell é uma linha só (a chamada seguinte substitui a anterior): tudo o que o
+    // usuário precisa saber deste desfecho vai na MESMA mensagem.
+    const avisos = [`${num(r.body.word_count)} palavras · ${items.length} legenda(s)`];
+    if (r.body.source === "estimate") avisos.push("tempos estimados, sem chave OpenAI");
+    if (r.body.warning) avisos.push(String(r.body.warning));
+    toast(avisos.join(" · "));
+  }
+  /** Desfecho de erro: toast com o `detail` do servidor e destaque do campo que ele aponta. */
+  function capFalhou(r, file) {
+    const d = capDetail(r.body);
+    if (r.status === 404) { toast(`arquivo não encontrado: ${file}`); capErrCampo("capFile", true); return void capFontes(null); }
+    if (r.status === 409) return toast("ffmpeg indisponível para extrair o áudio");
+    if (r.status === 422) {
+      const campo = { text: "capScript", file: "capFile", hi: "capHi", mode: "capPreset" }[String(d).split(":")[0].trim()];
+      if (campo) capErrCampo(campo, true);
+      return toast(d);
+    }
+    if (r.status === 502) return toast(d);
+    toast("Falha ao gerar legendas: " + d);
+  }
+  function pAudio(el) {
+    const rows = [];
+    // linha do que JÁ está na montagem sai com ✕ (exclui); linha de biblioteca com ＋ (adiciona)
+    const mf = (St.timeline.music || {}).file; if (mf) rows.push(["♪", mf.split("/").pop(), "trilha · música", "music", true]);
+    (St.timeline.sfx || []).forEach((s, i) => rows.push(["♪", s.file.split("/").pop(), "sfx", `sfx_${i}`, true]));
+    St.sfxLib.forEach((s) => { if (!(St.timeline.sfx || []).some((x) => x.file === s.file)) rows.push(["♪", s.name || s.file.split("/").pop(), `${(s.duration || 0).toFixed(0)}s · biblioteca`, "lib:" + s.file, false]); });
+    el.innerHTML = phead("Áudio", rows.length) + `<label class="drop sm" id="sfxDrop" style="display:block;margin-bottom:10px;padding:10px;border:1px dashed var(--vbd3);border-radius:8px;text-align:center;color:var(--vtx4);font-size:11px">Arraste SFX aqui (gelo, ambiência, respiração, impacto)<input id="sfxUp" type="file" accept="audio/*" multiple hidden></label>`
+      + `<div class="ved-list">${rows.map(([ic, nm, sub, act, naTl]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${esc(nm)}</div><div class="rs">${sub}</div></div><button class="radd ic" ${naTl ? `data-audel="${act}" title="Excluir"` : `data-aud="${act}"`}>${naTl ? "✕" : "＋"}</button></div>`).join("")}</div>`;
+    ui.drop(document.getElementById("sfxDrop"), uploadSfx);
+    el.querySelectorAll("[data-aud]").forEach((b) => b.onclick = () => { const a = b.dataset.aud; if (a.startsWith("lib:")) addSfx(a.slice(4)); });
+    el.querySelectorAll("[data-audel]").forEach((b) => b.onclick = () => deleteItems([b.dataset.audel]));
+  }
+  function pTransitions(el) {
+    el.innerHTML = phead("Transições", TRANSITIONS.length) + `<input class="ved-search" placeholder="Buscar…" oninput="const q=this.value.toLowerCase();this.parentNode.querySelectorAll('[data-tr]').forEach(b=>b.style.display=b.dataset.tr.toLowerCase().includes(q)?'':'none')"><div class="ved-pgrid">${TRANSITIONS.map((t) => `<button class="ved-pick" data-tr="${t}"><span class="sw">⧓</span>${t}<span class="sub">0.5s</span></button>`).join("")}</div><p class="ved-hint">[extensão] — aparece no preview; no master.mp4: fase seguinte. Selecione um clipe de vídeo antes.</p>`;
+    el.querySelectorAll("[data-tr]").forEach((b) => b.onclick = () => applyTransition(b.dataset.tr));
+  }
+  /** Os 14 efeitos valem para clipe, overlay, texto e legenda; o que o tipo selecionado não aceita
+   *  sai desabilitado com a sublegenda "só vídeo". A linha ativa abre um slider de intensidade
+   *  inline — irmão da linha, e não filho, para o clique no slider não desligar o efeito. */
+  function pEffects(el) {
+    const alvo = adjustTarget(), kind = fxKind();
+    const on = new Map(((alvo && alvo.effects) || []).filter((e) => e.enabled !== false).map((e) => [fxSlug(e.type), fxInt(e)]));
+    const linhas = EFFECTS.map((e) => {
+      const s = fxSlug(e), ativo = on.has(s), ok = fxAplica(e, kind);
+      const row = `<div class="ved-row${ativo && ok ? " on" : ""}${ok ? "" : " off"}" data-ef="${e}"><span class="ric">✦</span><div class="rmid"><div class="rn">${e}</div>${ok ? "" : `<div class="rs">só vídeo</div>`}</div><button class="radd"${ok ? "" : " disabled"}>${ativo && ok ? "remover" : "aplicar"}</button></div>`;
+      if (!ativo || !ok) return row;
+      const v = Math.round(on.get(s) * 100);
+      return row + `<div class="ved-slider ved-fxint"><label>Intensidade</label><input type="range" id="fxi-${s}" min="0" max="100" value="${v}"><span class="val" id="fxi-${s}v">${v}%</span></div>`;
+    }).join("");
+    el.innerHTML = phead("Efeitos", EFFECTS.length) + `<div class="ved-list">${linhas}</div><p class="ved-hint">[extensão] Blur/Sharpen/Grain entram no master.mp4 só em clipes da VÍDEO 1; nos demais tipos e efeitos é preview. Selecione um clipe, overlay, texto ou legenda.</p>`;
+    el.querySelectorAll("[data-ef]").forEach((b) => b.onclick = () => toggleEffect(b.dataset.ef));
+    EFFECTS.forEach((e) => {
+      const s = fxSlug(e); if (!on.has(s) || !document.getElementById("fxi-" + s)) return;
+      bindSlider("fxi-" + s, (v) => setFxIntensity(e, v / 100), "intensidade", (v) => { const d = document.getElementById("fxi-" + s + "v"); if (d) d.textContent = v + "%"; renderPreview(); });
+      document.getElementById("fxi-" + s).onchange = () => commit("intensidade", () => {});
+    });
+    markFx(el);
+  }
+  function pFilters(el) {
+    el.innerHTML = phead("Filtros", FILTERS.length) + `<div class="ved-list">${FILTERS.map(([id, nm, css]) => `<div class="ved-row" data-fl="${id}" data-css="${css}"><span class="ric" style="background:linear-gradient(45deg,#5661c8,#c85f8a);filter:${css}">◑</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">preset</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
+    el.querySelectorAll("[data-fl]").forEach((b) => b.onclick = () => setFilter(b.dataset.fl, b.dataset.css));
+  }
+  function pElements(el) {
+    el.innerHTML = phead("Elementos", ELEMENTS.length) + `<div class="ved-list">${ELEMENTS.map(([id, nm, ic]) => `<div class="ved-row" data-el="${id}" data-nm="${nm}"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div></div><button class="radd ic">＋</button></div>`).join("")}</div>`;
+    el.querySelectorAll("[data-el]").forEach((b) => b.onclick = () => addOverlayShape(b.dataset.el, b.dataset.nm));
+  }
+  function pAdjust(el) { el.innerHTML = phead("Ajustes", 1) + `<div class="ved-row" style="cursor:default"><span class="ric">⚙</span><div class="rmid"><div class="rs" style="white-space:normal">Selecione um clipe — os ajustes aparecem no painel direito →</div></div></div>`; }
+  function pLibrary(el) {
+    const items = [["Preset · abertura", "template", "▤"], ["Preset · CTA final", "template", "▤"], ["Kit legendas neon", "estilo", "CC"], ["LUT frost", "cor", "◑"]];
+    el.innerHTML = phead("Biblioteca", items.length) + `<div class="ved-list">${items.map(([nm, tp, ic]) => `<div class="ved-row"><span class="ric">${ic}</span><div class="rmid"><div class="rn">${nm}</div><div class="rs">${tp}</div></div><button class="radd ic">＋</button></div>`).join("")}</div><p class="ved-hint">Presets salvos (em breve).</p>`;
+  }
+  // a marcação do painel segue o PRIMEIRO selecionado (`adjustTarget`), mesmo em multi-seleção
+  function markFx(el) { const fx = adjustTarget(), kind = fxKind(); const on = new Set((fx && fx.effects || []).filter((e) => e.enabled !== false).map((e) => fxSlug(e.type))); el.querySelectorAll("[data-ef]").forEach((b) => b.classList.toggle("on", on.has(fxSlug(b.dataset.ef)) && fxAplica(b.dataset.ef, kind))); }
+
+  // ============================================================ PROPERTIES (direita)
+  const TABS = { basico: "Básico", video: "Vídeo", audio: "Áudio", speed: "Velocidade", ajustes: "Ajustes" };
+  // texto e legenda ganham a aba Ajustes (mesmos 10 ajustes do clipe, via `propsAdjustTab`); as
+  // abas de vídeo/áudio/velocidade continuam fora porque não existem para uma camada de texto
+  function tabsFor(kind) {
+    if (["music", "sfx"].includes(kind)) return ["audio", "speed"];
+    if (["text", "caption"].includes(kind)) return ["basico", "ajustes"];
+    return ["basico", "video", "audio", "speed", "ajustes"];
+  }
+  function renderProps() {
+    const el = document.getElementById("edProps"); if (!el) return;
+    const it = St.selection.length ? findItem(St.selection[0]) : null;
+    if (it) propsItem(el, it); else propsProject(el);
+    rotular(el);
+  }
+  /** Acessibilidade: liga cada <label> ao seu controle e nomeia os switches (que não têm texto
+   *  próprio) — sem isso a auditoria da tela acusa "campos sem rótulo" a cada painel. */
+  function rotular(scope) {
+    if (!scope) return;
+    scope.querySelectorAll(".ved-slider,.ved-num,.ved-inrow").forEach((row) => {
+      const lb = row.querySelector("label"), c = row.querySelector("input,select,textarea");
+      if (!lb || !c) return;
+      if (!c.id) c.id = newId("f");
+      if (!lb.getAttribute("for")) lb.setAttribute("for", c.id);
+    });
+    scope.querySelectorAll(".ved-toggle").forEach((row) => {
+      const sw = row.querySelector(".ved-sw"), txt = row.querySelector("span");
+      if (sw && txt && !sw.getAttribute("aria-label")) sw.setAttribute("aria-label", (txt.textContent || "").trim());
+    });
+    scope.querySelectorAll("textarea:not([aria-label]),input[type=text]:not([aria-label])").forEach((c) => {
+      if (!c.id || !scope.querySelector(`label[for="${c.id}"]`)) c.setAttribute("aria-label", c.placeholder || "Texto da camada");
+    });
+  }
+  function propsProject(el) {
+    const p = proj();
+    el.innerHTML = `<h4>Projeto</h4><div class="psub">nenhuma seleção</div>
+      ${prow("Resolução", RES.find((r) => r[1] == p.width) ? RES.find((r) => r[1] == p.width)[0] : p.width + "p")}
+      ${prow("Proporção", p.aspect)}${prow("FPS", p.fps)}${prow("Duração", fmtTC(duration()))}
+      ${prow("Clipes", (St.timeline.clips || []).length)}${prow("Tracks", tracks().length)}
+      <div class="ved-slider"><label>Fade final</label><input type="range" id="pFade" min="0" max="5" step="0.1" value="${num(St.timeline.fade_out, 1.5)}"><span class="val" id="pFadev">${num(St.timeline.fade_out, 1.5)}</span></div>
+      <div class="ved-toggle"><span>Normalizar áudio [ext]</span><button class="ved-sw${St.timeline.loudnorm !== false ? " on" : ""}" id="pLoud"></button></div>
+      <p class="ved-hint" style="margin-top:12px">Selecione um clipe na timeline para editar suas propriedades, ou arraste mídias da barra lateral.</p>`;
+    bindSlider("pFade", (v) => St.timeline.fade_out = v, "fade final");
+    document.getElementById("pLoud").onclick = () => commit("loudnorm", () => St.timeline.loudnorm = St.timeline.loudnorm === false);
+  }
+  function prow(k, v) { return `<div class="ved-prow ved-num"><span>${k}</span><span class="pv">${v}</span></div>`; }
+  function propsItem(el, it) {
+    const kind = it.kind; const tabs = tabsFor(kind); if (!tabs.includes(St.rightTab)) St.rightTab = tabs[0];
+    const nm = kind === "video" ? nameOf(it.clip) : kind === "music" ? "Música" : kind === "sfx" ? it.sfx.file.split("/").pop() : (it.item.text || TRACK_META(kind));
+    const dur = kind === "video" ? it.dur : it.dur;
+    el.innerHTML = `<h4>${esc(String(nm).slice(0, 30))}</h4><div class="psub">${kind.toUpperCase()} · ${dur.toFixed(1)}s · início ${fmtTC(it.start)}</div>
+      <div class="ved-tabs">${tabs.map((t) => `<button data-tab="${t}"${t == St.rightTab ? " class=on" : ""}>${TABS[t]}</button>`).join("")}</div><div id="tabBody"></div>`;
+    el.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { St.rightTab = b.dataset.tab; renderProps(); });
+    const body = document.getElementById("tabBody");
+    if (kind === "text" || kind === "caption") return St.rightTab === "ajustes" ? propsAdjustTab(body, it) : propsTextBody(body, it);
+    if (kind === "music" || kind === "sfx") return propsAudioItem(body, it);
+    // vídeo / overlay
+    const tab = St.rightTab;
+    if (tab === "basico") propsBasic(body, it);
+    else if (tab === "video") propsVideo(body, it);
+    else if (tab === "audio") propsAudioTab(body, it);
+    else if (tab === "speed") propsSpeed(body, it);
+    else if (tab === "ajustes") propsAdjustTab(body, it);
+  }
+  function TRACK_META(kind) { return { overlay: "Overlay", text: "Texto", caption: "Legenda" }[kind] || "Item"; }
+  function tfOf(it) { if (it.kind === "video") return clipFx(it.clip.id).transform; const o = it.item; return (o.transform = o.transform || { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }); }
+  function propsBasic(body, it) {
+    const tf = tfOf(it);
+    body.innerHTML = `<div class="ved-grid2">${nf("bX", "X", (tf.x * 100).toFixed(0), "%")}${nf("bY", "Y", (tf.y * 100).toFixed(0), "%")}${nf("bS", "Escala", (tf.scaleX * 100).toFixed(0), "%")}${nf("bR", "Rotação", tf.rotation, "°")}${nf("bIn", "Início", it.start.toFixed(2), "s")}${nf("bD", "Duração", it.dur.toFixed(2), "s")}</div>
+      <div class="ved-slider"><label>Opacidade</label><input type="range" id="bOp" min="0" max="100" value="${(tf.opacity != null ? tf.opacity : 1) * 100 | 0}"><span class="val" id="bOpv">${(tf.opacity != null ? tf.opacity : 1) * 100 | 0}%</span></div>
+      <div class="ved-slider"><label>Escala</label><input type="range" id="bSc" min="10" max="300" value="${tf.scaleX * 100 | 0}"><span class="val" id="bScv">${tf.scaleX * 100 | 0}%</span></div>
+      <div class="ved-grid2"><button class="ved-btn" id="bFx" style="padding:6px">⇋ Flip X</button><button class="ved-btn" id="bFy" style="padding:6px">⇵ Flip Y</button></div>${trackPickerHTML(it)}`;
+    bindTrackPicker(body, it);
+    bindNum("bX", (v) => tf.x = v / 100); bindNum("bY", (v) => tf.y = v / 100); bindNum("bS", (v) => tf.scaleX = tf.scaleY = v / 100); bindNum("bR", (v) => tf.rotation = v);
+    bindNum("bIn", (v) => setItemStart(it, v)); bindNum("bD", (v) => setItemDur(it, v));
+    bindSlider("bOp", (v) => tf.opacity = v / 100, "opacidade", (v) => document.getElementById("bOpv").textContent = v + "%");
+    bindSlider("bSc", (v) => tf.scaleX = tf.scaleY = v / 100, "escala", (v) => document.getElementById("bScv").textContent = v + "%");
+    document.getElementById("bFx").onclick = () => commit("flip", () => tf.flipX = !tf.flipX);
+    document.getElementById("bFy").onclick = () => commit("flip", () => tf.flipY = !tf.flipY);
+  }
+  /** Troca de faixa nas Propriedades: o botão da faixa atual fica marcado e o outro move o item.
+   *  Só aparece para o que pode viver nas duas faixas (clipe da VÍDEO 1 e overlay de vídeo). */
+  function trackPicker(it) {
+    if (it.kind === "video") return "v1";
+    if (it.kind === "overlay" && isVideoFile((it.item || {}).src)) return "v2";
+    return null;
+  }
+  function trackPickerHTML(it) {
+    const atual = trackPicker(it); if (!atual) return "";
+    return `<div class="ved-kick" style="margin:10px 0 4px">Faixa</div>
+      <div class="ved-speedgrid" style="grid-template-columns:repeat(2,1fr)">
+        <button data-trk="v1"${atual === "v1" ? " class=on" : ""}>VÍDEO 1</button>
+        <button data-trk="v2"${atual === "v2" ? " class=on" : ""}>VÍDEO 2</button></div>
+      <p class="ved-hint">Mover é mover: o item sai da faixa de origem e os efeitos do clipe não vão junto. Na VÍDEO 2 o vídeo aparece no preview — no master.mp4: fase seguinte.</p>`;
+  }
+  function bindTrackPicker(body, it) {
+    const atual = trackPicker(it); if (!atual) return;
+    body.querySelectorAll("[data-trk]").forEach((b) => b.onclick = () => { if (b.dataset.trk !== atual) moveToTrack(it.uid, b.dataset.trk); });
+  }
+  function propsVideo(body, it) {
+    if (it.kind !== "video") return void (body.innerHTML = `<p class="ved-hint">Sem controles de vídeo para este item.</p>`);
+    const c = it.clip, fx = clipFx(c.id);
+    const tog = ["crop", "chroma", "stabilize", "removebg", "freeze", "reverse"]; const lbl = { crop: "Crop", chroma: "Chroma key", stabilize: "Estabilização", removebg: "Remover fundo", freeze: "Congelar quadro", reverse: "Reverse" };
+    fx.vfx = fx.vfx || {};
+    body.innerHTML = `${nf("vIn", "In (s)", num(c.in).toFixed(2), "")}${nf("vOut", "Out (s)", num(c.out).toFixed(2), "")}${nf("vZoom", "Zoom", num(c.zoom, 1).toFixed(2), "")}
+      ${tog.map((k) => `<div class="ved-toggle"><span>${lbl[k]}</span><button class="ved-sw${fx.vfx[k] ? " on" : ""}" data-vt="${k}"></button></div>`).join("")}
+      <div class="ved-slider"><label>Border radius</label><input type="range" id="vRad" min="0" max="40" value="${fx.radius || 0}"><span class="val" id="vRadv">${fx.radius || 0}</span></div>
+      <p class="ved-hint">Trim é não destrutivo. Crop/chroma/etc. [extensão] — no preview; no master.mp4: fase seguinte.</p>`;
+    bindNum("vIn", (v) => c.in = clamp(v, 0, num(c.out) - .05), "trim"); bindNum("vOut", (v) => c.out = Math.max(v, num(c.in) + .05), "trim"); bindNum("vZoom", (v) => c.zoom = clamp(v, 1, 1.3), "zoom");
+    body.querySelectorAll("[data-vt]").forEach((b) => b.onclick = () => commit(lbl[b.dataset.vt], () => fx.vfx[b.dataset.vt] = !fx.vfx[b.dataset.vt]));
+    bindSlider("vRad", (v) => fx.radius = v, "border radius", (v) => document.getElementById("vRadv").textContent = v);
+  }
+  function propsAudioTab(body, it) {
+    if (it.kind !== "video") return void (body.innerHTML = `<p class="ved-hint">Sem áudio próprio neste item.</p>`);
+    const a = clipFx(it.clip.id).audio = clipFx(it.clip.id).audio || { volume: 1, muted: false, fadeIn: 0, fadeOut: 0, normalize: false, enhance: false, denoise: false };
+    const tog = [["muted", "Mudo"], ["normalize", "Normalização"], ["enhance", "Melhorar voz"], ["denoise", "Redução de ruído"]];
+    body.innerHTML = `<div class="ved-slider"><label>Volume</label><input type="range" id="avVol" min="0" max="150" value="${a.volume * 100 | 0}"><span class="val" id="avVolv">${a.volume * 100 | 0}%</span></div>
+      <div class="ved-slider"><label>Fade in</label><input type="range" id="avFi" min="0" max="5" step="0.1" value="${a.fadeIn}"><span class="val" id="avFiv">${a.fadeIn}s</span></div>
+      <div class="ved-slider"><label>Fade out</label><input type="range" id="avFo" min="0" max="5" step="0.1" value="${a.fadeOut}"><span class="val" id="avFov">${a.fadeOut}s</span></div>
+      ${tog.map(([k, lb]) => `<div class="ved-toggle"><span>${lb}</span><button class="ved-sw${a[k] ? " on" : ""}" data-at="${k}"></button></div>`).join("")}
+      <button class="ved-linkbtn" id="avSep">✂ Separar áudio do vídeo</button>
+      <p class="ved-hint">[extensão] — na aula 014 o áudio do modelo entra desligado; estes controles ficam guardados e entram no mix numa fase seguinte.</p>`;
+    bindSlider("avVol", (v) => a.volume = v / 100, "volume clipe", (v) => document.getElementById("avVolv").textContent = v + "%");
+    bindSlider("avFi", (v) => a.fadeIn = v, "fade in", (v) => document.getElementById("avFiv").textContent = v + "s");
+    bindSlider("avFo", (v) => a.fadeOut = v, "fade out", (v) => document.getElementById("avFov").textContent = v + "s");
+    body.querySelectorAll("[data-at]").forEach((b) => b.onclick = () => commit("áudio " + b.dataset.at, () => a[b.dataset.at] = !a[b.dataset.at]));
+    document.getElementById("avSep").onclick = () => toast("Separar áudio entra no mix numa fase seguinte [extensão].");
+  }
+  function propsSpeed(body, it) {
+    if (it.kind !== "video") return void (body.innerHTML = `<p class="ved-hint">Velocidade disponível para clipes de vídeo.</p>`);
+    const c = it.clip; const sp = num(c.speed, 1);
+    body.innerHTML = `<div class="ved-speedgrid">${SPEEDS.map((s) => `<button class="${sp == s ? "on" : ""}" data-sp="${s}">${s}x</button>`).join("")}</div>
+      <div class="ved-slider"><label>Custom · ${sp.toFixed(2)}x</label><input type="range" id="vSp" min="25" max="400" value="${sp * 100 | 0}"><span class="val" id="vSpv">${sp.toFixed(2)}x</span></div>
+      <div class="ved-prow ved-num"><span>Duração resultante</span><span class="pv">${clipLen(c).toFixed(2)}s</span></div>
+      <button class="ved-linkbtn">◔ Speed ramp (avançado)</button>`;
+    body.querySelectorAll("[data-sp]").forEach((b) => b.onclick = () => commit("velocidade", () => c.speed = num(b.dataset.sp, 1)));
+    const inp = document.getElementById("vSp"); inp.oninput = () => { c.speed = clamp(num(inp.value) / 100, .25, 4); document.getElementById("vSpv").textContent = c.speed.toFixed(2) + "x"; renderTimeline(); }; inp.onchange = () => commit("velocidade", () => {});
+  }
+  function propsAdjustTab(body, it) {
+    const t = it.kind === "video" ? clipFx(it.clip.id) : (it.item.filters ? it.item : (it.item.filters = {}, it.item)); t.filters = t.filters || {};
+    body.innerHTML = ADJ.map(([k, lb]) => adjSlider("cadj-" + k, lb, num(t.filters[k]))).join("") + `<button class="ved-linkbtn" id="cReset">Resetar ajustes</button>`;
+    ADJ.forEach(([k]) => bindSlider("cadj-" + k, (v) => { if (v) t.filters[k] = v; else delete t.filters[k]; }, "ajuste", (v) => { const e = document.getElementById("cadj-" + k + "v"); if (e) e.textContent = (v > 0 ? "+" : "") + v; renderPreview(); }));
+    document.getElementById("cReset").onclick = () => commit("resetar ajustes", () => t.filters = {}, { panel: true });
+  }
+  function propsTextBody(body, it) {
+    const o = it.item, s = o.style = o.style || {}, tf = tfOf(it);
+    body.innerHTML = `<textarea class="ved-txtarea" id="txT" rows="2">${esc(o.text || "")}</textarea>
+      <div class="ved-grid2">${nf("txSize", "Tamanho", s.size || 40, "")}${nf("txW", "Peso", s.weight || 700, "")}</div>
+      <div class="ved-inrow"><label>Alinhar</label><select id="txAlign">${["left", "center", "right"].map((a) => `<option${a == (s.align || "center") ? " selected" : ""}>${a}</option>`).join("")}</select></div>
+      <div class="ved-inrow"><label>Cor</label><input type="color" id="txColor" value="${s.color || "#ffffff"}"></div>
+      <div class="ved-inrow"><label>Fundo</label><input type="text" id="txBg" value="${esc(s.bg || "transparent")}" style="width:110px"></div>
+      <div class="ved-toggle"><span>Sombra</span><button class="ved-sw${s.shadow !== false ? " on" : ""}" id="txSh"></button></div>
+      <div class="ved-toggle"><span>Maiúsculas</span><button class="ved-sw${s.uppercase ? " on" : ""}" id="txUp"></button></div>
+      <div class="ved-slider"><label>Opacidade</label><input type="range" id="txOp" min="0" max="100" value="${(tf.opacity != null ? tf.opacity : 1) * 100 | 0}"><span class="val" id="txOpv"></span></div>
+      <div class="ved-grid2">${nf("txStart", "Início", it.start.toFixed(1), "s")}${nf("txEnd", "Fim", num(o.end).toFixed(1), "s")}</div>
+      ${it.kind === "caption" ? capPropsHTML(o) : ""}
+      ${fxSectionHTML(o)}`;
+    if (it.kind === "caption") bindCapProps(body, it);
+    document.getElementById("txT").oninput = (e) => { o.text = e.target.value; renderPreview(); renderTimeline(); scheduleSave(); };
+    document.getElementById("txAlign").onchange = (e) => cset("alinhar", () => s.align = e.target.value);
+    document.getElementById("txColor").oninput = (e) => { s.color = e.target.value; renderPreview(); scheduleSave(); };
+    document.getElementById("txBg").onchange = (e) => cset("fundo", () => s.bg = e.target.value);
+    document.getElementById("txSh").onclick = () => cset("sombra", () => s.shadow = s.shadow === false);
+    document.getElementById("txUp").onclick = () => cset("maiúsculas", () => s.uppercase = !s.uppercase);
+    bindNum("txSize", (v) => s.size = clamp(v, 4, 400), "tamanho"); bindNum("txW", (v) => s.weight = clamp(v, 100, 900), "peso");
+    bindSlider("txOp", (v) => tf.opacity = v / 100, "opacidade", (v) => document.getElementById("txOpv").textContent = v + "%");
+    bindNum("txStart", (v) => o.start = Math.max(v, 0), "início"); bindNum("txEnd", (v) => o.end = Math.max(v, num(o.start) + .2), "fim");
+    bindFxSection(body, o);
+  }
+  /** Bloco de LEGENDA nas Propriedades: modo, cor de destaque, palavras por linha e o botão de
+   *  re-sincronizar. Sem `words` (legenda manual) o modo fica travado em `bloco`, porque não há
+   *  palavra para acender — e o re-fatiar não tem o que fatiar. */
+  function capPropsHTML(o) {
+    const ws = capWords(o), tem = ws.length > 0, modo = capMode(o), hi = capHi(o);
+    return `<div class="ved-kick" style="margin:12px 0 4px">Legenda</div>
+      <div class="ved-inrow"><label for="capMode">Modo</label><select id="capMode"${tem ? "" : " disabled"}>${CAPTION_MODES.map((mo) => `<option value="${mo}"${mo === modo ? " selected" : ""}>${esc(MODE_LABEL[mo])}</option>`).join("")}</select></div>
+      ${tem ? "" : `<p class="ved-hint">sem palavras sincronizadas: use ✨ Gerar legendas</p>`}
+      ${tem ? `<div class="ved-kick" style="margin:8px 0 2px">Cor de destaque</div>
+      <div class="ved-swatches" id="capSwP">${HI_COLORS.map((c) => `<button type="button" class="ved-swatch${c.toLowerCase() === hi.toLowerCase() ? " on" : ""}" data-hi="${c}" style="background:${c}" title="${c}" aria-label="Cor ${c}"></button>`).join("")}</div>
+      <div class="ved-inrow"><label for="capHiP">Cor</label><input type="color" id="capHiP" value="${hi}"></div>
+      <div class="ved-inrow"><label for="capChunkP">Palavras por linha</label><select id="capChunkP">${CHUNK_OPTS.map((c) => `<option value="${c}"${c === num(o.chunk, 6) ? " selected" : ""}>${esc(CHUNK_LABEL[c])}</option>`).join("")}</select></div>
+      <button class="ved-linkbtn" id="capResync">↻ re-sincronizar com áudio</button>
+      <p class="ved-hint">${ws.length} palavra(s) sincronizada(s). Re-fatiar é local (sem chamada ao servidor) e preserva os tempos.</p>` : ""}`;
+  }
+  function bindCapProps(body, it) {
+    const o = it.item;
+    const modo = document.getElementById("capMode");
+    if (modo) modo.onchange = (e) => cset("modo legenda", () => o.mode = e.target.value);
+    const cor = document.getElementById("capHiP");
+    if (cor) cor.oninput = (e) => { o.hi = String(e.target.value).toUpperCase(); marcaSwP(o.hi); renderPreview(); scheduleSave(); };
+    const sw = document.getElementById("capSwP");
+    if (sw) sw.onclick = (e) => { const b = e.target.closest("[data-hi]"); if (!b) return; cset("cor de destaque", () => o.hi = b.dataset.hi); marcaSwP(b.dataset.hi); if (cor) cor.value = b.dataset.hi; };
+    const ch = document.getElementById("capChunkP");
+    if (ch) ch.onchange = (e) => resliceCaptionGroup(it, num(e.target.value, 6));
+    const rs = document.getElementById("capResync");
+    if (rs) rs.onclick = () => openCapModal({ source: "audio", file: (St.capLast || {}).file, start: num(o.start), mode: capMode(o), chunk: num(o.chunk, 6), hi: capHi(o), position: capPos(o) });
+  }
+  function marcaSwP(cor) {
+    const box = document.getElementById("capSwP"); if (!box) return;
+    box.querySelectorAll("[data-hi]").forEach((b) => b.classList.toggle("on", b.dataset.hi.toLowerCase() === String(cor).toLowerCase()));
+  }
+  /** Posição do item deduzida do `transform.y` (o servidor a converte na ida; a volta é só para
+   *  reabrir o modal no mesmo lugar). */
+  function capPos(o) {
+    const y = num((o.transform || {}).y, .82);
+    return y <= .3 ? "top" : y >= .7 ? "bottom" : "middle";
+  }
+  /** Re-fatia LOCALMENTE o grupo de legendas contíguas que contém `it`, em janelas de `chunk`
+   *  palavras. Nenhuma chamada ao servidor: as palavras já estão no item e a régua da janela é a
+   *  mesma dos dois lados. `chunk 0` une o grupo numa janela só — a divisão por LARGURA de linha
+   *  existe apenas na geração pelo servidor, que é quem tem a fonte do Pillow para medir. */
+  function resliceCaptionGroup(it, chunk) {
+    const tr = it.track && it.track.etrack; if (!tr) return;
+    const grupo = capGroup(tr, it.item);
+    const words = grupo.flatMap((x) => capWords(x)).sort((a, b) => num(a.start_s) - num(b.start_s));
+    if (!words.length) return toast("nenhuma palavra sincronizada para re-fatiar");
+    const modelo = it.item, i0 = tr.items.indexOf(grupo[0]);
+    const novos = [];
+    for (let i = 0; i < words.length; i += (chunk || words.length)) {
+      const ws = chunkOf(words, chunk, i).ws.map((w) => ({ ...w }));
+      if (!ws.length) break;
+      novos.push({
+        ...clone(modelo), id: newId("cap"), text: ws.map((w) => w.w).join(" "),
+        start: num(ws[0].start_s), end: num(ws[ws.length - 1].end_s), chunk, words: ws,
+      });
+    }
+    commit("re-fatiar legendas", () => {
+      tr.items = tr.items.filter((x) => !grupo.includes(x));
+      tr.items.splice(Math.max(i0, 0), 0, ...novos);
+      St.selection = novos.length ? [novos[0].id] : [];
+    }, { panel: true });
+  }
+  /** Itens de legenda CONTÍGUOS (fim de um = início do seguinte) com palavras, em torno de `alvo`.
+   *  É o que o usuário enxerga como "a legenda daquela fala" — re-fatiar uma janela sozinha
+   *  deixaria as vizinhas com o tamanho antigo. */
+  function capGroup(tr, alvo) {
+    const comWords = (tr.items || []).filter((x) => capWords(x).length).sort((a, b) => num(a.start) - num(b.start));
+    const i = comWords.indexOf(alvo); if (i < 0) return [alvo];
+    let a = i, b = i;
+    while (a > 0 && Math.abs(num(comWords[a - 1].end) - num(comWords[a].start)) <= 1e-3) a--;
+    while (b < comWords.length - 1 && Math.abs(num(comWords[b].end) - num(comWords[b + 1].start)) <= 1e-3) b++;
+    return comWords.slice(a, b + 1);
+  }
+  /** Seção "Efeitos" das Propriedades de texto/legenda: o que está ativo, com intensidade e ✕.
+   *  Aplicar efeito novo continua sendo pelo painel Efeitos, à esquerda. */
+  function fxSectionHTML(o) {
+    const ativos = (o.effects || []).filter((e) => e.enabled !== false);
+    const cab = `<div class="ved-kick" style="margin:12px 0 4px">Efeitos</div>`;
+    if (!ativos.length) return cab + `<p class="ved-hint">Nenhum efeito. Aplique pelo painel Efeitos, à esquerda.</p>`;
+    return cab + ativos.map((e) => {
+      const s = fxSlug(e.type), v = Math.round(fxInt(e) * 100);
+      return `<div class="ved-slider"><label>${esc(e.type)}</label><input type="range" id="txfx-${s}" min="0" max="100" value="${v}"><span class="val" id="txfx-${s}v">${v}%</span><button class="ved-ib" data-fxdel="${esc(e.type)}" title="Remover ${esc(e.type)}" style="width:22px;height:22px;font-size:11px">✕</button></div>`;
+    }).join("") + `<p class="ved-hint">Efeito em texto/legenda é preview — no master.mp4: fase seguinte.</p>`;
+  }
+  function bindFxSection(body, o) {
+    (o.effects || []).filter((e) => e.enabled !== false).forEach((e) => {
+      const s = fxSlug(e.type); if (!document.getElementById("txfx-" + s)) return;
+      bindSlider("txfx-" + s, (v) => e.intensity = clamp(v / 100, 0, 1), "intensidade", (v) => { const d = document.getElementById("txfx-" + s + "v"); if (d) d.textContent = v + "%"; renderPreview(); });
+      document.getElementById("txfx-" + s).onchange = () => commit("intensidade", () => {});
+    });
+    body.querySelectorAll("[data-fxdel]").forEach((b) => b.onclick = () => { const t = fxSlug(b.dataset.fxdel); commit("remover efeito", () => o.effects = (o.effects || []).filter((e) => fxSlug(e.type) !== t), { panel: true }); });
+  }
+  function propsAudioItem(body, it) {
+    if (it.kind === "music") {
+      const m = St.timeline.music || (St.timeline.music = {});
+      if (St.rightTab === "speed") return void (body.innerHTML = `<p class="ved-hint">Velocidade da trilha entra numa próxima fase.</p>`);
+      body.innerHTML = `${nf("mOff", "Offset (s)", num(m.offset).toFixed(1), "")}
+        <div class="ved-slider"><label>Volume</label><input type="range" id="mVol" min="0" max="150" value="${num(m.volume, 1) * 100 | 0}"><span class="val" id="mVolv">${(num(m.volume, 1) * 100 | 0)}%</span></div>
+        <div class="ved-slider"><label>Fade out</label><input type="range" id="mFo" min="0" max="5" step="0.1" value="${num(St.timeline.fade_out, 1.5)}"><span class="val" id="mFov"></span></div>
+        <div class="ved-toggle"><span>Mudo</span><button class="ved-sw${m.muted ? " on" : ""}" id="mMute"></button></div>`;
+      bindNum("mOff", (v) => m.offset = Math.max(v, 0), "offset");
+      bindSlider("mVol", (v) => m.volume = v / 100, "volume", (v) => { document.getElementById("mVolv").textContent = v + "%"; syncVolumes(); });
+      bindSlider("mFo", (v) => St.timeline.fade_out = v, "fade out", (v) => document.getElementById("mFov").textContent = v);
+      document.getElementById("mMute").onclick = () => commit("mudo música", () => m.muted = !m.muted, { panel: true, audio: true });
+    } else {
+      const s = it.sfx;
+      if (St.rightTab === "speed") return void (body.innerHTML = `<p class="ved-hint">—</p>`);
+      body.innerHTML = `${nf("sAt", "Em (s)", num(s.at).toFixed(1), "")}<div class="ved-slider"><label>Ganho (dB)</label><input type="range" id="sG" min="-40" max="12" value="${num(s.gain)}"><span class="val" id="sGv">${num(s.gain)}</span></div>`;
+      bindNum("sAt", (v) => s.at = Math.max(v, 0), "posição SFX");
+      bindSlider("sG", (v) => s.gain = v, "ganho", (v) => document.getElementById("sGv").textContent = v);
+    }
+  }
+  function nf(id, lb, val, unit) { return `<div class="ved-num"><label>${lb}</label><input type="text" id="${id}" value="${val}${unit || ""}"></div>`; }
+  function adjSlider(id, lb, val) { return `<div class="ved-slider"><label>${lb}</label><input type="range" id="${id}" min="-100" max="100" value="${val || 0}"><span class="val" id="${id}v">${val > 0 ? "+" + val : (val || 0)}</span></div>`; }
+  function bindNum(id, apply, label) { const inp = document.getElementById(id); if (!inp) return; inp.onchange = () => { snapshot(label || "editar"); apply(num(inp.value)); setStatus("dirty"); scheduleSave(); renderPreview(); renderTimeline(); }; }
+  function bindSlider(id, apply, label, live) { const inp = document.getElementById(id); if (!inp) return; inp.oninput = () => { apply(num(inp.value)); if (live) live(num(inp.value)); else renderPreview(); const o = document.getElementById(id + "v"); if (o && !live) o.textContent = inp.value; }; inp.onchange = () => { snapshot(label); setStatus("dirty"); scheduleSave(); }; }
+  function cset(label, fn) { snapshot(label); fn(); setStatus("dirty"); scheduleSave(); renderPreview(); renderTimeline(); }
+  function setItemDur(it, v) { if (it.kind === "video") { it.clip.out = num(it.clip.in) + Math.max(v, .05) * num(it.clip.speed, 1); } else { it.item.end = num(it.item.start) + Math.max(v, .2); } }
+  // mover pelo campo "Início" também desloca as `words` da legenda (mesma regra do arraste); o
+  // TRIM (`startTrim`, "Início"/"Fim" do texto) não mexe nelas: elas são tempos do ÁUDIO.
+  function setItemStart(it, v) { v = Math.max(v, 0); if (it.kind === "video") { ensurePositions(); it.clip.start = v; } else { const d = it.dur, de = num(it.item.start); it.item.start = v; it.item.end = v + d; shiftWords(it.item, v - de); } }
+
+  // ============================================================ TIMELINE
+  function timelineHTML() {
+    return `<div class="ved-resize-v" data-resize="timeline"></div>
+      <div class="ved-timeline" id="edTimeline"${uiStyle("tlHeight", "height")}>
+        <div class="ved-tlbar">
+          <button class="tbtn" id="tSplit" title="Dividir no playhead (Ctrl+B)">✂ Dividir</button>
+          <button class="tbtn" id="tDup" title="Duplicar (Ctrl+D)">⧉ Duplicar</button>
+          <button class="tbtn danger" id="tDel" title="Excluir (Delete)">🗑 Excluir</button>
+          <button class="tbtn" id="tRipple" title="Ripple delete">⇥| Ripple</button>
+          <button class="tbtn" id="tMark" title="Adicionar marker">⚑ Marker</button>
+          <label class="ved-check" style="color:var(--vtx4)"><input type="checkbox" id="tSnap" ${St.snap ? "checked" : ""}>snap</label>
+          <span class="spacer"></span>
+          <span class="selinfo" id="tSel">${St.selection.length ? St.selection.length + " selecionado(s)" : "clique num clipe"}</span>
+          <div class="zoom"><button class="ved-ib" id="zOut" style="width:26px;height:24px">－</button><input type="range" id="zR" aria-label="Zoom da timeline" min="25" max="400" value="${St.zoom * 100 | 0}"><button class="ved-ib" id="zIn" style="width:26px;height:24px">＋</button><span class="zp">${St.zoom * 100 | 0}%</span></div>
+        </div>
+        <div class="ved-tl-body">
+          <div class="ved-tl-heads" id="edTlHeads"></div>
+          <div class="ved-tl-main" id="edTlMain"><div class="ved-ruler" id="edRuler"></div><div class="ved-tracks" id="edTracks"></div><div class="ved-playhead" id="edPlayhead"><div class="grip"></div></div></div>
+        </div>
+      </div>`;
+  }
+  function bindTimeline() {
+    document.getElementById("tSplit").onclick = splitAtPlayhead;
+    document.getElementById("tDup").onclick = duplicateSelection;
+    document.getElementById("tDel").onclick = () => deleteItems(St.selection);
+    document.getElementById("tRipple").onclick = rippleDelete;
+    document.getElementById("tMark").onclick = addMarker;
+    document.getElementById("tSnap").onchange = (e) => { St.snap = e.target.checked; ed().ui.snap = St.snap; setStatus("dirty"); scheduleSave(); };
+    document.getElementById("zIn").onclick = () => setZoom(St.zoom + .25);
+    document.getElementById("zOut").onclick = () => setZoom(St.zoom - .25);
+    document.getElementById("zR").oninput = (e) => setZoom(num(e.target.value, 100) / 100);
+    const main = document.getElementById("edTlMain");
+    main.addEventListener("scroll", () => { document.getElementById("edTlHeads").scrollTop = main.scrollTop; });
+    main.addEventListener("wheel", (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(St.zoom * (e.deltaY < 0 ? 1.12 : 0.89)); } }, { passive: false });
+    main.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".ved-clip") || e.target.closest(".ved-trans")) return;
+      const r = main.getBoundingClientRect(); const t = (e.clientX - r.left + main.scrollLeft) / pps();
+      if (e.target.closest(".grip")) { seekTo(t); return startPlayheadDrag(e); }
+      if (e.target.closest(".ved-ruler")) { const mk = e.target.closest(".mk"); if (mk) return seekTo(num(mk.dataset.t)); return seekTo(t); }
+      seekTo(t); St.selection = []; renderProps(); renderTimeline();
+    });
+    // drop de mídia
+    main.addEventListener("dragover", (e) => e.preventDefault());
+    main.addEventListener("drop", (e) => {
+      e.preventDefault(); const d = (e.dataTransfer.getData("text/plain") || "");
+      const lane = e.target.closest(".ved-lane"), faixa = lane ? lane.dataset.tid : null;
+      if (d.startsWith("clip:")) { if (faixa === "v2") clipParaV2(d.slice(5)); else addPipelineClip(d.slice(5)); }
+      else if (d.startsWith("media:")) addMediaItem((St.mediaLib || []).find((m) => m.id === d.slice(6)), faixa, e);
+    });
+  }
+  function setZoom(z) { St.zoom = clamp(z, 0.25, 4); ed().ui.zoom = St.zoom; const zr = document.getElementById("zR"); if (zr) { zr.value = St.zoom * 100 | 0; zr.nextElementSibling.nextElementSibling.textContent = (St.zoom * 100 | 0) + "%"; } renderTimeline(); paintPlayhead(); setStatus("dirty"); scheduleSave(); }
+
+  function renderTimeline() {
+    const heads = document.getElementById("edTlHeads"), lanes = document.getElementById("edTracks"); if (!heads || !lanes) return;
+    const main = document.getElementById("edTlMain"), scroll = main ? main.scrollLeft : 0;
+    const trs = tracks(), dur = duration(), px = pps(), W = Math.max(dur * px + 200, 800);
+    const ruler = document.getElementById("edRuler"); ruler.style.width = W + "px"; ruler.innerHTML = "";
+    const stepS = px > 80 ? 1 : px > 40 ? 2 : px > 18 ? 5 : 10;
+    for (let s = 0; s <= dur + stepS; s += stepS) { const d = document.createElement("span"); d.className = "tick"; d.style.left = (s * px) + "px"; d.textContent = s + "s"; ruler.appendChild(d); }
+    (ed().markers || []).forEach((m) => { const mk = document.createElement("span"); mk.className = "mk"; mk.dataset.t = m.at; mk.style.left = (num(m.at) * px) + "px"; mk.innerHTML = `⚑<span class="mkl">${esc(m.name || "")}</span>`; ruler.appendChild(mk); });
+    heads.innerHTML = `<div class="ruler-pad"></div>` + trs.map((t) => { const c = COL[t.col || t.type]; return `<div class="ved-thead" style="height:${t.height}px" data-tid="${t.id}"><span class="sq" style="background:${c[2]}"></span><span class="tn">${esc(t.name)}</span><button data-act="vis" class="${t.visible ? "act" : ""}" title="Visibilidade">${t.visible ? "◉" : "◌"}</button><button data-act="lock" class="${t.locked ? "act" : ""}" title="Bloquear">${t.locked ? "🔒" : "🔓"}</button></div>`; }).join("");
+    lanes.style.width = W + "px"; lanes.innerHTML = trs.map((t) => laneHTML(t, px)).join("");
+    document.getElementById("edPlayhead").style.height = (26 + lanes.offsetHeight) + "px";
+    heads.querySelectorAll(".ved-thead").forEach((h) => h.querySelectorAll("button").forEach((b) => b.onclick = () => trackAction(h.dataset.tid, b.dataset.act)));
+    const sel = document.getElementById("tSel"); if (sel) sel.textContent = St.selection.length ? St.selection.length + " selecionado(s)" : "clique num clipe";
+    // o conteúdo das faixas é refeito, a viewport NÃO: o scroll horizontal do usuário fica onde
+    // estava e só corre atrás do playhead quando ele sai da área visível.
+    if (main) { main.scrollLeft = scroll; revelarPlayhead(main, px); }
+    paintPlayhead();
+  }
+  let phRevelado = { t: null, px: null };
+  /** Corre atrás do playhead SÓ quando ele se moveu (ou o zoom mudou). Rodar em todo
+   *  `renderTimeline` desfazia o scroll horizontal escolhido pelo usuário a cada edição — o mesmo
+   *  "pulo de layout" que esta rodada elimina (FDD §9, critério 11). */
+  function revelarPlayhead(main, px) {
+    if (phRevelado.t === St.playhead && phRevelado.px === px) return;
+    phRevelado = { t: St.playhead, px };
+    const x = St.playhead * px, vis = main.clientWidth;
+    if (vis <= 0) return;
+    if (x < main.scrollLeft + 8) main.scrollLeft = Math.max(0, x - 40);
+    else if (x > main.scrollLeft + vis - 8) main.scrollLeft = Math.max(0, x - vis + 80);
+  }
+  function laneHTML(t, px) {
+    const c = COL[t.col || t.type];
+    let inner = t.items.map((it) => clipHTML(t, it, c, px)).join("");
+    if (t.backbone && t.blacks) inner += t.blacks.map((b) => `<div class="ved-clip" style="left:${b.start * px}px;width:${Math.max(b.dur * px, 3)}px;height:${t.height - 6}px;background:#000;border-color:#333" title="preto ${b.dur}s"></div>`).join("");
+    if (t.type === "video") (ed().transitions || []).forEach((tr) => { const it = t.items.find((x) => x.uid === tr.from); if (it) inner += `<div class="ved-trans" data-tr="${tr.id}" style="left:${(it.start + it.dur) * px}px;top:${t.height / 2}px" title="${tr.type}">⧓</div>`; });
+    return `<div class="ved-lane" data-tid="${t.id}" style="height:${t.height}px">${inner}</div>`;
+  }
+  function clipHTML(t, it, c, px) {
+    const x = it.start * px, w = Math.max(it.dur * px, 14), h = t.height - 6;
+    let bg, label = "", tcol = c[2];
+    if (t.type === "video") bg = `repeating-linear-gradient(90deg, ${c[0]} 0 9px, #0f1319 9px 12px)`;
+    else if (["music", "sfx"].includes(t.type)) bg = `repeating-linear-gradient(90deg, ${c[2]}44 0 2px, transparent 2px 5px), ${c[0]}`;
+    else bg = c[0];
+    if (it.kind === "video") { label = nameOf(it.clip); const sp = num(it.clip.speed, 1); if (sp !== 1) label += ` · ${sp}x`; }
+    else if (it.kind === "text" || it.kind === "caption") label = it.item.text || t.name;
+    else if (it.kind === "overlay") label = it.item.text || "overlay";
+    else if (it.kind === "music") label = (it.music.file || "música").split("/").pop();
+    else if (it.kind === "sfx") label = it.sfx.file.split("/").pop();
+    // ADR-030 — nunca simular: o MP4 na VÍDEO 2 toca no preview, mas ainda não entra no encode.
+    const nota = it.kind === "overlay" && isVideoFile((it.item || {}).src) ? ` title="no master.mp4: fase seguinte"` : "";
+    const trim = it.kind !== "music" ? `<div class="cl-trim l" style="background:${tcol}"></div><div class="cl-trim r" style="background:${tcol}"></div>` : "";
+    return `<div class="ved-clip ${it.kind}${isSel(it.uid) ? " sel" : ""}" data-uid="${it.uid}" data-tid="${t.id}"${nota} style="left:${x}px;width:${w}px;height:${h}px;background:${bg};border-color:${c[1]}">${trim}<span class="cl-name" style="color:${tcol}">${esc(label)}</span></div>`;
+  }
+  function trackAction(tid, act) {
+    if (["v1", "t_mus", "t_sfx"].includes(tid)) { if (act === "vis" && tid !== "t_mus") return toast("Faixa do backbone da aula — sempre na montagem."); if (tid === "t_mus" && act === "vis") return commit("mudo música", () => St.timeline.music = { ...(St.timeline.music || {}), muted: !(St.timeline.music || {}).muted }); return; }
+    const t = etrack(tid, true); commit("faixa " + act, () => { if (act === "vis") t.visible = t.visible === false; else if (act === "lock") t.locked = !t.locked; });
+  }
+
+  // ============================================================ INTERAÇÕES
+  function bindPointer() {
+    const lanes = document.getElementById("edTracks");
+    lanes.addEventListener("pointerdown", (e) => {
+      const trans = e.target.closest(".ved-trans"); if (trans) return openTransition(trans.dataset.tr);
+      const clip = e.target.closest(".ved-clip"); if (!clip || !clip.dataset.uid) return;
+      const trim = e.target.closest(".cl-trim"); selectOnly(clip.dataset.uid, e);
+      if (trim) startTrim(e, clip, trim.classList.contains("l") ? "l" : "r"); else startClipDrag(e, clip);
+    });
+    lanes.addEventListener("contextmenu", (e) => { const clip = e.target.closest(".ved-clip"); if (clip && clip.dataset.uid) { e.preventDefault(); if (!isSel(clip.dataset.uid)) selectOnly(clip.dataset.uid, {}); openMenu(e.clientX, e.clientY); } });
+  }
+  function selectOnly(uid, e) {
+    if (e && (e.ctrlKey || e.metaKey)) { if (isSel(uid)) St.selection = St.selection.filter((x) => x !== uid); else St.selection.push(uid); }
+    else if (!isSel(uid) || St.selection.length > 1) St.selection = [uid];
+    St.rightTab = tabsFor(itemType(uid)).includes(St.rightTab) ? St.rightTab : tabsFor(itemType(uid))[0];
+    renderProps(); renderTimeline(); renderPreview();
+  }
+  function startClipDrag(e, el) {
+    const uid = el.dataset.uid, it = findItem(uid); if (!it) return; if (it.track.backbone && !["video", "sfx"].includes(it.kind)) return;
+    if (it.kind === "video") ensurePositions();   // primeira arrastada de vídeo → modo posicional (gaps livres)
+    const sx = e.clientX, x0 = it.kind === "video" ? num(it.clip.start, it.start) : it.start; let moved = false;
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / pps(); if (Math.abs(ev.clientX - sx) > 3) moved = true;
+      const ns = snapTime(Math.max(x0 + dx, 0), uid); el.style.left = ns * pps() + "px"; el.dataset.ns = ns;
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); if (!moved) return;
+      const ns = num(el.dataset.ns, x0);
+      if (it.kind === "video") commit("mover vídeo", () => { it.clip.start = ns; });
+      else if (it.kind === "sfx") commit("mover SFX", () => St.timeline.sfx[it.i].at = ns);
+      // mover é DESLOCAR: a legenda leva as palavras junto, senão o karaokê acenderia fora de hora
+      else { const d = it.dur, de = num(it.item.start); commit("mover", () => { it.item.start = ns; it.item.end = ns + d; shiftWords(it.item, ns - de); }); }
+    };
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+  }
+  function startTrim(e, el, side) {
+    const uid = el.dataset.uid, it = findItem(uid); const sx = e.clientX;
+    const b = it.kind === "video" ? { in: num(it.clip.in), out: num(it.clip.out) } : { start: num(it.item.start), end: num(it.item.end) };
+    const move = (ev) => { const dx = (ev.clientX - sx) / pps(); if (it.kind === "video") { const sp = num(it.clip.speed, 1); if (side === "l") it.clip.in = clamp(b.in + dx * sp, 0, num(it.clip.out) - .05); else it.clip.out = Math.max(b.out + dx * sp, num(it.clip.in) + .05); } else { if (side === "l") it.item.start = clamp(b.start + dx, 0, num(it.item.end) - .2); else it.item.end = Math.max(b.end + dx, num(it.item.start) + .2); } renderTimeline(); renderPreview(); };
+    const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); commit("trim", () => {}); };
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+  }
+  function startPlayheadDrag(e) { const main = document.getElementById("edTlMain"); const move = (ev) => seekTo((ev.clientX - main.getBoundingClientRect().left + main.scrollLeft) / pps()); const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); }; document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); }
+  function snapTime(t, skip) { if (!St.snap) return t; const px = 8 / pps(); const cands = [0, duration(), St.playhead]; tracks().forEach((tr) => tr.items.forEach((it) => { if (it.uid === skip) return; cands.push(it.start, it.start + it.dur); })); (ed().markers || []).forEach((m) => cands.push(num(m.at))); for (const c of cands) if (Math.abs(c - t) < px) return c; return t; }
+  function startLayerDrag(e, uid) {
+    const it = findItem(uid); if (!it || !["text", "caption", "overlay"].includes(it.kind)) return;
+    const stage = document.getElementById("edStage"), sr = stage.getBoundingClientRect(); const tf = it.item.transform = it.item.transform || { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+    const x0 = tf.x, y0 = tf.y, sx = e.clientX, sy = e.clientY; let moved = false;
+    const move = (ev) => { moved = true; tf.x = clamp(x0 + (ev.clientX - sx) / sr.width, -1, 2); tf.y = clamp(y0 + (ev.clientY - sy) / sr.height, -1, 2); guides(tf); renderPreview(); };
+    const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); stage.querySelectorAll(".ved-guide").forEach((g) => g.remove()); if (moved) commit("mover camada", () => {}); };
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+  }
+  function guides(tf) { const stage = document.getElementById("edStage"); stage.querySelectorAll(".ved-guide").forEach((g) => g.remove()); if (Math.abs(tf.x - .5) < .02) { tf.x = .5; const g = document.createElement("div"); g.className = "ved-guide v"; g.style.left = "50%"; stage.appendChild(g); } if (Math.abs(tf.y - .5) < .02) { tf.y = .5; const g = document.createElement("div"); g.className = "ved-guide h"; g.style.top = "50%"; stage.appendChild(g); } }
+  function startBBox(e, handle) {
+    const it = findItem(St.selection[0]); if (!it || !it.item) return; const tf = it.item.transform; const stage = document.getElementById("edStage"), sr = stage.getBoundingClientRect();
+    const cx = sr.left + tf.x * sr.width, cy = sr.top + tf.y * sr.height, s0 = tf.scaleX || 1, r0 = tf.rotation || 0, d0 = Math.hypot(e.clientX - cx, e.clientY - cy) || 1, a0 = Math.atan2(e.clientY - cy, e.clientX - cx);
+    const move = (ev) => { if (handle === "rot") tf.rotation = Math.round(r0 + (Math.atan2(ev.clientY - cy, ev.clientX - cx) - a0) * 180 / Math.PI); else { const k = clamp(s0 * Math.hypot(ev.clientX - cx, ev.clientY - cy) / d0, .1, 8); tf.scaleX = tf.scaleY = +k.toFixed(3); } renderPreview(); };
+    const up = () => { document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); commit("transform", () => {}); };
+    e.stopPropagation(); document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+  }
+
+  // ============================================================ AÇÕES
+  function splitAtPlayhead() {
+    const t = St.playhead, seg = segAt(t); if (!seg || seg.kind !== "clip") return toast("Posicione o playhead sobre um clipe de vídeo");
+    const c = seg.clip, local = (t - seg.start) * num(c.speed, 1); if (local < .05 || local > (num(c.out) - num(c.in)) - .05) return toast("Muito perto da borda");
+    commit("dividir", () => { const i = St.timeline.clips.findIndex((x) => x.id === c.id); const a = clone(c), b = clone(c); a.out = +(num(c.in) + local).toFixed(3); b.in = a.out; b.id = newId("c"); if (a.start != null) b.start = +(num(a.start) + clipLen(a)).toFixed(3); St.timeline.clips.splice(i, 1, a, b); });
+    toast("Clipe dividido");
+  }
+  function duplicateSelection() {
+    if (!St.selection.length) return;
+    commit("duplicar", () => St.selection.forEach((u) => { const it = findItem(u); if (!it) return; if (it.kind === "video") { const i = St.timeline.clips.findIndex((x) => x.id === u); const d = clone(it.clip); d.id = newId("c"); St.timeline.clips.splice(i + 1, 0, d); } else if (it.kind === "sfx") St.timeline.sfx.push({ ...clone(it.sfx), at: num(it.sfx.at) + .2 }); else if (it.item && it.track) { const d = clone(it.item); d.id = newId("it"); d.start = num(d.start) + .3; d.end = num(d.end) + .3; shiftWords(d, .3); const et = it.track.etrack || etrack(it.track.id, true); if (et) et.items.push(d); } }));
+  }
+  /** Exclui qualquer seleção — inclusive a música e o ÚLTIMO clipe. A montagem pode ficar vazia:
+   *  quem exige clipe é a exportação (`startRender`), não a edição. Os itens são resolvidos ANTES
+   *  do commit (nada de `toast` dentro do mutator, nenhuma entrada no histórico quando nada
+   *  resolve) e o SFX sai por REFERÊNCIA ao objeto — por índice, excluir dois de uma vez removia
+   *  o errado, porque o `sfx_<i>` do segundo já tinha mudado de significado. */
+  function deleteItems(uids) {
+    if (!uids || !uids.length) return;
+    const its = uids.map((u) => findItem(u)).filter(Boolean);
+    if (!its.length) return;
+    if (its.some((it) => it.kind === "music") && musicAudio) musicAudio.pause();
+    commit("excluir", () => {
+      its.forEach((it) => {
+        const u = it.uid;
+        if (it.kind === "video") {
+          St.timeline.clips = (St.timeline.clips || []).filter((x) => x.id !== u);
+          ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u);
+        } else if (it.kind === "music") St.timeline.music = { file: null, offset: 0 };
+        else if (it.kind === "sfx") St.timeline.sfx = (St.timeline.sfx || []).filter((x) => x !== it.sfx);
+        else if (it.track && it.track.etrack) it.track.etrack.items = (it.track.etrack.items || []).filter((x) => x.id !== u);
+      });
+      St.selection = [];      // dentro do mutator: o render do commit já sai sem a seleção morta
+    }, { panel: true, audio: true });
+  }
+  function rippleDelete() {
+    const u = St.selection[0]; const it = u && findItem(u); if (!it || it.kind !== "video") return deleteItems(St.selection);
+    const pos = it.clip.start != null ? num(it.clip.start) : null, delta = clipLen(it.clip);
+    commit("ripple delete", () => {
+      St.timeline.clips = (St.timeline.clips || []).filter((x) => x.id !== u);
+      ed().transitions = (ed().transitions || []).filter((t) => t.from !== u && t.to !== u);
+      // no modo posicional o buraco não fecha sozinho: puxar os seguintes para trás é o "ripple"
+      if (pos != null) (St.timeline.clips || []).forEach((c) => { if (c.start != null && num(c.start) > pos) c.start = Math.max(+(num(c.start) - delta).toFixed(3), 0); });
+      St.selection = [];
+    }, { panel: true, audio: true });
+  }
+  function addText(text, style, type) {
+    const tid = type === "caption" ? "t_cap" : "t_txt";
+    commit("adicionar " + type, () => { const t = etrack(tid, true); const it = { id: newId("tx"), start: +St.playhead.toFixed(2), end: +(St.playhead + 2.5).toFixed(2), text, style: { size: 40, weight: 700, align: "center", color: "#FFFFFF", shadow: true, ...style }, transform: { x: .5, y: type === "caption" ? .82 : .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, anim: { in: "fade", out: "fade" } }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
+  }
+  /** Vídeo na faixa VÍDEO 2: overlay com `src` de vídeo (o preview já compõe por cima do V1). */
+  function addOverlayVideo(file, dur, rotulo) {
+    if (!file) return;
+    commit("vídeo na VÍDEO 2", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + Math.max(num(dur, 3), .5)).toFixed(2), src: file, text: rotulo || "", transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
+  }
+  function clipParaV2(cid) { const c = (St.timeline.clips || []).find((x) => x.id === cid); if (c) addOverlayVideo(c.file, clipLen(c), nameOf(c)); }
+  /** Move um vídeo entre VÍDEO 1 e VÍDEO 2 preservando o `start` efetivo. É MOVER, não copiar: o
+   *  item de origem sai da timeline. Os efeitos do clipe (`clip_fx`) NÃO migram para o overlay —
+   *  o overlay nasce limpo e o usuário reaplica (decisão registrada no FDD §4d). */
+  function moveToTrack(uid, dest) {
+    const it = uid ? findItem(uid) : null; if (!it) return;
+    if (dest === "v2") {
+      if (it.kind !== "video") { console.warn("[edit] moveToTrack", uid, dest); return toast("Só clipes da VÍDEO 1 podem ir para a VÍDEO 2"); }
+      const c = it.clip, start = +num(it.start).toFixed(2), end = +(num(it.start) + num(it.dur)).toFixed(2), novo = newId("ov");
+      commit("mover para VÍDEO 2", () => {
+        ensurePositions();        // sem isso, tirar um clipe do meio puxa todos os seguintes
+        const t = etrack("v2", true);
+        t.items.push({ id: novo, start, end, src: c.file, text: nameOf(c), transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} });
+        St.timeline.clips = (St.timeline.clips || []).filter((x) => x.id !== uid);
+        ed().transitions = (ed().transitions || []).filter((t2) => t2.from !== uid && t2.to !== uid);
+        St.selection = [novo];
+      }, { panel: true });
+    } else if (dest === "v1") {
+      const o = it.item;
+      if (it.kind !== "overlay" || !o || !isVideoFile(o.src)) { console.warn("[edit] moveToTrack", uid, dest); return toast("Só vídeo pode ir para a VÍDEO 1"); }
+      const start = num(o.start), out = Math.max(num(o.end) - start, .5), novo = newId("c"), tr = it.track.etrack;
+      commit("mover para VÍDEO 1", () => {
+        ensurePositions();          // com `start` a timeline vira posicional: fixar os outros ANTES
+        St.timeline.clips = St.timeline.clips || [];
+        St.timeline.clips.push({ id: novo, scene: "upload", shot: (o.text || "media").replace(/\W+/g, "_"), take: "1", file: o.src, in: 0, out, speed: 1, blend: true, zoom: 1, start });
+        if (tr) tr.items = (tr.items || []).filter((x) => x.id !== uid);
+        St.selection = [novo];
+      }, { panel: true });
+      pruneOverlayPool();           // o <video> do overlay que saiu não fica pendurado no pool
+    } else toast("Faixa inválida");
+  }
+  function addOverlayShape(shape, nome) {
+    commit("adicionar elemento", () => { const t = etrack("v2", true); const it = { id: newId("ov"), start: +St.playhead.toFixed(2), end: +(St.playhead + 3).toFixed(2), text: nome || shape, shape, transform: { x: .5, y: .5, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 }, effects: [], filters: {} }; t.items.push(it); St.selection = [it.id]; }, { panel: true });
+  }
+  function applyTransition(type) {
+    const u = St.selection.find((x) => itemType(x) === "video"); if (!u) return toast("Selecione um clipe de vídeo");
+    const clips = St.timeline.clips, i = clips.findIndex((c) => c.id === u); if (i < 0 || i >= clips.length - 1) return toast("Selecione um clipe que tenha um próximo");
+    commit("transição", () => { ed().transitions = (ed().transitions || []).filter((t) => t.from !== u); ed().transitions.push({ id: newId("tr"), from: u, to: clips[i + 1].id, type, duration: .5, config: { direction: "left", intensity: .5, easing: "ease" } }); });
+    toast("Transição " + type + " aplicada (preview)");
+  }
+  function openTransition(tid) {
+    const tr = (ed().transitions || []).find((t) => t.id === tid); if (!tr) return;
+    ui.modal({ title: "Transição · " + tr.type, subtitle: "entre dois clipes",
+      html: `<div class="ved-inrow"><label>Tipo</label><select id="trT">${TRANSITIONS.map((t) => `<option${t == tr.type ? " selected" : ""}>${t}</option>`).join("")}</select></div><div class="ved-slider"><label>Duração</label><input type="range" id="trD" min="0.1" max="3" step="0.1" value="${tr.duration}"><span class="val" id="trDv">${tr.duration}</span></div><p class="ved-hint">[extensão] — preview; no master.mp4: fase seguinte.</p>`,
+      actions: [{ label: "Remover", onClick: (m) => { commit("remover transição", () => ed().transitions = ed().transitions.filter((x) => x.id !== tid)); m.close(); } }, { label: "OK", primary: true, onClick: (m) => { commit("editar transição", () => { tr.type = document.getElementById("trT").value; tr.duration = num(document.getElementById("trD").value, .5); }); m.close(); } }] });
+    setTimeout(() => { const d = document.getElementById("trD"); if (d) d.oninput = () => document.getElementById("trDv").textContent = d.value; }, 0);
+  }
+  /** Liga/desliga o efeito em TODA a seleção. Com alvos de tipos diferentes, quem decide entre
+   *  aplicar e remover é o PRIMEIRO alvo, para os itens terminarem no mesmo estado. Alvo que não
+   *  aceita o efeito fica de fora; nenhum alvo aceitar vira toast, sem commit (FDD §6). */
+  function toggleEffect(type) {
+    const alvos = adjustEntries(); if (!alvos.length) return toast("Selecione um clipe");
+    const ok = alvos.filter((a) => fxAplica(type, a.kind));
+    if (!ok.length) return toast(`${type} só se aplica a vídeo (VÍDEO 1/VÍDEO 2)`);
+    const t = fxSlug(type), tinha = (ok[0].fx.effects || []).some((e) => fxSlug(e.type) === t);
+    commit("efeito " + type, () => ok.forEach(({ fx }) => {
+      fx.effects = (fx.effects || []).filter((e) => fxSlug(e.type) !== t);
+      if (!tinha) fx.effects.push({ type, intensity: .5, enabled: true });
+    }), { panel: true });
+  }
+  /** Intensidade do efeito nos alvos que o têm — chamada pelo slider inline (sem commit no arraste). */
+  function setFxIntensity(type, i) {
+    const t = fxSlug(type);
+    adjustTargets().forEach((fx) => (fx.effects || []).forEach((e) => { if (fxSlug(e.type) === t) e.intensity = clamp(i, 0, 1); }));
+  }
+  function setFilter(id, css) {
+    const alvos = adjustTargets(); if (!alvos.length) return toast("Selecione um clipe");
+    commit("filtro", () => alvos.forEach((fx) => { fx.filters = fx.filters || {}; fx.filters.preset = id; fx.presetCss = css; }), { panel: true });
+  }
+  /** [cross-feature] contrato 4: `adjustTarget()` devolve o alvo de efeitos/ajustes da primeira
+   *  seleção e `adjustTargets()` o da seleção inteira — clipe da VÍDEO 1 pelo `clip_fx`, overlay,
+   *  texto e legenda pelo próprio item, sempre com `effects[]` e `filters{}` garantidos. As
+   *  legendas geradas pela frente C herdam efeitos por este caminho. */
+  function adjustTarget() { const a = adjustEntries()[0]; return a ? a.fx : null; }
+  function adjustTargets() { return adjustEntries().map((a) => a.fx); }
+  /** Uso interno: o alvo COM o tipo, que é o que decide o que cada efeito aceita (`EFFECT_APPLIES`). */
+  function adjustEntries() {
+    const out = [];
+    St.selection.forEach((u) => {
+      const it = findItem(u); if (!it) return;
+      if (it.kind === "video") return void out.push({ fx: clipFx(it.clip.id), kind: "video", uid: u });
+      if (!["overlay", "text", "caption"].includes(it.kind)) return;
+      const o = it.item; o.effects = o.effects || []; o.filters = o.filters || {};
+      out.push({ fx: o, kind: it.kind, uid: u });
+    });
+    return out;
+  }
+  function fxKind() { const a = adjustEntries()[0]; return a ? a.kind : null; }
+  function addMarker() { commit("marcador", () => ed().markers.push({ id: newId("mk"), at: +St.playhead.toFixed(2), name: "Marcador" })); }
+  function addSfx(file) { commit("adicionar SFX", () => St.timeline.sfx.push({ file, at: +St.playhead.toFixed(2), gain: -6 }), { panel: true, audio: true }); }
+  async function uploadSfx(files) { try { const r = await ui.upload(`${base()}/sfx/upload`, files); St.sfxLib = await api(`${base()}/sfx`); const novos = St.sfxLib.slice(-r.added); commit("importar SFX", () => novos.forEach((s) => St.timeline.sfx.push({ file: s.file, at: +St.playhead.toFixed(2), gain: -6 })), { panel: true, audio: true }); toast(`${r.added} SFX importados`); } catch (err) { toast(err.message); } }
+  async function resetTimeline() { try { const r = await api(`${base()}/timeline/reset`, { method: "POST" }); St.timeline = r.timeline; load(); } catch (err) { toast(err.message); } }
+
+  // ============================================================ CONTEXT MENU
+  function openMenu(x, y) {
+    closeMenu();
+    const u = St.selection[0], sel = u ? findItem(u) : null;
+    const isV = !!sel && sel.kind === "video";
+    const isOv = !!sel && sel.kind === "overlay" && isVideoFile((sel.item || {}).src);
+    const items = [["Dividir", splitAtPlayhead, "Ctrl+B", isV], ["Copiar", () => { St._clip = St.selection.slice(); toast("Copiado"); }, "Ctrl+C", true], ["Duplicar", duplicateSelection, "Ctrl+D", true], ["sep"], ["Mover para VÍDEO 2", () => moveToTrack(u, "v2"), "", isV], ["Mover para VÍDEO 1", () => moveToTrack(u, "v1"), "", isOv], ["Ripple delete", rippleDelete, "", isV], ["Velocidade", () => { St.rightTab = "speed"; renderProps(); }, "", isV], ["Congelar quadro", () => toast("Freeze frame entra na próxima fase"), "", isV], ["sep"], ["Excluir", () => deleteItems(St.selection), "Del", true, "danger"]];
+    const m = document.createElement("div"); m.className = "ved-menu"; m.id = "vedMenu";
+    m.innerHTML = items.filter((i) => i[0] === "sep" || i[3] !== false).map((i) => i[0] === "sep" ? `<div class="sep"></div>` : `<button class="${i[4] || ""}" data-i="${i[0]}">${i[0]}<kbd>${i[2] || ""}</kbd></button>`).join("");
+    document.body.appendChild(m); const r = m.getBoundingClientRect(); m.style.left = Math.min(x, innerWidth - r.width - 8) + "px"; m.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+    m.querySelectorAll("button").forEach((b) => b.onclick = () => { const f = items.find((i) => i[0] === b.dataset.i); if (f && f[1]) f[1](); closeMenu(); });
+    armarFechamento();
+  }
+  let menuFora = null;
+  function closeMenu() {
+    const m = document.getElementById("vedMenu"); if (m) m.remove();
+    if (menuFora) { document.removeEventListener("pointerdown", menuFora, true); menuFora = null; }
+  }
+  /** Fecha o menu no primeiro clique FORA dele. Fechar em QUALQUER `pointerdown` (como antes)
+   *  tirava o botão do DOM entre o pointerdown e o click: nenhum item do menu chegava a rodar. */
+  function armarFechamento() {
+    if (menuFora) document.removeEventListener("pointerdown", menuFora, true);
+    menuFora = (e) => { if (!e.target.closest("#vedMenu")) closeMenu(); };
+    const armar = menuFora;
+    setTimeout(() => { if (menuFora === armar) document.addEventListener("pointerdown", armar, true); }, 0);
+  }
+  /** Menu de escolha da faixa ao adicionar um vídeo — mesma estrutura do `openMenu`. Chama
+   *  `onPick("v1"|"v2")`; fechar sem escolher não adiciona nada. */
+  function openTrackMenu(x, y, onPick) {
+    closeMenu();
+    const faixas = [["v1", "Adicionar na VÍDEO 1"], ["v2", "Adicionar na VÍDEO 2 (sobreposição)"]];
+    const m = document.createElement("div"); m.className = "ved-menu"; m.id = "vedMenu";
+    m.innerHTML = faixas.map(([v, lb]) => `<button data-faixa="${v}">${lb}</button>`).join("");
+    document.body.appendChild(m); const r = m.getBoundingClientRect();
+    m.style.left = Math.min(x, innerWidth - r.width - 8) + "px"; m.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+    m.querySelectorAll("button").forEach((b) => b.onclick = () => { const f = b.dataset.faixa; closeMenu(); onPick(f); });
+    armarFechamento();
+  }
+
+  // ============================================================ EXPORT
+  function openExport() {
+    const p = proj();
+    let expRes = RES.find((r) => r[1] == p.width) ? RES.find((r) => r[1] == p.width)[0] : "1080p", expFps = p.fps, expQual = "alta";
+    const pills = (arr, cur, cls) => arr.map((v) => `<button class="ved-pick" data-${cls}="${v}" style="flex:1"${v == cur ? " data-on=1" : ""}>${v}</button>`).join("");
+    ui.modal({ title: "Exportar vídeo", subtitle: "Renderiza o master com ffmpeg",
+      html: `<div class="ved-kick" style="margin-bottom:4px">Resolução</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exRes">${pills(RES.map((r) => r[0]), expRes, "res")}</div>
+        <div class="ved-kick" style="margin-bottom:4px">FPS</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exFps">${pills(FPS_CHOICES.map((f) => f + " fps"), expFps + " fps", "fps")}</div>
+        <div class="ved-kick" style="margin-bottom:4px">Qualidade</div><div style="display:flex;gap:6px;margin-bottom:10px" id="exQ">${pills(["baixa", "média", "alta"], expQual, "q")}</div>
+        <div style="font-size:11px;color:#8B93A0">formato MP4 (H.264) · proporção ${p.aspect} · duração ${fmtTC(duration())} · saída ${expRes} · ${expFps}fps · ${expQual}</div>
+        <p style="font-size:11px;color:#8B93A0;margin-top:8px">Entram no master.mp4: o backbone da aula 014 + textos, legendas, overlays, efeitos (blur/sharpen/grain) e ajustes de cor. Transições ainda só no preview.</p>`,
+      actions: [{ label: "Rough cut", onClick: (m) => { m.close(); startRender("rough", null); } }, { label: "Renderizar", primary: true, onClick: (m) => {
+        const sel = (id, attr) => { const b = document.querySelector(`#${id} [data-on]`); return b ? b.getAttribute("data-" + attr) : null; };
+        const rname = sel("exRes", "res") || expRes, r = RES.find((x) => x[0] === rname) || RES[1];
+        const opts = { width: r[1], height: r[2], fps: num((sel("exFps", "fps") || "30").split(" ")[0], 30), quality: ({ baixa: "low", "média": "medium", alta: "high" }[sel("exQ", "q") || "alta"]) };
+        m.close(); startRender("master", opts); } }] });
+    ["exRes", "exFps", "exQ"].forEach((g) => { const el = document.getElementById(g); if (!el) return; el.querySelectorAll("[data-on]").forEach((b) => b.classList.add("on")); el.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; el.querySelectorAll("button").forEach((x) => { x.removeAttribute("data-on"); x.classList.remove("on"); }); b.setAttribute("data-on", "1"); b.classList.add("on"); }); });
+  }
+  function startRender(target, opts) {
+    if (!St.hasFfmpeg) return toast("ffmpeg ausente — render bloqueado");
+    // a montagem pode ficar vazia na edição; quem exige clipe é a EXPORTAÇÃO
+    if (!St.timeline || !(St.timeline.clips || []).length) return toast("Adicione ao menos um clipe na VÍDEO 1 antes de exportar");
+    save(true).then(() => ui.progressJob({ title: target === "master" ? "Renderizar master" : "Prévia (rough)", subtitle: "Studio de vídeo (ffmpeg)", start: () => api(`${base()}/render`, { method: "POST", body: JSON.stringify({ target, ...(opts || {}) }) }), jobUrl: `${base()}/render/job`, done: (j) => { if (j.output) toast(`${j.output} pronto — assista na etapa 9`); ctx.guide(); } }).catch((err) => toast(err.message)));
+  }
+
+  // ============================================================ SHORTCUTS
+  function onKey(e) {
+    const t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return; if (!St.timeline || !root().innerHTML) return;
+    const meta = e.ctrlKey || e.metaKey;
+    if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+    else if (meta && e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (meta && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+    else if (meta && e.key.toLowerCase() === "b") { e.preventDefault(); splitAtPlayhead(); }
+    else if (meta && e.key.toLowerCase() === "d") { e.preventDefault(); duplicateSelection(); }
+    else if (meta && e.key.toLowerCase() === "c") St._clip = St.selection.slice();
+    else if (meta && e.key.toLowerCase() === "v") duplicateSelection();
+    else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteItems(St.selection); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(e.shiftKey ? -fps() : -1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(e.shiftKey ? fps() : 1); }
+    else if (e.key === "Escape") { closeMenu(); St.selection = []; renderProps(); renderTimeline(); renderPreview(); }
+    else if (e.key === "Home") seekTo(0); else if (e.key === "End") seekTo(duration());
+  }
+
+  // ============================================================ LAYOUT
+  function fit() {
+    const r = root(); if (!r) return;
+    const side = document.querySelector(".side"), topbar = document.querySelector(".topbar");
+    // `offsetParent === null` = menu lateral escondido (`.app.side-hidden .side{display:none}`):
+    // o editor encosta em 0 em vez de herdar a largura de um elemento que não está mais na tela
+    const l = side && side.offsetParent !== null ? side.getBoundingClientRect().right : 0, top = topbar ? topbar.getBoundingClientRect().height : 0;
+    if (document.fullscreenElement === r) { r.style.top = "0"; r.style.left = "0"; } else { r.style.top = top + "px"; r.style.left = l + "px"; }
+    fitTimeline(r);
+    stageBox();
+  }
+  /** Em viewport baixa (ex.: 1024×768) a altura preferida da timeline (`ui.tlHeight`, 345 px) não cabe
+   *  junto do header + controles do player: a timeline passava por cima do player. A preferência continua
+   *  gravada; o que se aplica na tela é o mínimo entre ela e o espaço que sobra (palco ≥ 160 px). */
+  function fitTimeline(r) {
+    const tl = document.getElementById("edTimeline"), topo = r.querySelector(".ved-top"), pctl = document.getElementById("edPctl");
+    if (!tl || !St.timeline) return;
+    const reserva = (topo ? topo.offsetHeight : 50) + (pctl ? pctl.offsetHeight : 50) + 160;
+    const teto = Math.max(UI_SIZES.tlHeight[1], r.clientHeight - reserva);
+    const querido = ed().ui.tlHeight == null ? UI_SIZES.tlHeight[0] : uiSize("tlHeight");
+    const alvo = Math.min(querido, teto);
+    if (Math.abs(tl.offsetHeight - alvo) > 1) tl.style.height = alvo + "px";
+  }
+  function bindResizers() {
+    document.addEventListener("pointerdown", (e) => {
+      const h = e.target.closest("[data-resize]"); if (!h || !root().contains(h)) return; e.preventDefault();
+      const kind = h.dataset.resize, left = document.getElementById("edLeft"), right = document.getElementById("edRight"), tl = document.getElementById("edTimeline");
+      const sx = e.clientX, sy = e.clientY, lw = left ? left.offsetWidth : 0, rw = right ? right.offsetWidth : 0, th = tl ? tl.offsetHeight : 0;
+      const move = (ev) => { if (kind === "left" && left) left.style.width = clamp(lw + (ev.clientX - sx), 180, 420) + "px"; if (kind === "right" && right) right.style.width = clamp(rw - (ev.clientX - sx), 220, 460) + "px"; if (kind === "timeline" && tl) tl.style.height = clamp(th - (ev.clientY - sy), 260, 700) + "px"; stageBox(); renderTimeline(); };
+      // a medida ajustada vai para `editor.ui` e é salva: reabrir a etapa devolve o mesmo layout
+      const up = () => {
+        document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up);
+        const u = ed().ui;
+        if (kind === "left" && left) u.leftW = left.offsetWidth;
+        else if (kind === "right" && right) u.rightW = right.offsetWidth;
+        else if (kind === "timeline" && tl) u.tlHeight = tl.offsetHeight;
+        else return;
+        setStatus("dirty"); scheduleSave();
+      };
+      document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+    });
+  }
+
+  return {
+    init() { window.addEventListener("keydown", onKey); window.addEventListener("resize", fit); document.addEventListener("fullscreenchange", fit); bindResizers(); this.onProject(); },
+    async onProject() {
+      if (!ctx.pid()) { St.timeline = null; renderRoot(); return; }
+      try { const f = await api("/api/edit/ffmpeg"); St.hasFfmpeg = f.available; } catch (e) { St.hasFfmpeg = true; }
+      try { St.sfxLib = await api(`${base()}/sfx`); } catch (e) { St.sfxLib = []; }
+      try { St.mediaLib = await api(`${base()}/media`); } catch (e) { St.mediaLib = []; }
+      toggleSide(sidePref());          // a preferência de menu escondido volta ao entrar na etapa
+      await load();
+    },
+    // a classe sai com a etapa (senão o menu lateral some no resto do Studio); a preferência fica
+    destroy() { pause(); if (raf) cancelAnimationFrame(raf); if (saveTimer) clearTimeout(saveTimer); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", fit); document.removeEventListener("fullscreenchange", fit); closeMenu(); const app = document.querySelector(".app"); if (app) app.classList.remove("side-hidden"); videoPool.clear(); sfxPool.clear(); overlayPool.forEach((v) => { v.pause(); v.remove(); }); overlayPool.clear(); musicAudio = null; },
+  };
+}

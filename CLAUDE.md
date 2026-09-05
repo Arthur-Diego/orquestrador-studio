@@ -73,13 +73,17 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
 
 - Python 3.12 · FastAPI + Uvicorn · Playwright (Chromium) · Pillow. Sem banco: persistência
   em arquivos sob `projects/<id>/` (nunca versionado).
-- Frontend em `studio/web/` (HTML/CSS/JS sem build) **em migração para React** desde a Wave 10:
-  `frontend/` (Vite + React + TypeScript estrito) constrói para `studio/web/dist/`, servido pelo
-  mesmo processo. Os dois mundos convivem atrás de uma ponte até a E10 (ADR-031, ADR-032).
-- **Etapas são plugins**: `studio/etapas/<id>/` com `META`, `router.py`, `view.html`, `view.js`
-  (descoberta automática; ver `docs/domains/studio/hld.md`). Para implementar uma etapa nova,
-  crie só essa pasta + `studio/<id>/service.py` + testes; **não edite** `app.py`, `index.html`,
-  `app.js` nem `steps.py`. O `view.js` registra `Studio.register("<id>", ctx => ({init, onProject}))`.
+- Frontend em **React** (`frontend/`: Vite + React + TypeScript estrito + TanStack Query + Vitest),
+  que constrói o bundle **versionado** `studio/web/dist/`, servido pelo mesmo processo em
+  `/static/dist/` (ADR-031, ADR-032). A migração da Wave 10 terminou na E10: o vanilla
+  `studio/web/{index.html,app.js,ui.js,ui.css,style.css}`, a flag `STUDIO_UI` e a ponte
+  `window.Studio` foram removidos; React é sempre o default. `make verify` (Python) NÃO depende de
+  Node — o job `frontend` do CI é paralelo.
+- **Etapas são plugins**: `studio/etapas/<id>/` com `META`, `router.py` e a UI React `ui/index.tsx`
+  (descoberta automática pelo backend via `discover()`; pelo shell via `import.meta.glob` — sem
+  registry central). Para implementar uma etapa nova, crie só essa pasta + `studio/<id>/service.py`
+  + testes; **não edite** `app.py`, `steps.py` nem o núcleo do frontend (`frontend/src/**`). A tela
+  é o componente default-exportado de `ui/index.tsx`, montado pelo `PluginHost` do shell.
 - Ponte com a Higgsfield **somente** via CLI oficial (`studio/higgsfield.py`, subprocess +
   `--json`). Nunca chamar `api.higgsfield.ai` direto; nunca automatizar a UI da Higgsfield.
 - Testes: `pytest` sem rede e sem navegador (fakes); `make verify` = ruff + pytest.
@@ -128,11 +132,12 @@ Valem enquanto a wave estiver aberta (E0…E10, `docs/domains/studio/waves/wave-
    O `stack-up.sh` já resolve a primeira porta livre a partir de 8790, então o único conflito
    real é o diretório da rodada. Relatório commitado em
    `docs/qa/reports/<AAAA-MM-DD>-<run-id>/`.
-2. **`studio/web/dist/` não é commitado durante a wave.** Ele está no `.gitignore` e o commit
-   único do bundle é da **E10**, junto com a inversão da guarda de CI. O bundle é versionado no
-   estado final de propósito — o usuário desta ferramenta local não tem Node —, mas seis frentes
-   paralelas commitando bundles minificados rivais conflitariam em todo merge, em código que
-   ninguém revisa (ADR-031; `wave-10.md` §6.1).
+2. **`studio/web/dist/` é versionado (desde a E10).** Durante a wave ficava no `.gitignore` para
+   não conflitar entre as seis frentes paralelas; a **E10** commitou o bundle e **inverteu a guarda
+   de CI** — o job `frontend` rebuilda e falha se o `dist/` commitado divergir do rebuild. Quem mexe
+   no frontend roda `make frontend-build` e commita o `dist/`, senão o CI reprova (ADR-031;
+   `wave-10.md` §6.1). O bundle é versionado de propósito: o usuário desta ferramenta local não tem
+   Node.
 3. **Tocar o núcleo exige declarar titularidade.** `tests/test_adr010_fronteira_nucleo.py` barra
    qualquer branch que mexa em `studio/web/`, `studio/app.py`, `steps.py`, `config.py`,
    `higgsfield.py`, `etapas/__init__.py` ou `frontend/` sem estar registrada em
@@ -155,6 +160,24 @@ precisa instalar npm. Os alvos são separados, espelhando os dois jobs paralelos
 `make frontend-build`. A UI de cada etapa é `studio/etapas/<id>/ui/index.tsx`, descoberta por
 `import.meta.glob` — **não existe registry central**, e criar etapa nova continua sendo criar só a
 pasta dela (ADR-031, ADR-032).
+
+O acesso à API sai todo de `frontend/src/api/` (Wave 10 · E1): `api()`/`apiUpload()` equivalentes
+ao helper do vanilla, rotas e corpos tipados a partir de `schema.ts` e os hooks TanStack Query.
+`schema.ts` é **gerado** do `/openapi.json` que o FastAPI publica — quem mexer em rota ou em modelo
+Pydantic roda `make frontend-schema` e commita o arquivo, senão o job `frontend` reprova na guarda
+de drift. Nenhum hook deriva prontidão de etapa: ela vem sempre do guia do backend (ADR-010 a).
+
+O design system vive em `frontend/src/ui/` (Wave 10 · E2): componentes e hooks React que reproduzem
+**100% da superfície de `window.Studio.ui`** do vanilla (28 membros — `Modal`, `ProgressModal`
++ `useProgress`/`progressJob`, `CostSheet` + `useCostConfirm`, `Guide`/`StepGuide`, `MoodMosaic`,
+`Tile`, `Pipe`, `Beats`, `HfChip`, `CreditsChip`, `Chip`, `CopyButton`, `useUpload`, `usePoll`,
+`useAutosize`, `esc`, `fmtPct`, os mapas `STATUS_LABEL/ITEM_LABEL/STATUS_KIND` etc.), com os MESMOS
+ids/classes/atributos ARIA. As folhas `style.css`/`ui.css` são cópias **byte-a-byte** em
+`frontend/src/styles/` — nenhuma classe é renomeada (contrato com os cenários de QA). Desde o corte
+da E10 não há mais vanilla: todas as telas e o shell importam de `frontend/src/ui`; o único
+resquício de `window.Studio` são os escape hatches imperativos que os cenários de QA dirigem
+(`window.Studio.{moodboards,creditos}.open`, reinstalados pelas áreas React). O POST multipart
+(`upload`) mora na camada de API e é reexportado pela `ui`, sem segunda cópia.
 
 ## Idioma
 

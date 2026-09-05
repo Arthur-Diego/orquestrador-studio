@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orquestrador Studio</title>
+    <meta
+      name="description"
+      content="Produza uma campanha de vídeo com IA seguindo, etapa por etapa, o método do curso O Orquestrador."
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
+    <script>
+      // Aplica o tema salvo ANTES do primeiro paint (sem isto a tela pisca no tema errado). Mesmo
+      // contrato do `studio/web/index.html` vanilla e das chaves de `localStorage` (recon §1.4).
+      // Wave 10 · E3 (card [REACT-04]).
+      try {
+        var t = localStorage.getItem("studio.theme");
+        if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+      } catch (e) {
+        /* localStorage bloqueado: fica no tema do sistema */
+      }
+    </script>
+    <script type="module" crossorigin src="/static/dist/assets/index-BlE_YMvp.js"></script>
+    <link rel="stylesheet" crossorigin href="/static/dist/assets/index-DrEzvgyS.css">
+  </head>
+  <body>
+    <!--
+      Casca do shell React (Wave 10 · E3). Desde a E10 (card [REACT-11]) o React é o DEFAULT: o
+      `studio/app.py` serve este bundle (`studio/web/dist/index.html`) na raiz, sem flag, e o vanilla
+      foi removido. O `#root` recebe o chrome (sidebar/topbar); o `#main` e o `#toast` nascem dentro
+      do `App`.
+    -->
+    <div id="root"></div>
+  </body>
+</html>

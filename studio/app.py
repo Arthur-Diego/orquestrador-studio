@@ -202,18 +202,6 @@ for _id, _plugin in PLUGINS.items():
         app.include_router(_plugin["router"])
 
 
-@app.get("/steps/{step_id}/{asset}")
-def step_asset(step_id: str, asset: str):
-    """view.html / view.js de uma etapa implementada."""
-    plugin = PLUGINS.get(step_id)
-    if not plugin or asset not in ("view.html", "view.js"):
-        raise HTTPException(404, "etapa ou recurso inexistente")
-    path = plugin["dir"] / asset
-    if not path.exists():
-        raise HTTPException(404, "recurso inexistente")
-    return FileResponse(path, media_type="text/html" if asset.endswith(".html") else "application/javascript")
-
-
 # arquivos dos projetos (thumbs e originais) e frontend
 app.mount("/files", StaticFiles(directory=str(PROJECTS_DIR)), name="files")
 # imagens da biblioteca global de mood boards `[extensão]` (ADR-013)
@@ -221,6 +209,19 @@ app.mount("/mbfiles", StaticFiles(directory=str(MOODBOARDS_DIR)), name="mbfiles"
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
+#: Shell do frontend a servir na raiz. Wave 10 · E10 (card [REACT-11], ADR-031/ADR-032): a migração
+#: para React terminou — o bundle `studio/web/dist/index.html` (gerado por `make frontend-build` e
+#: **versionado** no repositório, porque o usuário desta ferramenta local não tem Node) é servido
+#: SEMPRE. A flag `STUDIO_UI` e a ponte strangler `window.Studio` do vanilla foram removidas com o
+#: resíduo `studio/web/{index.html,app.js,ui.js,ui.css,style.css}`.
+#:
+#: Isto é serving ESTÁTICO — a exceção sancionada pelo recon §1.1/§6.3. A invariante "backend
+#: intocado" refere-se à lógica de etapa (`service.py`/`router.py`/`guide.py`), não à escolha de
+#: qual `index.html` a raiz devolve. O bundle é servido pelo MESMO processo em `/static/dist/`
+#: (ADR-001, monolito single-process — nada de segundo runtime).
+_REACT_INDEX = Path(WEB_DIR) / "dist" / "index.html"
+
+
 @app.get("/")
 def index():
-    return FileResponse(Path(WEB_DIR) / "index.html")
+    return FileResponse(_REACT_INDEX)
