@@ -205,3 +205,8 @@ router.include_router(skills_router)
 from .vibes_router import router as vibes_router  # noqa: E402  (bloco de inclusão no fim, wave 10)
 
 router.include_router(vibes_router)
+
+# ---------- corrida das skills `mood_` pela tela `[extensão]` (ADH-OS-20260902-01) ----------
+from .mood_run_router import router as mood_run_router  # noqa: E402  (bloco de inclusão no fim, wave 10)
+
+router.include_router(mood_run_router)
