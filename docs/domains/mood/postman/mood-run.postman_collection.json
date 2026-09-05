@@ -1,0 +1,500 @@
+{
+  "info": {
+    "name": "mood — corrida das skills `mood_` pela tela [extensão] (ADH-OS-20260902-01)",
+    "description": "Contratos da seção 5 e matriz de erros da seção 6 do FDD docs/domains/mood/features/mood-run-fdd.md. Rotas GLOBAIS de mood board (sem pid), todas sob /api/moodboards/{mbid}/mood-run. Ordem: leitura (options/job/result) → estimativa → disparo (DESABILITADO, ver aviso) → erros. AVISO: o POST /api/moodboards/{mbid}/mood-run com foto válida dispara uma corrida REAL da cadeia mood_ — ~15 min e dezenas de downloads de imagens de terceiros do Pinterest. O único request de disparo desta coleção está desabilitado e, mesmo se habilitado, sai com `foto` vazia (422) enquanto `foto_semente` e `confirmo_corrida_real` não forem preenchidas à mão.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {"type": "noauth"},
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:8768"},
+    {"key": "mbid", "value": ""},
+    {"key": "mbid_inexistente", "value": "board-que-nao-existe"},
+    {"key": "mbid_efemero", "value": ""},
+    {"key": "foto_semente", "value": ""},
+    {"key": "confirmo_corrida_real", "value": "nao"},
+    {"key": "timeout_s_esperado", "value": "1800"},
+    {"key": "board_min", "value": "4"},
+    {"key": "n_min", "value": "1"},
+    {"key": "board_abaixo", "value": "3"},
+    {"key": "n_abaixo", "value": "0"},
+    {"key": "board_default", "value": "8"},
+    {"key": "n_default", "value": "3"},
+    {"key": "objetivo_valido", "value": "ambiente"},
+    {"key": "agregador", "value": "todos"},
+    {"key": "total_escolhidas", "value": "0"},
+    {"key": "available_claude", "value": "false"}
+  ],
+  "item": [
+    {
+      "name": "1. leitura — o painel 05 e o estado da corrida",
+      "item": [
+        {
+          "name": "GET /api/moodboards — escolhe o board de teste (setup)",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards",
+            "description": "Não é rota desta feature: é o setup que descobre um {{mbid}} real, do mesmo jeito que a coleção mood-vibes faz. Preencha `mbid` no ambiente para fixar um board específico."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const boards = pm.response.json();",
+            "pm.test('a biblioteca global de mood boards responde uma lista', () => pm.expect(boards).to.be.an('array'));",
+            "const ids = boards.map(b => b.id);",
+            "const atual = String(pm.variables.get('mbid') || '').trim();",
+            "if (atual && ids.includes(atual)) { pm.collectionVariables.set('mbid', atual); }",
+            "else if (ids.length) { pm.collectionVariables.set('mbid', ids[0]); }",
+            "else { pm.collectionVariables.set('mbid', ''); }",
+            "pm.test('há pelo menos um board para exercitar as rotas', () => {",
+            "  pm.expect(ids.length, 'crie um mood board na tela antes de rodar a coleção').to.be.above(0);",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "GET .../mood-run/options — opções, defaults e pisos (FDD §5.1, linha 195)",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/options",
+            "description": "Somente leitura. Tudo que é lista, default ou piso vem do manifesto das skills (frente 04) — nenhum literal do lado da tela. Esperado: 200 (FDD linhas 199-213)."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('envelope do painel 05 (FDD linhas 199-213)', () => {",
+            "  pm.expect(b.available_claude).to.be.a('boolean');",
+            "  pm.expect(b.objetivos).to.be.an('array').that.is.not.empty;",
+            "  pm.expect(b.fundos).to.be.an('array').that.is.not.empty;",
+            "  pm.expect(b.defaults).to.have.all.keys('board', 'n', 'fundo');",
+            "  pm.expect(b.limites).to.have.all.keys('board_min', 'n_min');",
+            "  pm.expect(b.escolhidas.total).to.be.a('number');",
+            "  pm.expect(b.escolhidas.pasta).to.be.a('string');",
+            "  pm.expect(b.saida).to.be.a('string');",
+            "  pm.expect(b.timeout_s).to.be.a('number');",
+            "  pm.expect(b.job).to.have.property('state');",
+            "});",
+            "pm.test('gate é fixo em auto — a tela nunca oferece interativo (D3, FDD linha 201)', () => {",
+            "  pm.expect(b.gate).to.eql('auto');",
+            "});",
+            "pm.test('os objetivos e o agregador são os do manifesto (FDD linhas 202-203)', () => {",
+            "  pm.expect(b.objetivos).to.eql(['ambiente', 'campanha', 'produto', 'personagem']);",
+            "  pm.expect(b.agregador).to.eql('todos');",
+            "  pm.expect(b.fundos).to.eql(['escuro', 'claro']);",
+            "});",
+            "pm.test('defaults e pisos declarados (FDD linhas 206-207)', () => {",
+            "  pm.expect(b.defaults).to.eql({board: 8, n: 3, fundo: 'escuro'});",
+            "  pm.expect(b.limites).to.eql({board_min: 4, n_min: 1});",
+            "});",
+            "pm.test('saida é imposta pelo servidor, dentro do board (D1, FDD linha 209)', () => {",
+            "  pm.expect(b.saida).to.match(/[\\\\/]mood_run$/);",
+            "  pm.expect(b.saida).to.include(pm.collectionVariables.get('mbid'));",
+            "});",
+            "pm.test('timeout_s bate com STUDIO_SKILL_TIMEOUT_S (§5.6; ajuste timeout_s_esperado se exportou outro)', () => {",
+            "  pm.expect(b.timeout_s).to.eql(Number(pm.variables.get('timeout_s_esperado')));",
+            "});",
+            "if (!b.available_claude) { console.log('claude ausente do PATH: o botão de disparo fica desabilitado (E1) e o POST devolveria 409'); }",
+            "if (b.escolhidas.total === 0) { console.log('peneira _escolhidas vazia: o disparo devolveria 422 (E8) — rode /mood_vibe_scout e escolha uma foto no painel de vibes'); }",
+            "pm.collectionVariables.set('available_claude', String(b.available_claude));",
+            "pm.collectionVariables.set('total_escolhidas', b.escolhidas.total);",
+            "pm.collectionVariables.set('objetivo_valido', b.objetivos[0]);",
+            "pm.collectionVariables.set('agregador', b.agregador);",
+            "pm.collectionVariables.set('board_default', b.defaults.board);",
+            "pm.collectionVariables.set('n_default', b.defaults.n);",
+            "pm.collectionVariables.set('board_min', b.limites.board_min);",
+            "pm.collectionVariables.set('n_min', b.limites.n_min);",
+            "pm.collectionVariables.set('board_abaixo', b.limites.board_min - 1);",
+            "pm.collectionVariables.set('n_abaixo', b.limites.n_min - 1);"
+          ]}}]
+        },
+        {
+          "name": "GET .../mood-run/job — estado do job mood_run:<mbid> (FDD §5.4, linha 257)",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/job",
+            "description": "Status do JobRegistry com as chaves-base sempre presentes; {state: idle} quando nunca rodou. Esperado: 200 (FDD linhas 257-261)."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('as chaves-base do piso vêm sempre (FDD linhas 259-261)', () => {",
+            "  pm.expect(b.done).to.be.a('number');",
+            "  pm.expect(b.total).to.be.a('number');",
+            "  pm.expect(b.added).to.be.a('number');",
+            "  pm.expect(b).to.have.property('error');",
+            "  pm.expect(b.log).to.be.an('array');",
+            "  pm.expect(b.state).to.be.a('string');",
+            "});",
+            "if (b.state === 'running') { console.log('ATENÇÃO: há uma corrida em andamento neste board — um POST de disparo devolveria 409 (E6)'); }"
+          ]}}]
+        },
+        {
+          "name": "GET .../mood-run/result — pranchas da corrida vigente (FDD §5.5, linha 263)",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/result",
+            "description": "200 com o _run.json da corrida vigente acrescido das *_url servíveis por /mbfiles; 404 quando nunca houve corrida neste board (E13); 502 se o _run.json existe e está corrompido (E14). O teste aceita 200 ou 404 porque depende de o board já ter corrido — o 404 determinístico está na pasta 4."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200 (já correu) ou 404 (nunca correu) — nunca 502 (FDD linhas 282-285)', () => {",
+            "  pm.expect([200, 404]).to.include(pm.response.code);",
+            "});",
+            "const b = pm.response.json();",
+            "if (pm.response.code === 404) {",
+            "  pm.test('E13: a mensagem é a da feature, não a genérica de projeto', () => {",
+            "    pm.expect(b.detail).to.include('nenhuma corrida de mood neste board ainda');",
+            "  });",
+            "} else {",
+            "  pm.test('boards é lista e cada URL é servida pelo mount /mbfiles que já existe (D1)', () => {",
+            "    pm.expect(b.boards).to.be.an('array');",
+            "    const prefixo = '/mbfiles/' + pm.collectionVariables.get('mbid') + '/mood_run/';",
+            "    b.boards.forEach(item => {",
+            "      pm.expect(item.objetivo).to.be.a('string');",
+            "      ['prancha_url', 'leitura_url', 'curadoria_url'].forEach(k => {",
+            "        if (item[k] !== undefined) { pm.expect(item[k]).to.have.string(prefixo); }",
+            "      });",
+            "    });",
+            "  });",
+            "}"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "2. estimativa — a barreira antes dos downloads (FDD §5.2, linha 217)",
+      "item": [
+        {
+          "name": "POST .../mood-run/estimate — todos 8/3 = 84 downloads (critério A2)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [\"todos\"], \"board\": 8, \"n\": 3}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/estimate",
+            "description": "A conta obrigatória antes do disparo (FDD §4.1 passo 4). `todos` é expandido para os 4 objetivos: 4 × (8 − 1) × 3 = 84, o número da corrida manual de referência (FDD linha 230). Não baixa nada e não dispara nada."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('A2: todos --board 8 --n 3 = 84 downloads e 7 consultas (FDD linha 230)', () => {",
+            "  pm.expect(b.objetivos).to.eql(4);",
+            "  pm.expect(b.consultas).to.eql(7);",
+            "  pm.expect(b.board).to.eql(8);",
+            "  pm.expect(b.n).to.eql(3);",
+            "  pm.expect(b.downloads).to.eql(84);",
+            "});",
+            "pm.test('a resposta é internamente coerente com a própria fórmula', () => {",
+            "  pm.expect(b.consultas).to.eql(b.board - 1);",
+            "  pm.expect(b.downloads).to.eql(b.objetivos * b.consultas * b.n);",
+            "});",
+            "pm.test('a fórmula declarada volta junto (FDD linha 224)', () => {",
+            "  pm.expect(b.formula).to.eql('downloads = objetivos × (board − 1) × n');",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "POST .../mood-run/estimate — 2 objetivos 8/3 = 42 (exemplo literal do §5.2)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [\"ambiente\", \"produto\"], \"board\": 8, \"n\": 3}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/estimate",
+            "description": "O corpo e a resposta exatos do exemplo do FDD (linhas 220-224)."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('resposta idêntica ao exemplo do FDD (linhas 222-224)', () => {",
+            "  pm.expect(b.objetivos).to.eql(2);",
+            "  pm.expect(b.consultas).to.eql(7);",
+            "  pm.expect(b.n).to.eql(3);",
+            "  pm.expect(b.board).to.eql(8);",
+            "  pm.expect(b.downloads).to.eql(42);",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "POST .../mood-run/estimate — sem board/n cai nos defaults (não declarado no FDD, ver divergências)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [\"{{objetivo_valido}}\"]}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/estimate",
+            "description": "O §5.2 mostra board e n sempre presentes no corpo; a implementação os aceita ausentes/null e cai nos defaults do manifesto. Divergência MEDIA registrada em mood-run.divergencias.md — o teste assere o comportamento real, que é um superconjunto do FDD."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200 — board e n ausentes caem nos defaults do manifesto', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('os defaults aplicados são os de GET /options', () => {",
+            "  pm.expect(b.board).to.eql(Number(pm.collectionVariables.get('board_default')));",
+            "  pm.expect(b.n).to.eql(Number(pm.collectionVariables.get('n_default')));",
+            "  pm.expect(b.objetivos).to.eql(1);",
+            "  pm.expect(b.downloads).to.eql(b.objetivos * b.consultas * b.n);",
+            "});"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "3. disparo — MANUAL, NÃO RODAR NA COLEÇÃO (FDD §5.3, linha 232)",
+      "item": [
+        {
+          "name": "[DESABILITADO · CORRIDA REAL ~15 min] POST /api/moodboards/{{mbid}}/mood-run",
+          "disabled": true,
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"foto\": \"{{foto_semente}}\", \"objetivos\": [\"{{objetivo_valido}}\"], \"board\": {{board_default}}, \"n\": {{n_default}}, \"fundo\": \"escuro\"}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run",
+            "description": "NÃO RODAR AUTOMATICAMENTE. Com foto válida este request dispara a cadeia mood_ de verdade: ~15 min de execução e dezenas de imagens de terceiros baixadas do Pinterest (FDD linha 31 e risco R3). Por isso ele está com `disabled: true` e, por construção, sai com `foto` = {{foto_semente}} — vazia por default, o que devolve 422 sem disparar nada.\n\nPara disparar de propósito (validação manual do dono, pendência 4 da seção 13 do FDD): preencha `foto_semente` com o caminho ABSOLUTO de uma foto dentro de MOODBOARDS_DIR/_escolhidas/ (GET /api/escolhidas devolve `caminho`), troque `confirmo_corrida_real` para `sim`, habilite o request e rode SÓ ele.\n\n`gate` e `saida` não são aceitos no corpo: o primeiro é fixo em `auto` (D3), o segundo é imposto pelo servidor (D1) — mandados aqui, são ignorados (FDD linhas 244-246)."
+          },
+          "event": [
+            {"listen": "prerequest", "script": {"exec": [
+              "// Trava dupla: além de `disabled: true`, aborta se a confirmação manual não estiver dada.",
+              "if (String(pm.variables.get('confirmo_corrida_real') || 'nao').toLowerCase() !== 'sim') {",
+              "  console.log('disparo real NÃO confirmado (confirmo_corrida_real != sim) — enviando foto vazia, que devolve 422 sem baixar nada');",
+              "  pm.variables.set('foto_semente', '');",
+              "  try { pm.execution.skipRequest(); } catch (e) { /* runner antigo: a foto vazia já garante o 422 */ }",
+              "}"
+            ]}},
+            {"listen": "test", "script": {"exec": [
+              "const confirmado = String(pm.variables.get('confirmo_corrida_real') || 'nao').toLowerCase() === 'sim';",
+              "if (!confirmado) {",
+              "  pm.test('sem confirmação manual, o disparo não acontece: 422 e nenhuma corrida (E8/E10)', () => {",
+              "    pm.expect(pm.response.code).to.eql(422);",
+              "    pm.expect(pm.response.json().detail).to.include('escolhid');",
+              "  });",
+              "} else {",
+              "  pm.test('200 com o job da corrida (FDD linhas 238-241)', () => pm.response.to.have.status(200));",
+              "  const b = pm.response.json();",
+              "  pm.test('o job traz op, objetivos, downloads_estimados e saida', () => {",
+              "    pm.expect(b.state).to.be.oneOf(['running', 'done', 'error']);",
+              "    pm.expect(b.op).to.eql('mood_run');",
+              "    pm.expect(b.objetivos).to.be.an('array').that.is.not.empty;",
+              "    pm.expect(b.downloads_estimados).to.be.a('number');",
+              "    pm.expect(b.saida).to.have.string('mood_run');",
+              "  });",
+              "  console.log('CORRIDA REAL DISPARADA — acompanhe em GET .../mood-run/job; leva ~15 min');",
+              "}"
+            ]}}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. erros — matriz da seção 6 (nenhum destes dispara corrida)",
+      "item": [
+        {
+          "name": "GET .../mood-run/options com mbid inexistente — E7: 404",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards/{{mbid_inexistente}}/mood-run/options",
+            "description": "board_dir levanta KeyError e o handler global do núcleo devolve 404 (FDD linha 215 e E7, linha 338)."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('404', () => pm.response.to.have.status(404));",
+            "pm.test('o detail cita o mbid pedido', () => {",
+            "  pm.expect(pm.response.json().detail).to.include(pm.variables.get('mbid_inexistente'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "GET .../mood-run/job com mbid inexistente — E7: 404",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards/{{mbid_inexistente}}/mood-run/job",
+            "description": "O mbid é conferido antes de qualquer coisa (FDD linha 261)."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('404', () => pm.response.to.have.status(404));"
+          ]}}]
+        },
+        {
+          "name": "GET .../mood-run/result com mbid inexistente — E7: 404",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards/{{mbid_inexistente}}/mood-run/result",
+            "description": "404 de board (E7), diferente do 404 de corrida ausente (E13) logo abaixo — as mensagens não podem ser a mesma (FDD linha 283)."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('404', () => pm.response.to.have.status(404));",
+            "pm.test('é o 404 de board, não o de corrida ausente', () => {",
+            "  const detail = pm.response.json().detail;",
+            "  pm.expect(detail).to.include(pm.variables.get('mbid_inexistente'));",
+            "  pm.expect(detail).to.not.include('nenhuma corrida de mood');",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "POST .../mood-run/estimate com mbid inexistente — E7 precede o 422",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [\"nao-existe\"], \"board\": 1, \"n\": 0}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid_inexistente}}/mood-run/estimate",
+            "description": "Corpo inválido de propósito: mesmo assim o 404 de board vem primeiro, como o FDD exige (E7, linha 338)."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('404 (não 422): o mbid é conferido antes dos parâmetros', () => pm.response.to.have.status(404));"
+          ]}}]
+        },
+        {
+          "name": "POST .../mood-run/estimate objetivo inválido — E9: 422 listando os aceitos",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [\"paisagem\"], \"board\": 8, \"n\": 3}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/estimate",
+            "description": "A regra do SKILL.md é listar os aceitos, nunca adivinhar (FDD linha 340)."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('422', () => pm.response.to.have.status(422));",
+            "const detail = pm.response.json().detail;",
+            "pm.test('a mensagem nomeia o objetivo recusado', () => pm.expect(detail).to.include('paisagem'));",
+            "pm.test('e lista todos os aceitos, incluindo o agregador (E9)', () => {",
+            "  ['ambiente', 'campanha', 'produto', 'personagem', 'todos'].forEach(o => pm.expect(detail).to.include(o));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "POST .../mood-run/estimate lista vazia — E9: 422",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [], \"board\": 8, \"n\": 3}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/estimate",
+            "description": "Lista vazia é 422 explícito (FDD linha 228), não uma corrida sem objetivo."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('422', () => pm.response.to.have.status(422));",
+            "pm.test('a mensagem também lista os aceitos', () => {",
+            "  pm.expect(pm.response.json().detail).to.include('ambiente');",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "POST .../mood-run/estimate board abaixo do piso — E11: 422 citando o piso",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [\"{{objetivo_valido}}\"], \"board\": {{board_abaixo}}, \"n\": {{n_default}}}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/estimate",
+            "description": "board_min − 1 (3 com o manifesto atual). O piso vem da camada de apresentação do manifesto, e a mensagem precisa citá-lo (FDD linha 342)."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('422', () => pm.response.to.have.status(422));",
+            "pm.test('a mensagem cita o piso vindo do manifesto (E11)', () => {",
+            "  const detail = pm.response.json().detail;",
+            "  pm.expect(detail).to.include('board');",
+            "  pm.expect(detail).to.include(String(pm.collectionVariables.get('board_min')));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "POST .../mood-run/estimate n abaixo do piso — E11: 422 citando o piso",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"objetivos\": [\"{{objetivo_valido}}\"], \"board\": {{board_default}}, \"n\": {{n_abaixo}}}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run/estimate",
+            "description": "n_min − 1 (0 com o manifesto atual)."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('422', () => pm.response.to.have.status(422));",
+            "pm.test('a mensagem cita o piso de n (E11)', () => {",
+            "  const detail = pm.response.json().detail;",
+            "  pm.expect(detail).to.include('n ');",
+            "  pm.expect(detail).to.include(String(pm.collectionVariables.get('n_min')));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "POST /api/moodboards — board efêmero para o 404 de corrida ausente (setup)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"name\": \"zz postman mood run\", \"note\": \"board efêmero da coleção mood-run; apagado no request de cleanup\"}"},
+            "url": "{{base_url}}/api/moodboards",
+            "description": "Cria um board que nunca correu, para que o E13 seja determinístico. Se o board já existir, a rota devolve 409 e os dois requests seguintes são pulados."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('200 (criado) ou 409 (sobra de uma execução anterior)', () => {",
+            "  pm.expect([200, 409]).to.include(pm.response.code);",
+            "});",
+            "if (pm.response.code === 200) {",
+            "  const id = pm.response.json().id;",
+            "  pm.test('o id do efêmero é o slug esperado — trava do cleanup', () => {",
+            "    pm.expect(id).to.match(/^zz-postman-mood-run/);",
+            "  });",
+            "  pm.collectionVariables.set('mbid_efemero', /^zz-postman-mood-run/.test(id) ? id : '');",
+            "} else {",
+            "  pm.collectionVariables.set('mbid_efemero', '');",
+            "  console.log('board efêmero já existia: apague zz postman mood run na tela e rode de novo para exercitar o E13');",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "GET .../mood-run/result em board sem corrida — E13: 404 com mensagem própria",
+          "request": {"method": "GET", "url": "{{base_url}}/api/moodboards/{{mbid_efemero}}/mood-run/result",
+            "description": "Board recém-criado, sem _run.json: 404 'nenhuma corrida de mood neste board ainda' (FDD linhas 283 e 344)."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "if (!pm.collectionVariables.get('mbid_efemero')) { pm.test.skip('board efêmero não foi criado', () => {}); } else {",
+            "  pm.test('404', () => pm.response.to.have.status(404));",
+            "  pm.test('E13: mensagem da feature, não a genérica de board inexistente', () => {",
+            "    pm.expect(pm.response.json().detail).to.eql('nenhuma corrida de mood neste board ainda');",
+            "  });",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "DELETE /api/moodboards/{{mbid_efemero}} — apaga o board efêmero (cleanup)",
+          "request": {"method": "DELETE", "url": "{{base_url}}/api/moodboards/{{mbid_efemero}}",
+            "description": "Só roda sobre o id criado no setup, que é validado contra o prefixo zz-postman-mood-run. Com a variável vazia, a URL não resolve para board nenhum."},
+          "event": [{"listen": "test", "script": {"exec": [
+            "const id = String(pm.collectionVariables.get('mbid_efemero') || '');",
+            "if (!/^zz-postman-mood-run/.test(id)) { pm.test.skip('nada a apagar', () => {}); } else {",
+            "  pm.test('200', () => pm.response.to.have.status(200));",
+            "  pm.test('apagou exatamente o efêmero', () => pm.expect(pm.response.json().deleted).to.eql(id));",
+            "  pm.collectionVariables.set('mbid_efemero', '');",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "POST /api/moodboards/{{mbid}}/mood-run sem foto — E8/E10: 422 sem disparar nada",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"foto\": \"\", \"objetivos\": [\"{{objetivo_valido}}\"], \"board\": {{board_default}}, \"n\": {{n_default}}, \"fundo\": \"escuro\"}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run",
+            "description": "SEGURO: a validação da foto-semente acontece ANTES de o job ser criado, então nada é baixado e nenhuma corrida começa. Peneira vazia → E8; peneira cheia e foto vazia → E10 (FDD linhas 339-341)."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "if (pm.response.code === 409) {",
+            "  pm.test('E1: sem claude no PATH o 409 vem antes da validação de parâmetro', () => {",
+            "    pm.expect(pm.response.json().detail).to.include('Claude CLI');",
+            "  });",
+            "} else {",
+            "  pm.test('422', () => pm.response.to.have.status(422));",
+            "  pm.test('a mensagem é sobre a foto escolhida (E8 ou E10)', () => {",
+            "    pm.expect(pm.response.json().detail).to.include('escolhid');",
+            "  });",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "POST /api/moodboards/{{mbid}}/mood-run com foto fora de _escolhidas — E10: 422",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"foto\": \"/etc/hosts\", \"objetivos\": [\"{{objetivo_valido}}\"], \"board\": {{board_default}}, \"n\": {{n_default}}, \"fundo\": \"escuro\"}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid}}/mood-run",
+            "description": "SEGURO: caminho existente mas fora da peneira. A contenção é sobre o caminho resolvido — aceitar caminho arbitrário aqui entregaria leitura de qualquer arquivo do disco à corrida (FDD linhas 248-251). Nenhum job é criado."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "if (pm.response.code === 409) {",
+            "  pm.test('E1: sem claude no PATH o 409 vem antes (rede de segurança)', () => {",
+            "    pm.expect(pm.response.json().detail).to.include('Claude CLI');",
+            "  });",
+            "} else {",
+            "  pm.test('422', () => pm.response.to.have.status(422));",
+            "  pm.test('caminho fora da peneira é recusado (E10)', () => {",
+            "    pm.expect(pm.response.json().detail).to.include('escolhid');",
+            "  });",
+            "}"
+          ]}}]
+        },
+        {
+          "name": "POST /api/moodboards/{{mbid_inexistente}}/mood-run — E7: 404 antes de qualquer 409",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\"foto\": \"\", \"objetivos\": [\"{{objetivo_valido}}\"]}"},
+            "url": "{{base_url}}/api/moodboards/{{mbid_inexistente}}/mood-run",
+            "description": "SEGURO: board inexistente. O 404 precede o 409 de CLI e o 422 de parâmetro, como o bloco de multishot já faz (FDD linha 338)."
+          },
+          "event": [{"listen": "test", "script": {"exec": [
+            "pm.test('404', () => pm.response.to.have.status(404));",
+            "pm.test('não é 409 nem 422 — a ordem de verificação é a do FDD', () => {",
+            "  pm.expect(pm.response.json().detail).to.include(pm.variables.get('mbid_inexistente'));",
+            "});"
+          ]}}]
+        }
+      ]
+    }
+  ]
+}
