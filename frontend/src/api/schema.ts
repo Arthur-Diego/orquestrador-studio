@@ -384,6 +384,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/moodboards/{mbid}/mood-run/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mood Run Options
+         * @description Opções, defaults e pisos do painel — tudo derivado do manifesto das skills `mood_`.
+         */
+        get: operations["mood_run_options_api_moodboards__mbid__mood_run_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/moodboards/{mbid}/mood-run/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mood Run Estimate
+         * @description Quantos downloads a corrida faria. Não baixa nada e não dispara nada.
+         */
+        post: operations["mood_run_estimate_api_moodboards__mbid__mood_run_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/moodboards/{mbid}/mood-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mood Run Start
+         * @description Dispara a corrida da cadeia `mood_` para este board e devolve o job.
+         */
+        post: operations["mood_run_start_api_moodboards__mbid__mood_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/moodboards/{mbid}/mood-run/job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mood Run Job
+         * @description Estado da corrida, no formato que o `ui.progressJob` consome.
+         */
+        get: operations["mood_run_job_api_moodboards__mbid__mood_run_job_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/moodboards/{mbid}/mood-run/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mood Run Result
+         * @description As pranchas da corrida vigente, com as URLs servidas por `/mbfiles`.
+         */
+        get: operations["mood_run_result_api_moodboards__mbid__mood_run_result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/creditos": {
         parameters: {
             query?: never;
@@ -4149,6 +4249,21 @@ export interface components {
             /** Variant */
             variant?: string | null;
         };
+        /**
+         * EstimateReq
+         * @description A conta antes do disparo. `board`/`n` ausentes caem nos defaults do manifesto.
+         */
+        EstimateReq: {
+            /**
+             * Objetivos
+             * @default []
+             */
+            objetivos?: string[];
+            /** Board */
+            board?: number | null;
+            /** N */
+            n?: number | null;
+        };
         /** FeedbackReq */
         FeedbackReq: {
             /**
@@ -4524,6 +4639,29 @@ export interface components {
              * @default true
              */
             replied?: boolean;
+        };
+        /**
+         * RunReq
+         * @description O disparo. `gate` e `saida` NÃO estão aqui de propósito: o primeiro é fixo em `auto` (D3), o
+         *     segundo é imposto pelo servidor (D1). Mandados no body, são ignorados.
+         */
+        RunReq: {
+            /**
+             * Foto
+             * @default
+             */
+            foto?: string;
+            /**
+             * Objetivos
+             * @default []
+             */
+            objetivos?: string[];
+            /** Board */
+            board?: number | null;
+            /** N */
+            n?: number | null;
+            /** Fundo */
+            fundo?: string | null;
         };
         /** SceneIn */
         SceneIn: {
@@ -5958,6 +6096,179 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mood_run_options_api_moodboards__mbid__mood_run_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mbid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mood_run_estimate_api_moodboards__mbid__mood_run_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mbid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EstimateReq"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mood_run_start_api_moodboards__mbid__mood_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mbid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunReq"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mood_run_job_api_moodboards__mbid__mood_run_job_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mbid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mood_run_result_api_moodboards__mbid__mood_run_result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mbid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

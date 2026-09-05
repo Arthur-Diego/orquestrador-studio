@@ -1,0 +1,50 @@
+"""Testes de tela do painel 05 (corrida das skills `mood_`) — ADH-OS-20260902-01.
+
+Aplicar JUNTO com `mood-run-front.patch`. Saíram de `tests/test_mood_run_api.py` porque leem
+`studio/web/moodboards.js`, que é núcleo sob a ADR-010 e só a frente de preparo/shell da wave
+pode editar. Cole-os de volta em `tests/test_mood_run_api.py` quando o patch do front for
+aplicado.
+
+Os dois testes que NÃO dependem da aplicação do patch (FT-01 `git apply --check` e FT-02
+`node --check`) já vivem em `tests/test_mood_run_api.py` e não precisam ser movidos: eles são a
+guarda de que esta pendência não apodrece em silêncio enquanto não é aplicada.
+"""
+
+
+# ---------- tela (lida como texto) ----------
+def test_o_painel_da_corrida_vive_em_moodboards_js(client):
+    """FT-03. ADR-014: a UI nova mora na biblioteca global, nunca na etapa 2."""
+    js = client.get("/static/moodboards.js").text
+    for token in ("Studio.moodRun", "renderMoodRunPanel", "/mood-run/options", "/mood-run/estimate",
+                  "/mood-run/job", "/mood-run/result", "/api/escolhidas", "studio:escolhidas",
+                  "mrn-", "leitura.md", "curadoria.md"):
+        assert token in js, token
+
+
+def test_o_css_do_painel_e_escopado_e_nao_vazou_para_o_global(client):
+    """FT-04. ADR-019: CSS novo é `<style>` inline escopado; `ui.css`/`style.css` não são tocados."""
+    js = client.get("/static/moodboards.js").text
+    assert ".mrn-grid" in js and ".mrn-boards" in js
+    for css in ("/static/ui.css", "/static/style.css"):
+        assert "mrn-" not in client.get(css).text
+
+
+def test_a_barreira_do_painel_e_a_conta_de_downloads_e_nao_o_custo(client):
+    """FT-05. A cadeia `mood_` é gratuita (ADR-016): confirmar GASTO aqui seria mentira de UI.
+
+    O que precisa de confirmação é o volume de downloads de terceiros. Por isso o painel monta o
+    próprio modal sobre o `ui.modal` público em vez de reusar `confirmCost`/`_confirmModal`, cujo
+    subtítulo fixo é "Custo antes de gerar (aula 008)".
+    """
+    js = client.get("/static/moodboards.js").text
+    trecho = js[js.index("ADH-OS-20260902-01"):]
+    assert "confirmCost" not in trecho, "a corrida não gasta crédito: não pode abrir modal de custo"
+    assert "refreshCredits" not in trecho
+    assert "mrnConfirmarDownloads" in trecho and "downloads" in trecho
+
+
+def test_o_botao_e_gateado_pelo_contador_de_escolhidas(client):
+    """FT-06 `[cross-feature]` com a frente 03: sem foto escolhida, não há corrida."""
+    js = client.get("/static/moodboards.js").text
+    assert "mrnTotalEscolhidas" in js and "mrnOnEscolhidasChange" in js
+    assert "btn.disabled = !opts.available_claude || !estado.total" in js
