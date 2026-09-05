@@ -144,7 +144,6 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
 
   const [meta, setMeta] = useState<InstructionsMeta>({
     kinds: [],
-    presets: [],
     models: [],
     arc: [],
     counts: { uncertain: 4, tweak: 1 },
@@ -852,24 +851,6 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                 {meta.kinds.map((k) => (
                   <option key={k.kind} value={k.kind}>
                     {k.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                id="sbPreset"
-                aria-label="Fórmula da aula"
-                value=""
-                onChange={(e) => {
-                  const p = meta.presets[+e.target.value];
-                  if (!p) return;
-                  setKind(p.kind);
-                  setText(p.text);
-                }}
-              >
-                <option value="">— fórmulas da aula —</option>
-                {meta.presets.map((p, i) => (
-                  <option key={i} value={i}>
-                    {p.label}
                   </option>
                 ))}
               </select>

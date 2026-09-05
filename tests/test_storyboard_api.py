@@ -253,14 +253,8 @@ def test_job_is_idle_before_any_generation(client, pid):
         "state": "idle", "done": 0, "total": 0, "added": 0, "error": None, "log": []}
 
 
-def test_published_presets_round_trip_through_the_validator(client, pid, base):
-    """Toda fórmula devolvida pelo GET tem que ser aceita pelo POST (contrato 2 x contrato 3)."""
-    presets = client.get(f"/api/projects/{pid}/storyboard/instructions").json()["presets"]
-    assert any(";" in p["text"] for p in presets), "o preset de inpaint da aula usa ponto-e-vírgula"
-    for preset in presets:
-        r = client.post(f"/api/projects/{pid}/storyboard/instructions",
-                        json={"kind": preset["kind"], "text": preset["text"], "count": 4})
-        assert r.status_code == 200, (preset["label"], r.status_code, r.text)
+# [ADR-035] O combo de fórmulas da aula (`presets`) foi removido; o antigo round-trip
+# `test_published_presets_round_trip_through_the_validator` saiu junto com a chave publicada.
 
 
 def test_unknown_project_is_404_on_every_storyboard_route(client):

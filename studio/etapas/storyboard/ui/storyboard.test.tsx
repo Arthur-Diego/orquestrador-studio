@@ -27,10 +27,6 @@ const INSTRUCTIONS = {
     { kind: "edit", label: "Edição numerada", ui_hint: "uma instrução por vez" },
     { kind: "multishot", label: "Multi Shot", ui_hint: "varie o ângulo" },
   ],
-  presets: [
-    { label: "P0", kind: "edit", text: "t0" },
-    { label: "Inpaint", kind: "multishot", text: "a; b" },
-  ],
   models: [{ id: "nano_banana_2", label: "Nano Banana 2", default: true }],
   arc: [
     { id: "comeco", label: "começo", hint: "h" },
