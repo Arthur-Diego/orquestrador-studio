@@ -14,6 +14,7 @@ import {
   useUpload,
 } from "../../../../frontend/src/ui";
 import { Annotate } from "./Annotate";
+import { MaskEditor } from "./MaskEditor";
 import type { StudioCtx } from "../../../../frontend/src/shell/plugin";
 import type {
   HistoryItem,
@@ -70,7 +71,29 @@ type IdeaModal =
   | { kind: "animate"; sid: string; img: string }
   | { kind: "reorder" }
   | { kind: "lightbox"; rel: string }
-  | { kind: "annotate"; src: { id: string; url: string; label: string } };
+  | { kind: "annotate"; src: { id: string; url: string; label: string } }
+  | { kind: "maskeditor"; src: { id: string; url: string; label: string } };
+
+/** `[extensão]` motor local (ADR-033): modelo do catálogo grátis (gen/inpaint). */
+interface LocalModelOpt {
+  id: string;
+  label: string;
+  default?: boolean;
+}
+interface LocalStatus {
+  ready: boolean;
+  detail: string;
+  engine_installed: boolean;
+  comfy_up: boolean;
+  gen_models: LocalModelOpt[];
+  inpaint_models: LocalModelOpt[];
+}
+interface LocalJob {
+  state: string;
+  error?: string | null;
+  result?: string | null;
+  result_id?: string | null;
+}
 
 function seedPhotos(sc: Scene[]): PhotoState {
   const out: PhotoState = {};
@@ -170,6 +193,13 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     null,
   );
 
+  // `[extensão]` motor local (grátis) — ADR-033. Caminho ADICIONAL ao lado do pago (Higgsfield).
+  const [localSt, setLocalSt] = useState<LocalStatus | null>(null);
+  const [localPrompt, setLocalPrompt] = useState("");
+  const [localCount, setLocalCount] = useState("4");
+  const [localModel, setLocalModel] = useState("flux-schnell");
+  const [localSourceId, setLocalSourceId] = useState("");
+
   const [modal, setModal] = useState<IdeaModal>(null);
   const areaBoxRef = useRef<HTMLTextAreaElement>(null);
 
@@ -216,6 +246,20 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     const r = ((await api(url("/candidates"))) as { ideas: Idea[] }).ideas;
     setIdeas(r);
     return r;
+  }, [api, url, ctx]);
+
+  // `[extensão]` motor local: prontidão (engine + ComfyUI). Offline nunca quebra a tela.
+  const loadLocalStatus = useCallback(async () => {
+    if (!ctx.pid()) return;
+    try {
+      const st = (await api(url("/local/status"))) as LocalStatus;
+      setLocalSt(st);
+      const gen = st.gen_models || [];
+      if (gen.length)
+        setLocalModel((m) => (gen.some((x) => x.id === m) ? m : gen.find((x) => x.default)?.id || gen[0]!.id));
+    } catch {
+      setLocalSt(null);
+    }
   }, [api, url, ctx]);
 
   const scriptModelLabel = useCallback(() => {
@@ -300,6 +344,10 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
       } catch {
         if (vivo) setAreaCli(null);
       }
+      // motor local (grátis) `[extensão]`
+      setLocalPrompt("");
+      setLocalSourceId("");
+      if (vivo) await loadLocalStatus();
     })();
     return () => {
       vivo = false;
@@ -678,6 +726,80 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     }
   }
 
+  // ---------------- motor local (grátis) `[extensão]` — ADR-033 ----------------
+  const localReady = !!localSt?.ready;
+
+  async function runLocalGenerate() {
+    const p = localPrompt.trim();
+    if (!p) return toast("Escreva o prompt (em inglês, aula 007).");
+    const count = +localCount || 4;
+    try {
+      await progressJob(prog, {
+        title: "Gerar keyframes locais (grátis) [extensão]",
+        subtitle: "Motor local (Flux via ComfyUI) — sem gastar crédito",
+        start: () =>
+          api(url("/local/generate"), {
+            method: "POST",
+            body: JSON.stringify({ prompt: p, count, model: localModel }),
+          }),
+        jobUrl: url("/local/job"),
+        done: async () => {
+          await refresh();
+        },
+        label: "Keyframes gerados",
+      });
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  }
+
+  function openMaskEditor(sourceId: string) {
+    if (!localReady) return toast(localSt?.detail || "Motor local offline: suba o ComfyUI.");
+    const src = areaSource(sourceId);
+    if (!src) return toast("Imagem base ausente: conclua a etapa 3 (base).");
+    setModal({ kind: "maskeditor", src });
+  }
+
+  /** Roda o inpaint local (upload da máscara + poll do job) e devolve a URL do resultado, ou null. */
+  async function runLocalInpaint(
+    src: { id: string },
+    maskBlob: Blob,
+    instruction: string,
+    opts: { model: string },
+  ): Promise<string | null> {
+    const f = new File([maskBlob], "mask.png", { type: "image/png" });
+    try {
+      await apiUpload(url("/local/inpaint"), [f], "mask", {
+        instruction,
+        source_id: src.id || "",
+        model: opts.model,
+      });
+    } catch (err) {
+      toast((err as Error).message);
+      return null;
+    }
+    // inpaint é lento (dev ~3-4min): poll silencioso; o MaskEditor mostra "Processando…".
+    let job: LocalJob = { state: "running" };
+    for (let i = 0; i < 700 && job.state === "running"; i++) {
+      await new Promise((r) => setTimeout(r, 700));
+      try {
+        job = (await api(url("/local/job"))) as LocalJob;
+      } catch {
+        job = { state: "error", error: "falha ao consultar o job local" };
+      }
+    }
+    if (job.state === "error") {
+      toast(job.error || "falha no inpaint local");
+      return null;
+    }
+    await loadIdeas();
+    if (!job.result) {
+      toast("Sem mudança (resultado idêntico a um candidato existente).");
+      return null;
+    }
+    return ctx.files(job.result);
+  }
+
   // autosize da instrução da área quando a caixa aparece
   useEffect(() => {
     const el = areaBoxRef.current;
@@ -873,6 +995,86 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
               Gerar via CLI (gasta créditos)
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* Painel motor local — geração + inpaint LOCAIS (grátis) `[extensão]` ADR-033.
+          Caminho ADICIONAL ao pago (Higgsfield permanece nos painéis acima). */}
+      <section className="panel" id="sbLocal">
+        <div className="panel-head">
+          <h3>
+            <span className="pn">01b</span>Motor local (grátis) <span className="ext">[extensão]</span>
+          </h3>
+          <span id="sbLocalState" className="chip mode">
+            {localReady ? "no ar" : localSt ? "offline" : "verificando…"}
+          </span>
+        </div>
+        <p className="sb-script-warn">
+          Alternativa GRÁTIS ao caminho pago: gere keyframes e faça inpaint real por máscara no motor
+          local (ComfyUI/Flux), sem gastar crédito. A Higgsfield continua disponível nos painéis acima.
+          {!localReady && localSt?.detail ? ` — ${localSt.detail}` : ""}
+        </p>
+        <div className="sb-script-ctrls">
+          <label className="field" style={{ flex: "1 1 320px" }}>
+            <span className="eyebrow lbl">prompt (inglês, aula 007)</span>
+            <textarea
+              id="sbLocalPrompt"
+              value={localPrompt}
+              placeholder="ex.: a lone climber on a snowy ridge, cinematic"
+              aria-label="Prompt do motor local"
+              onChange={(e) => setLocalPrompt(e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span className="eyebrow lbl">modelo</span>
+            <select id="sbLocalModel" value={localModel} aria-label="Modelo local" onChange={(e) => setLocalModel(e.target.value)}>
+              {(localSt?.gen_models || []).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="eyebrow lbl">variações</span>
+            <select id="sbLocalCount" value={localCount} aria-label="Variações locais" onChange={(e) => setLocalCount(e.target.value)}>
+              <option value="4">4 (incerto)</option>
+              <option value="1">1 (tweak)</option>
+            </select>
+          </label>
+          <button
+            id="sbLocalGen"
+            type="button"
+            className="primary"
+            disabled={!localReady}
+            title={localReady ? "" : localSt?.detail || "motor local offline"}
+            onClick={() => void runLocalGenerate()}
+          >
+            Gerar local (grátis)
+          </button>
+        </div>
+        <div className="sb-script-ctrls">
+          <label className="field" style={{ flex: "1 1 320px" }}>
+            <span className="eyebrow lbl">inpaint real sobre</span>
+            <select id="sbLocalSource" value={localSourceId} aria-label="Imagem-fonte do inpaint" onChange={(e) => setLocalSourceId(e.target.value)}>
+              <option value="">imagem base (etapa 3)</option>
+              {ideas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.file.split("/").pop()}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            id="sbLocalInpaint"
+            type="button"
+            className="ghost"
+            disabled={!localReady}
+            title={localReady ? "" : localSt?.detail || "motor local offline"}
+            onClick={() => openMaskEditor(localSourceId)}
+          >
+            Editar por máscara (inpaint real, grátis)
+          </button>
         </div>
       </section>
 
@@ -1286,6 +1488,18 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           sourceUrl={modal.src.url}
           brush={10}
           onSave={(blob) => saveAnnotation(modal.src, blob)}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
+      {modal?.kind === "maskeditor" ? (
+        <MaskEditor
+          title="Inpaint local (grátis) [extensão]"
+          subtitle={`${modal.src.label} · pinte a região a mudar`}
+          sourceUrl={modal.src.url}
+          models={localSt?.inpaint_models || []}
+          onRun={(blob, instruction, opts) => runLocalInpaint(modal.src, blob, instruction, opts)}
+          onDone={() => void refresh()}
           onClose={() => setModal(null)}
         />
       ) : null}

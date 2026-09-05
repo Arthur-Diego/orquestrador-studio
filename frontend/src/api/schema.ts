@@ -1812,6 +1812,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/storyboard/local/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storyboard Local Status */
+        get: operations["storyboard_local_status_api_projects__pid__storyboard_local_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/storyboard/local/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Storyboard Local Generate */
+        post: operations["storyboard_local_generate_api_projects__pid__storyboard_local_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/storyboard/local/job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storyboard Local Job */
+        get: operations["storyboard_local_job_api_projects__pid__storyboard_local_job_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/storyboard/local/inpaint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Storyboard Local Inpaint */
+        post: operations["storyboard_local_inpaint_api_projects__pid__storyboard_local_inpaint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/storyboard/script/job": {
         parameters: {
             query?: never;
@@ -3841,6 +3909,29 @@ export interface components {
              */
             source_id?: string;
         };
+        /** Body_storyboard_local_inpaint_api_projects__pid__storyboard_local_inpaint_post */
+        Body_storyboard_local_inpaint_api_projects__pid__storyboard_local_inpaint_post: {
+            /** Mask */
+            mask: string;
+            /** Instruction */
+            instruction: string;
+            /**
+             * Source Id
+             * @default
+             */
+            source_id?: string;
+            /**
+             * Model
+             * @default flux-dev
+             */
+            model?: string;
+            /** Steps */
+            steps?: number | null;
+            /** Guidance */
+            guidance?: number | null;
+            /** Denoise */
+            denoise?: number | null;
+        };
         /** Body_storyboard_upload_api_projects__pid__storyboard_import_upload_post */
         Body_storyboard_upload_api_projects__pid__storyboard_import_upload_post: {
             /** Files */
@@ -4199,6 +4290,25 @@ export interface components {
              * @default true
              */
             liked?: boolean | null;
+        };
+        /** LocalGenerateReq */
+        LocalGenerateReq: {
+            /** Prompt */
+            prompt: string;
+            /**
+             * Count
+             * @default 4
+             */
+            count?: number;
+            /**
+             * Model
+             * @default flux-schnell
+             */
+            model?: string;
+            /** Steps */
+            steps?: number | null;
+            /** Seed */
+            seed?: number | null;
         };
         /**
          * MoodGenReq
@@ -8648,6 +8758,138 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ScriptGenerateReq"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storyboard_local_status_api_projects__pid__storyboard_local_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storyboard_local_generate_api_projects__pid__storyboard_local_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalGenerateReq"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storyboard_local_job_api_projects__pid__storyboard_local_job_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storyboard_local_inpaint_api_projects__pid__storyboard_local_inpaint_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_storyboard_local_inpaint_api_projects__pid__storyboard_local_inpaint_post"];
             };
         };
         responses: {

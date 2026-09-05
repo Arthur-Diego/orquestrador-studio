@@ -788,3 +788,19 @@ levanta `hf.CliUnavailable` (com `installed`) quando o CLI está ausente OU desl
 mood/animate/moodboards-multishot, que não checavam login e deixavam o job estourar no subprocess.
 Relaciona ADR-002 (só via CLI), ADR-004 (troca de implementação, não de processo), ADR-016 (ordem
 custo→gerar e livro-caixa intactos) e ADR-008 (CLI sempre fake nos testes).
+
+---
+
+**ADR nova: ADR-033** (STUDIO) — motor de imagem LOCAL (ComfyUI/Flux) como **segunda ponte de
+ferramenta externa** `[extensão]`. A etapa 4 ganha um caminho ADICIONAL grátis ao lado do pago
+(Higgsfield permanece): geração local de keyframes (`engine image`, subprocess) e **inpaint REAL por
+máscara** headless via HTTP do ComfyUI (grafo `InpaintModelConditioning` Flux GGUF), com a máscara
+pintada num modal do próprio sistema (`MaskEditor.tsx`) — o usuário nunca abre a UI do ComfyUI. Nova
+ponte `studio/localengine.py` (fakeável), serviço `studio/storyboard/local.py`, rotas
+`.../storyboard/local/{status,generate,job,inpaint}`, resultados ingeridos como candidatos
+`source:"local"`. Gate de saúde `EngineUnavailable`→409 (nunca 5xx, nunca afeta o pago). **Supera
+parcialmente** ADR-004/ADR-002 (deixa de valer que inpaint só existe na UI/CLI sem máscara: agora há
+inpaint real local). Relaciona ADR-001 (single-process — ComfyUI é ferramenta externa, não 2º
+runtime), ADR-006 (jobs em thread + polling), ADR-008 (fakes, sem rede), ADR-010 (só artefatos
+gerados do núcleo tocados, com titularidade declarada) e ADR-016 (local é grátis: livro-caixa
+inalterado).
