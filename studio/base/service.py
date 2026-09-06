@@ -458,17 +458,27 @@ def prompts(pid: str, model: str | None = None) -> dict:
 
 # ---------- candidatas ----------
 def _normalize(cands: list[dict], kind: str | None = None, ref_id: str | None = None,
-               new_ids: set[str] | None = None) -> list[dict]:
+               new_ids: set[str] | None = None, source_id: str | None = None) -> list[dict]:
     """Completa o que o `ingest` não sabe da etapa: `kind` da aula e `ref_id`, e deixa
-    `file`/`thumb` relativos ao projeto (schema fixado na wave 1)."""
+    `file`/`thumb` relativos ao projeto (schema fixado na wave 1).
+
+    `source_id` é `[extensão]` (F11): de que candidata a nova veio. Só é gravado nas candidatas de
+    `new_ids`; nas antigas entra por `setdefault`, para que um `candidates.json` anterior à feature
+    carregue com `source_id: null` sem migração e sem reescrita de nenhum outro campo.
+    """
     for c in cands:
         if new_ids is not None and c["id"] in new_ids:
             if kind:
                 c["kind"] = kind
             c["ref_id"] = ref_id
+            # A origem de uma `situation` é a referência da etapa 1, já em `ref_id`; o `!= c["id"]`
+            # sustenta o invariante "nunca o próprio id" (FDD §6).
+            sid = None if kind == "situation" else source_id
+            c["source_id"] = sid if sid != c["id"] else None
         if c.get("kind") not in KINDS:
             c["kind"] = kind or "situation"
         c.setdefault("ref_id", None)
+        c.setdefault("source_id", None)
         if c.get("file") and not str(c["file"]).startswith(f"{STEP}/"):
             c["file"] = f"{STEP}/candidates/{c['file']}"
         if c.get("thumb") and not str(c["thumb"]).startswith(f"{STEP}/"):
@@ -480,10 +490,18 @@ def load(pid: str) -> list[dict]:
     return _normalize(ingest.load_candidates(project_dir(pid), STEP))
 
 
-def _finish_import(root: Path, before: set[str], kind: str, ref_id: str | None) -> list[str]:
+def _finish_import(root: Path, before: set[str], kind: str, ref_id: str | None,
+                   source_id: str | None = None) -> list[str]:
+    """`source_id` `[extensão]` (F11): no caminho pago vem pronto do item do `_plan`, que já
+    resolveu a origem antes de chamar o CLI. No import pela tela chega `None` e é inferido por
+    `source_candidate` sobre as candidatas que já existiam ANTES do import (`before`), para que uma
+    candidata nova jamais seja origem de si mesma."""
     cands = ingest.load_candidates(root, STEP)
     new_ids = {c["id"] for c in cands} - before
-    cands = _normalize(cands, kind, ref_id, new_ids)
+    if source_id is None and kind != "situation":
+        src = source_candidate([c for c in cands if c["id"] in before], kind)
+        source_id = src["id"] if src else None
+    cands = _normalize(cands, kind, ref_id, new_ids, source_id)
     ingest.save_candidates(root, STEP, cands)
     return upscale_warnings(root, cands, new_ids) if kind == "upscale" else []
 
@@ -510,7 +528,7 @@ def cand_size(root: Path, c: dict | None) -> tuple[int, int]:
 def upscale_warnings(root: Path, cands: list[dict], new_ids: set[str]) -> list[str]:
     """B6: a aula manda "2x, preset High Fidelity V2". Compara a largura da candidata importada
     como `upscale` com a da candidata de origem selecionada. Aviso — nunca recusa o import."""
-    src = most_advanced([c for c in cands if c.get("kind") in ("situation", "clean", "label")])
+    src = source_candidate(cands, "upscale")
     base_w = cand_size(root, src)[0]
     if not base_w:
         return []
@@ -599,6 +617,23 @@ def most_advanced(cands: list[dict]) -> dict | None:
     """A candidata selecionada mais avançada da cadeia: upscale > label > situação."""
     chosen = [c for c in cands if c.get("selected") and c.get("kind") in KINDS]
     return max(chosen, key=lambda c: RANK[c["kind"]]) if chosen else None
+
+
+def source_candidate(cands: list[dict], kind: str) -> dict | None:
+    """`[extensão]` (F11): de qual candidata selecionada um passo `kind` parte.
+
+    Reproduz a precedência que `_plan` já usa no caminho pago, para que o import pela tela grave a
+    mesma origem — com uma diferença deliberada: um `upscale` importado NUNCA aponta para outro
+    `upscale` (`most_advanced` consideraria), o que evitaria origem circular na cadeia. Sem origem
+    selecionada devolve `None`: grava-se `null`, nunca um chute.
+    """
+    if kind == "clean":
+        return _selected(cands, "situation")
+    if kind == "label":
+        return _selected(cands, "clean") or _selected(cands, "situation")
+    if kind == "upscale":
+        return most_advanced([c for c in cands if c.get("kind") in ("situation", "clean", "label")])
+    return None     # `situation` (origem é a referência da etapa 1, em `ref_id`) e kind inválido
 
 
 def _write_final(root: Path, cand: dict) -> None:
@@ -732,7 +767,7 @@ def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
             raise ValueError("Escolha primeiro a melhor imagem de situação (aula 009).")
         # `clean_prompt` sempre devolve texto (sem `target`, fica genérico): não há segundo `raise`.
         text = prompt.strip() or clean_prompt(target)
-        item = {"ref_id": base.get("ref_id"), "prompt": text,
+        item = {"ref_id": base.get("ref_id"), "prompt": text, "source_id": base["id"],
                 "image_references": [str(root / base["file"])]}
         return [dict(item) for _ in range(max(1, count))], text
     if kind == "label":
@@ -747,13 +782,17 @@ def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
         if brand_img is None:
             raise ValueError("Anexe a imagem da marca antes de trocar o rótulo.")
         text = prompt.strip() or LABEL_IMAGE_PROMPT
-        item = {"ref_id": base.get("ref_id"), "prompt": text,
+        item = {"ref_id": base.get("ref_id"), "prompt": text, "source_id": base["id"],
                 "image_references": [str(root / base["file"]), str(brand_img)]}
         return [dict(item) for _ in range(max(1, count))], text
     src = most_advanced(cands)
     if src is None:
         raise ValueError("Escolha primeiro a imagem que será ampliada (situação ou rótulo).")
-    return [{"ref_id": src.get("ref_id"), "prompt": "", "image_references": [str(root / src["file"])]}], ""
+    # `source_id` `[extensão]` (F11): aqui a origem é a imagem que de fato foi ao CLI — inclusive
+    # outro `upscale`, se foi ela a entrada. A regra de "nunca outro upscale" é da inferência do
+    # import pela tela (`source_candidate`), onde a entrada real não é conhecida.
+    return [{"ref_id": src.get("ref_id"), "prompt": "", "source_id": src["id"],
+             "image_references": [str(root / src["file"])]}], ""
 
 
 def cost_model(pid: str, kind: str, model: str | None = None) -> str:
@@ -857,7 +896,7 @@ def _ingest_job(root: Path, res: dict, kind: str, item: dict, model: str, job: d
         if ingest.ingest_bytes(root, STEP, data, "cli", name, item["prompt"],
                                {"job_id": res.get("id"), "model": model}):
             added += 1
-    for w in _finish_import(root, before, kind, item.get("ref_id")):
+    for w in _finish_import(root, before, kind, item.get("ref_id"), item.get("source_id")):
         if job is not None:
             job["log"].append(w)
     shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -768,3 +768,158 @@ def test_clean_most_advanced_ranks_between_situation_and_label(studio_env, svc, 
     lbl = _up(svc, project, "label", (40, 40, 200))
     svc.select(project, lbl)
     assert svc.most_advanced(svc.load(project))["id"] == lbl
+
+
+# ---------- `source_id`: de que candidata o passo veio `[extensão]` (F11) ----------
+def _newest(svc, pid, kind):
+    return [c for c in svc.load(pid) if c["kind"] == kind][-1]
+
+
+def _sel(cid, kind, selected=True):
+    return {"id": cid, "kind": kind, "selected": selected}
+
+
+def test_source_candidate_precedence_matches_the_plan(svc):
+    """FDD §5 Contrato 2: uma única função implementa a precedência que `_plan` já usa."""
+    sit, cln, lbl, up = (_sel("s1", "situation"), _sel("c1", "clean"),
+                         _sel("l1", "label"), _sel("u1", "upscale"))
+    assert svc.source_candidate([sit, cln, lbl, up], "situation") is None, "origem é o ref_id da etapa 1"
+    assert svc.source_candidate([sit, cln, lbl], "clean")["id"] == "s1"
+    assert svc.source_candidate([sit, cln], "label")["id"] == "c1", "a limpeza vence a situação"
+    assert svc.source_candidate([sit], "label")["id"] == "s1", "sem limpeza, cai na situação"
+    assert svc.source_candidate([sit, cln, lbl], "upscale")["id"] == "l1", "a mais avançada da cadeia"
+    assert svc.source_candidate([sit, cln], "upscale")["id"] == "c1"
+    assert svc.source_candidate([sit, up], "upscale")["id"] == "s1", "upscale nunca vem de outro upscale"
+
+
+def test_source_candidate_is_none_without_a_selected_origin(svc):
+    """Risco 2: sem origem selecionada grava-se `null`, nunca um chute."""
+    naos = [_sel("s1", "situation", selected=False), _sel("c1", "clean", selected=False)]
+    for kind in svc.KINDS:
+        assert svc.source_candidate(naos, kind) is None
+        assert svc.source_candidate([], kind) is None
+    assert svc.source_candidate([_sel("u1", "upscale")], "upscale") is None, "só há outro upscale"
+
+
+def test_source_id_paid_path_follows_the_chain(studio_env, svc, project, monkeypatch):
+    """Critério 3: no caminho pago o `source_id` é a origem que o `_plan` resolveu."""
+    _root, sit = _clean_ready(studio_env, svc, project)
+    svc.brand_image_set(project, image_bytes())
+    _fake_cli(svc, monkeypatch, [["http://x/c.png"], ["http://x/l.png"], ["http://x/u.png"]])
+
+    svc.start_generate(project, "clean", count=1)
+    assert _wait(svc, project)["state"] == "done"
+    cln = _newest(svc, project, "clean")
+    assert cln["source_id"] == sit["id"], "a limpeza parte da situação escolhida"
+
+    svc.select(project, cln["id"])
+    svc.start_generate(project, "label", count=1)
+    assert _wait(svc, project)["state"] == "done"
+    lbl = _newest(svc, project, "label")
+    assert lbl["source_id"] == cln["id"], "o rótulo parte da limpeza escolhida"
+
+    svc.select(project, lbl["id"])
+    svc.start_generate(project, "upscale")
+    assert _wait(svc, project)["state"] == "done"
+    assert _newest(svc, project, "upscale")["source_id"] == lbl["id"], "amplia a mais avançada"
+
+    assert all(c["source_id"] != c["id"] for c in svc.load(project)), "nunca o próprio id"
+
+
+def test_source_id_paid_label_falls_back_to_the_situation(studio_env, svc, project, monkeypatch):
+    """Critério 3: sem `clean` escolhida, o rótulo pago aponta para a situação (fallback do `_plan`)."""
+    _root, sit = _clean_ready(studio_env, svc, project)
+    svc.brand_image_set(project, image_bytes())
+    _fake_cli(svc, monkeypatch, [["http://x/l.png"]])
+    svc.start_generate(project, "label", count=1)
+    assert _wait(svc, project)["state"] == "done"
+    assert _newest(svc, project, "label")["source_id"] == sit["id"]
+
+
+def test_source_id_paid_situation_is_always_null(studio_env, svc, project, monkeypatch):
+    """Decisão auto-aceita 3: a origem de uma situação é a referência da etapa 1, já em `ref_id`."""
+    prepare(studio_env, project)
+    _fake_cli(svc, monkeypatch, [["http://x/1.png"], ["http://x/2.png"]])
+    svc.start_generate(project, "situation")
+    assert _wait(svc, project)["state"] == "done"
+    cands = svc.load(project)
+    assert cands and all(c["source_id"] is None and c["ref_id"] for c in cands)
+
+
+def test_source_id_screen_import_infers_the_selected_origin(studio_env, svc, project):
+    """Critério 3: o import pela tela infere a origem pela cadeia selecionada no momento do import."""
+    _root, sit = _clean_ready(studio_env, svc, project)
+    svc.import_upload(project, [("c.png", _png(800, 450, (10, 20, 30)))], "clean")
+    cln = _newest(svc, project, "clean")
+    assert cln["source_id"] == sit["id"]
+
+    svc.select(project, cln["id"])
+    svc.import_upload(project, [("l.png", _png(800, 450, (40, 60, 80)))], "label")
+    lbl = _newest(svc, project, "label")
+    assert lbl["source_id"] == cln["id"]
+
+    svc.select(project, lbl["id"])
+    svc.import_upload(project, [("u.png", _png(1600, 900, (90, 90, 90)))], "upscale")
+    assert _newest(svc, project, "upscale")["source_id"] == lbl["id"]
+
+    ids = {c["id"] for c in svc.load(project)}
+    assert all(c["source_id"] != c["id"] and (c["source_id"] is None or c["source_id"] in ids)
+               for c in svc.load(project)), "aponta sempre para outra candidata existente"
+
+
+def test_source_id_imported_upscale_never_comes_from_another_upscale(studio_env, svc, project):
+    """Risco 2 / decisão auto-aceita 4: origem circular de upscale é proibida no import."""
+    _clean_ready(studio_env, svc, project)
+    svc.import_upload(project, [("l.png", _png(800, 450, (40, 60, 80)))], "label")
+    lbl = _newest(svc, project, "label")
+    svc.select(project, lbl["id"])
+    svc.import_upload(project, [("u1.png", _png(1600, 900, (90, 90, 90)))], "upscale")
+    u1 = _newest(svc, project, "upscale")
+    svc.select(project, u1["id"])
+    assert svc.most_advanced(svc.load(project))["id"] == u1["id"], "a upscale é a mais avançada"
+
+    svc.import_upload(project, [("u2.png", _png(1600, 900, (91, 92, 93)))], "upscale")
+    u2 = _newest(svc, project, "upscale")
+    assert u2["id"] != u1["id"]
+    assert u2["source_id"] == lbl["id"], "a origem é o rótulo escolhido, não a outra upscale"
+    assert u2["source_id"] not in (u1["id"], u2["id"]), "nunca outra upscale, nunca o próprio id"
+
+
+def test_source_id_screen_import_of_a_situation_is_null(studio_env, svc, project):
+    prepare(studio_env, project)
+    svc.import_upload(project, [("s.png", _png(800, 450))], "situation", "0f8e7d6c5b4a")
+    assert _newest(svc, project, "situation")["source_id"] is None
+
+
+def test_source_id_is_null_when_there_is_no_selected_origin(studio_env, svc, project):
+    """Critério 3: sem `situation` escolhida, o import de `clean` grava `null` em vez de chutar."""
+    prepare(studio_env, project)
+    svc.import_upload(project, [("s.png", _png(800, 450))], "situation", "0f8e7d6c5b4a")  # não escolhida
+    svc.import_upload(project, [("c.png", _png(800, 450, (10, 20, 30)))], "clean")
+    assert _newest(svc, project, "clean")["source_id"] is None
+
+
+def test_old_candidates_load_with_null_source_id_and_stay_selectable(studio_env, svc, project):
+    """Critério 4: JSON anterior à feature carrega com `source_id: null`, sem migração e sem
+    reescrever nenhum outro campo."""
+    root = prepare(studio_env, project)
+    antigas = []
+    for cid, kind in (("aa11bb22cc33", "situation"), ("dd44ee55ff66", "upscale")):
+        make_image(root / "base" / "candidates" / f"{cid}.png", color=(30, 60, 90))
+        make_image(root / "base" / "candidates" / "thumbs" / f"{cid}.jpg", color=(30, 60, 90))
+        antigas.append({"id": cid, "kind": kind, "ref_id": "0f8e7d6c5b4a", "source": "upload",
+                        "prompt": "", "file": f"base/candidates/{cid}.png",
+                        "thumb": f"base/candidates/thumbs/{cid}.jpg", "selected": False})
+    (root / "base").mkdir(parents=True, exist_ok=True)
+    (root / "base" / "candidates.json").write_text(json.dumps(antigas))
+
+    carregadas = svc.load(project)
+    assert [c["id"] for c in carregadas] == [c["id"] for c in antigas]
+    assert all(c["source_id"] is None for c in carregadas), "ausente é lido como null"
+    for gravada, lida in zip(antigas, carregadas, strict=True):
+        assert {k: v for k, v in lida.items() if k != "source_id"} == gravada, \
+            "nenhum outro campo é reescrito"
+
+    r = svc.select(project, antigas[0]["id"])
+    assert r["chain"]["situation"] == antigas[0]["id"]
+    assert (root / "base" / "base_final.png").exists()
