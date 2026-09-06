@@ -9,6 +9,21 @@ export → publicação → prospecção. Backend FastAPI + frontend estático; 
 `/dd-parallel`, 385 testes). Geração de imagem/vídeo continua em "modo UI" (você gera na
 interface da Higgsfield e importa) ou via CLI logado. Plano completo em `docs/plano/`.
 
+## Assistente de chat `[extensão]`
+
+Um painel lateral (⌘/dock) conduz a campanha do início ao fim conversando: explica o método,
+diz o que falta em cada etapa e **executa as ações** pelas tools de um servidor MCP do Studio.
+O modelo é o **Claude Code CLI** do usuário (assinatura, sem chave de API); cada turno é um
+`claude -p` com stream-json. Abas paralelas permitem trabalhar em várias campanhas ao mesmo
+tempo. Decisão visual (qual foto/take) e gasto (geração paga) são sempre do usuário — o chat
+mostra a grade para escolher e confirma o custo antes de gerar. Há uma biblioteca de
+**Personagens** para acertar a identidade e reaplicá-la nas cenas (foto e vídeo).
+
+O mesmo MCP roda no terminal: com o Studio no ar e o `.mcp.json` do repositório, um `claude`
+comum usa as tools `mcp__studio__*` (skills `studio-conduzir`, `studio-personagem`,
+`studio-ajuda`). Detalhes: `docs/operations/assistente-chat.md`, `docs/domains/chat/hld.md`,
+`docs/domains/characters/hld.md`, ADR-036 a 040. Requer o Claude Code CLI instalado.
+
 ## Requisitos
 
 - Python 3.12+, Node 18+ (só para o CLI da Higgsfield), Chromium do Playwright.

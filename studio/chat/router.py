@@ -115,6 +115,34 @@ def chat_events(chat_id: str, after: int = 0):
     return {"events": sessions.read_events(chat_id, after=after), "pending": bridge.pending(chat_id)}
 
 
+@router.get("/api/chats/{chat_id}/trace")
+def chat_trace(chat_id: str):
+    """Observabilidade (Onda E): o que o assistente fez nesta aba — tools chamadas, custo, turnos.
+
+    Derivado do transcript (`events.jsonl`), sem estado novo. Alimenta o painel "o que o assistente
+    fez" por campanha e a contagem de uso por aba.
+    """
+    try:
+        sess = sessions.get(chat_id)
+    except KeyError as e:
+        raise HTTPException(404, f"conversa não encontrada: {chat_id}") from e
+    eventos = sessions.read_events(chat_id)
+    tools_por_nome: dict[str, int] = {}
+    custo = 0.0
+    erros = 0
+    for e in eventos:
+        if e.get("kind") == "tool_call":
+            nome = (e.get("name") or "").replace("mcp__studio__", "")
+            tools_por_nome[nome] = tools_por_nome.get(nome, 0) + 1
+        elif e.get("kind") == "result":
+            if isinstance(e.get("cost"), (int, float)):
+                custo += float(e["cost"])
+            if e.get("is_error"):
+                erros += 1
+    return {"chat_id": chat_id, "title": sess.title, "pid": sess.pid, "turns": sess.turns,
+            "events": len(eventos), "tools": tools_por_nome, "usd_estimado": round(custo, 4), "erros": erros}
+
+
 @router.post("/api/chats/{chat_id}/stop")
 def stop_chat(chat_id: str):
     task = _turns.get(chat_id)

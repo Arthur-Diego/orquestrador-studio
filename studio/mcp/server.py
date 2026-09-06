@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import actions, tools, ui
+from . import actions, resources, tools, ui
 from .client import StudioClient
 
 
@@ -196,6 +196,9 @@ def build_server(client: StudioClient | None = None):
     @t(name="character_score", description="Nota de identidade (similaridade facial) entre o personagem fixado e uma candidata (motor local, opcional).")
     def character_score(cid: str, candidate_id: str, step: str = "explore") -> str:
         return actions.character_score(cli, cid, candidate_id, step)
+
+    # ---------- resources de conhecimento (ADR-037, Onda E) ----------
+    resources.register_resources(server, cli)
 
     return server
 

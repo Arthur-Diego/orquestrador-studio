@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "studio": {
+      "command": ".venv/bin/python",
+      "args": ["-m", "studio.mcp"],
+      "env": {
+        "STUDIO_URL": "http://127.0.0.1:8765"
+      }
+    }
+  }
+}

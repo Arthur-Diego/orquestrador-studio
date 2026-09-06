@@ -76,6 +76,20 @@ def test_limite_de_conversas_ativas(client, monkeypatch):
         assert ev["kind"] == "notify" and "limite" in ev["text"].lower()
 
 
+def test_trace_resume_o_que_o_assistente_fez(client):
+    from studio.chat import sessions
+    cid = client.post("/api/chats", json={"title": "t", "pid": "gelo"}).json()["id"]
+    sessions.append_event(cid, {"kind": "user", "text": "vai"})
+    sessions.append_event(cid, {"kind": "tool_call", "name": "mcp__studio__guide"})
+    sessions.append_event(cid, {"kind": "tool_call", "name": "mcp__studio__mood_generate"})
+    sessions.append_event(cid, {"kind": "result", "is_error": False, "cost": 0.12})
+    t = client.get(f"/api/chats/{cid}/trace").json()
+    assert t["turns"] == 0 and t["events"] == 4
+    assert t["tools"]["guide"] == 1 and t["tools"]["mood_generate"] == 1
+    assert t["usd_estimado"] == 0.12 and t["erros"] == 0
+    assert client.get("/api/chats/none/trace").status_code == 404
+
+
 def test_websocket_recusa_aba_inexistente(client):
     import pytest
     from starlette.websockets import WebSocketDisconnect

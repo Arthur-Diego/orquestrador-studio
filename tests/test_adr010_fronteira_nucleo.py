@@ -70,6 +70,13 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-08-chat-onda-e": (
+        "`[extensão]` Onda E — conhecimento, MCP no terminal, observabilidade e docs, card "
+        "ADH-OS-20260905-08: `.mcp.json` (raiz), resources e trace em `studio/mcp`/`studio/chat` "
+        "(fora de NUCLEO_PREFIXOS), skills e docs. O único núcleo tocado é `frontend/`, e só um "
+        "arquivo de TESTE (`useChatSocket.test.ts`) — nenhuma fonte do bundle muda. ADR-037.",
+        ("frontend/",),
+    ),
     "feature/adh-os-20260905-07-chat-onda-d": (
         "`[extensão]` Onda D — biblioteca de Personagens e identidade (ADR-039), card "
         "ADH-OS-20260905-07: novo domínio `studio/characters/` e `studio/mcp/` (fora de "
