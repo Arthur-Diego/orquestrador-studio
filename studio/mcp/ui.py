@@ -102,10 +102,26 @@ def choose_one(client: StudioClient, title: str, options: list[dict]) -> dict:
 
 
 def choose_images(client: StudioClient, title: str, images: list[dict], minimum: int = 1,
-                  maximum: int | None = None) -> dict:
-    """images: [{id, thumb, label}]. Retorna {answered, selected:[ids], order?}."""
-    return _ask(client, {"widget": "choose_images", "title": title, "images": images,
-                         "min": minimum, "max": maximum})
+                  maximum: int | None = None, media: list[dict] | None = None,
+                  actions: list[dict] | None = None) -> dict:
+    """images: [{id, thumb, label}]. Retorna {answered, selected:[ids], order?}.
+
+    `media` e `actions` são `[extensão]` (ADR-038) e entram no payload apenas quando não são `None`;
+    sem eles o `ask` é exatamente o de sempre, e os `*_pick` não mudam de comportamento.
+
+    - `media`: itens de exibição no formato do `ui.show` (`{url, label?, kind?}`) mais o pareamento
+      antes/depois — `role` (`"before"|"after"`) e `pair` (o `id` da imagem a que o item pertence).
+    - `actions`: botões `{label, value, for?}`, onde `value` é o objeto exato que o dock devolve como
+      resposta do `ask` e `for` (opcional) amarra o botão ao cartão daquela imagem; sem `for`, o
+      botão é global.
+    """
+    payload: dict[str, Any] = {"widget": "choose_images", "title": title, "images": images,
+                               "min": minimum, "max": maximum}
+    if media is not None:
+        payload["media"] = media
+    if actions is not None:
+        payload["actions"] = actions
+    return _ask(client, payload)
 
 
 def form(client: StudioClient, title: str, fields: list[dict]) -> dict:
