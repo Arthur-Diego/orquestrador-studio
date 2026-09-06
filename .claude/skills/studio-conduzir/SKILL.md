@@ -25,7 +25,9 @@ conectado (`.mcp.json` do repo; confira com `claude mcp list`). As tools chegam 
 1. `guide <pid>` para ver o que falta. Sem campanha, ajude a criar/escolher.
 2. Referências: `refs_suggest_terms` → `refs_search` → `job_wait <pid> refs` → `refs_pick`.
 3. Mood: `mood_prompt` → `mood_generate` (confirme custo) → `job_wait` → `mood_pick`.
-4. Base: `base_prompt` → `base_generate` (confirme custo) → `base_pick`.
+4. Base: `base_prompt` → `base_generate` (confirme custo) → `job_wait <pid> base` → `base_review`
+   (mostra as candidatas NOVAS com o par antes→depois e deixa o usuário definir a base final).
+   Use `base_pick` quando a escolha for entre candidatas já existentes, sem geração recente.
 5. Storyboard: `storyboard_local_generate` (grátis) → `job_wait` → `storyboard_pick`.
 6. Animação/Trilha/Montagem/Export: `animate_generate`/`music_generate` (pago, confirme) ·
    `edit_render`/`export_render`/`export_qa` (grátis) · `job_wait` a cada passo.

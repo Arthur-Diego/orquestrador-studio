@@ -681,6 +681,25 @@ Contratos (seção 5): 4
 Fluxos principais (seção 4): 1
 Arquivos previstos: 16
 
+**Ajuste do que foi de fato tocado (registrado no fechamento de ciclo, 2026-09-06).** Três desvios
+em relação à previsão acima, nenhum deles de contrato:
+
+- **`studio/chat/mudancas.py` foi tocado** (uma linha: `"base_review": ("base", "selection")` no
+  `TOOL_STEPS`). A seção 3 atribui o mapa a F03, e a previsão de arquivos não o listava — mas o
+  acréscimo é **obrigatório**, por dois motivos: sem ele o passo 13 do fluxo da seção 4 (o
+  `state_changed` emitido depois do `tool_result` de `base_review`) não acontece e o critério 18 não
+  fecha; e o teste de drift por AST de `tests/test_chat_mudancas.py` exige uma entrada para **cada**
+  tool registrada em `studio/mcp/server.py`, então uma tool nova sem entrada reprova a suíte. O que é
+  de F03 é o **mecanismo**; declarar a tool própria nele é de quem cria a tool.
+- **`frontend/src/areas/chat/toolLabels.ts` foi tocado** (rótulo de `base_review`). O arquivo é de
+  F02, que ainda estava em voo quando este FDD foi escrito; passou a existir no rebase e tem a mesma
+  natureza de guarda: `tests/test_chat_tool_labels.py` cobra um rótulo por tool registrada.
+  `tests/test_mcp_pick_routers.py` também recebeu casos, pelo mesmo motivo (guarda de catálogo).
+- **`studio/etapas/base/router.py` NÃO foi tocado**, ao contrário do que a ordem 2 da tabela previa.
+  O enriquecimento com `new_candidates` ficou inteiro em `studio/base/service.py::job_status`, e o
+  router seguiu apenas delegando (`return base.job_status(pid)`). É o desenho melhor — o router da
+  etapa não tem regra de negócio — e não muda o contrato publicado.
+
 Decisão direta × SDD: **SDD (Compozy)**. A regra da wave é direta só com ≤3 contratos **e** 1 fluxo **e**
 ≤8 arquivos; aqui são 4 contratos e 16 arquivos, então a frente decompõe com `cy-create-tasks` e executa
 pelo pipeline SDD.

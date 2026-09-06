@@ -221,8 +221,13 @@ prompt de situacao leva o texto fixo "No people unless they appear in the refere
 - Assinatura/Rota: `GET /api/projects/{pid}/base/candidates`
 - Método: GET
 - Semântica: 200 `{"candidates": [...], "final": "base/base_final.png"|null}`; cada item com
-  `{id, kind, source, name, prompt, file, thumb, width, height, ref_id, selected, imported, job_id?, model?}`.
+  `{id, kind, source, name, prompt, file, thumb, width, height, ref_id, selected, imported, job_id?, model?, source_id}`.
   `file`/`thumb` relativos ao projeto (servidos por `/files/{pid}/...`).
+- `source_id` `[extensão]` (Wave 11 · F11, `base-upscale-chat-fdd.md` §5 contrato 2): de que
+  candidata o passo partiu — `null` em `situation` (a origem é a referência da etapa 1, já em
+  `ref_id`), a `situation` selecionada em `clean`, a `clean` (ou a `situation`) em `label` e a mais
+  avançada da cadeia em `upscale`. Candidata gravada antes daquela feature carrega com `null` por
+  `setdefault`: não houve migração de `candidates.json`.
 
 **Contrato 4: importar por upload**
 - Tipo: endpoint
@@ -280,7 +285,16 @@ prompt de situacao leva o texto fixo "No people unless they appear in the refere
 - Tipo: endpoint
 - Assinatura/Rota: `GET /api/projects/{pid}/base/job`
 - Método: GET
-- Semântica: 200 `registry.status(pid)`; `{state:"idle"}` quando nunca rodou.
+- Semântica: 200 `registry.status(pid)` **mais** `new_candidates`; `{state:"idle", new_candidates: []}`
+  quando nunca rodou.
+- `new_candidates` `[extensão]` (Wave 11 · F11, `base-upscale-chat-fdd.md` §5 contrato 1): lista
+  sempre presente, com uma entrada `{id, kind, thumb_url, file_url, source_id}` por candidata
+  ingerida **naquele** job, na ordem de ingestão (`[]` sem job ou sem ingestão). `thumb_url` é
+  `null` quando o `ingest` não gerou thumb. As URLs são absolutas e servíveis por `/files` — é a
+  única borda onde a prefixação com `/files/{pid}/` acontece; `file`/`thumb` do contrato 3 seguem
+  relativos à raiz do projeto. Invariante: `len(new_candidates) == added` nos jobs concluídos com
+  sucesso. A rota continua **sem** `response_model`, para não filtrar as chaves que o `JobRegistry`
+  injeta (`kind`, `model`, `log`) — por isso `frontend/src/api/schema.ts` não muda por causa dela.
 
 **Contrato 10: selecionar**
 - Tipo: endpoint

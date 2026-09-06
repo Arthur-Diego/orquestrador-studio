@@ -1,8 +1,9 @@
 ### HLD: chat (assistente do Studio) `[extensão]`
 
-Versão: 1.2 (Onda A + sincronização chat → telas + feedback ao vivo do turno)
+Versão: 1.3 (Onda A + sincronização chat → telas + feedback ao vivo do turno + `ask` com ações)
 Data: 2026-09-06
-Task-Id: ADH-OS-20260905-04 (v1.0) · ADH-OS-20260906-05 (v1.1) · ADH-OS-20260906-04 (v1.2)
+Task-Id: ADH-OS-20260905-04 (v1.0) · ADH-OS-20260906-05 (v1.1) · ADH-OS-20260906-04 (v1.2) ·
+ADH-OS-20260906-13 (v1.3)
 Responsável: Arthur Diego (modo autônomo /dd-parallel, aprovação total)
 
 > **v1.2 (Wave 11 · F02, card #86)** — o dock deixa de adivinhar se o assistente está trabalhando.
@@ -46,6 +47,7 @@ no Studio (ADR-036).
 | `studio/chat/prompts/sistema.md` | Persona e regras (seguir o guia, não gerar pago sem confirmar, não escolher no lugar do usuário, fidelidade ao curso). |
 | `studio/mcp/` | Servidor MCP stdio (`python -m studio.mcp`): `client.py` (HTTP loopback), `tools.py` (funções puras), `server.py` (FastMCP). Tools de leitura na Onda A. |
 | `frontend/src/areas/chat/` | Dock lateral do shell: `ChatDock` + `useChatSocket` + `chat.css`. Montado sempre no `Shell` (área global). Traduz `state_changed` em `invalidarGuia` + publicação no barramento (Wave 11 · F03). |
+| `frontend/src/areas/chat/MediaCard.tsx` | Cartão de mídia do dock, extraído do `ChatDock` (Wave 11 · F11): renderiza o `ui.show` como antes e, quando o `ask` traz `actions`, um botão por ação mais o par antes→depois; clicar na imagem abre o lightbox, que reusa o `Modal` do design system e **não** responde o `ask`. |
 | `frontend/src/shell/events.ts` | Barramento de mudanças do shell: `emitStudioChange` + `useStudioChange(step, cb, opts?)`, filtro por step/pid e debounce de 400 ms. Sem `window`, sem rede — só transporta o AVISO (Wave 11 · F03). |
 
 Acrescentados na **v1.2** (Wave 11 · F02):
@@ -73,6 +75,17 @@ Acrescentados na **v1.2** (Wave 11 · F02):
    o par de turno aberto.
 7. `ui.*` (Onda B): a tool faz POST em `/api/chats/{id}/ask`; o router empurra o pedido ao browser
    e aguarda a Future; o browser responde e a tool recebe a escolha.
+   **Extensão aditiva do widget `choose_images` (Wave 11 · F11, ADR-038).** O payload do `ask`
+   aceita dois campos opcionais, que só entram no dicionário quando não são `None`: `media` (itens
+   `{url, label?, kind?}` do `ui.show` mais `role` `"before"|"after"` e `pair`, o id da candidata a
+   que o item pertence) e `actions` (`{label, value, for?}`, onde `value` é o objeto **exato** que o
+   dock devolve como resposta e `for` amarra o botão ao cartão daquela candidata; sem `for` o botão
+   é global). Com `actions` presentes, o `AskCard` renderiza um `MediaCard` por imagem em vez da
+   grade com "Confirmar seleção" — a guarda é `actions?.length`, nunca a presença de `media`, para
+   que `refs_pick`, `mood_pick`, `storyboard_pick` e `character_pick`, que não mandam nenhum dos
+   dois, continuem com o payload e o comportamento de sempre. A ordem do ADR-038 é preservada: o
+   botão carrega a resposta pronta, mas quem clica é o usuário, e a tool só age depois do `ask`
+   respondido. Primeiro consumidor: `base_review`.
 8. **Sincronização chat → telas (Wave 11 · F03, ADR-041).** Depois de persistir e empurrar um
    `tool_result` bem-sucedido de tool de **ação**, o router emite também um `state_changed`
    (`{pid, step, scope, tool}`) pelo mesmo WebSocket. No browser, `useChatSocket` chama `onEvent`

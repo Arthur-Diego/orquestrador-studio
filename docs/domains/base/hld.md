@@ -38,8 +38,14 @@ Dependências com outros domínios
 
 ### Arquitetura geral
 Plugin de etapa (`studio/etapas/base/`) + serviço puro sobre o sistema de arquivos
-(`studio/base/service.py`). Nenhum arquivo único do núcleo é tocado: a etapa é descoberta por
-`studio.etapas.discover()` pelo `META` (`id="base"`, `n=3`, `aula="009"`).
+(`studio/base/service.py`). Nenhum arquivo único do núcleo é tocado **pelo plugin**: a etapa é
+descoberta por `studio.etapas.discover()` pelo `META` (`id="base"`, `n=3`, `aula="009"`).
+
+Ressalva `[extensão]` (Wave 11 · F11): a revisão da etapa 3 **pelo chat** vive fora do plugin e
+toca núcleo sob titularidade declarada em `tests/test_adr010_fronteira_nucleo.py` — o recorte é
+`frontend/src/areas/chat/` (cartão de mídia com ações e lightbox) e o bundle gerado
+`studio/web/dist/`. A tool `base_review` é do catálogo do MCP (`studio/mcp/`), não da etapa, e
+continua sendo cliente HTTP das rotas acima (ADR-037).
 
 Tecnologias principais
 - FastAPI (router com modelos Pydantic), Pillow (conversão do final para PNG), threading via
@@ -70,7 +76,8 @@ Padrões adotados
 | `select()` | seleção exclusiva por passo, cadeia situação → limpeza `[extensão]` → rótulo → upscale, `base_final.png` e `base.md` | Pillow |
 | `clean_prompt(target)` `[extensão]` | instrução de limpeza de marca em inglês, determinística (não passa pelo bot, como `label_prompt`); `target` nomeia a marca a remover e só entra no texto quando o campo do prompt vem vazio | — |
 | `estimate_cost` / `start_generate` / `job_status` | caminho pago: estimativa, job em thread (um por projeto), log por item, JSON bruto em `jobs/base_<id>.json` | `higgsfield`, `JobRegistry` |
-| `view.html` / `view.js` | os passos da aula na tela (mais o passo opcional "limpar marca" `[extensão]`, fora do auto-avanço: `COURSE_CHAIN` continua sendo só o que a aula ensina), painel `#guide` e bloco do CLI; usa os helpers compartilhados (`Studio.ui.drop/upload/confirmCost/poll/esc/hfChip/renderGuide`) e expõe `destroy()` | `studio/web/ui.js`, `style.css`, `Studio.register`, `GET /api/projects/{pid}/guide/base`, `GET /api/higgsfield/status` |
+| `source_candidate(cands, kind)` / `new_candidates(pid, ids)` `[extensão]` | linhagem da cadeia: de qual candidata selecionada um passo parte, e as candidatas de um job no formato servível que o chat consome (URLs absolutas só nessa borda) | `ingest` |
+| `ui/index.tsx` | os passos da aula na tela (mais o passo opcional "limpar marca" `[extensão]`, fora do auto-avanço: `COURSE_CHAIN` continua sendo só o que a aula ensina), painel `#guide` e bloco do CLI; componente React default-exportado, montado pelo `PluginHost` do shell e descoberto por `import.meta.glob` (Wave 10 · E10 — o par `view.html`/`view.js` e a ponte `window.Studio` deixaram de existir) | `frontend/src/ui` (design system), `frontend/src/shell/events` (`useStudioChange`, Wave 11 · F03), `GET /api/projects/{pid}/guide/base`, `GET /api/higgsfield/status` |
 
 ---
 
@@ -197,7 +204,12 @@ assistente mostrar o par antes → depois no chat sem montar caminho nenhum.
 - `job["log"]`: uma linha por item (`[situation] ref=… model=… urls=… added=…`) e `erro: <stderr>`.
 - `jobs/base_<jobid>.json` com o JSON bruto do CLI, para diagnóstico do formato real.
 - Logger `studio.base` (INFO) no início e no fim de cada job e em `select`.
-- Sem métricas nem tracing (ferramenta local, ADR-001).
+- `[extensão]` (Wave 11 · F11) linha extra no fim do job: `base: job pid=%s kind=%s novas=%s
+  origens=%s`, com a contagem de `new_candidates` e quantas têm `source_id`. É o sinal que permite
+  cruzar `job["added"]` com `len(new_candidates)`: divergência aí indica ingestão fora do
+  `_finish_import`, que é a fonte única desses ids.
+- Sem métricas nem tracing (ferramenta local, ADR-001). Não há dado sensível: ids são sha12 de
+  conteúdo, caminhos são relativos ao projeto e nenhum token trafega.
 
 ---
 
