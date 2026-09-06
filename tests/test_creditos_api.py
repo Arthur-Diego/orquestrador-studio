@@ -145,6 +145,27 @@ def test_spend_para_de_reprovar_gasto_real(client, stub_hf, action):
                        json={"action": "storyboard.video", "model": "kling2_6"}).status_code == 422
 
 
+def test_cost_das_acoes_novas_degrada_por_linha(client, stub_hf):
+    """`GET /api/creditos/cost` para as 3 ações novas. `stub_hf` zera o `generate cost` ao vivo.
+
+    A cadeia da rota é `cli › measured › unknown` — `source` aqui responde "de onde veio o número",
+    e não "consultei a tabela" (que é o `source` de `pricing.estimate`). Sem custo medido E sem
+    valor ao vivo, o certo é `unknown` com `credits: None`: a tela mostra "—" e a linha segue
+    configurável, em vez de inventar um número.
+    """
+    def cost(action: str) -> dict:
+        r = client.get("/api/creditos/cost", params={"action": action})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    assert cost("storyboard.angles")["credits"] == 2          # nano_banana_2 @ 2k
+    assert cost("storyboard.upscale")["credits"] == 2         # bytedance_image_upscale
+    reframe = cost("export.reframe")
+    assert reframe["model"] == "reframe" and reframe["kind"] == "reframe"
+    assert reframe["credits"] is None and reframe["measured"] is None
+    assert reframe["source"] == "unknown" and reframe["live"] is None
+
+
 def test_catalogo_de_acoes_e_de_modelos_batem_entre_si(client, stub_hf):
     from studio.common import pricing, settings
     assert settings.ACTION_KEYS == {a["key"] for a in settings.ACTIONS}

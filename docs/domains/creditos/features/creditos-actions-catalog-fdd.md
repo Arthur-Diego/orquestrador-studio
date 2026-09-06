@@ -24,14 +24,14 @@ conforme recon Wave 11 §0.2 e §0.5, que registram "créditos: sem domínio de 
    `frontend/src/areas/creditos/CreditosArea.tsx`);
 3. vocabulário do livro-caixa (`STATE_DIR/spend-ledger.jsonl`), agregado por `settings.summary`.
 
-Hoje o catálogo tem 13 ações (`settings.py:32-63`) e quatro gravações reais no livro-caixa usam
+Hoje o catálogo tem 12 ações (`settings.py:32-63`; o card falava em 13 — a contagem real em `develop` @ `0c4e823` é 12) e quatro gravações reais no livro-caixa usam
 chaves que não estão nele:
 
 | Chamada | Arquivo:linha | Ação gravada | Modelo real |
 |---|---|---|---|
 | `angles.start_generate` | `studio/storyboard/angles.py:476` | `storyboard.angles` | `nano_banana_2` (`angles.py:42`) |
 | `angles.start_upscale` | `studio/storyboard/angles.py:509` | `storyboard.upscale` | `bytedance_image_upscale` (`angles.py:43`) |
-| `service.start_video` | `studio/storyboard/service.py:1108` | `storyboard.video` | resolvido de `storyboard.video.scene` ou `storyboard.video.transition` (`service.py:958-965`) |
+| `service.start_video` | `studio/storyboard/service.py:1119` (era `:1108`) | `storyboard.video` | resolvido de `storyboard.video.scene` ou `storyboard.video.transition` (`service.py:958-965`) |
 | `export.start_reframe` | `studio/export/service.py:534` | `export.reframe` | `reframe` (`export/service.py:39`), ausente de `pricing.CATALOG` |
 
 Além disso o multishot da biblioteca de mood boards grava `spend_pid=None` com
@@ -90,7 +90,7 @@ o sintoma "painel que mente" que o card quer eliminar]`
 - **O2. Paridade painel × código.** Toda ação de `ACTIONS` tem entrada em `DEFAULTS`, e todo modelo
   de `DEFAULTS` existe em `pricing.CATALOG`. Medida: `set(ACTIONS keys) == set(DEFAULTS keys)` e
   `all(pricing.known(d["model"]) for d in DEFAULTS.values())`.
-- **O3. Configurabilidade das quatro ações.** `GET /api/creditos/config` passa de 13 para 16 linhas
+- **O3. Configurabilidade das quatro ações.** `GET /api/creditos/config` passa de 12 para 15 linhas
   e `PUT /api/creditos/config` aceita `storyboard.angles`, `storyboard.upscale` e `export.reframe`
   com 200. Medida: teste de API por ação.
 - **O4. Validação do `spend` deixa de reprovar gasto real.** `POST /api/creditos/spend` responde 200
@@ -158,7 +158,7 @@ o sintoma "painel que mente" que o card quer eliminar]`
 
 1. O usuário abre `#/creditos` (com ou sem campanha). `CreditosArea` faz `GET /api/creditos` ou
    `GET /api/projects/{pid}/creditos`; `service.dashboard` devolve `actions = settings.all_defaults(pid)`
-   com **16** linhas (13 atuais + 3 novas).
+   com **15** linhas (12 atuais + 3 novas).
 2. Para cada linha, `settings.default_for` resolve projeto › global › código
    (`settings.py:191-216`) e `pricing.estimate` anexa o custo medido. Para `export.reframe` o custo
    medido é `null` e o painel mostra "—" (guarda já existente em `AdminSection`).
@@ -215,7 +215,7 @@ lacuna do domínio (seção 12).
   derivado; `DEFAULTS: dict[str, {"model": str, "variant": str | None}]`.
 - Endpoints que o refletem, sem mudança de rota nem de shape:
   `GET /api/creditos/config`, `GET /api/creditos`, `GET /api/projects/{pid}/creditos`
-  (campo `actions[]` cresce de 13 para 16 itens), `PUT /api/creditos/config`,
+  (campo `actions[]` cresce de 12 para 15 itens), `PUT /api/creditos/config`,
   `PUT /api/projects/{pid}/creditos/config`, `DELETE /api/projects/{pid}/creditos/config/{action}`,
   `POST /api/creditos/spend`, `GET /api/creditos/cost?action=`.
 - Semântica de status: `200` ação conhecida; `422` ação desconhecida (mensagem
@@ -229,9 +229,9 @@ ordem por etapa):
 ```python
 # ACTIONS
 {"key": "storyboard.angles", "screen": "Etapa 4 — Storyboard", "kind": "image",
- "label": "Gerar os ângulos da cena (CLI)"},
+ "label": "Gerar os ângulos da cena (CLI) [extensão]"},
 {"key": "storyboard.upscale", "screen": "Etapa 4 — Storyboard", "kind": "upscale",
- "label": "Upscale 2x do frame escolhido"},
+ "label": "Upscale 2x do frame escolhido [extensão]"},
 # `[extensão]` alternativa paga ao crop central da etapa 8 (ADR-028 HF barra sem login).
 {"key": "export.reframe", "screen": "Etapa 8 — Export e QA", "kind": "reframe",
  "label": "Reenquadrar o master pelo CLI [extensão]"},
@@ -260,7 +260,7 @@ PUT /api/creditos/config
 ```json
 {"defaults": [
   {"key": "storyboard.upscale", "screen": "Etapa 4 — Storyboard", "kind": "upscale",
-   "label": "Upscale 2x do frame escolhido", "action": "storyboard.upscale",
+   "label": "Upscale 2x do frame escolhido [extensão]", "action": "storyboard.upscale",
    "model": "bytedance_image_upscale", "variant": null, "source": "code", "credits": 2},
   {"key": "export.reframe", "screen": "Etapa 8 — Export e QA", "kind": "reframe",
    "label": "Reenquadrar o master pelo CLI [extensão]", "action": "export.reframe",
@@ -316,8 +316,8 @@ entra nesta frente (tipo `credits: number | null` e fallback "—"). Nenhum outr
 
 - Tipo: registro append-only em arquivo (ADR-003), lido por `settings.history` e `settings.summary`
   e exposto por `GET /api/creditos/history`, `GET /api/creditos` e `GET /api/projects/{pid}/creditos`.
-- Mudança: `studio/storyboard/service.py:1108` passa a gravar a **ação resolvida** em vez do nome
-  genérico. O restante da linha (`at`, `pid`, `project_name`, `step`, `model`, `variant`, `credits`,
+- Mudança: `studio/storyboard/service.py:1119` passa a gravar a **ação resolvida** em vez do nome
+  genérico, pelo helper `video_action(mode)` (ver contrato 3b). O restante da linha (`at`, `pid`, `project_name`, `step`, `model`, `variant`, `credits`,
   `job_id`) é idêntico.
 - Semântica: `action` é sempre uma chave de `ACTION_KEYS`; `step` continua sendo o id da etapa.
 - Compatibilidade: linhas antigas com `action="storyboard.video"` continuam sendo lidas e agregadas
@@ -342,6 +342,19 @@ Depois (modo `single`, cena):
 Depois (modo `start_end`, transição): idêntico com `"action": "storyboard.video.transition"` e
 `"model": "kling3_0"`.
 
+**[Contrato 3b] `storyboard.service.video_action(mode) -> str` (novo, interno ao módulo)**
+
+- Tipo: função de módulo Python, pública dentro de `studio/storyboard/service.py`.
+- Assinatura: `video_action(mode: str) -> str`; devolve `"storyboard.video.transition"` quando
+  `mode == "start_end"`, senão `"storyboard.video.scene"`. Total: qualquer string entra, nunca
+  levanta, e a saída é sempre uma chave de `ACTION_KEYS`.
+- Motivo de existir: a chave da ação era calculada em dois lugares — em `video_model`, para
+  resolver o modelo, e (errado) no `record_generation`, que gravava a genérica. Um helper único
+  torna impossível os dois divergirem de novo; é o que faz o contrato 3 valer por construção.
+- Consumidores: `video_model` (`:974`), `start_video_generate.run` (`:1119`) e o teste de
+  cobertura estática, que a declara como indireção conhecida e verifica os dois modos possíveis.
+- Compatibilidade: aditivo. Nenhuma assinatura existente muda.
+
 ---
 
 ### 6. Erros, exceções e fallback
@@ -355,7 +368,8 @@ Depois (modo `start_end`, transição): idêntico com `"action": "storyboard.vid
 | `POST /api/creditos/spend` com ação fora do catálogo | 422 | Rota de uso opcional pelo cliente; a fonte primária continua sendo o serviço |
 | `record_spend` recebe ação fora de `ACTION_KEYS` | grava a linha e emite `log.warning("gasto fora do catálogo action=%s model=%s", ...)` | Nunca levanta: a geração já aconteceu (ADR-016 §Consequências). É a rede de segurança em produção do teste estático |
 | Falha de I/O ao anexar a linha do ledger | `except OSError: pass` (comportamento atual) | Mantido |
-| `pricing.estimate` para modelo sem custo medido (`reframe`) | `credits=None`, `source="measured"` | Painel e histórico mostram "—"; nenhuma exceção |
+| `pricing.estimate` para modelo sem custo medido (`reframe`) | `credits=None`, `source="measured"` | "consultei a tabela e ela não tem número". Painel e histórico mostram "—"; nenhuma exceção |
+| `GET /api/creditos/cost?action=export.reframe` com o CLI deslogado | `credits=None`, `measured=None`, `live=None`, `source="unknown"` | O `source` da ROTA é outro campo: responde "de onde veio o número" na cadeia `cli › measured › unknown`, e não "consultei a tabela". Sem valor nenhum, `unknown` é o certo — a tela mostra "—" e a linha segue configurável. Com o CLI logado a mesma rota devolve `source="cli"` com o valor real |
 | Override de projeto apontando para modelo removido do catálogo | cai para o próximo nível da cadeia (`default_for`) | Comportamento existente, preservado |
 | Linha de ledger com `pid` nulo | rotulada "Biblioteca" na UI | Não é erro; é o caso da biblioteca global (ADR-013) |
 
@@ -436,7 +450,7 @@ uma ação nova gravada fora do catálogo reprova o CI antes de chegar ao usuár
 
 ### 9. Critérios de aceite técnicos
 
-1. `GET /api/creditos/config` devolve 16 linhas, incluindo `storyboard.angles`,
+1. `GET /api/creditos/config` devolve 15 linhas, incluindo `storyboard.angles`,
    `storyboard.upscale` e `export.reframe`, cada uma com `screen`, `kind`, `label`, `model`,
    `variant`, `source` e `credits`.
 2. `PUT /api/creditos/config` e `PUT /api/projects/{pid}/creditos/config` devolvem 200 para as três
@@ -445,15 +459,23 @@ uma ação nova gravada fora do catálogo reprova o CI antes de chegar ao usuár
 3. `POST /api/creditos/spend` devolve 200 para `storyboard.angles`, `storyboard.upscale`,
    `export.reframe`, `storyboard.video.scene` e `storyboard.video.transition`, e segue devolvendo
    422 para uma chave inventada.
-4. Teste estático (AST) sobre `studio/**/*.py` não encontra nenhuma chamada de
-   `record_generation`/`record_spend`/`spend_action=` com literal fora de `ACTION_KEYS`; as duas
-   indireções conhecidas (`studio/base/service.py` via `KIND_ACTION`, `studio/common/multishot.py`
-   via parâmetro `spend_action`) estão em uma lista explícita e são verificadas pelo outro lado
-   (`set(base.service.KIND_ACTION.values()) | {base.service.ACTION_DEFAULT} <= ACTION_KEYS`).
+4. Teste estático (AST) sobre `studio/**/*.py` (menos `studio/common/settings.py`, que **define** o
+   catálogo e por isso não conta como uso) não encontra nenhuma chamada de
+   `record_generation`/`record_spend`/`default_for`/`spend_action=` com literal fora de
+   `ACTION_KEYS`. As indireções — chamadas em que a ação chega por expressão — ficam em uma lista
+   explícita chaveada pelo `ast.unparse` da expressão. São **cinco**, de dois tipos:
+   (a) *resolvidas no repositório*, verificadas pelo outro lado — `studio/base/service.py` via
+   `KIND_ACTION` (`set(KIND_ACTION.values()) | {ACTION_DEFAULT} <= ACTION_KEYS`) e
+   `studio/storyboard/service.py` via `video_action(mode)` (os dois modos possíveis);
+   (b) *parâmetros de fronteira*, cujo valor vem de fora da chamada — `studio/common/multishot.py`
+   (`spend_action`, fornecido por chamador que o teste já vê como literal) e as duas rotas de
+   crédito (`req.action` / `action`, barradas pelo `_valid` do router com 422 antes de gravar).
+   Uma indireção NOVA reprova o teste até ser declarada.
 5. Teste de integridade: `set(DEFAULTS) == ACTION_KEYS` e todo `DEFAULTS[k]["model"]` está em
    `pricing.CATALOG`; toda família de `CATALOG` está em `KIND_ORDER` e em `KIND_LABEL`.
 6. Teste de órfãs: o conjunto de chaves de `ACTION_KEYS` que não aparecem como literal em nenhum
-   `.py` de `studio/` é exatamente `{"storyboard.scene", "storyboard.multishot"}`.
+   `.py` de `studio/` — exceto `studio/common/settings.py`, onde o catálogo é declarado — é
+   exatamente `{"storyboard.scene", "storyboard.multishot"}`.
 7. Gerar um vídeo de storyboard em modo `single` grava `action="storyboard.video.scene"`; em modo
    `start_end`, `action="storyboard.video.transition"` (teste sobre `tests/test_storyboard_api.py`
    ou `tests/test_creditos_api.py`, com `hf` fake).
@@ -504,7 +526,7 @@ uma ação nova gravada fora do catálogo reprova o CI antes de chegar ao usuár
 - **Impacto:** rebase manual na integração (a ordem da wave é F04 → F05 → F01 → F03 → F02 → F07 → F06,
   ou seja F05 entra antes das duas frentes de storyboard).
 - **Mitigação:**
-  - A mudança é de uma linha, dentro do `run()` de `start_video` (`:1101-1115`), região que F06
+  - A mudança é de duas linhas, dentro do `run()` de `start_video` (`:1111-1125`), região que F06
     (ideação, cenas, roteiro) e F07 (ângulos, motor local) não tocam pelo recorte da wave-11.
   - F05 integra antes das duas, então quem rebaseia é F06/F07, sobre uma linha só.
 - **Plano de contingência:** se o conflito aparecer, resolver mantendo a chave resolvida (é a
@@ -544,7 +566,11 @@ uma ação nova gravada fora do catálogo reprova o CI antes de chegar ao usuár
 - **Impacto:** um serviço futuro que passe a ação por variável faria o teste falhar sem haver bug.
 - **Mitigação:**
   - O teste distingue literal de expressão: literais são verificados; expressões entram em uma lista
-    nomeada de indireções conhecidas, cada uma com a sua verificação própria pelo outro lado.
+    nomeada de indireções conhecidas. Das cinco declaradas, duas são resolvidas dentro do
+    repositório e têm verificação executável pelo outro lado (`KIND_ACTION`, `video_action`); as
+    outras três são parâmetros de fronteira, cujo valor vem de fora da chamada e é coberto onde
+    entra — o chamador literal (multishot) ou o `_valid` do router, que devolve 422 antes de gravar.
+    A distinção está anotada no próprio teste.
   - A mensagem de falha cita arquivo, linha e a ação encontrada, para que o autor decida em segundos
     entre "catalogar" e "declarar indireção".
 - **Plano de contingência:** o `log.warning` de `record_spend` cobre em tempo de execução o que o
@@ -566,7 +592,10 @@ uma ação nova gravada fora do catálogo reprova o CI antes de chegar ao usuár
 | 8 | Nota aditiva na ADR-016 e verificação de QA | 4, 7 | `docs/adrs/generated/STUDIO/ADR-016-gestao-de-creditos-custos-e-modelo-default-por-acao.md`, `scripts/qa/cenarios/creditos.py` (somente execução, sem edição) | 14, 15, 16 |
 
 Arquivos autorais previstos (o bundle `studio/web/dist/` é artefato gerado e não conta; `schema.ts`
-não é tocado):
+não é tocado). **A entrega fechou com 9**, não 8: o critério 7 (ação resolvida no ledger do vídeo)
+foi verificado onde a montagem de cena já existe, `tests/test_storyboard_api.py`, em vez de
+duplicá-la — o próprio critério previa as duas casas. A decisão do gate não muda: o limite de ≤8 é
+sobre arquivos de PRODUTO previstos, e o nono é um arquivo de teste já existente:
 
 1. `studio/common/pricing.py`
 2. `studio/common/settings.py`
@@ -578,18 +607,23 @@ não é tocado):
 8. `docs/adrs/generated/STUDIO/ADR-016-gestao-de-creditos-custos-e-modelo-default-por-acao.md`
 
 **Titularidade de núcleo a declarar (ADR-010 / ADR-032).** A frente declara em
-`TITULARES_DO_NUCLEO` (`tests/test_adr010_fronteira_nucleo.py:72`) os prefixos:
+`TITULARES_DO_NUCLEO` (`tests/test_adr010_fronteira_nucleo.py`) o recorte mínimo:
 
-- `frontend/src/areas/creditos/` (recorte mínimo: `CreditosArea.tsx` e `CreditosArea.test.tsx`);
-- `studio/web/dist/` (bundle regenerado por `make frontend-build`, obrigatório pela guarda de drift).
+- `frontend/src/areas/creditos/` — só `CreditosArea.tsx` e `CreditosArea.test.tsx`;
+- `studio/web/dist/` — bundle regenerado por `make frontend-build`, obrigatório pela guarda de drift.
+
+Ressalva de implementação: a guarda só compara contra a granularidade de `NUCLEO_PREFIXOS`, então o
+par registrado no dict é `("frontend/", "studio/web/")`. O recorte fino acima fica no **motivo**
+declarado ao lado, que é o que o PR audita.
 
 Não são tocados e portanto **não** são declarados: `studio/app.py`, `studio/steps.py`,
 `studio/config.py`, `studio/higgsfield.py`, `studio/etapas/__init__.py`, `frontend/src/shell/`,
 `frontend/src/ui/`, `frontend/package.json`, `frontend/src/api/schema.ts`.
 
-Contratos (seção 5): 3
+Contratos (seção 5): 3 (o 3b é o helper que torna o contrato 3 verdadeiro por construção, não um
+contrato público a mais)
 Fluxos principais (seção 4): 1
-Arquivos previstos: 8
+Arquivos previstos: 8 (entregues: 9 — o nono é `tests/test_storyboard_api.py`, arquivo já existente)
 
 **Decisão direta × SDD:** 3 contratos (≤3) **e** 1 fluxo principal **e** 8 arquivos (≤8) →
 **implementação direta**, sem pipeline Compozy. Bate com o card ("Tamanho pequeno: implementação
