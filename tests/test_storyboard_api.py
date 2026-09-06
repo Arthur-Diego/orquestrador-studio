@@ -1,6 +1,7 @@
 """Contrato HTTP da etapa 4 — Storyboard (FastAPI TestClient), sem rede, sem CLI, sem navegador."""
 import json
 import logging
+import os
 import threading
 
 import pytest
@@ -474,7 +475,10 @@ def test_scenes_put_persists_per_photo_map(client, pid):
          "photos": {img: {"video_desc": "a can falls", "video_prompt": "slow dolly", "videos": []}}}]})
     assert r.status_code == 200
     scene = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]
-    assert scene["photos"][img] == {"video_desc": "a can falls", "video_prompt": "slow dolly", "videos": []}
+    # `[extensão]` Wave 11 · F06 (FDD §5.5): `image_prompt` entrou no schema por foto (aditivo,
+    # default ""); `preset`/`origin` seguem ausentes porque o cliente não os mandou.
+    assert scene["photos"][img] == {"video_desc": "a can falls", "video_prompt": "slow dolly",
+                                    "image_prompt": "", "videos": []}
 
 
 def test_status_exposes_video_models_for_the_animate_modal(client, pid):
@@ -947,3 +951,432 @@ def test_script_routes_are_404_for_an_unknown_project(client):
     assert client.post("/api/projects/nope/storyboard/script/generate", json={}).status_code == 404
     assert client.get("/api/projects/nope/storyboard/script/job").status_code == 404
     assert client.get("/api/projects/nope/storyboard/script").status_code == 404
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.2/§5.5) — diagnóstico do CLI no status e schema por foto
+# (`image_prompt`, `preset` de três estados, `origin`). Sem rede e sem CLI real (ADR-008).
+# ==========================================================================================
+def test_status_exposes_the_cli_diagnosis_next_to_the_boolean(client, pid, monkeypatch):
+    """Critério A3: `script_cli` continua booleano e `script_cli_diag` traz as seis chaves."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", None)
+    st = client.get(f"/api/projects/{pid}/storyboard").json()
+    assert st["script_cli"] is False
+    assert set(st["script_cli_diag"]) == {"name", "available", "path", "searched_path", "checked_at", "hint"}
+    assert st["script_cli_diag"]["available"] is False and st["script_cli_diag"]["hint"]
+    assert st["script_cli_diag"]["searched_path"] == os.environ.get("PATH", "")
+
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    st = client.get(f"/api/projects/{pid}/storyboard").json()
+    assert st["script_cli"] is True
+    assert st["script_cli_diag"]["available"] is True and st["script_cli_diag"]["path"] == "/usr/bin/claude"
+
+    assert client.get("/api/projects/nao-existe/storyboard").status_code == 404
+
+
+def test_scenes_photo_preset_keeps_its_three_states(client, pid):
+    """Critério C4 (invariante 6): chave AUSENTE ≠ `null` ≠ id, no corpo, na memória e no disco.
+
+    Ausente é o que faz a foto HERDAR o padrão visual da campanha; colapsá-la em `None` apagaria a
+    diferença entre "herda" e "não quero preset nenhum"."""
+    img = _select_idea(client, pid)
+
+    def salva(photo):
+        r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena", "images": [img], "primary": img, "photos": {img: photo}}]})
+        assert r.status_code == 200, r.text
+        return client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]
+
+    herda = salva({"video_prompt": "", "videos": []})
+    assert "preset" not in herda
+
+    desligado = salva({"video_prompt": "", "videos": [], "preset": None})
+    assert "preset" in desligado and desligado["preset"] is None
+
+    escolhido = salva({"video_prompt": "", "videos": [], "preset": "documentary-street"})
+    assert escolhido["preset"] == "documentary-street"
+
+    # E o mesmo no arquivo — o round-trip não pode inventar a chave na volta ao disco.
+    from studio.refs.service import project_dir
+    disco = json.loads((project_dir(pid) / "storyboard" / "scenes.json").read_text())
+    assert disco["scenes"][0]["photos"][img]["preset"] == "documentary-street"
+
+
+def test_scenes_rejects_a_photo_preset_outside_the_catalog(client, pid):
+    """FDD §6: id desconhecido é 422 (`prompter.valid_preset` é a fonte única de ids)."""
+    img = _select_idea(client, pid)
+    r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+        {"text": "cena", "images": [img], "primary": img,
+         "photos": {img: {"preset": "nao-existe", "videos": []}}}]})
+    assert r.status_code == 422 and "nao-existe" in r.json()["detail"]
+
+
+def test_scenes_caps_photo_prompts_citing_scene_and_photo(client, pid):
+    """Critério D10: 4001 caracteres é 422, e a mensagem diz QUAL cena e QUAL foto estourou."""
+    from studio.storyboard import service as sb
+    img = _select_idea(client, pid)
+
+    def put(photo):
+        return client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena"}, {"text": "cena", "images": [img], "primary": img, "photos": {img: photo}}]})
+
+    r = put({"image_prompt": "x" * (sb.MAX_PHOTO_PROMPT + 1), "videos": []})
+    assert r.status_code == 422
+    assert "cena02" in r.json()["detail"] and img in r.json()["detail"]
+    assert "image_prompt" in r.json()["detail"]
+
+    r = put({"video_prompt": "y" * (sb.MAX_PHOTO_PROMPT + 1), "videos": []})
+    assert r.status_code == 422 and "video_prompt" in r.json()["detail"] and "cena02" in r.json()["detail"]
+
+    # No teto exato ainda salva: o limite é inclusivo.
+    r = put({"image_prompt": "x" * sb.MAX_PHOTO_PROMPT, "videos": []})
+    assert r.status_code == 200
+    scene = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][1]
+    assert len(scene["photos"][img]["image_prompt"]) == sb.MAX_PHOTO_PROMPT
+
+
+def test_scenes_caps_video_desc_at_the_same_500_of_the_video_prompt_route(client, pid):
+    """FDD §5.5: `video_desc` também tem teto (500), o mesmo que `POST /video-prompt` já cobrava.
+
+    Regressão da rodada de review 001 (issue_014): só os dois prompts eram limitados, então a rota
+    recusava uma descrição de 501 caracteres enquanto o `PUT /scenes` gravava a MESMA string sem
+    limite nenhum — e é ela que a tela reenvia para `/video-prompt` depois."""
+    from studio.storyboard import service as sb
+    img = _select_idea(client, pid)
+
+    def put(desc):
+        return client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena", "images": [img], "primary": img,
+             "photos": {img: {"video_desc": desc, "videos": []}}}]})
+
+    r = put("d" * (sb.MAX_VIDEO_DESC + 1))
+    assert r.status_code == 422
+    assert "cena01" in r.json()["detail"] and img in r.json()["detail"]
+    assert "video_desc" in r.json()["detail"]
+    assert put("d" * sb.MAX_VIDEO_DESC).status_code == 200
+
+
+def test_scenes_rejects_a_non_string_photo_preset_instead_of_coercing_it(client, pid):
+    """Invariante 6: um `preset` malformado é 422, NUNCA uma coerção silenciosa para `null`.
+
+    Regressão da rodada de review 001 (issue_017): `preset if isinstance(preset, str) else None`
+    trocava em silêncio "herda o padrão da campanha" (chave ausente) por "esta foto não quer
+    preset" (`null`) — o único colapso que os três estados não podem pagar."""
+    img = _select_idea(client, pid)
+
+    def put(preset):
+        return client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena", "images": [img], "primary": img,
+             "photos": {img: {"preset": preset, "videos": []}}}]})
+
+    for ruim in (123, True, ["documentary-street"], {"id": "documentary-street"}):
+        assert put(ruim).status_code == 422, ruim
+    # os dois estados legítimos seguem passando
+    assert put(None).status_code == 200
+    assert client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]["preset"] is None
+
+
+def test_scenes_with_non_string_text_fields_is_422_not_500(client, pid):
+    """§6: entrada malformada é erro do cliente, não do servidor.
+
+    Regressão da rodada de review 001 (issue_018): `(123 or "").strip()` levantava `AttributeError`
+    dentro do `_normalize`, e o `_guard` só traduz `Invalid`/`Precondition` — o resultado era 500."""
+    img = _select_idea(client, pid)
+    for campo in ("image_prompt", "video_prompt", "video_desc"):
+        r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena", "images": [img], "primary": img, "photos": {img: {campo: 123, "videos": []}}}]})
+        assert r.status_code < 500, f"{campo} devolveu {r.status_code}"
+        assert r.status_code == 200
+        # o valor lixo é descartado, não persistido
+        got = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]
+        assert got[campo] == ""
+
+
+def test_scenes_keeps_origin_of_video_desc_written_by_the_mcp_tool(client, pid):
+    """FDD §5.18: `storyboard_keyframe_set` carimba origem nos TRÊS campos, inclusive `video_desc`.
+
+    Regressão da rodada de review 001 (issue_010): `ORIGIN_FIELDS` não incluía `video_desc`, então
+    o servidor descartava a procedência em silêncio enquanto a tool devolvia "(manual)"."""
+    img = _select_idea(client, pid)
+    origin = {"video_desc": {"source": "manual", "preset": None, "at": "2026-09-06T14:31:02"}}
+    r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+        {"text": "cena", "images": [img], "primary": img,
+         "photos": {img: {"video_desc": "he steps off the curb", "origin": origin, "videos": []}}}]})
+    assert r.status_code == 200
+    got = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]
+    assert got["origin"]["video_desc"] == {"source": "manual", "preset": None, "at": "2026-09-06T14:31:02"}
+
+
+def test_scenes_round_trip_keeps_image_prompt_and_well_formed_origin(client, pid):
+    """Critério D2: o texto do usuário e a procedência sobrevivem ao PUT → GET."""
+    img = _select_idea(client, pid)
+    origin = {"image_prompt": {"source": "ia", "preset": "documentary-street", "at": "2026-09-06T14:20:00"},
+              "video_prompt": {"source": "manual", "preset": None, "at": "2026-09-06T14:31:02"}}
+    r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+        {"text": "cena", "images": [img], "primary": img,
+         "photos": {img: {"image_prompt": "A lone courier steps off the curb",
+                          "video_prompt": "slow dolly", "videos": [], "origin": origin}}}]})
+    assert r.status_code == 200
+    photo = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]
+    assert photo["image_prompt"] == "A lone courier steps off the curb"
+    assert photo["origin"] == origin
+
+
+def test_scenes_drops_malformed_origin_without_failing_the_save(client, pid):
+    """FDD §6: `origin` é metadado de UI — o que está fora do enum some, o save não cai.
+
+    Um chip de origem errado nunca pode custar ao usuário o texto que ele acabou de escrever."""
+    img = _select_idea(client, pid)
+    r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+        {"text": "cena", "images": [img], "primary": img,
+         "photos": {img: {"image_prompt": "texto que precisa sobreviver", "videos": [],
+                          "origin": {"image_prompt": {"source": "extraterrestre", "at": "x"},
+                                     "campo_desconhecido": {"source": "ia"},
+                                     "video_prompt": {"source": "manual", "preset": 7}}}}}]})
+    assert r.status_code == 200, r.text
+    photo = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]
+    assert photo["image_prompt"] == "texto que precisa sobreviver"
+    # `source` fora do enum e campo desconhecido somem; o que sobra é normalizado.
+    assert photo["origin"] == {"video_prompt": {"source": "manual", "preset": None, "at": ""}}
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.1, §5.4, §5.6) — diagnóstico do CLI, prompt de imagem por
+# foto e `local_kind` na galeria. Todo teste finge o binário `claude` (ADR-008): sem rede, sem CLI.
+# ==========================================================================================
+def test_script_cli_route_reports_a_missing_binary_as_data_not_error(client, pid, monkeypatch):
+    """Critério A1: sem `claude` no PATH a rota é 200 com `available: false` — NUNCA 409."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", None)
+    r = client.get(f"/api/projects/{pid}/storyboard/script/cli")
+    assert r.status_code == 200
+    d = r.json()
+    assert set(d) == {"name", "available", "path", "searched_path", "checked_at", "hint"}
+    assert d["name"] == "claude" and d["available"] is False and d["path"] is None
+    assert d["searched_path"] == os.environ.get("PATH", "")
+    assert d["hint"], "sem CLI a resposta precisa dizer o que fazer"
+
+
+def test_script_cli_refresh_finds_a_binary_installed_after_the_server_started(client, pid, base, monkeypatch):
+    """Critério A2: `?refresh=true` re-resolve o PATH e o `POST /script/generate` seguinte roda.
+
+    É a causa-raiz do defeito do card: o `BIN` de import time congelava a ausência do CLI, e
+    instalar o Claude Code com o Studio no ar não adiantava nada. Aqui o binário "aparece" DEPOIS
+    de o app subir e ninguém reinicia o processo."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", None)
+    assert client.get(f"/api/projects/{pid}/storyboard/script/cli").json()["available"] is False
+
+    # Leitura barata (sem `refresh`) não toca o PATH: o binário novo ainda não é visto.
+    monkeypatch.setattr(prompter.clibin, "which", lambda name="claude": "/usr/bin/claude")
+    assert client.get(f"/api/projects/{pid}/storyboard/script/cli").json()["available"] is False
+
+    d = client.get(f"/api/projects/{pid}/storyboard/script/cli?refresh=true").json()
+    assert d["available"] is True and d["path"] == "/usr/bin/claude"
+    assert prompter.available() is True, "o `BIN` do processo foi reatribuído"
+
+    # E o roteiro passa a rodar de verdade — sem reiniciar o servidor (a base vem da fixture).
+    monkeypatch.setattr(prompter.subprocess, "run", _script_fake([]))
+    job = _run_script_job(client, pid, {"count": 5})
+    assert job["state"] == "done" and job["error"] is None
+
+
+def test_script_cli_route_is_404_for_an_unknown_project(client):
+    assert client.get("/api/projects/nope/storyboard/script/cli").status_code == 404
+    assert client.get("/api/projects/nope/storyboard/script/cli?refresh=true").status_code == 404
+
+
+# ---------- `POST .../storyboard/image-prompt` (FDD §5.4, critério D1) ----------
+def _keyframe_fake(calls, negative="plastic skin", boom=None):
+    """Claude fake do papel `keyframe`: devolve o rig exigido dentro do próprio prompt."""
+    import json as _json
+    import re as _re
+    import subprocess
+
+    def run(args, capture_output=True, text=True, timeout=None, **kw):
+        calls.append({"args": args, "prompt": args[2], "timeout": timeout})
+        if boom:
+            raise boom
+        rig = _re.search(r"MANDATORY RIG, IDENTICAL IN EVERY SCENE: (.+?) — write", args[2], _re.S)
+        body = _json.dumps({"prompt": "A lone courier holds the can at chest height. Shot on "
+                                      + (rig.group(1) if rig else "no fixed rig") + ".",
+                            "negative": negative, "camera": "x", "notes_pt": "duas linhas"})
+        return subprocess.CompletedProcess(args, 0, "Segue.\n```json\n" + body + "\n```\n", "")
+
+    return run
+
+
+@pytest.fixture()
+def foto(client, pid):
+    """Uma ideia escolhida, em storyboard/ideas/ — a foto que o prompt de imagem descreve."""
+    return _select_idea(client, pid)
+
+
+def test_image_prompt_route_asks_claude_and_returns_one_prompt(client, pid, foto, monkeypatch):
+    """Critério D1: com o `claude` fingido, `source: "claude"` e o contrato de cinco chaves."""
+    from studio.common import prompter
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _keyframe_fake(calls))
+    r = client.post(f"/api/projects/{pid}/storyboard/image-prompt",
+                    json={"scene_id": "cena02", "photo": foto,
+                          "description": "o produto na mão do personagem, chuva forte ao fundo",
+                          "preset": "documentary-street"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert set(body) == {"prompt", "negative", "source", "seconds", "preset"}
+    assert body["source"] == "claude" and body["prompt"].strip()
+    assert body["preset"] == "documentary-street"
+    # A foto e a descrição do usuário chegaram ao bot, e o rig do preset voltou no prompt.
+    enviado = calls[0]["prompt"]
+    assert foto.rsplit("/", 1)[-1] in enviado and "chuva forte ao fundo" in enviado
+    assert prompter.REALISM_PRESETS["documentary-street"]["rig"]["camera"] in body["prompt"]
+
+
+def test_image_prompt_route_falls_back_to_the_template_without_claude(client, pid, foto, monkeypatch):
+    """Critério D1 + §6 + decisão auto-aceita 3: sem CLI é 200 com template — NUNCA 409.
+
+    O 409 do ADR-025 é do ROTEIRO, que escreve arquivo; o prompt por foto não persiste nada."""
+    from studio.storyboard import service as sb
+    monkeypatch.setattr(sb.prompter, "BIN", None)
+    r = client.post(f"/api/projects/{pid}/storyboard/image-prompt",
+                    json={"scene_id": "cena01", "photo": foto, "description": "he holds the can"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "template" and body["prompt"].strip() and body["negative"].strip()
+    assert body["prompt"].startswith("A photorealistic cinematic still of he holds the can")
+    # Descrição vazia continua dando um prompt útil (a foto já diz o que mostrar).
+    vazio = client.post(f"/api/projects/{pid}/storyboard/image-prompt",
+                        json={"scene_id": "cena01", "photo": foto}).json()
+    assert vazio["source"] == "template" and len(vazio["prompt"]) > 200
+
+
+def test_image_prompt_route_falls_back_when_claude_times_out(client, pid, foto, monkeypatch, caplog):
+    """§6: falha ou timeout do bot vira template + `log.warning`, igual ao `/video-prompt`."""
+    import subprocess
+
+    from studio.common import prompter
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run",
+                        _keyframe_fake(calls, boom=subprocess.TimeoutExpired(cmd="claude", timeout=180)))
+    with caplog.at_level(logging.WARNING, logger="studio.storyboard"):
+        r = client.post(f"/api/projects/{pid}/storyboard/image-prompt",
+                        json={"scene_id": "cena01", "photo": foto, "description": "x"})
+    assert r.status_code == 200 and r.json()["source"] == "template"
+    assert calls, "o bot chegou a ser chamado"
+    assert any("image_prompt claude falhou" in m for m in caplog.messages)
+
+
+def test_image_prompt_route_validates_the_request_before_any_cli_call(client, pid, foto, monkeypatch):
+    """Matriz da §6: `scene_id`, `photo`, `description` e `preset` inválidos são 422 antes do CLI."""
+    from studio.common import prompter
+    chamou = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", lambda *a, **k: chamou.append(1))
+    url = f"/api/projects/{pid}/storyboard/image-prompt"
+
+    assert client.post(url, json={"scene_id": "lixo", "photo": foto}).status_code == 422
+    assert client.post(url, json={"scene_id": "cena01", "photo": "base/base_final.png"}).status_code == 422
+    assert client.post(url, json={"scene_id": "cena01",
+                                  "photo": "storyboard/ideas/../../../../etc/passwd"}).status_code == 422
+    assert client.post(url, json={"scene_id": "cena01", "photo": ""}).status_code == 422
+    assert client.post(url, json={"scene_id": "cena01", "photo": foto,
+                                  "description": "x" * 501}).status_code == 422
+    assert client.post(url, json={"scene_id": "cena01", "photo": foto,
+                                  "preset": "nao-existe"}).status_code == 422
+    # `scene_id`/`photo` são obrigatórios: corpo sem eles é 422 do próprio Pydantic.
+    assert client.post(url, json={"photo": foto}).status_code == 422
+    assert client.post(url, json={"scene_id": "cena01"}).status_code == 422
+    assert chamou == [], "nenhum pedido inválido chegou ao Claude CLI"
+
+    # No teto exato o pedido é VÁLIDO e o bot é chamado — a fronteira do 422 é 501, não 500.
+    assert client.post(url, json={"scene_id": "cena01", "photo": foto,
+                                  "description": "x" * 500}).status_code == 200
+    assert len(chamou) == 1
+
+
+def test_image_prompt_route_resolves_the_campaign_preset_when_the_field_is_absent(client, pid, foto, monkeypatch):
+    """Três estados do preset (invariante 6): AUSENTE herda o padrão da campanha, `null` desliga."""
+    from studio.storyboard import service as sb
+    monkeypatch.setattr(sb.prompter, "BIN", None)
+    url = f"/api/projects/{pid}/storyboard/image-prompt"
+    # De fábrica a ação `storyboard.keyframe` não tem preset nenhum.
+    assert client.post(url, json={"scene_id": "cena01", "photo": foto}).json()["preset"] is None
+
+    r = client.put(f"/api/projects/{pid}/prompter/preset-config",
+                   json={"kind": "storyboard.keyframe", "preset": "arri-natural-narrative"})
+    assert r.status_code == 200, r.text
+    ausente = client.post(url, json={"scene_id": "cena01", "photo": foto}).json()
+    assert ausente["preset"] == "arri-natural-narrative", "campo ausente HERDA o padrão da campanha"
+    nulo = client.post(url, json={"scene_id": "cena01", "photo": foto, "preset": None}).json()
+    assert nulo["preset"] is None, "`null` desliga o preset, não herda"
+    escolhido = client.post(url, json={"scene_id": "cena01", "photo": foto,
+                                       "preset": "documentary-street"}).json()
+    assert escolhido["preset"] == "documentary-street"
+
+
+def test_image_prompt_route_never_writes_scenes_json(client, pid, foto, root, monkeypatch):
+    """§5.4: a rota não persiste nada — quem grava é o cliente, pelo `PUT .../scenes`."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _keyframe_fake([]))
+    client.put(f"/api/projects/{pid}/storyboard/scenes",
+               json={"scenes": [{"text": "cena", "images": [foto], "primary": foto}]})
+    arquivo = root / "storyboard" / "scenes.json"
+    antes = arquivo.read_bytes()
+    r = client.post(f"/api/projects/{pid}/storyboard/image-prompt",
+                    json={"scene_id": "cena01", "photo": foto, "description": "he holds the can"})
+    assert r.status_code == 200 and r.json()["prompt"].strip()
+    assert arquivo.read_bytes() == antes, "o prompt por foto não escreve no scenes.json"
+
+
+def test_image_prompt_route_is_404_for_an_unknown_project(client, monkeypatch):
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", None)
+    r = client.post("/api/projects/nope/storyboard/image-prompt",
+                    json={"scene_id": "cena01", "photo": "storyboard/ideas/a.png"})
+    assert r.status_code == 404
+
+
+# ---------- `local_kind` na galeria de ideias (FDD §5.6) ----------
+def test_candidates_expose_the_local_engine_kind_next_to_the_source(client, pid, root):
+    """§5.6: `local_kind` distingue motor local de inpaint local; o resto da linha fica intocado."""
+    from studio.common import ingest
+    ingest.ingest_bytes(root, "storyboard", image_bytes(color=(1, 2, 3)), "local", "local_0.png",
+                        "a red fox", {"local_kind": "keyframe_local", "model": "flux-schnell"})
+    ingest.ingest_bytes(root, "storyboard", image_bytes(color=(4, 5, 6)), "local", "inp_0.png",
+                        "retoque", {"local_kind": "inpaint_local", "model": "flux-fill"})
+    client.post(f"/api/projects/{pid}/storyboard/import/upload",
+                files=[("files", ("manual.png", image_bytes(color=(7, 8, 9)), "image/png"))])
+
+    ideas = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"]
+    por_kind = {i["local_kind"]: i for i in ideas}
+    assert set(por_kind) == {"keyframe_local", "inpaint_local", None}
+    assert por_kind["keyframe_local"]["source"] == "local"
+    assert por_kind["inpaint_local"]["source"] == "local"
+    assert por_kind[None]["source"] == "upload"
+    # Campos existentes intocados (contrato aditivo).
+    for i in ideas:
+        assert set(i) == {"id", "file", "thumb", "prompt", "selected", "source", "local_kind",
+                          "imported"}
+        assert i["selected"] is False and i["file"].startswith("storyboard/candidates/")
+        assert i["thumb"] and i["imported"]
+
+
+def test_script_generate_still_refuses_without_the_cli_and_job_wins_the_precedence(client, pid, base, monkeypatch):
+    """ADR-025 inalterado: o ROTEIRO (que escreve arquivo) continua 409 sem CLI, com a mensagem
+    atual — e o 409 de job concorrente continua vindo ANTES do de CLI ausente."""
+    from studio.common import prompter
+    monkeypatch.setattr(prompter, "BIN", None)
+    r = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={})
+    assert r.status_code == 409
+    assert r.json()["detail"] == ("Claude CLI não encontrado no PATH: escreva as cenas manualmente "
+                                 "(aula 010) ou instale o Claude Code")
+
+    from studio.storyboard import service as sb
+    monkeypatch.setattr(sb._story_registry, "status", lambda _pid: {"state": "running"})
+    concorrente = client.post(f"/api/projects/{pid}/storyboard/script/generate", json={})
+    assert concorrente.status_code == 409
+    assert "andamento" in concorrente.json()["detail"], "o 409 do job tem precedência sobre o do CLI"

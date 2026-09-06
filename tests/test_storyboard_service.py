@@ -1,5 +1,6 @@
 """Etapa 4 — o storyboard segue a aula 010: uma instrução por vez, 4/1 gerações, ~5 cenas em texto."""
 import json
+import logging
 import threading
 from pathlib import Path
 
@@ -276,6 +277,13 @@ def test_status_counts_ideas_scenes_and_base(sb, project, root, base):
     sb.select_ideas(project, [sb.list_ideas(project)["ideas"][0]["id"]])
     sb.save_scenes(project, [{"text": "Close no astronauta"}, {"text": ""}])
     st = sb.status(project)
+    # `[extensão]` Wave 11 · F06 (FDD §5.2): o diagnóstico carrega um `checked_at` do relógio, então
+    # compará-lo com um `cli_status()` chamado DEPOIS do `status()` falharia sempre que as duas
+    # leituras caíssem em segundos diferentes (o `status()` faz I/O antes de voltar). A asserção é
+    # estrutural: as seis chaves do contrato e os dois valores que dependem do processo.
+    diag = st.pop("script_cli_diag")
+    assert set(diag) == {"name", "available", "path", "searched_path", "checked_at", "hint"}
+    assert diag["available"] is sb.prompter.available() and diag["path"] == sb.prompter.BIN
     assert st == {"base_image": "base/base_final.png", "has_base": True, "ideas": 1, "selected": 1,
                   "scenes": 2, "scenes_with_text": 1, "storyboard_md": "storyboard/storyboard.md",
                   # `[extensão]` vídeo por foto (ADR-022): seletor de modelo do modal "Gerar animação".
@@ -552,8 +560,11 @@ def test_video_generate_per_photo_stores_under_the_owning_photo(sb, project, mon
     assert job["state"] == "done" and job["video"] == rel and (root / rel).exists()
     assert sent["model"] == "seedance_2_0"
     scene = sb.load_scenes(project)["scenes"][0]
-    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "dolly na foto A", "videos": [rel]}
-    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "videos": []}
+    # `[extensão]` Wave 11 · F06 (FDD §5.5): `image_prompt` é aditivo e nasce vazio; `preset` e
+    # `origin` só existem quando o cliente os manda (chave ausente = herda o padrão da campanha).
+    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "dolly na foto A",
+                                  "image_prompt": "", "videos": [rel]}
+    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "image_prompt": "", "videos": []}
     assert scene["videos"] == [], "vídeo por foto não polui o par por-cena (legado)"
 
 
@@ -583,9 +594,9 @@ def test_scene_photos_migrates_legacy_per_scene_to_primary(sb, project, root):
         {"id": "cena01", "n": 1, "text": "t", "images": [a, b], "primary": a,
          "video_prompt": "prompt legado", "videos": ["storyboard/cena01/video/take_1.mp4"]}]}))
     scene = sb.load_scenes(project)["scenes"][0]
-    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "prompt legado",
+    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "prompt legado", "image_prompt": "",
                                   "videos": ["storyboard/cena01/video/take_1.mp4"]}
-    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "videos": []}
+    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "image_prompt": "", "videos": []}
 
 
 # ---------- ponte storyboard → montagem (`[extensão]` ADR-022, R2) ----------
@@ -1166,3 +1177,178 @@ def test_script_requires_the_rig_in_every_shot_of_a_scene(sb, project, base, roo
     assert job["state"] == "error"
     assert any("foto 2" in linha for linha in job["log"]), job["log"]
     assert not (root / "storyboard" / "script.json").is_file()
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.5/§5.11) — schema por foto e chaves de preset da etapa 4.
+# ==========================================================================================
+def test_legacy_photos_load_without_migration_or_invented_keys(sb, project, root):
+    """Um `scenes.json` de campanha antiga (só `video_desc`/`video_prompt`/`videos` por foto)
+    carrega sem migração: os campos novos são opcionais e aditivos."""
+    a, b = _two_ideas(sb, project)
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "scenes.json").write_text(json.dumps({"scenes": [
+        {"id": "cena01", "n": 1, "text": "t", "images": [a, b], "primary": a,
+         "photos": {a: {"video_desc": "d", "video_prompt": "p", "videos": []}}}]}))
+    photos = sb.load_scenes(project)["scenes"][0]["photos"]
+    assert photos[a] == {"video_desc": "d", "video_prompt": "p", "image_prompt": "", "videos": []}
+    assert photos[b] == {"video_desc": "", "video_prompt": "", "image_prompt": "", "videos": []}
+    # Nem `preset` nem `origin` são inventados na leitura: ausente é o estado "herda".
+    assert all("preset" not in p and "origin" not in p for p in photos.values())
+
+
+def test_photos_are_pruned_to_the_images_still_in_the_scene(sb, project):
+    """Invariante 5: `photos` só contém chaves que estão em `images`, mesmo com os campos novos."""
+    a, b = _two_ideas(sb, project)
+    cheio = {"image_prompt": "keyframe", "video_prompt": "dolly", "videos": [],
+             "preset": "documentary-street",
+             "origin": {"image_prompt": {"source": "manual", "preset": None, "at": "2026-09-06T10:00:00"}}}
+    sb.save_scenes(project, [{"text": "t", "images": [a, b], "primary": a,
+                              "photos": {a: cheio, b: dict(cheio)}}])
+    assert set(sb.load_scenes(project)["scenes"][0]["photos"]) == {a, b}
+    # Removida a foto B da galeria, a entrada dela some junto (e a `primary` continua válida).
+    scene = sb.save_scenes(project, [{"text": "t", "images": [a], "primary": a,
+                                      "photos": {a: cheio, b: dict(cheio)}}])["scenes"][0]
+    assert set(scene["photos"]) == {a} and scene["primary"] == a
+    assert scene["photos"][a]["preset"] == "documentary-street"
+    assert set(sb.load_scenes(project)["scenes"][0]["photos"]) == {a}
+
+
+def test_scenes_saved_log_counts_image_prompts_and_photo_presets(sb, project, caplog):
+    """FDD §7: o log `scenes_saved` ganha `with_image_prompt` e `with_photo_preset` (aditivos)."""
+    a, b = _two_ideas(sb, project)
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        sb.save_scenes(project, [
+            {"text": "t", "images": [a], "primary": a, "photos": {a: {"image_prompt": "keyframe"}}},
+            {"text": "u", "images": [b], "primary": b, "photos": {b: {"preset": None}}},
+            {"text": "v"}])
+    linha = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("scenes_saved"))
+    campos = json.loads(linha.split("scenes_saved ", 1)[1].replace("'", '"').replace("None", "null"))
+    assert campos["scenes"] == 3 and campos["with_image"] == 2
+    assert campos["with_image_prompt"] == 1 and campos["with_photo_preset"] == 1
+
+
+def test_step_registers_its_preset_actions_idempotently(sb):
+    """Critério C5: as chaves da etapa 4 entram no mapa ABERTO da provedora por `setdefault`, sem
+    editar `studio/common/settings.py` (território de F05) nem `angles.py` (território de F07)."""
+    from studio.common import settings
+    assert settings.PRESET_ACTIONS[sb.ANGLES_ACTION] is None
+    assert settings.PRESET_ACTIONS[sb.KEYFRAME_ACTION] is None
+    assert (sb.ANGLES_ACTION, sb.KEYFRAME_ACTION) == ("storyboard.angles", "storyboard.keyframe")
+    # `setdefault` é o que torna o rebase com F07 trivial: registrar de novo não sobrescreve quem
+    # chegou primeiro (F07 registra a MESMA chave em `angles.py`).
+    settings.PRESET_ACTIONS.setdefault(sb.ANGLES_ACTION, "arri-natural-narrative")
+    assert settings.PRESET_ACTIONS[sb.ANGLES_ACTION] is None
+
+
+# ---------- `[extensão]` Wave 11 · F06: prompt de imagem por foto e diagnóstico do CLI (FDD §7) ----------
+def _keyframe_fake(calls, boom=None):
+    """Claude fake do papel `keyframe` — devolve o rig exigido dentro do prompt (Risco 5)."""
+    import re as _re
+    import subprocess
+
+    def run(args, capture_output=True, text=True, timeout=None, **kw):
+        calls.append(args[2])
+        if boom:
+            raise boom
+        rig = _re.search(r"MANDATORY RIG, IDENTICAL IN EVERY SCENE: (.+?) — write", args[2], _re.S)
+        body = json.dumps({"prompt": "A lone courier holds the can. Shot on "
+                                     + (rig.group(1) if rig else "no fixed rig") + ".",
+                           "negative": "plastic skin", "camera": "x", "notes_pt": "duas linhas"})
+        return subprocess.CompletedProcess(args, 0, "```json\n" + body + "\n```", "")
+
+    return run
+
+
+def test_image_prompt_sends_the_photo_and_the_campaign_brief_to_the_bot(sb, project, monkeypatch):
+    """§5.4: o bot recebe a FOTO, a descrição do usuário e o brief da campanha (produto e vibe)."""
+    a, _b = _two_ideas(sb, project)
+    calls = []
+    monkeypatch.setattr(sb.prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(sb.prompter.subprocess, "run", _keyframe_fake(calls))
+    r = sb.image_prompt(project, "cena02", a, "he steps off the curb")
+    assert r["source"] == "claude" and r["prompt"].strip() and r["preset"] is None
+    enviado = calls[0]
+    assert str(sb.project_dir(project) / a) in enviado
+    assert "he steps off the curb" in enviado and "energy drink" in enviado and "snow neon" in enviado
+    assert "cena02" in enviado and "16:9" in enviado, "a cena e a proporção da campanha vão no brief"
+    # Papel certo, sem contaminar o caminho do roteiro.
+    assert sb.prompter.ROLES["keyframe"] in enviado
+    assert sb.prompter.ROLES["script"] not in enviado
+
+
+def test_image_prompt_template_is_used_without_claude_and_never_raises(sb, project, monkeypatch):
+    """§6 + decisão auto-aceita 3: sem CLI o serviço NÃO levanta `Precondition` — cai no template."""
+    a, _b = _two_ideas(sb, project)
+    monkeypatch.setattr(sb.prompter, "BIN", None)
+    r = sb.image_prompt(project, "cena01", a, "he holds the can")
+    assert set(r) == {"prompt", "negative", "source", "seconds", "preset"}
+    assert r["source"] == "template" and r["seconds"] == 0.0
+    assert r["prompt"] == sb._image_instruction("he holds the can")
+    assert r["negative"] == sb.IMAGE_TEMPLATE_NEGATIVE
+    # O template segue a mesma ordem de briefing do papel (Risco 5), sem placeholder solto.
+    assert "{action}" not in r["prompt"] and "{negative}" not in r["prompt"]
+
+
+def test_image_prompt_validation_matches_the_error_matrix(sb, project, monkeypatch):
+    """§6: `scene_id`, `description` e `photo` inválidos são `Invalid` (422) antes de qualquer CLI."""
+    a, _b = _two_ideas(sb, project)
+    chamou = []
+    monkeypatch.setattr(sb.prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(sb.prompter.subprocess, "run", lambda *x, **k: chamou.append(1))
+    for kwargs in ({"scene_id": "lixo", "photo": a},
+                   {"scene_id": "cena01", "photo": ""},
+                   {"scene_id": "cena01", "photo": "base/base_final.png"},
+                   {"scene_id": "cena01", "photo": "storyboard/ideas/../../project.json"},
+                   {"scene_id": "cena01", "photo": a, "description": "x" * 501}):
+        with pytest.raises(sb.Invalid):
+            sb.image_prompt(project, **kwargs)
+    assert chamou == []
+    # Projeto inexistente é o `KeyError` de `project_dir` (o 404 padrão da etapa), não `Invalid`.
+    with pytest.raises(KeyError):
+        sb.image_prompt("nao-existe", "cena01", a)
+
+
+def test_image_prompt_log_reports_the_size_never_the_prompt_text(sb, project, monkeypatch, caplog):
+    """§7: `image_prompt` loga fonte, preset e TAMANHO — nunca o texto do prompt."""
+    a, _b = _two_ideas(sb, project)
+    monkeypatch.setattr(sb.prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(sb.prompter.subprocess, "run", _keyframe_fake([]))
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        r = sb.image_prompt(project, "cena03", a, "he holds the can", preset="documentary-street")
+    linha = next(m for m in caplog.messages if m.startswith("image_prompt "))
+    campos = json.loads(linha.split("image_prompt ", 1)[1].replace("'", '"').replace("None", "null"))
+    assert campos["pid"] == project and campos["scene"] == "cena03" and campos["photo"] == a
+    assert campos["source"] == "claude" and campos["preset"] == "documentary-street"
+    assert campos["chars"] == len(r["prompt"])
+    assert r["prompt"][:40] not in linha, "o texto do prompt nunca entra no log"
+
+
+def test_cli_probe_log_records_every_explicit_recheck(sb, project, monkeypatch, caplog):
+    """§7: `cli_probe` diz se a re-checagem foi explícita (`refresh`) e o que ela encontrou."""
+    monkeypatch.setattr(sb.prompter, "BIN", None)
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        ausente = sb.script_cli_diag(project)
+        monkeypatch.setattr(sb.prompter.clibin, "which", lambda name="claude": "/usr/bin/claude")
+        achado = sb.script_cli_diag(project, refresh=True)
+    assert ausente["available"] is False and achado["available"] is True
+    linhas = [m for m in caplog.messages if m.startswith("cli_probe ")]
+    campos = [json.loads(m.split("cli_probe ", 1)[1].replace("'", '"')
+                         .replace("None", "null").replace("False", "false").replace("True", "true"))
+              for m in linhas]
+    assert [c["refresh"] for c in campos] == [False, True]
+    assert [c["available"] for c in campos] == [False, True]
+    assert campos[1]["path"] == "/usr/bin/claude" and campos[0]["name"] == "claude"
+    with pytest.raises(KeyError):
+        sb.script_cli_diag("nao-existe")
+
+
+def test_idea_row_exposes_the_local_engine_kind(sb, project, root):
+    """§5.6: `local_kind` é aditivo e `null` para quem não veio do motor local."""
+    from studio.common import ingest
+    ingest.ingest_bytes(root, "storyboard", image_bytes(color=(1, 2, 3)), "local", "l.png",
+                        "a red fox", {"local_kind": "keyframe_local", "model": "flux-schnell"})
+    sb.import_upload(project, [("m.png", image_bytes(color=(9, 9, 9)))])
+    por_kind = {i["local_kind"]: i for i in sb.list_ideas(project)["ideas"]}
+    assert set(por_kind) == {"keyframe_local", None}
+    assert por_kind["keyframe_local"]["source"] == "local" and por_kind[None]["source"] == "upload"

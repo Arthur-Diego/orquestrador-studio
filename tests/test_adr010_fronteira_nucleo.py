@@ -70,6 +70,19 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-08-storyboard-cenas": (
+        "`[extensão]` Wave 11 · frente F06 storyboard-cenas, cards #95 (leitura A), #97, #98 e "
+        "#99 (ADH-OS-20260906-08): a etapa 4 é plugin e todo o trabalho vive em "
+        "`studio/etapas/storyboard/`, `studio/storyboard/`, `studio/common/` e `studio/mcp/` "
+        "(fora de NUCLEO_PREFIXOS). O núcleo tocado é só o GERADO: `frontend/src/api/schema.ts` "
+        "e `frontend/openapi.json` (rotas novas `GET .../storyboard/script/cli` e "
+        "`POST .../storyboard/image-prompt`, `make frontend-schema`) e o bundle "
+        "`studio/web/dist/` (`make frontend-build`), mais o item OPCIONAL C5 em "
+        "`frontend/src/areas/creditos/`. Nada de `frontend/src/shell/`, `studio/app.py`, "
+        "`steps.py`, `config.py`, `higgsfield.py` ou `etapas/__init__.py`. "
+        "ADR-042, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-10-chat-navigate": (
         "`[extensão]` Wave 11 · frente F08 — o assistente leva a tela junto, card #88 "
         "(ADH-OS-20260906-10), FDD `docs/domains/chat/features/chat-navigate-fdd.md`. A tool "

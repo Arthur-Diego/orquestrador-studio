@@ -831,3 +831,22 @@ versionada); não supera nada. Relaciona ADR-006 (o push não substitui o pollin
 ADR-010 item a (o evento **invalida** o guia, jamais deriva prontidão no cliente), ADR-037 (as tools
 rodam no subprocess do MCP, por isso o mapa é explícito e não derivado do path da API) e ADR-038
 (a ponte humano-no-laço segue intocada).
+
+---
+
+**ADR nova: ADR-042** (STORYBOARD) — campos abertos de prompt POR FOTO no storyboard e papel
+`keyframe` do prompter `[extensão]`. A foto da cena deixa de ser só metadado de vídeo (ADR-022) e
+passa a carregar conteúdo autoral: `scenes.json` ganha, de forma ADITIVA e por foto, `image_prompt`,
+`preset` de **três estados** (chave ausente herda o default da ação, `null` desliga, `"<id>"` usa) e
+`origin` por campo (`ia`/`manual`/`template` + preset + horário). O prompter ganha o papel `keyframe`
+e a rota `POST .../storyboard/image-prompt`, que reusa a ordem de briefing e o rig do roteiro para
+UMA foto e cai em template determinístico sem o Claude CLI — **o 409 da ADR-025 continua valendo só
+para o ROTEIRO**, que escreve arquivo. O servidor segue nunca escrevendo `scenes.json` a partir do
+roteiro: as tools MCP aplicam o roteiro e anexam fotos só depois de `ui_confirm`/`ui_choose_images`
+(ADR-038) ou de `confirm=true` no terminal. Desanexar uma foto de todas as cenas não a desmarca nem
+a remove de `storyboard/ideas/`. **Amplia** ADR-018/ADR-022 (o schema por foto cresce; nada muda de
+forma) e ADR-025/ADR-028 (o prompt de imagem deixa de existir só em `script.json`); não supera nada.
+Relaciona ADR-004 (a aula manda escrever o prompt à mão — os campos ficam abertos e editáveis),
+ADR-035 (remoção do combo de fórmulas: instrução sempre autoral), ADR-037 (as tools rodam no
+subprocess do MCP, clientes HTTP da própria API) e ADR-010/031/032 (núcleo gerado — `schema.ts` e
+`studio/web/dist/` — com titularidade declarada).

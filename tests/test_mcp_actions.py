@@ -630,3 +630,485 @@ def test_as_duas_tools_por_cena_estao_no_catalogo_curado():
     for nome in ("storyboard_scene_generate", "storyboard_scene_pick"):
         assert f'name="{nome}"' in fonte
     assert "GRÁTIS" in fonte and "PAGO" in fonte
+# ---------- `[extensão]` Wave 11 · F06: roteiro, anexo e prompt por foto ----------
+# Nenhum destes toca rede: o `StudioClient` é fingido e o `claude` nunca é invocado (quem chamaria
+# o CLI é o servidor, do outro lado do HTTP). Invariante 8 do FDD: nada é escrito em `scenes.json`
+# sem `ui.confirm`/`ui.choose_images` ou `confirm=true`.
+P = "/api/projects/p/storyboard"
+
+
+class SbFake(Fake):
+    """Fake do storyboard: GET com fila por path (para polling), erros por path e PUTs gravados."""
+
+    def __init__(self, responses=None, fila=None, erros=None):
+        super().__init__(responses)
+        self.fila = fila or {}
+        self.erros = erros or {}
+        self.puts = []
+
+    def get(self, path, params=None):
+        if path in self.fila:
+            seq = self.fila[path]
+            return seq.pop(0) if len(seq) > 1 else seq[0]
+        return self.responses.get(path, {})
+
+    def post(self, path, json=None, params=None):
+        if path in self.erros:
+            raise self.erros[path]
+        self.posts.append((path, json))
+        return self.responses.get(path, {})
+
+    def put(self, path, json=None, params=None):
+        if path in self.erros:
+            raise self.erros[path]
+        self.puts.append((path, json))
+        return {"scenes": (json or {}).get("scenes", [])}
+
+
+def _cena(n, text="", images=(), primary=None, photos=None):
+    return {"id": f"cena{n:02d}", "n": n, "text": text, "images": list(images), "primary": primary,
+            "video_desc": "", "video_prompt": "", "videos": [], "photos": photos or {}}
+
+
+def _cenas(cli):
+    """As cenas do ÚLTIMO PUT."""
+    return cli.puts[-1][1]["scenes"]
+
+
+# ---------- storyboard_script ----------
+def test_script_dispara_e_manda_acompanhar():
+    cli = SbFake()
+    out = actions.storyboard_script(cli, "p", count=5, arc="começa na chuva",
+                                    preset="documentary-street")
+    assert out == ("Roteiro em geração: 5 cenas (preset documentary-street). "
+                   "Acompanhe com `storyboard_script_wait`.")
+    path, body = cli.posts[0]
+    assert path == f"{P}/script/generate"
+    assert body == {"count": 5, "instruction": "começa na chuva", "preset": "documentary-street"}
+
+
+def test_script_sem_preset_omite_a_chave_para_o_servidor_resolver():
+    cli = SbFake()
+    actions.storyboard_script(cli, "p")
+    assert "preset" not in cli.posts[0][1]
+
+
+def test_script_409_sem_cli_devolve_a_mensagem_literal_do_servidor():
+    msg = ("Claude CLI não encontrado no PATH: escreva as cenas manualmente (aula 010) ou "
+           "instale o Claude Code")
+    cli = SbFake(erros={f"{P}/script/generate": StudioApiError(msg, status=409, detail=msg)})
+    assert actions.storyboard_script(cli, "p") == msg
+
+
+# ---------- storyboard_script_wait ----------
+def test_script_wait_running_para_done_resume_o_roteiro():
+    cli = SbFake(
+        responses={f"{P}/script": {"script": {
+            "count": 5, "preset": "documentary-street",
+            "scenes": [{"n": 1, "arc": "comeco", "shot_prompts": ["a", "b", "c"]},
+                       {"n": 2, "arc": "descoberta", "shot_prompts": ["a"] * 5},
+                       {"n": 3, "arc": "acao", "shot_prompts": ["a"] * 4},
+                       {"n": 4, "arc": "acao", "shot_prompts": ["a"] * 3},
+                       {"n": 5, "arc": "desfecho", "shot_prompts": ["a"] * 4}]}}},
+        fila={f"{P}/script/job": [{"state": "running"}, {"state": "done"}]})
+    out = actions.storyboard_script_wait(cli, "p", _sleep=lambda s: None)
+    assert out == ("Roteiro pronto: 5 cenas (comeco, descoberta, acao, acao, desfecho), "
+                   "3 a 5 fotos por cena, preset documentary-street. Aplique com "
+                   "`storyboard_apply_script` (mode=empty não sobrescreve o que você escreveu).")
+
+
+def test_script_wait_erro_cita_a_ultima_linha_do_log_e_diz_que_nada_foi_gravado():
+    cli = SbFake(fila={f"{P}/script/job": [
+        {"state": "error", "error": "boom", "log": ["começou", "roteiro falhou: timeout do CLI"]}]})
+    out = actions.storyboard_script_wait(cli, "p", _sleep=lambda s: None)
+    assert out == "O roteiro falhou: roteiro falhou: timeout do CLI. Nada foi gravado; peça de novo."
+
+
+def test_script_wait_timeout_pede_nova_chamada():
+    """O relógio entra por `_now`, não por monkeypatch de `time.monotonic`.
+
+    Regressão da rodada de review 001 (issue_021): `actions.time` É o módulo `time` da stdlib, então
+    substituir `monotonic` ali valia para o PROCESSO inteiro, apoiado num iterador de 3 itens —
+    qualquer outro código que lesse o relógio na janela do teste levantava `StopIteration`."""
+    marcas = iter([0.0, 1.0, 700.0])
+    cli = SbFake(fila={f"{P}/script/job": [{"state": "running"}]})
+    out = actions.storyboard_script_wait(cli, "p", _sleep=lambda s: None, _now=lambda: next(marcas))
+    assert out == ("O roteiro ainda está rodando depois de 600 s. "
+                   "Chame `storyboard_script_wait` de novo.")
+
+
+def test_script_wait_nao_anuncia_roteiro_de_outra_sessao_quando_nada_rodou():
+    """Job `idle` sem nunca ter passado por `running` NÃO é "roteiro pronto".
+
+    Regressão da rodada de review 001 (issue_011): o laço caía direto no resumo e anunciava o
+    `script.json` que estivesse em disco — de outra sessão, ou de antes de um 409 que o agente
+    ignorou — e o agente então o aplicava às cenas. Mesmo cuidado do `tools.job_wait`."""
+    cli = SbFake({f"{P}/script": {"script": {"count": 5, "preset": "documentary-street",
+                                             "scenes": [{"arc": "acao", "text": "velho"}]}}},
+                 fila={f"{P}/script/job": [{"state": "idle"}]})
+    out = actions.storyboard_script_wait(cli, "p", _sleep=lambda s: None)
+    assert "Nenhuma geração de roteiro em andamento" in out
+    assert "Roteiro pronto" not in out
+
+
+def test_script_wait_com_2xx_nao_json_nao_levanta_excecao_crua():
+    """§6: `_call` devolve `str` para 2xx não-JSON; a tool tem de virar texto, não `AttributeError`."""
+    cli = SbFake(fila={f"{P}/script/job": ["<html>proxy</html>"]})
+    assert isinstance(actions.storyboard_script_wait(cli, "p", _sleep=lambda s: None), str)
+
+
+# ---------- storyboard_apply_script ----------
+def _cli_apply(cenas, sugeridas=None, preset="documentary-street"):
+    sugeridas = sugeridas or [{"n": i + 1, "arc": "acao", "text": f"texto {i + 1}",
+                               "image_prompt": f"prompt {i + 1}",
+                               "shot_prompts": [f"prompt {i + 1}"]} for i in range(len(cenas))]
+    return SbFake({f"{P}/scenes": {"scenes": cenas},
+                   f"{P}/script": {"script": {"count": len(sugeridas), "preset": preset,
+                                              "scenes": sugeridas}}})
+
+
+def test_apply_sem_chat_e_sem_confirm_nao_escreve(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = _cli_apply([_cena(1), _cena(2)])
+    out = actions.storyboard_apply_script(cli, "p")
+    assert "confirm=true" in out and "Nada foi escrito" in out
+    assert cli.puts == []
+
+
+def test_apply_com_ui_recusada_nao_escreve(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": False})
+    cli = _cli_apply([_cena(1), _cena(2)])
+    out = actions.storyboard_apply_script(cli, "p")
+    assert out == "Aplicação cancelada pelo usuário. Nada foi escrito em scenes.json."
+    assert cli.puts == []
+
+
+def test_apply_empty_so_preenche_as_cenas_sem_texto(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": True})
+    cli = _cli_apply([_cena(1, "escrito à mão"), _cena(2), _cena(3)])
+    out = actions.storyboard_apply_script(cli, "p")
+    assert "2 cena(s) preenchida(s)" in out and "mode=empty" in out
+    assert "1 sugestão(ões) sobraram" in out
+    textos = [s["text"] for s in _cenas(cli)]
+    assert textos == ["escrito à mão", "texto 2", "texto 3"]
+
+
+def test_apply_replace_sobrescreve_todas(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": True})
+    cli = _cli_apply([_cena(1, "escrito à mão"), _cena(2)])
+    out = actions.storyboard_apply_script(cli, "p", mode="replace")
+    assert "2 cena(s) preenchida(s)" in out and "mode=replace" in out
+    assert [s["text"] for s in _cenas(cli)] == ["texto 1", "texto 2"]
+
+
+def test_apply_mode_invalido_nao_escreve():
+    cli = _cli_apply([_cena(1)])
+    out = actions.storyboard_apply_script(cli, "p", mode="lixo")
+    assert "mode inválido" in out and "Nada foi escrito" in out
+    assert cli.puts == []
+
+
+def test_apply_com_prompts_leva_shot_prompts_para_as_fotos_ja_anexadas(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": True})
+    imgs = ["storyboard/ideas/a1.png", "storyboard/ideas/b2.png"]
+    cli = _cli_apply([_cena(1, images=imgs, primary=imgs[0])],
+                     sugeridas=[{"n": 1, "arc": "comeco", "text": "chove",
+                                 "image_prompt": "p1", "shot_prompts": ["p1", "p2", "p3"]}])
+    actions.storyboard_apply_script(cli, "p", with_prompts=True)
+    photos = _cenas(cli)[0]["photos"]
+    assert set(photos) == set(imgs)                     # o 3º prompt NÃO criou foto nenhuma
+    assert photos[imgs[0]]["image_prompt"] == "p1" and photos[imgs[1]]["image_prompt"] == "p2"
+    assert photos[imgs[0]]["origin"]["image_prompt"] == {"source": "ia",
+                                                         "preset": "documentary-street"}
+
+
+# ---------- storyboard_scene_attach ----------
+def _ideia(i, selected=True):
+    return {"id": i, "file": f"storyboard/ideas/{i}.png",
+            "thumb": f"storyboard/candidates/thumbs/{i}.jpg", "prompt": f"prompt {i}",
+            "selected": selected, "source": "local"}
+
+
+def _cli_attach(cenas, ideias):
+    return SbFake({f"{P}/scenes": {"scenes": cenas}, f"{P}/candidates": {"ideas": ideias}})
+
+
+def test_attach_sem_ids_monta_o_thumb_relativo_a_raiz_do_projeto(monkeypatch):
+    vistos = {}
+
+    def _choose(client, title, images, minimum=1, maximum=None):
+        vistos["title"], vistos["images"] = title, images
+        return {"answered": True, "selected": ["a1"]}
+
+    monkeypatch.setattr(ui, "choose_images", _choose)
+    cli = _cli_attach([_cena(1), _cena(2)], [_ideia("a1"), _ideia("b2")])
+    actions.storyboard_scene_attach(cli, "p", "cena02")
+    assert "cena 2" in vistos["title"]
+    urls = [i["thumb"] for i in vistos["images"]]
+    assert urls == ["/files/p/storyboard/candidates/thumbs/a1.jpg",
+                    "/files/p/storyboard/candidates/thumbs/b2.jpg"]
+    assert not any("candidates/candidates" in u for u in urls)   # não passou por `_images_for`
+
+
+def test_attach_soma_a_galeria_sem_duplicar_e_devolve_a_proxima_acao(monkeypatch):
+    monkeypatch.setattr(ui, "choose_images",
+                        lambda *a, **k: {"answered": True, "selected": ["a1", "b2", "c3"]})
+    ja = "storyboard/ideas/a1.png"
+    cli = _cli_attach([_cena(1, images=[ja], primary=ja)],
+                      [_ideia("a1"), _ideia("b2"), _ideia("c3")])
+    out = actions.storyboard_scene_attach(cli, "p", "cena01")
+    assert out == ("2 foto(s) anexada(s) à cena01 (agora com 3). Próxima ação: "
+                   "`storyboard_keyframe_prompt` para escrever o prompt de imagem de cada foto, "
+                   "ou `storyboard_scenes` para revisar.")
+    assert _cenas(cli)[0]["images"] == [ja, "storyboard/ideas/b2.png", "storyboard/ideas/c3.png"]
+
+
+def test_attach_define_primary_so_quando_a_cena_nao_tinha(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)                # caminho de terminal
+    cli = _cli_attach([_cena(1)], [_ideia("a1"), _ideia("b2")])
+    actions.storyboard_scene_attach(cli, "p", "cena01", ids=["b2", "a1"])
+    # a ★ é a PRIMEIRA escolha do usuário, não a primeira da listagem de candidatas
+    # (regressão da rodada de review 001, issue_019).
+    assert _cenas(cli)[0]["images"] == ["storyboard/ideas/b2.png", "storyboard/ideas/a1.png"]
+    assert _cenas(cli)[0]["primary"] == "storyboard/ideas/b2.png"
+
+    ja = "storyboard/ideas/z9.png"
+    cli2 = _cli_attach([_cena(1, images=[ja], primary=ja)], [_ideia("a1")])
+    actions.storyboard_scene_attach(cli2, "p", "cena01", ids=["a1"])
+    assert _cenas(cli2)[0]["primary"] == ja                        # preservada
+
+
+def test_attach_sem_ideias_escolhidas_orienta_e_nao_escreve():
+    cli = _cli_attach([_cena(1)], [_ideia("a1", selected=False)])
+    out = actions.storyboard_scene_attach(cli, "p", "cena01")
+    assert out == ("Nenhuma ideia escolhida ainda. Use `storyboard_pick` para o usuário escolher, "
+                   "ou `storyboard_local_generate` para gerar de graça no motor local.")
+    assert cli.puts == []
+
+
+def test_attach_ignora_ideia_nao_escolhida_mesmo_com_id_explicito(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = _cli_attach([_cena(1)], [_ideia("a1"), _ideia("b2", selected=False)])
+    actions.storyboard_scene_attach(cli, "p", "cena01", ids=["a1", "b2"])
+    assert _cenas(cli)[0]["images"] == ["storyboard/ideas/a1.png"]
+
+
+# ---------- storyboard_keyframe_prompt ----------
+IMG = "storyboard/ideas/a1.png"
+
+
+def _cli_kf(photos=None, respostas=None, erros=None):
+    resp = {f"{P}/scenes": {"scenes": [_cena(1), _cena(2, images=[IMG], primary=IMG,
+                                                      photos=photos or {})]}}
+    resp.update(respostas or {})
+    return SbFake(resp, erros=erros)
+
+
+def test_keyframe_prompt_image_grava_e_marca_a_origem(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = _cli_kf(respostas={f"{P}/image-prompt": {"prompt": "A lone courier steps off the curb",
+                                                   "source": "claude",
+                                                   "preset": "documentary-street"}})
+    out = actions.storyboard_keyframe_prompt(cli, "p", "cena02", IMG, description="na chuva")
+    assert cli.posts[0] == (f"{P}/image-prompt",
+                            {"scene_id": "cena02", "photo": IMG, "description": "na chuva"})
+    foto = _cenas(cli)[1]["photos"][IMG]
+    assert foto["image_prompt"] == "A lone courier steps off the curb"
+    # `claude` é o produtor; o enum que `scenes.json` aceita é `ia`/`manual`/`template`
+    # (`service.ORIGIN_SOURCES`). Antes o teste assertava "claude" sobre o payload FALSO e dava
+    # sinal verde a um valor que o servidor real descartava — o critério D9 não fechava.
+    assert foto["origin"]["image_prompt"] == {"source": "ia", "preset": "documentary-street"}
+    assert "Prompt de imagem escrito para cena02/a1.png" in out
+    assert "fonte: claude, preset documentary-street" in out and "`storyboard_keyframe_set`" in out
+
+
+def test_keyframe_prompt_video_usa_a_rota_de_video(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = _cli_kf(respostas={f"{P}/video-prompt": {"prompt": "A photorealistic animation",
+                                                   "source": "template", "preset": None}})
+    out = actions.storyboard_keyframe_prompt(cli, "p", "cena02", IMG, kind="video")
+    assert cli.posts[0] == (f"{P}/video-prompt",
+                            {"scene_id": "cena02", "description": "",
+                             "frames": {"mode": "single", "image": IMG}})
+    assert _cenas(cli)[1]["photos"][IMG]["video_prompt"] == "A photorealistic animation"
+    assert "Prompt de vídeo escrito" in out and "preset nenhum" in out
+
+
+def test_keyframe_prompt_kind_invalido_nao_chama_rota_nenhuma():
+    cli = _cli_kf()
+    out = actions.storyboard_keyframe_prompt(cli, "p", "cena02", IMG, kind="lixo")
+    assert "kind inválido" in out and "Nada foi escrito" in out
+    assert cli.posts == [] and cli.puts == []
+
+
+def test_keyframe_prompt_nao_sobrescreve_texto_manual_sem_chat(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = _cli_kf(photos={IMG: {"image_prompt": "escrito por mim",
+                                "origin": {"image_prompt": {"source": "manual", "preset": None}}}},
+                  respostas={f"{P}/image-prompt": {"prompt": "sugestão da IA",
+                                                   "source": "claude", "preset": None}})
+    out = actions.storyboard_keyframe_prompt(cli, "p", "cena02", IMG)
+    assert cli.puts == []
+    assert "NÃO foi sobrescrito" in out and "sugestão da IA" in out
+    assert "`storyboard_keyframe_set`" in out
+
+
+def test_keyframe_prompt_aceita_so_o_nome_do_arquivo(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = _cli_kf(respostas={f"{P}/image-prompt": {"prompt": "x", "source": "template",
+                                                   "preset": None}})
+    actions.storyboard_keyframe_prompt(cli, "p", "cena02", "a1.png")
+    assert cli.posts[0][1]["photo"] == IMG          # resolvido contra as imagens da cena
+    assert IMG in _cenas(cli)[1]["photos"]
+
+
+# ---------- storyboard_keyframe_set ----------
+def test_keyframe_set_escreve_e_marca_manual():
+    cli = _cli_kf()
+    out = actions.storyboard_keyframe_set(cli, "p", "cena02", IMG, "video_prompt", "texto à mão")
+    foto = _cenas(cli)[1]["photos"][IMG]
+    assert foto["video_prompt"] == "texto à mão"
+    assert foto["origin"]["video_prompt"] == {"source": "manual", "preset": None}
+    assert "video_prompt de cena02/a1.png atualizado (manual, 11 chars)" in out
+
+
+def test_keyframe_set_field_invalido_nao_escreve():
+    cli = _cli_kf()
+    out = actions.storyboard_keyframe_set(cli, "p", "cena02", IMG, "lixo", "x")
+    assert "field inválido" in out and "Nada foi escrito" in out
+    assert cli.puts == []
+
+
+def test_keyframe_set_422_do_teto_volta_como_texto():
+    msg = "Entrada inválida: cena02: prompt de imagem acima de 4000 caracteres"
+    cli = _cli_kf(erros={f"{P}/scenes": StudioApiError(msg, status=422, detail=msg)})
+    out = actions.storyboard_keyframe_set(cli, "p", "cena02", IMG, "image_prompt", "x" * 4001)
+    assert out == msg
+
+
+# ---------- registro no servidor MCP ----------
+def test_as_seis_tools_novas_estao_registradas():
+    from studio.mcp import server as mcp_server
+    srv = mcp_server.build_server(SbFake())
+    nomes = {t.name for t in srv._tool_manager.list_tools()}
+    assert {"storyboard_script", "storyboard_script_wait", "storyboard_apply_script",
+            "storyboard_scene_attach", "storyboard_keyframe_prompt",
+            "storyboard_keyframe_set"} <= nomes
+    assert {"storyboard_local_generate", "storyboard_pick", "storyboard_scenes"} <= nomes
+
+
+# ---------- invariante 8: nenhuma escrita em scenes.json sem autorização humana ----------
+# Rodada de review 001 (issues 012, 013 e 015): os testes de `scene_attach` cobriam o caminho
+# feliz, mas nenhum deles falhava se o portão de autorização fosse APAGADO. Estes falham.
+def test_attach_sem_ui_e_sem_ids_nao_escreve_nada(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": False, "no_ui": True})
+    cli = _cli_attach([_cena(1)], [_ideia("a1")])
+    out = actions.storyboard_scene_attach(cli, "p", "cena01")
+    assert cli.puts == []
+    assert "Sem interface" in out and "a1" in out
+
+
+def test_attach_com_usuario_sem_responder_nao_escreve_nada(monkeypatch):
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": False})
+    cli = _cli_attach([_cena(1)], [_ideia("a1")])
+    out = actions.storyboard_scene_attach(cli, "p", "cena01")
+    assert cli.puts == [] and "não escolheu" in out
+
+
+def test_attach_com_selecao_vazia_nao_escreve_nada(monkeypatch):
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": True, "selected": []})
+    cli = _cli_attach([_cena(1)], [_ideia("a1")])
+    out = actions.storyboard_scene_attach(cli, "p", "cena01")
+    assert cli.puts == [] and "não selecionou" in out
+
+
+def test_attach_com_chat_ignora_ids_e_sempre_mostra_o_seletor(monkeypatch):
+    """Invariante 8: dentro do chat, a escolha visual é do USUÁRIO (ADR-038).
+
+    O agente já conhece os ids (de `storyboard_pick`), então aceitá-los aqui deixaria o seletor a
+    um argumento de ser contornado — era o único `PUT /scenes` alcançável sem nenhuma das duas
+    cláusulas da invariante 8 (rodada de review 001, issue_012)."""
+    chamou = []
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "choose_images",
+                        lambda *a, **k: chamou.append(1) or {"answered": False})
+    cli = _cli_attach([_cena(1)], [_ideia("a1"), _ideia("b2")])
+    actions.storyboard_scene_attach(cli, "p", "cena01", ids=["a1", "b2"])
+    assert chamou == [1], "com chat, o seletor visual tem de aparecer mesmo com ids"
+    assert cli.puts == []
+
+
+def test_keyframe_prompt_com_chat_confirma_antes_de_sobrescrever_manual(monkeypatch):
+    """Critério D3 no lado do agente: o ramo COM chat não tinha teste nenhum (issue_013)."""
+    perguntas = []
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm",
+                        lambda cli, t, d="": perguntas.append(t) or {"answered": True, "confirmed": False})
+    manual = {IMG: {"image_prompt": "escrito à mão",
+                    "origin": {"image_prompt": {"source": "manual", "preset": None}}}}
+    cli = _cli_kf(photos=manual,
+                  respostas={f"{P}/image-prompt": {"prompt": "sugestão da IA", "source": "claude",
+                                                   "preset": "documentary-street"}})
+    out = actions.storyboard_keyframe_prompt(cli, "p", "cena02", IMG)
+    assert perguntas and "manual" in perguntas[0]
+    assert cli.puts == [], "recusar a confirmação não pode escrever"
+    assert "Mantido" in out and "sugestão da IA" in out
+
+
+def test_keyframe_prompt_com_chat_sobrescreve_quando_o_usuario_aceita(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": True})
+    manual = {IMG: {"image_prompt": "escrito à mão",
+                    "origin": {"image_prompt": {"source": "manual", "preset": None}}}}
+    cli = _cli_kf(photos=manual,
+                  respostas={f"{P}/image-prompt": {"prompt": "sugestão da IA", "source": "claude",
+                                                   "preset": None}})
+    actions.storyboard_keyframe_prompt(cli, "p", "cena02", IMG)
+    foto = _cenas(cli)[1]["photos"][IMG]
+    assert foto["image_prompt"] == "sugestão da IA"
+    assert foto["origin"]["image_prompt"]["source"] == "ia"
+
+
+def test_keyframe_prompt_regenera_sobre_origem_ia_sem_perguntar(monkeypatch):
+    """Texto de origem `ia`/`template` é regeneração: não pergunta nada (§4, fluxo 4, passo 4)."""
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: pytest.fail("não devia perguntar"))
+    antes = {IMG: {"image_prompt": "da IA", "origin": {"image_prompt": {"source": "ia", "preset": None}}}}
+    cli = _cli_kf(photos=antes,
+                  respostas={f"{P}/image-prompt": {"prompt": "novo", "source": "claude", "preset": None}})
+    actions.storyboard_keyframe_prompt(cli, "p", "cena02", IMG)
+    assert _cenas(cli)[1]["photos"][IMG]["image_prompt"] == "novo"
+
+
+def test_origin_source_escrito_pelas_tools_esta_no_enum_do_servidor():
+    """Guarda cruzada: o que a tool escreve tem de ser aceito por `service._photo_origin`."""
+    from studio.storyboard import service as sb
+    assert actions._sb_source("claude") in sb.ORIGIN_SOURCES
+    assert actions._sb_source("template") in sb.ORIGIN_SOURCES
+    assert actions._sb_source(None) in sb.ORIGIN_SOURCES
+    for field in ("image_prompt", "video_prompt", "video_desc"):
+        assert field in sb.ORIGIN_FIELDS, f"{field} é aceito por keyframe_set mas o servidor descarta"
+
+
+def test_apply_script_com_prompts_preserva_o_prompt_escrito_a_mao(monkeypatch):
+    """Rodada de review 001 (issue_015): o lote sobrescrevia texto autoral sem dizer nada."""
+    detalhes = []
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm",
+                        lambda cli, t, d="": detalhes.append(d) or {"answered": True, "confirmed": True})
+    a, b = "storyboard/ideas/a1.png", "storyboard/ideas/b2.png"
+    cena = _cena(1, images=[a, b], primary=a, photos={
+        a: {"image_prompt": "meu prompt", "origin": {"image_prompt": {"source": "manual", "preset": None}}},
+        b: {"image_prompt": ""}})
+    cli = _cli_apply([cena], sugeridas=[{"n": 1, "arc": "acao", "text": "t",
+                                         "shot_prompts": ["do roteiro A", "do roteiro B"]}])
+    actions.storyboard_apply_script(cli, "p", mode="empty", with_prompts=True)
+    fotos = _cenas(cli)[0]["photos"]
+    assert fotos[a]["image_prompt"] == "meu prompt", "prompt manual não pode ser sobrescrito"
+    assert fotos[b]["image_prompt"] == "do roteiro B"
+    assert detalhes and "escrito à mão" in detalhes[0] and "cena01/a1.png" in detalhes[0]

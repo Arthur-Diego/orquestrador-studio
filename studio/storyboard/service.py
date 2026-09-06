@@ -55,6 +55,10 @@ DEFAULT_SCENES = 5
 MAX_SCENES = 10
 MAX_TEXT = 300          # instrução de geração
 MAX_SCENE_TEXT = 500    # texto de uma cena
+#: `[extensão]` campos abertos de prompt por foto (FDD Wave 11 · F06 §5.5): teto de `image_prompt`
+#: e de `video_prompt`. Folgado de propósito — é texto que o usuário escreve ou aceita da IA, e um
+#: prompt de fotografia com rig, luz e negativos passa de 2000 caracteres sem esforço.
+MAX_PHOTO_PROMPT = 4000
 COUNTS = {"uncertain": 4, "tweak": 1}
 SUFFIX = "Keep everything else identical, realistic."
 
@@ -216,6 +220,10 @@ def status(pid: str) -> dict:
         "script_preset_default": settings.preset_default_for(SCRIPT_ACTION, pid)["preset"],
         "script_models": [dict(m) for m in SCRIPT_MODELS],
         "script_cli": prompter.available(),
+        # `[extensão]` Wave 11 · F06 (FDD §5.2): o MESMO diagnóstico da rota `script/cli`, porém
+        # SEM re-resolver o PATH — `status` é leitura barata, chamada a cada abertura da tela. A
+        # re-checagem explícita (`?refresh=true`) é gesto do usuário. `script_cli` fica intocado.
+        "script_cli_diag": prompter.cli_status(),
     }
 
 
@@ -401,11 +409,18 @@ def import_annotation(pid: str, data: bytes, name: str = "annotation.png",
 # ---------- galeria e seleção ----------
 def _idea_row(c: dict) -> dict:
     """Projeção pública de um candidato. `file` aponta para ideas/ quando selecionado (decisão 7
-    do lote: ideas/ guarda só as escolhidas; o resto fica em candidates/)."""
+    do lote: ideas/ guarda só as escolhidas; o resto fica em candidates/).
+
+    `[extensão]` Wave 11 · F06 (FDD §5.6): `local_kind` é campo ADITIVO, só para o badge de origem
+    da galeria distinguir "Motor local (grátis)" de "Inpaint local" — os dois chegam com
+    `source: "local"` e o `meta` do candidato (`local.py`) é o único lugar que sabe qual é qual.
+    `null` para todo candidato que não veio do motor local. Nenhum campo existente muda.
+    """
     where = IDEAS_DIR if c.get("selected") else f"{STEP}/candidates"
     return {"id": c["id"], "file": f"{where}/{c['file']}", "thumb": f"{STEP}/candidates/{c['thumb']}" if c.get("thumb") else None,
             "prompt": c.get("prompt", ""), "selected": bool(c.get("selected")),
-            "source": c.get("source", ""), "imported": c.get("imported", "")}
+            "source": c.get("source", ""), "local_kind": c.get("local_kind") or None,
+            "imported": c.get("imported", "")}
 
 
 def list_ideas(pid: str) -> dict:
@@ -508,16 +523,63 @@ def _scene_videos(s: dict) -> list[str]:
     return [v for v in videos if not (v in seen or seen.add(v))]
 
 
+#: `[extensão]` campos abertos de prompt por foto (FDD Wave 11 · F06 §5.5): quais campos podem ter
+#: procedência registrada e de onde um texto pode ter vindo. Enums FECHADOS — o que estiver fora
+#: deles é descartado sem derrubar o save (`origin` é metadado de UI, não contrato de geração).
+#: `video_desc` entra aqui porque a tool `storyboard_keyframe_set` (FDD §5.18) aceita os TRÊS
+#: campos e carimba `origin` nos três; sem ele o servidor descartava a procedência em silêncio e a
+#: tool devolvia "(manual)" para uma escrita que não acontecia.
+ORIGIN_FIELDS = ("image_prompt", "video_prompt", "video_desc")
+ORIGIN_SOURCES = ("ia", "manual", "template")
+
+
+def _texto(v: object) -> str:
+    """Texto de campo por foto, defensivo: o que não for `str` vira `""`.
+
+    `(v or "").strip()` parecia equivalente, mas `(123 or "")` é `123` e `123.strip()` levanta
+    `AttributeError` DENTRO do `_normalize` — e o `_guard` do router só traduz `Invalid`/
+    `Precondition`, então um `{"image_prompt": 123}` virava 500 em vez de um 4xx honesto."""
+    return v.strip() if isinstance(v, str) else ""
+
+
+def _photo_origin(raw: object) -> dict:
+    """Procedência por campo: `{campo: {source, preset, at}}`, LENIENTE (FDD §6).
+
+    Mesma leniência dos `videos` da foto: campo desconhecido, `source` fora do enum ou entrada que
+    não é um mapa somem em silêncio. Um chip de origem errado nunca pode custar ao usuário o texto
+    que ele acabou de escrever."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for field in ORIGIN_FIELDS:                  # a ordem é do enum, não do cliente
+        entry = raw.get(field)
+        if not isinstance(entry, dict) or entry.get("source") not in ORIGIN_SOURCES:
+            continue
+        preset = entry.get("preset")
+        at = entry.get("at")
+        out[field] = {"source": entry["source"],
+                      "preset": preset if isinstance(preset, str) else None,
+                      "at": at.strip() if isinstance(at, str) else ""}
+    return out
+
+
 def _scene_photos(s: dict, images: list[str], primary: str | None) -> dict:
     """`[extensão]` vídeo por FOTO (ADR-022): mapa `img_rel -> {video_prompt, videos}`, só para as
     imagens da cena. Aditivo/retrocompatível (ADR-018/021): cena antiga sem `photos` mas com o par
-    por-cena (`video_prompt`/`videos`) vê esse par migrado para a foto **principal** na leitura."""
+    por-cena (`video_prompt`/`videos`) vê esse par migrado para a foto **principal** na leitura.
+
+    `[extensão]` Wave 11 · F06 (FDD §5.5): a foto ganha ainda `image_prompt` (o keyframe que o
+    usuário escreve ou aceita da IA), `preset` e `origin`. `preset` tem TRÊS estados e a chave é
+    preservada literalmente (invariante 6): AUSENTE herda o default da ação, `null` desliga,
+    `"<id>"` usa esse id — colapsar ausente em `None` apagaria a rota de fuga do usuário. `origin`
+    só aparece quando sobra algo bem formado."""
     raw = s.get("photos") if isinstance(s.get("photos"), dict) else {}
     out: dict[str, dict] = {}
     for img in images:
         entry = raw.get(img) if isinstance(raw.get(img), dict) else {}
-        vd = (entry.get("video_desc") or "").strip()
-        vp = (entry.get("video_prompt") or "").strip()
+        vd = _texto(entry.get("video_desc"))
+        vp = _texto(entry.get("video_prompt"))
+        ip = _texto(entry.get("image_prompt"))
         vids = entry.get("videos")
         vids = [v for v in vids if v] if isinstance(vids, list) else []
         if img == primary:                       # migração do par por-cena (ADR-022)
@@ -526,8 +588,18 @@ def _scene_photos(s: dict, images: list[str], primary: str | None) -> dict:
             if not vids and isinstance(s.get("videos"), list):
                 vids = [v for v in s["videos"] if v]
         seen: set[str] = set()
-        out[img] = {"video_desc": vd, "video_prompt": vp,
-                    "videos": [v for v in vids if not (v in seen or seen.add(v))]}
+        photo = {"video_desc": vd, "video_prompt": vp, "image_prompt": ip,
+                 "videos": [v for v in vids if not (v in seen or seen.add(v))]}
+        if "preset" in entry:                    # chave AUSENTE ≠ `null` (invariante 6)
+            # o valor cru passa adiante: quem decide é o `_check_photo_preset` do `save_scenes`.
+            # Coagir aqui um valor malformado para `None` seria trocar em silêncio "herda o padrão
+            # da campanha" por "opta por NÃO ter preset" — o único colapso que os três estados não
+            # podem pagar.
+            photo["preset"] = entry["preset"]
+        origin = _photo_origin(entry.get("origin"))
+        if origin:
+            photo["origin"] = origin
+        out[img] = photo
     return out
 
 
@@ -579,6 +651,35 @@ def _check_image(root: Path, image: str | None) -> str | None:
     return f"{IDEAS_DIR}/{p.name}"
 
 
+def _check_photo_prompt(scene_id: str, img: str, field: str, text: object,
+                        limit: int = MAX_PHOTO_PROMPT) -> str:
+    """`[extensão]` FDD Wave 11 · F06 (§6, critério D10): teto de um campo de texto por foto.
+
+    A mensagem cita a CENA e a FOTO de propósito — com 5 cenas e 3 fotos por cena, um 422 genérico
+    não diz ao usuário qual campo estourou. O `limit` é parâmetro porque a §5.5 contrata tetos
+    DIFERENTES: 4000 para os dois prompts e `MAX_VIDEO_DESC` (500) para o `video_desc`, o mesmo
+    teto que o `POST /video-prompt` já cobra na entrada."""
+    t = _texto(text)
+    if len(t) > limit:
+        raise Invalid(f"{scene_id} · {img}: {field} acima de {limit} caracteres.")
+    return t
+
+
+def _check_photo_preset(scene_id: str, img: str, preset: object) -> str | None:
+    """`[extensão]` FDD Wave 11 · F06 (§5.5): id de preset por foto contra o catálogo do prompter.
+
+    `None` (o estado "sem preset") é sempre aceito; a chave AUSENTE nem chega aqui, porque quem
+    herda o default da ação não guarda valor nenhum. Um valor que não é `str` nem `None` é 422, e
+    não uma coerção silenciosa para `None`: os três estados só valem se o servidor se recusar a
+    adivinhar qual deles o cliente quis dizer."""
+    if preset is not None and not isinstance(preset, str):
+        raise Invalid(f"{scene_id} · {img}: preset tem de ser um id do catálogo ou null.")
+    try:
+        return prompter.valid_preset(preset)
+    except ValueError as e:
+        raise Invalid(f"{scene_id} · {img}: {e}") from e
+
+
 def save_scenes(pid: str, scenes: list[dict]) -> dict:
     """Grava scenes.json e regrava storyboard.md na mesma chamada (nunca um sem o outro)."""
     root = project_dir(pid)
@@ -607,6 +708,10 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
         s["videos"] = checked_videos
         # `[extensão]` vídeo por foto (ADR-022): poda `photos` para as imagens válidas e valida
         # (leniente — não derruba o save) os mp4 de cada foto sob storyboard/<cena>/video/.
+        # `[extensão]` Wave 11 · F06: `image_prompt`/`video_prompt` têm teto (422 citando cena e
+        # foto), `preset` é validado contra o catálogo e `origin` atravessa como `_scene_photos` o
+        # deixou (já leniente). A chave `preset` só é escrita quando veio — ausente é o estado
+        # "herda o default da ação" (invariante 6).
         photos: dict[str, dict] = {}
         for img in checked:
             pe = s["photos"].get(img) or {}
@@ -618,12 +723,28 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
                     okv = None
                 if okv and okv not in pv:
                     pv.append(okv)
-            photos[img] = {"video_desc": (pe.get("video_desc") or "").strip(),
-                           "video_prompt": (pe.get("video_prompt") or "").strip(), "videos": pv}
+            photo = {"video_desc": _check_photo_prompt(s["id"], img, "video_desc",
+                                                       pe.get("video_desc"), limit=MAX_VIDEO_DESC),
+                     "video_prompt": _check_photo_prompt(s["id"], img, "video_prompt", pe.get("video_prompt")),
+                     "image_prompt": _check_photo_prompt(s["id"], img, "image_prompt", pe.get("image_prompt")),
+                     "videos": pv}
+            if "preset" in pe:
+                photo["preset"] = _check_photo_preset(s["id"], img, pe["preset"])
+            if pe.get("origin"):
+                photo["origin"] = pe["origin"]
+            photos[img] = photo
         s["photos"] = photos
     _write_scenes(root, norm)
     md = _write_md(root, norm)
-    log.info("scenes_saved %s", {"pid": pid, "scenes": len(norm), "with_image": sum(1 for s in norm if s["images"])})
+    log.info("scenes_saved %s", {
+        "pid": pid, "scenes": len(norm),
+        "with_image": sum(1 for s in norm if s["images"]),
+        # `[extensão]` Wave 11 · F06 (§7): cenas com pelo menos uma foto que já tem prompt de
+        # imagem escrito, e cenas com pelo menos uma foto com preset PRÓPRIO (a que herda o
+        # padrão da campanha não guarda a chave, então não conta aqui).
+        "with_image_prompt": sum(1 for s in norm if any(p.get("image_prompt") for p in s["photos"].values())),
+        "with_photo_preset": sum(1 for s in norm if any("preset" in p for p in s["photos"].values())),
+    })
     return {"scenes": norm, "storyboard_md": md}
 
 
@@ -1176,6 +1297,18 @@ SCRIPT_MODELS = [{"id": "nano_banana_2", "label": "Nano Banana Pro", "default": 
 # `storyboard.script` no mapa `defaults` e o `preset-config` aceita a ação sem mudança de código lá.
 settings.PRESET_ACTIONS.setdefault(SCRIPT_ACTION, SCRIPT_PRESET_DEFAULT)
 
+# `[extensão]` Wave 11 · F06 (FDD §5.11): as outras duas ações de preset da etapa 4, registradas
+# aqui pelo MESMO mecanismo. `storyboard.angles` é contrato consumido por F07 (os ângulos por cena)
+# e `storyboard.keyframe` é o papel novo do prompter (prompt de imagem por foto). Ficam neste
+# arquivo, e não em `studio/common/settings.py`, para não conflitar com F05 — e por `setdefault`,
+# que torna o registro idempotente: se F07 registrar `storyboard.angles` em `angles.py`, as duas
+# chamadas convivem e quem chegar primeiro decide. Default de código `None` nas duas: nenhuma aula
+# ensina presets, então sem escolha explícita do usuário nada é injetado no prompt (ADR-004).
+ANGLES_ACTION = "storyboard.angles"
+KEYFRAME_ACTION = "storyboard.keyframe"
+settings.PRESET_ACTIONS.setdefault(ANGLES_ACTION, None)
+settings.PRESET_ACTIONS.setdefault(KEYFRAME_ACTION, None)
+
 #: Registro PRÓPRIO do roteiro (ADR-006), separado da ideação (`_registry`) e do vídeo
 #: (`_video_registry`). O nome é `_story_registry` porque `studio/common/reset.py::_registries`
 #: descobre os registros da etapa por uma lista FECHADA de atributos —
@@ -1428,3 +1561,130 @@ def script_state(pid: str) -> dict:
     if not isinstance(data, dict):
         return {"exists": False, "generated_at": None}
     return {"exists": True, "generated_at": data.get("generated_at")}
+
+
+def script_cli_diag(pid: str, refresh: bool = False) -> dict:
+    """`[extensão]` Wave 11 · F06 (FDD §5.1): diagnóstico do `claude` VISTO POR ESTE PROCESSO.
+
+    A ausência do CLI é **dado**, não erro: esta função nunca levanta `Precondition`. O único
+    status diferente de 200 é o 404 do `project_dir` — a rota vive no namespace da etapa porque o
+    roteiro é quem consome o diagnóstico (decisão auto-aceita 2 do FDD).
+
+    Com `refresh=True`, `prompter.cli_status` re-resolve o PATH e reatribui o `BIN` do processo: é
+    isso que faz o botão "Verificar de novo" valer sem reiniciar o servidor (critério A2). O log
+    fica aqui, e não no router, para sair no mesmo logger `studio.storyboard` dos outros eventos
+    da etapa (§7); `searched_path` não entra na linha porque já está no corpo da resposta.
+    """
+    project_dir(pid)
+    diag = prompter.cli_status(refresh=refresh)
+    log.info("cli_probe %s", {"name": diag["name"], "available": diag["available"],
+                              "path": diag["path"], "refresh": bool(refresh)})
+    return diag
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.4, ADR-042 proposta) — PROMPT DE IMAGEM POR FOTO.
+#
+# Gêmeo de `video_prompt`, para o outro campo da foto: o usuário descreve o que a foto precisa
+# mostrar e recebe UM briefing de diretor de fotografia (papel `keyframe` do prompter), com o rig
+# do preset de realismo resolvido para a ação `storyboard.keyframe`. Sem Claude no PATH — ou com
+# falha/timeout dele — cai no TEMPLATE determinístico e devolve `source: "template"`: aqui NÃO
+# existe 409. O 409 do ADR-025 é do ROTEIRO, que escreve arquivo; este caminho não persiste nada —
+# quem grava é o cliente, pelo `PUT .../storyboard/scenes` (mesma política do `/video-prompt`).
+# ==========================================================================================
+MAX_IMAGE_DESC = MAX_VIDEO_DESC           # mesmo teto da descrição do vídeo (FDD §6)
+
+#: Template AGNÓSTICO do prompt de imagem, na forma do `VIDEO_TEMPLATE`: serve de ESTRUTURA, sem
+#: assumir cena alguma, e segue a MESMA ordem de briefing do papel `keyframe`
+#: (`prompter.BRIEFING_ORDER`). `{action}` é instanciado pela descrição do usuário. Vai como
+#: instrução ao bot e, sem Claude, é o próprio prompt determinístico (fallback).
+IMAGE_TEMPLATE = (
+    "A photorealistic cinematic still of {action}. The subject is framed as the clear centre of "
+    "attention, in a real place with visible depth — foreground, subject and background read as "
+    "three distinct planes. Shot on professional cinema equipment: full-frame body, prime lens, "
+    "wide aperture, shallow depth of field with the subject tack-sharp. ONE dominant light source "
+    "shapes the scene, with soft fill and a subtle rim for separation; the direction of the light "
+    "is readable on every surface. Materials show real texture and real imperfections — skin "
+    "pores, fabric weave, dust, scratches, condensation, fingerprints. Colour grade is cinematic "
+    "and restrained, with natural skin tones and clean shadows. Composition is deliberate and "
+    "balanced for the campaign's aspect ratio. It must look like a photograph taken with a real "
+    "camera, not a render: physically accurate light behaviour, natural optical falloff, no "
+    "digital perfection. Avoid: {negative}."
+)
+#: Negativos do template, no formato do campo `negative` da resposta (o mesmo que o bot devolve).
+#: Ficam à parte para o fallback preencher os DOIS lugares — o texto do prompt e o campo — sem
+#: manter duas listas à mão.
+IMAGE_TEMPLATE_NEGATIVE = ("plastic skin, airbrushed look, oversaturation, HDR glow, CGI look, "
+                           "text, watermarks, extra limbs")
+_IMAGE_TEMPLATE_SUBJECT = ("the subject of this storyboard photo exactly as it appears in the "
+                           "reference frame, unchanged")
+
+
+def _image_instruction(desc: str) -> str:
+    """Template preenchido pela descrição do usuário. Descrição vazia é legítima aqui (ao contrário
+    do `/video-prompt`): a foto já existe e é ela que diz o que mostrar, então o `{action}` cai no
+    sujeito genérico e o prompt continua útil."""
+    return (IMAGE_TEMPLATE.replace("{action}", desc or _IMAGE_TEMPLATE_SUBJECT)
+            .replace("{negative}", IMAGE_TEMPLATE_NEGATIVE))
+
+
+def _image_brief(root: Path, scene_id: str, instruction: str) -> dict:
+    """Brief do prompt por foto, no mesmo formato fixo de `prompter._brief_text` (contrato da
+    task_01). `purpose` carrega a cena e a proporção da campanha — a proporção nunca vem do body."""
+    meta = _read_json(root / "project.json", {}) or {}
+    aspect = _aspect_ratio(root)
+    brief = {
+        "product": (meta.get("product") or meta.get("name") or "the product").strip(),
+        "vibe": (meta.get("vibe") or "").strip(),
+        "purpose": (f"one photo (keyframe) of scene {scene_id} of an advertising video, composed "
+                    f"for a {aspect} frame (state the {aspect} aspect ratio in the composition "
+                    f"part of the prompt)"),
+        "instruction": instruction,
+    }
+    return {k: v for k, v in brief.items() if v}
+
+
+def image_prompt(pid: str, scene_id: str, photo: str, description: str = "",
+                 preset: settings.PresetArg = settings.PRESET_UNSET) -> dict:
+    """Gera o PROMPT DE IMAGEM de UMA foto da cena (Claude via papel `keyframe` + template agnóstico).
+
+    Devolve `{prompt, negative, source, seconds, preset}` — `seconds` é quanto o CLI demorou (`0.0`
+    no template) e `preset` é o preset de realismo RESOLVIDO para esta requisição: ausente resolve
+    o default da ação `storyboard.keyframe` (`None` de fábrica), `null` desliga, id usa esse.
+
+    A ordem das guardas é a da matriz da §6 do FDD: 404 pelo `project_dir`, depois 422 de
+    `scene_id`/`description`/`photo` — todos ANTES de qualquer chamada ao CLI. Sem Claude (ou com
+    falha dele) o retorno é 200 com `source: "template"`, nunca 409: o prompt por foto não escreve
+    arquivo nenhum, então não há pré-requisito a cobrar. Nada disto toca `scenes.json`: quem grava
+    é o cliente, pelo `PUT .../storyboard/scenes` (ADR-025, invariante 1).
+    """
+    root = project_dir(pid)
+    preset, _explicit = settings.resolve_preset(KEYFRAME_ACTION, pid, preset)
+    _valid_scene_id(scene_id)
+    desc = (description or "").strip()
+    if len(desc) > MAX_IMAGE_DESC:
+        raise Invalid(f"Descrição acima de {MAX_IMAGE_DESC} caracteres.")
+    rel = _check_image(root, photo)
+    if not rel:
+        raise Invalid("Informe a foto da cena (caminho relativo em storyboard/ideas/).")
+    instruction = _image_instruction(desc)
+    # Sem preset a chamada ao prompter fica exatamente como era (invariante opt-in do gate W3).
+    kw = {"preset": preset} if preset else {}
+    if prompter.available():
+        try:
+            res = prompter.keyframe([root / rel], _image_brief(root, scene_id, instruction), **kw)
+            # Só o TAMANHO do prompt entra no log, nunca o texto (§7 do FDD).
+            log.info("image_prompt %s", {"pid": pid, "scene": scene_id, "photo": rel,
+                                         "source": "claude", "preset": preset,
+                                         "seconds": res["seconds"], "chars": len(res["prompt"])})
+            return {"prompt": res["prompt"], "negative": res["negative"], "source": "claude",
+                    "seconds": res["seconds"], "preset": preset}
+        except Exception as e:  # noqa: BLE001  — bot indisponível/erro cai no template determinístico
+            log.warning("image_prompt claude falhou, usando template: %s", e)
+    log.info("image_prompt %s", {"pid": pid, "scene": scene_id, "photo": rel,
+                                 "source": "template", "preset": preset, "seconds": 0.0,
+                                 "chars": len(instruction)})
+    # Como no `video_prompt`: o template não tem onde encaixar o rig, mas a resposta continua
+    # dizendo qual preset a requisição resolveu — a UI não fica sem saber no caminho de fallback.
+    return {"prompt": instruction, "negative": IMAGE_TEMPLATE_NEGATIVE, "source": "template",
+            "seconds": 0.0, "preset": preset}

@@ -193,6 +193,18 @@
       "value": "false",
       "type": "string",
       "description": "true libera o POST script/generate, que chama o Claude CLI real (sem credito Higgsfield)"
+    },
+    {
+      "key": "scriptCliDiag",
+      "value": "",
+      "type": "string",
+      "description": "available do GET .../storyboard/script/cli (frente storyboard-cenas)"
+    },
+    {
+      "key": "descricaoLonga",
+      "value": "",
+      "type": "string",
+      "description": "501 caracteres, montados no pre-request do 422 de description"
     }
   ],
   "item": [
@@ -2505,6 +2517,274 @@
       ]
     },
     {
+      "name": "08 diagnostico do CLI e prompt de imagem por foto (storyboard-cenas) [extensao]",
+      "description": "Rotas NOVAS da frente storyboard-cenas, FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secoes 5.1 e 5.4.\n\nRoda sobre o `{{pid}}` do preparo: a pasta 03 ja selecionou uma ideia (`ideaFileSelecionado` aponta para `storyboard/ideas/<id>.png`) e a pasta 04 ja criou as 5 cenas (`cena01`).\n\nAs duas rotas sao GRATIS: `script/cli` so olha o PATH do processo e `image-prompt` usa o Claude CLI (assinatura local, ADR-025) ou cai em template determinístico. Nenhuma delas gasta credito Higgsfield e NENHUMA delas escreve `scenes.json` - quem grava e o cliente, pelo `PUT .../storyboard/scenes` (ADR-042, decisao 3).",
+      "item": [
+        {
+          "name": "GET script/cli - diagnostico do Claude CLI (sem refresh)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/cli",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "cli"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.1. 200 SEMPRE que o projeto existe: a ausencia do CLI e DADO, nao erro - esta rota nunca devolve 409. O corpo tem `{name, available, path, searched_path, checked_at, hint}`; `hint` ja vem pronto em pt-BR para o bloco `#sbScriptCliDiag` da tela."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (nunca 409: CLI ausente e dado)', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('schema do diagnostico (secao 5.1)', function () {",
+                  "  pm.expect(b).to.include.keys('name', 'available', 'path', 'searched_path', 'checked_at', 'hint');",
+                  "  pm.expect(b.name).to.eql('claude');",
+                  "  pm.expect(b.available).to.be.a('boolean');",
+                  "  pm.expect(b.searched_path).to.be.a('string');",
+                  "});",
+                  "pm.test('path e hint acompanham o available', function () {",
+                  "  if (b.available) { pm.expect(b.path).to.be.a('string'); }",
+                  "  else { pm.expect(b.path).to.eql(null); pm.expect(b.hint).to.be.a('string').and.not.empty; }",
+                  "});",
+                  "pm.collectionVariables.set('scriptCliDiag', String(b.available));",
+                  "console.log('claude available =', b.available, '| PATH do processo =', b.searched_path);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET script/cli?refresh=true - re-resolve o PATH sem reiniciar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/script/cli?refresh=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "script",
+                "cli"
+              ],
+              "query": [
+                {
+                  "key": "refresh",
+                  "value": "true",
+                  "description": "re-resolve shutil.which('claude') e atualiza prompter.BIN"
+                }
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.1, criterio A2. Com `refresh=true` o `prompter.cli_status` re-resolve o binario e REATRIBUI o `prompter.BIN` do processo - e o que faz o botao \"Verificar de novo\" (`#sbScriptCliRecheck`) valer sem reiniciar o servidor. O `checked_at` avanca; `name` e `searched_path` nao mudam de forma."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 tambem com refresh', function () { pm.response.to.have.status(200); });",
+                  "const b = pm.response.json();",
+                  "pm.test('mesmo schema do probe sem refresh', function () {",
+                  "  pm.expect(b).to.include.keys('name', 'available', 'path', 'searched_path', 'checked_at', 'hint');",
+                  "  pm.expect(b.name).to.eql('claude');",
+                  "});",
+                  "pm.test('available continua booleano (o refresh nao inventa estado)', function () {",
+                  "  pm.expect(b.available).to.be.a('boolean');",
+                  "});",
+                  "pm.collectionVariables.set('scriptCliDiag', String(b.available));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST image-prompt - caminho feliz com preset explicito",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4. Corpo `{scene_id, photo, description?, preset?}`; resposta `{prompt, negative, source, seconds, preset}`. `source` e `claude` com o CLI no PATH e `template` sem ele - NUNCA 409, porque a rota nao persiste nada (ADR-042, decisao 2). `photo` precisa ser o caminho relativo COMPLETO sob `storyboard/ideas/`; so o nome do arquivo e 422.\n\nDepende de `ideaFileSelecionado` (pasta 03) e de `cena01` (pasta 04); sem ideia selecionada a resposta e 422 e o teste aceita esse caso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena01\",\n  \"photo\": \"{{ideaFileSelecionado}}\",\n  \"description\": \"o produto na mao do personagem, chuva forte ao fundo\",\n  \"preset\": \"documentary-street\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com foto selecionada, 422 sem ela (secao 5.4)', function () { pm.expect([200, 422]).to.include(c); });",
+                  "pm.test('nunca 409: o prompt por foto nao escreve arquivo (ADR-025 vale so para o ROTEIRO)', function () {",
+                  "  pm.expect(c).to.not.eql(409);",
+                  "});",
+                  "if (c === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.test('schema da resposta (secao 5.4)', function () {",
+                  "    pm.expect(b).to.include.keys('prompt', 'negative', 'source', 'seconds', 'preset');",
+                  "    pm.expect(b.prompt).to.be.a('string').and.not.empty;",
+                  "    pm.expect(b.seconds).to.be.a('number');",
+                  "  });",
+                  "  pm.test('source e claude (CLI no PATH) ou template (sem CLI)', function () {",
+                  "    pm.expect(['claude', 'template']).to.include(b.source);",
+                  "  });",
+                  "  pm.test('o preset RESOLVIDO volta na resposta', function () { pm.expect(b.preset).to.eql('documentary-street'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST image-prompt - preset AUSENTE herda o default da acao storyboard.keyframe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4 e ADR-042 (decisao 1): o preset por foto tem TRES estados e **ausente != null != id**. Sem a chave `preset` no corpo, quem resolve e `settings.resolve_preset('storyboard.keyframe', pid, PRESET_UNSET)`: argumento -> projeto -> global -> codigo. O valor resolvido volta na resposta (pode ser `null` de fabrica, quando nenhum nivel definiu preset).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena01\",\n  \"photo\": \"{{ideaFileSelecionado}}\",\n  \"description\": \"plano medio, luz dura de fim de tarde\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com foto selecionada, 422 sem ela', function () { pm.expect([200, 422]).to.include(c); });",
+                  "if (c === 200) {",
+                  "  const b = pm.response.json();",
+                  "  pm.test('a chave ausente NAO vira erro: o servico resolve o default', function () {",
+                  "    pm.expect(b).to.have.property('preset');",
+                  "    pm.expect(b.preset === null || typeof b.preset === 'string').to.eql(true);",
+                  "  });",
+                  "  pm.test('prompt gerado mesmo sem preset no corpo', function () { pm.expect(b.prompt).to.be.a('string').and.not.empty; });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST image-prompt - preset null desliga o rig (nao e o mesmo que ausente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4 e ADR-042 (decisao 1): `\"preset\": null` e a rota de fuga explicita do usuario - \"(sem preset)\" na tela. E DIFERENTE da chave ausente, que herda. O servico responde 200 com `preset: null` e o template/briefing sai sem bloco de rig.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena01\",\n  \"photo\": \"{{ideaFileSelecionado}}\",\n  \"description\": \"sem rig de camera, so o que a foto precisa mostrar\",\n  \"preset\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.response.code;",
+                  "pm.test('200 com foto selecionada, 422 sem ela', function () { pm.expect([200, 422]).to.include(c); });",
+                  "if (c === 200) {",
+                  "  pm.test('preset null volta null (nao herda)', function () { pm.expect(pm.response.json().preset).to.eql(null); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "erros",
       "description": "FDD secao 6 (matriz de erros, linhas 330-347) e os status de erro declarados na secao 5. Cada request confere o status; os casos que dependem da base da etapa 3 aceitam o 409 que a wave produz hoje.",
       "item": [
@@ -4379,6 +4659,278 @@
                   "    pm.expect(pm.response.json().detail).to.include('em andamento');",
                   "  });",
                   "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - pid inexistente (GET script/cli)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/script/cli",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "script",
+                "cli"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.1: o UNICO status diferente de 200 e o 404 do `refs.project_dir`. CLI ausente nao vira erro nesta rota."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - pid inexistente (POST image-prompt)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4 e matriz de erros da secao 6: o 404 do projeto vem ANTES de qualquer validacao de `scene_id`/`photo` e antes de qualquer chamada ao CLI.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena01\",\n  \"photo\": \"storyboard/ideas/qualquer.png\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 projeto inexistente', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - image-prompt com photo fora de storyboard/ideas (path traversal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4: `photo` so pode apontar para dentro de `storyboard/ideas/`. `_check_image` recusa path traversal e qualquer caminho fora da pasta.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena01\",\n  \"photo\": \"../../../etc/passwd\",\n  \"description\": \"tentativa de sair da pasta\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 foto fora de storyboard/ideas', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - image-prompt com scene_id fora do formato cenaNN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4: `scene_id` segue o formato `cenaNN` (`_valid_scene_id`). O 422 sai antes de qualquer chamada ao Claude CLI.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena-1\",\n  \"photo\": \"{{ideaFileSelecionado}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 scene_id invalido', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - image-prompt com preset fora do catalogo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4: id de preset desconhecido vira 422 no VALIDADOR do modelo (`prompter.valid_preset`), ou seja antes de o endpoint rodar e antes de o CLI ser chamado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena01\",\n  \"photo\": \"{{ideaFileSelecionado}}\",\n  \"preset\": \"preset-que-nao-existe\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 preset desconhecido', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - image-prompt com description acima de 500 caracteres",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/image-prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "image-prompt"
+              ]
+            },
+            "description": "FDD `docs/domains/storyboard/features/storyboard-cenas-fdd.md` (Wave 11 - frente F06, ADH-OS-20260906-08, ADR-042) secao 5.4: teto de 500 caracteres na `description` (`MAX_IMAGE_DESC`, o mesmo do `video_desc`). O pre-request monta 501 caracteres em `descricaoLonga`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scene_id\": \"cena01\",\n  \"photo\": \"{{ideaFileSelecionado}}\",\n  \"description\": \"{{descricaoLonga}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('descricaoLonga', 'a'.repeat(501));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 descricao acima do teto', function () { pm.response.to.have.status(422); });"
                 ]
               }
             }

@@ -1,0 +1,64 @@
+%% Foto entra, sai e se move entre cenas na etapa 4 — frente storyboard-cenas [extensão]
+%% Fonte: docs/domains/storyboard/features/storyboard-cenas-fdd.md, fluxo principal 2 (seção 4)
+%% Wave 11, frente F06 · ADH-OS-20260906-08 · ADR-042 (amplia ADR-018/ADR-022)
+sequenceDiagram
+    autonumber
+    actor U as Usuário (etapa 4)
+    participant G as #sbIdeasGallery (painel 01)
+    participant M as PickerModal
+    participant I as Ideation.tsx (attachImages/persist)
+    participant R as router.py (etapa 4)
+    participant S as service.py (storyboard)
+    participant C as storyboard/candidates.json + ideas/
+    participant F as storyboard/scenes.json
+
+    Note over G,I: boot — a galeria é a MESMA fonte do picker
+    I->>R: GET .../storyboard/candidates
+    R->>S: list_ideas(pid)
+    S-->>R: ideas[{id, file, source, local_kind, selected, thumb}]
+    R-->>I: 200 {ideas:[...]}
+    I->>G: card por ideia (data-id, data-file, data-source)<br/>badge de origem + marca "escolhida"
+    Note over G: #sbIdeasFilter (origem) vale para a galeria E para o picker
+
+    alt anexar pelo botão
+        U->>I: "+ Adicionar foto à cena" (button.sb-pick.sbAddPhoto)
+        I->>M: abre o picker com as MESMAS ideias e o MESMO filtro
+        U->>M: marca/desmarca cards
+        U->>M: "Adicionar à cena" (primária) ou "Substituir tudo" (fantasma)
+        M-->>I: onApply(ids) → mode="add" · onReplace(ids) → window.confirm → mode="replace"
+    else arrastar da galeria para a cena
+        U->>G: dragstart do card (application/x-studio-idea = id)
+        U->>I: drop em .sb-phototable da cena i
+        I->>I: mode="add"
+    end
+
+    I->>R: POST .../storyboard/candidates/select {ids: união}
+    R->>S: select_ideas(pid, ids)
+    S->>C: copia as escolhidas para storyboard/ideas/ e desanexa o que saiu
+    S-->>I: 200 {ideas:[...]} (file agora aponta para ideas/)
+    Note over I: falhou o select? nada é anexado e a tela mostra o erro
+
+    I->>I: attachImages(i, ids, mode)<br/>add → images = dedup([...atual, ...novas]), primary preservada<br/>replace → images = novas
+    I->>I: putScenesState(next) — scenesRef atualizada no MESMO instante
+
+    Note over U,I: os demais gestos NÃO passam pelo picker
+    alt gestos na linha-foto
+        U->>I: ✕ .sb-rm (remove) · ★ .sb-star (troca a principal) · ↑/↓ (reordena)
+    else mover entre cenas
+        U->>I: drag da .sb-key para outra cena (application/x-studio-photo {sid,img})<br/>ou select.sbPhotoMove ("Mover para…")
+        I->>I: remove da origem + acrescenta no destino
+    else reordenar dentro da cena
+        U->>I: drop de uma .sb-key sobre outra .sb-key da mesma cena
+    end
+
+    Note over I,R: TODO gesto termina em persist — nenhum depende de "Salvar cenas"
+    I->>R: PUT .../storyboard/scenes {scenes:[{text, images, primary, photos}]}
+    Note over I: fila de UM PUT: o último payload espera a requisição no ar voltar
+    R->>S: save_scenes(pid, scenes)
+    S->>S: _check_image — imagem fora de storyboard/ideas/ vira 422
+    S->>F: write_json_atomic(scenes.json) + storyboard.md
+    S-->>R: scenes normalizadas
+    R-->>I: 200 {scenes:[...]}
+    I->>R: GET .../storyboard + guia (prontidão vem SEMPRE do backend, ADR-010 a)
+
+    Note over C,F: foto que saiu de TODAS as cenas continua `selected`<br/>e continua em storyboard/ideas/ (ADR-042, decisão 4).<br/>Desmarcar é gesto exclusivo da galeria (POST /candidates/select).

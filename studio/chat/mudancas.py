@@ -83,6 +83,16 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     # dispara-job / grava-seleção das duas acima, só que com o recorte de UMA cena.
     "storyboard_scene_generate": ("storyboard", "job"),
     "storyboard_scene_pick": ("storyboard", "selection"),
+    # Roteiro, fotos e prompts por foto (frente F06 da wave 11, card ADH-OS-20260906-08).
+    # `storyboard_script` dispara o job do roteiro; `_wait` termina com `script.json` novo em
+    # disco (artefato que o painel 02 mostra, logo `candidates`); as outras quatro escrevem
+    # `scenes.json` por gesto humano confirmado (ADR-025/038), logo `selection`.
+    "storyboard_script": ("storyboard", "job"),
+    "storyboard_script_wait": ("storyboard", "candidates"),
+    "storyboard_apply_script": ("storyboard", "selection"),
+    "storyboard_scene_attach": ("storyboard", "selection"),
+    "storyboard_keyframe_prompt": ("storyboard", "selection"),
+    "storyboard_keyframe_set": ("storyboard", "selection"),
     "animate_generate": ("animate", "job"),
     "music_generate": ("music", "job"),
     "edit_render": ("edit", "job"),
