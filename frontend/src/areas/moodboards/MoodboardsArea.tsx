@@ -27,6 +27,7 @@ import {
 } from "../../ui";
 import { toast } from "../../shell/toast";
 import { Multishot, type MultishotOpts } from "../multishot/Multishot";
+import { MoodRun, type MoodRunOpts } from "../moodrun/MoodRun";
 
 // ---------- tipos das respostas ----------
 interface BoardListItem {
@@ -287,6 +288,7 @@ function BoardEditor({ mbid }: { mbid: string }) {
   const [instrucao, setInstrucao] = useState("");
   const [copiado, setCopiado] = useState("");
   const [multishot, setMultishot] = useState<MultishotOpts | null>(null);
+  const [moodrun, setMoodrun] = useState<MoodRunOpts | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [prog, progEl] = useProgress();
@@ -668,7 +670,31 @@ function BoardEditor({ mbid }: { mbid: string }) {
         </div>
       </section>
 
+      <section className="panel">
+        <div className="panel-head">
+          <h3>
+            <span className="pn">04</span>Corrida de mood (skills, grátis){" "}
+            <span className="ext">[extensão]</span>
+          </h3>
+          <button
+            type="button"
+            className="primary"
+            id="btnMbMoodRun"
+            onClick={() => setMoodrun({ mbid, boardName: data.name, onChanged: () => void reload() })}
+          >
+            Abrir corrida de mood
+          </button>
+        </div>
+        <p className="fine">
+          Roda a cadeia de skills <code>mood_orquestrador</code> (foto-semente → DNA → prancha, um
+          board por objetivo) de graça, via <code>claude</code> local. Navegue as referências do{" "}
+          <code>mood_vibe_scout</code>, escolha a semente e gere as pranchas — tudo sem sair da tela.
+          Estende o método do curso (ADR-013); os painéis acima seguem intocados.
+        </p>
+      </section>
+
       {progEl}
+      {moodrun ? <MoodRun opts={moodrun} onClose={() => setMoodrun(null)} /> : null}
       {renaming ? (
         <RenameModal mbid={mbid} data={data} onClose={() => setRenaming(false)} onDone={() => void reload()} />
       ) : null}

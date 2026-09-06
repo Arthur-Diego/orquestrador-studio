@@ -484,6 +484,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vibes/scout-run/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scout Run Options
+         * @description Default, piso e prontidão do formulário — tudo derivado do manifesto da skill.
+         */
+        get: operations["scout_run_options_api_vibes_scout_run_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vibes/scout-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scout Run Start
+         * @description Dispara a coleta headless e devolve o job.
+         */
+        post: operations["scout_run_start_api_vibes_scout_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vibes/scout-run/job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scout Run Job
+         * @description Estado da coleta, no formato que o `ui.progressJob` consome.
+         */
+        get: operations["scout_run_job_api_vibes_scout_run_job_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/creditos": {
         parameters: {
             query?: never;
@@ -4692,6 +4752,25 @@ export interface components {
             /** Scenes */
             scenes: components["schemas"]["SceneIn"][];
         };
+        /**
+         * ScoutRunReq
+         * @description O disparo. `saida` e `--sem-entrevista` NÃO estão aqui de propósito: ambos são impostos pelo
+         *     servidor (D1/D3). `n` ausente cai no default do manifesto.
+         */
+        ScoutRunReq: {
+            /**
+             * Descricao
+             * @default
+             */
+            descricao?: string;
+            /**
+             * Vibes
+             * @default []
+             */
+            vibes?: string[];
+            /** N */
+            n?: number | null;
+        };
         /** ScriptGenerateReq */
         ScriptGenerateReq: {
             /** Preset */
@@ -6278,6 +6357,85 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scout_run_options_api_vibes_scout_run_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    scout_run_start_api_vibes_scout_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScoutRunReq"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scout_run_job_api_vibes_scout_run_job_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

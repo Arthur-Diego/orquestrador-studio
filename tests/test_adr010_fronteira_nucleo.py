@@ -70,6 +70,16 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-03-mood-skills-na-tela": (
+        "`[extensão]` integra as skills de mood na Biblioteca de mood boards (ADR-013), card "
+        "ADH-OS-20260905-03: novos componentes React `frontend/src/areas/moodrun/{MoodRun,SeedPicker}.tsx` "
+        "consomem endpoints que já existem (mood-run/vibes/escolhidas) e um painel novo em "
+        "`frontend/src/areas/moodboards/MoodboardsArea.tsx` os abre — o núcleo do frontend muda, "
+        "exigindo RECONSTRUIR o bundle versionado `studio/web/dist/`. A rota nova `/api/vibes/scout-run` "
+        "vive em `studio/moodboards/` (fora de NUCLEO_PREFIXOS), mas REGERA `frontend/src/api/schema.ts` "
+        "pela guarda de drift. Nenhuma etapa nem o shell são tocados. ADR-013, ADR-031/ADR-032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260905-02-remove-combo-formulas": (
         "Remoção do combo de fórmulas da aula (`#sbPreset`) do Storyboard, ADR-035 (reconcilia o "
         "PR #103 pré-Wave-10 na versão React): a UI da etapa muda, exigindo RECONSTRUIR o bundle "
