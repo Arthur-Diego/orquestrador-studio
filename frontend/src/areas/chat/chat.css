@@ -97,11 +97,13 @@
   border-radius: 12px;
   font-size: 14px;
   line-height: 1.5;
-  white-space: pre-wrap;
   word-break: break-word;
   max-width: 90%;
 }
-.chat-msg.user .chat-bubble { background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+/* `pre-wrap` desce da regra genérica para a bolha do USUÁRIO (Wave 11 · F01, card #85): ela é a
+   única que continua sendo texto cru e precisa preservar as quebras digitadas. A do assistente é
+   markdown renderizado e monta os próprios blocos. */
+.chat-msg.user .chat-bubble { background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; white-space: pre-wrap; }
 .chat-msg.assistant .chat-bubble { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
 .chat-tool {
   font-family: "IBM Plex Mono", monospace;
@@ -118,6 +120,45 @@
 .chat-tool[data-err="1"] { color: var(--fail); border-color: var(--fail); }
 .chat-note { font-size: 12.5px; color: var(--ink-3); font-style: italic; align-self: center; }
 .chat-note[data-err="1"] { color: var(--fail); font-style: normal; }
+
+/* Markdown da bolha do assistente (Wave 11 · F01, card #85) — `[extensão]`.
+   Tudo escopado em `.chat-md`, só com tokens de tema já existentes: nenhuma cor literal, e os dois
+   temas saem de graça de `styles/style.css`. Nenhuma classe pré-existente foi renomeada. */
+.chat-md > :first-child { margin-top: 0; }
+.chat-md > :last-child { margin-bottom: 0; }
+.chat-md p { margin: 0 0 8px; }
+.chat-md ul, .chat-md ol { margin: 6px 0 8px; padding-left: 20px; }
+.chat-md li { margin: 2px 0; }
+.chat-md li > input[type="checkbox"] { margin-right: 6px; }
+.chat-md strong { font-weight: 600; color: var(--ink); }
+.chat-md em { font-style: italic; }
+.chat-md del { color: var(--ink-3); }
+.chat-md a { color: var(--accent); text-decoration: underline; }
+.chat-md code { font-family: "IBM Plex Mono", monospace; font-size: 0.88em; background: var(--bg-2); color: var(--ink); padding: 1px 5px; border-radius: 5px; }
+.chat-md h1, .chat-md h2, .chat-md h3, .chat-md h4 { margin: 10px 0 6px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.chat-md h1 { font-size: 16px; }
+.chat-md h2 { font-size: 15px; }
+.chat-md h3 { font-size: 14px; }
+.chat-md h4 { font-size: 13.5px; }
+.chat-md blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.chat-md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.chat-md table { display: block; overflow-x: auto; border-collapse: collapse; margin: 8px 0; font-size: 12.5px; }
+.chat-md th, .chat-md td { border: 1px solid var(--line-2); padding: 4px 8px; text-align: left; }
+.chat-md th { background: var(--surface); font-weight: 600; }
+.chat-md-img { display: block; width: 100%; margin: 6px 0; border-radius: 8px; }
+
+.chat-md-code { position: relative; margin: 8px 0; }
+.chat-md-code pre { margin: 0; padding: 9px 10px; overflow-x: auto; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; }
+.chat-md-code pre code { display: block; padding: 0; background: none; font-size: 12px; line-height: 1.5; white-space: pre; }
+.chat-md-code .link.copy { position: absolute; top: 5px; right: 6px; font-size: 11px; opacity: 0; transition: opacity 0.15s ease; }
+.chat-md-code:hover .link.copy, .chat-md-code .link.copy:focus-visible { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .chat-md-code .link.copy { transition: none; } }
+
+/* Variante do chip de erro de tool: herda fonte mono e cor de falha do `.chat-tool[data-err="1"]`
+   e zera as margens de bloco, para o chip continuar com uma linha só. */
+.chat-md.compact { display: inline; font: inherit; color: inherit; }
+.chat-md.compact p, .chat-md.compact ul, .chat-md.compact ol, .chat-md.compact .chat-md-code { margin: 0; }
+.chat-md.compact code { background: none; padding: 0; color: inherit; }
 
 .chat-empty {
   margin: auto;

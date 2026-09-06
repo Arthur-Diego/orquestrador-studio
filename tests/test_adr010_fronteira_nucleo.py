@@ -70,6 +70,16 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-03-chat-markdown": (
+        "`[extensão]` Wave 11 · F01 — markdown na bolha do assistente do dock de chat, card #85 "
+        "(https://trello.com/c/lqrj73sV), FDD `docs/domains/chat/features/chat-markdown-fdd.md`. "
+        "Recorte mínimo: `frontend/` (componente novo `src/areas/chat/MessageMarkdown.tsx`, duas "
+        "chamadas no `switch` do `Message` em `ChatDock.tsx`, regras `.chat-md*` em `chat.css` e "
+        "as deps pinadas `react-markdown`/`remark-gfm` em `package.json` — ADR-031) e "
+        "`studio/web/` só pelo bundle regenerado por `make frontend-build` (ADR-032). Nenhuma "
+        "rota nem modelo Pydantic muda, logo `schema.ts` não é regenerado.",
+        ("frontend/", "studio/web/"),
+    ),
     "fix/adh-os-20260905-09-schema-drift-trace": (
         "Hotfix: regenera `frontend/src/api/schema.ts` para a rota `GET /api/chats/{id}/trace` "
         "adicionada na Onda E (o schema não foi regenerado, quebrando a guarda de drift do CI em "
