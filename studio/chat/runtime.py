@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -27,6 +28,14 @@ ROOT = Path(__file__).resolve().parents[2]
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "sistema.md"
 #: Tipos de evento de controle do stream-json que não fazem parte do transcript (ruído p/ a UI).
 _IGNORAR = {"rate_limit_event"}
+#: Flag do CLI que liga os deltas de texto (`stream_event`) — sondada uma vez por processo.
+PARTIAL_FLAG = "--include-partial-messages"
+#: Escape hatch e gancho de teste: `1`/`0` força o suporte a partials sem sondar o CLI.
+PARTIAL_ENV = "STUDIO_CHAT_PARTIAL"
+#: Teto da sonda `claude --help` (segundos). Sonda cara nunca pode segurar um turno.
+PARTIAL_PROBE_TIMEOUT_S = 5.0
+#: Resultado da sonda, cacheado no processo (`None` = ainda não sondado).
+_partial_cache: bool | None = None
 
 
 class ChatUnavailable(RuntimeError):
@@ -35,6 +44,36 @@ class ChatUnavailable(RuntimeError):
 
 def available() -> bool:
     return BIN is not None
+
+
+def _probe_help() -> str:
+    """Sonda default: roda `claude --help` uma vez e devolve o texto da ajuda."""
+    if not BIN:
+        return ""
+    out = subprocess.run([BIN, "--help"], capture_output=True, text=True,  # noqa: S603
+                         timeout=PARTIAL_PROBE_TIMEOUT_S, check=False)
+    return f"{out.stdout}\n{out.stderr}"
+
+
+def supports_partial(_probe=None) -> bool:
+    """O CLI instalado aceita `--include-partial-messages`? Resultado cacheado no processo.
+
+    `STUDIO_CHAT_PARTIAL=1|0` força o valor sem sondar (escape hatch e gancho de teste).
+    `_probe` é injetável (ADR-008): default roda `claude --help` uma vez e procura a flag.
+    Sonda que falha ou estoura o timeout conta como SEM suporte — nunca propaga (FDD §6).
+    """
+    global _partial_cache
+    forcado = os.environ.get(PARTIAL_ENV, "").strip()
+    if forcado in ("0", "1"):
+        return forcado == "1"
+    if _partial_cache is not None:
+        return _partial_cache
+    try:
+        ajuda = (_probe or _probe_help)() or ""
+    except Exception:  # noqa: BLE001 — sonda é conveniência: qualquer falha vira "sem suporte"
+        ajuda = ""
+    _partial_cache = PARTIAL_FLAG in ajuda
+    return _partial_cache
 
 
 def _studio_url() -> str:
@@ -67,15 +106,21 @@ def _system_prompt() -> str:
 
 
 def build_argv(text: str, *, session_id: str, resume: bool, mcp_config: Path,
-               model: str | None = None) -> list[str]:
+               model: str | None = None, partial: bool = False) -> list[str]:
     """Monta o argv do turno. Primeiro turno cria a sessão (`--session-id`); os demais continuam
-    (`--resume`)."""
+    (`--resume`).
+
+    `partial=True` acrescenta `--include-partial-messages` logo depois de `--verbose` (deltas de
+    texto). A função continua PURA: quem decide o valor é `run_turn`, chamando `supports_partial()`.
+    """
     if not BIN:
         raise ChatUnavailable("CLI `claude` não encontrado no PATH (instale o Claude Code).")
-    args = [BIN, "-p", text, "--output-format", "stream-json", "--verbose",
-            "--mcp-config", str(mcp_config), "--strict-mcp-config",
-            "--allowedTools", "mcp__studio__*", "--tools", "",
-            "--append-system-prompt", _system_prompt()]
+    args = [BIN, "-p", text, "--output-format", "stream-json", "--verbose"]
+    if partial:
+        args += [PARTIAL_FLAG]
+    args += ["--mcp-config", str(mcp_config), "--strict-mcp-config",
+             "--allowedTools", "mcp__studio__*", "--tools", "",
+             "--append-system-prompt", _system_prompt()]
     args += (["--resume", session_id] if resume else ["--session-id", session_id])
     escolhido = MODEL if model is None else model
     if escolhido:
@@ -88,8 +133,8 @@ def normalize_event(line: str) -> list[dict]:
 
     Protocolo do WS (kind): `system` (session_id), `assistant_text` (text), `tool_call`
     (name/input), `tool_result` (content/is_error), `result` (text/cost/usage/is_error),
-    `raw` (linha não reconhecida — nunca engolida). Uma linha `assistant` com N blocos vira N
-    eventos, na ordem.
+    `assistant_delta` (text — efêmero, só com `--include-partial-messages`), `raw` (linha não
+    reconhecida — nunca engolida). Uma linha `assistant` com N blocos vira N eventos, na ordem.
     """
     line = (line or "").strip()
     if not line:
@@ -121,11 +166,30 @@ def normalize_event(line: str) -> list[dict]:
                             "is_error": bool(block.get("is_error")),
                             "content": _text_of(block.get("content"))})
         return out
+    if t == "stream_event":
+        return _stream_delta(ev.get("event") or {})
     if t == "result":
         return [{"kind": "result", "is_error": bool(ev.get("is_error")),
                  "text": ev.get("result", ""), "cost": ev.get("total_cost_usd"),
                  "usage": ev.get("usage"), "session_id": ev.get("session_id")}]
     return [{"kind": "raw", "text": line[:2000]}]
+
+
+def _stream_delta(evento: dict) -> list[dict]:
+    """Subtipo de `stream_event` → evento do WS. Só `content_block_delta/text_delta` vira algo.
+
+    Invariante (FDD §6, invariante 4): NENHUM subtipo de `stream_event` cai em `raw`. Com partials
+    ligados o CLI emite dezenas de linhas de controle por bloco (`message_start`,
+    `content_block_start/stop`, `message_delta/stop`, `input_json_delta`, `thinking_delta`);
+    deixá-las virar `raw` inundaria o transcript e a tela.
+    """
+    if evento.get("type") != "content_block_delta":
+        return []
+    delta = evento.get("delta") or {}
+    if delta.get("type") != "text_delta":
+        return []
+    texto = delta.get("text") or ""
+    return [{"kind": "assistant_delta", "text": texto}] if texto else []
 
 
 def _text_of(content) -> str:
@@ -161,7 +225,8 @@ async def run_turn(chat_id: str, text: str, *, model: str | None = None,
     """
     s = sessions.get(chat_id)
     mcp_config = write_mcp_config(chat_id)
-    argv = build_argv(text, session_id=chat_id, resume=s.turns > 0, mcp_config=mcp_config, model=model)
+    argv = build_argv(text, session_id=chat_id, resume=s.turns > 0, mcp_config=mcp_config,
+                      model=model, partial=supports_partial())
     saw_result = False
     async for line in line_source(argv, str(ROOT)):
         for event in normalize_event(line):
@@ -169,5 +234,7 @@ async def run_turn(chat_id: str, text: str, *, model: str | None = None,
                 saw_result = True
             yield event
     if not saw_result:
-        yield {"kind": "result", "is_error": True, "text": "o turno terminou sem resultado do modelo"}
+        # `synthetic` marca que o CLI não fechou o ciclo: o router fecha o turno com reason="error"
+        yield {"kind": "result", "is_error": True, "synthetic": True,
+               "text": "o turno terminou sem resultado do modelo"}
     sessions.bump_turn(chat_id)

@@ -1,9 +1,15 @@
 ### HLD: chat (assistente do Studio) `[extensão]`
 
-Versão: 1.1 (Onda A + sincronização chat → telas, Wave 11 · frente F03)
+Versão: 1.2 (Onda A + sincronização chat → telas + feedback ao vivo do turno)
 Data: 2026-09-06
-Task-Id: ADH-OS-20260905-04, ADH-OS-20260906-05
+Task-Id: ADH-OS-20260905-04 (v1.0) · ADH-OS-20260906-05 (v1.1) · ADH-OS-20260906-04 (v1.2)
 Responsável: Arthur Diego (modo autônomo /dd-parallel, aprovação total)
+
+> **v1.2 (Wave 11 · F02, card #86)** — o dock deixa de adivinhar se o assistente está trabalhando.
+> O servidor passa a delimitar cada turno com o par `turn_started`/`turn_ended`, a transmitir o texto
+> em construção (`assistant_delta`, quando o CLI aceita `--include-partial-messages`) e a acompanhar
+> os jobs das tools de espera com um poller próprio (`tool_progress`). Os dois últimos são **eventos
+> efêmeros**: vão ao WebSocket e não ao disco. Ver "Feedback ao vivo do turno (v1.2)" abaixo.
 
 ---
 
@@ -29,7 +35,7 @@ no Studio (ADR-036).
 - **Persistência em arquivo (ADR-003).** Abas e transcript em `STATE_DIR/chats/<id>/` — fora do
   git, fora de `projects/`.
 
-### Componentes (Onda A + Wave 11 · F03)
+### Componentes (Onda A + Wave 11 · F02/F03)
 | Componente | Papel |
 | --- | --- |
 | `studio/chat/sessions.py` | Store das abas: `meta.json` + `events.jsonl` por aba; `seq` para replay. |
@@ -42,6 +48,13 @@ no Studio (ADR-036).
 | `frontend/src/areas/chat/` | Dock lateral do shell: `ChatDock` + `useChatSocket` + `chat.css`. Montado sempre no `Shell` (área global). Traduz `state_changed` em `invalidarGuia` + publicação no barramento (Wave 11 · F03). |
 | `frontend/src/shell/events.ts` | Barramento de mudanças do shell: `emitStudioChange` + `useStudioChange(step, cb, opts?)`, filtro por step/pid e debounce de 400 ms. Sem `window`, sem rede — só transporta o AVISO (Wave 11 · F03). |
 
+Acrescentados na **v1.2** (Wave 11 · F02):
+
+| Componente | Papel |
+| --- | --- |
+| `studio/chat/progress.py` | Poller dos jobs: uma task por `tool_call.id` de tool de espera, lendo `/api/projects/{pid}/{step}/job` e `/api/characters/{cid}/job` por `httpx` em loopback. Nunca importa serviço de etapa (ADR-037). Monta o `label` já em pt-BR e o `pct` (ou `null` quando o job não declara `total`). |
+| `frontend/src/areas/chat/toolLabels.ts` | Mapa `mcp__studio__*` → rótulo humano do chip e da linha de status. Cobertura garantida nos dois sentidos por `tests/test_chat_tool_labels.py`. |
+
 ### Fluxo de um turno
 1. Browser (dock) manda `{type:"user", text, context:{pid,view}}` pelo WebSocket.
 2. `router._run_turn` chama `runtime.run_turn`, que grava o `mcp.json` da aba e roda
@@ -49,10 +62,18 @@ no Studio (ADR-036).
    --strict-mcp-config --allowedTools mcp__studio__* --tools "" --append-system-prompt <sistema>`.
 3. O `claude` sobe `python -m studio.mcp` (STUDIO_URL + STUDIO_CHAT_ID no env); as tools chamam a
    API do Studio em loopback e devolvem texto compacto.
-4. Cada linha do stream vira evento normalizado, persistido no `events.jsonl` e empurrado ao WS.
-5. `ui.*` (Onda B): a tool faz POST em `/api/chats/{id}/ask`; o router empurra o pedido ao browser
+4. Cada linha do stream vira evento normalizado e o `_run_turn` **classifica**: os **persistidos**
+   (tudo o que existia, mais `turn_started`/`turn_ended`) passam por `sessions.append_event`, ganham
+   `seq` e reaparecem no replay; os **efêmeros** (`assistant_delta`, `tool_progress`) vão direto ao
+   `manager.push`, sem `seq` e sem disco. A classificação é única, pela constante `EFEMEROS`.
+5. Enquanto uma tool de espera (`job_wait`/`character_wait`) está pendente, `progress.watch` abre uma
+   task por `tool_call.id` e empurra `tool_progress` a cada 2 s (batimento de 10 s), cancelada no
+   `tool_result` correspondente ou no `finally` do turno — nenhum progresso órfão sobrevive ao turno.
+6. `turn_ended` sai do `finally`, e não dos ramos: é a única forma de nenhum caminho de saída deixar
+   o par de turno aberto.
+7. `ui.*` (Onda B): a tool faz POST em `/api/chats/{id}/ask`; o router empurra o pedido ao browser
    e aguarda a Future; o browser responde e a tool recebe a escolha.
-6. **Sincronização chat → telas (Wave 11 · F03, ADR-041).** Depois de persistir e empurrar um
+8. **Sincronização chat → telas (Wave 11 · F03, ADR-041).** Depois de persistir e empurrar um
    `tool_result` bem-sucedido de tool de **ação**, o router emite também um `state_changed`
    (`{pid, step, scope, tool}`) pelo mesmo WebSocket. No browser, `useChatSocket` chama `onEvent`
    apenas para mensagem **ao vivo** (nunca no replay de `GET /events`, senão abrir uma conversa
@@ -64,7 +85,46 @@ no Studio (ADR-036).
    Sem browser (MCP no terminal) não há evento — limitação conhecida.
    Diagrama: `docs/domains/chat/diagrams/mermaid/sincronizacao-chat-telas.md`.
 
-### Interfaces (Onda A + Wave 11 · F03)
+### Feedback ao vivo do turno (v1.2)
+
+O estado "ocupado" do dock passa a vir do **servidor**. Antes, o cliente derivava por heurística do
+transcript (último evento sem `result` = trabalhando), o que errava em reinício de servidor e em
+turno interrompido. Agora o par `turn_started`/`turn_ended` delimita o turno, o hook `useChatSocket`
+expõe `{turn, busy}` e o dock desenha três coisas: a bolha viva com o texto em construção, a linha de
+status `aria-live` com o rótulo humano da tool e o percentual, e o botão Parar.
+
+**Eventos do WebSocket acrescentados** (todos aditivos; a lista viva do protocolo é o **ADR-041**):
+
+| Evento | Persistência | Campos | Semântica |
+| --- | --- | --- | --- |
+| `assistant_delta` | **efêmero** (sem `seq`, não vai ao disco) | `turn_id`, `text` | Pedaço do bloco de texto em construção. O cliente acumula e descarta o buffer quando o `assistant_text` do mesmo bloco chega — o delta nunca é fonte de verdade do transcript. Ausente quando o CLI não aceita `--include-partial-messages`. |
+| `tool_progress` | **efêmero** (sem `seq`) | `turn_id`, `id`, `pct` (0–100 ou `null`), `label`, `state` | Progresso do job acompanhado por `progress.py`. `pct` é `null` quando o job não declara `total`; a tela omite o `%` nesse caso em vez de mostrar `0 %`. O `label` já vem pronto em pt-BR (`Etapa refs: 13/31`, `Personagem c3f1: gerando`). |
+| `turn_ended` | **persistido** (`seq` + `ts`) | `turn_id`, `reason` (`done \| error \| stopped`) | Fecha o turno. `done` só quando o `result` do CLI chegou; o `result` sintetizado pelo runtime (`synthetic: true`) fecha com `error`; `stopped` é cancelamento do usuário. |
+| `turn_started` | **persistido** (`seq` + `ts`) | `turn_id` | Abre o turno, logo depois do `user` e antes de tocar no subprocess. |
+
+**Observabilidade** (ADR-001: não há coletor; a observabilidade é o transcript mais o `/trace`). O
+par de turno funciona como o span, e é dele que `GET /api/chats/{id}/trace` deriva os campos
+aditivos `turnos_iniciados`, `turnos_interrompidos` e `duracao_media_s`. `GET /api/chats` ganha uma
+correção de comportamento no mesmo espírito: aba com `status == "running"` sem task viva em `_turns`
+(órfã de reinício do servidor) volta a `idle` antes de listar. Nenhuma rota nova, nenhum modelo
+Pydantic novo — `frontend/src/api/schema.ts` não muda.
+
+**`normalize_event` deixa de mandar `stream_event` para `raw`.** O subtipo
+`content_block_delta / text_delta` vira `assistant_delta`; todos os outros subtipos viram lista
+vazia. Invariante: nenhum subtipo de `stream_event` cai em `raw` — com partials ligados o CLI emite
+dezenas de linhas de controle por bloco, e deixá-las virar `raw` inundaria o transcript.
+
+**Ponto de extensão.** Evento efêmero novo entra na constante `EFEMEROS` dos dois lados —
+`studio/chat/router.py` e `frontend/src/areas/chat/useChatSocket.ts`, mais um `case` em
+`aplicarEfemero` — nunca num `if` paralelo no `onmessage`.
+
+**As guardas de arquivo do frontend são pytest, não vitest.** `tests/test_chat_tool_labels.py`
+(todo `@t(name=...)` de `studio/mcp/server.py` tem rótulo, e nenhum rótulo é órfão) e
+`tests/test_chat_css_feedback.py` (o bloco de estilo do feedback continua em `chat.css`) leem o
+disco. O Vitest deste repo roda com `css: false` — a folha vira módulo vazio, `?raw` inclusive — e o
+projeto npm não tem `@types/node`, então nenhum `*.test.tsx` conseguiria fazer essa asserção.
+
+### Interfaces (Onda A + Wave 11 · F02/F03)
 | Rota | Tipo | Nota |
 | --- | --- | --- |
 | `GET /api/chat/status` | REST | `{available}` — o CLI `claude` está no PATH? |
@@ -73,7 +133,8 @@ no Studio (ADR-036).
 | `GET /api/chats/{id}/events?after=N` | REST | replay do transcript + asks pendentes |
 | `POST /api/chats/{id}/stop` | REST | cancela o turno em andamento |
 | `POST /api/chats/{id}/ask|answer` | REST | ponte humano-no-laço (ADR-038) |
-| `WS /ws/chat/{id}` | WebSocket | mensagens do usuário e stream do turno |
+| `WS /ws/chat/{id}` | WebSocket | mensagens do usuário e stream do turno; na v1.2 carrega `turn_started`/`turn_ended` (persistidos) e `assistant_delta`/`tool_progress` (efêmeros) |
+| `GET /api/chats/{id}/trace` | REST | métricas derivadas do transcript; na v1.2 ganha `turnos_iniciados`, `turnos_interrompidos` e `duracao_media_s` (campos aditivos) |
 | tools MCP `mcp__studio__{projects,project,guide,guide_step,steps,doctor,job,api_get}` | MCP | leitura (Onda A) |
 | kinds do `WS /ws/chat/{id}` | WebSocket | protocolo **v2 aditivo** (ADR-041): aos kinds da Onda A soma-se `state_changed {pid, step, scope, tool}`. Cliente antigo ignora (o `switch` do dock cai em `default`). |
 

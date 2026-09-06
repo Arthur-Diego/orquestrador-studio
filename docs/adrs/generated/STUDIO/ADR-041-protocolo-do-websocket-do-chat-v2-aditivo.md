@@ -67,13 +67,13 @@ versão 1 de um protocolo **estritamente aditivo**, com três regras:
 | Kind | Direção | Origem | Frente | O que anuncia |
 | --- | --- | --- | --- | --- |
 | `state_changed` | servidor → cliente | `studio/chat/router.py::_run_turn` + `studio/chat/mudancas.py` | F03 (esta ADR, card #87) | uma tool de ação concluiu com sucesso e mudou artefato de uma etapa |
-| `turn_started` | servidor → cliente | *(acrescentado pela frente F02 da Wave 11)* | F02 | o turno começou |
-| `turn_ended` | servidor → cliente | *(acrescentado pela frente F02 da Wave 11)* | F02 | o turno terminou |
-| `assistant_delta` | servidor → cliente | *(acrescentado pela frente F02 da Wave 11)* | F02 | pedaço incremental do texto do assistente |
-| `tool_progress` | servidor → cliente | *(acrescentado pela frente F02 da Wave 11)* | F02 | progresso de uma tool longa |
+| `turn_started` | servidor → cliente | `studio/chat/router.py::_run_turn` | F02 (card #86) | o turno começou |
+| `turn_ended` | servidor → cliente | `studio/chat/router.py::_run_turn` (`finally`) | F02 (card #86) | o turno terminou, e por quê |
+| `assistant_delta` | servidor → cliente | `studio/chat/runtime.py::normalize_event` | F02 (card #86) | pedaço incremental do texto do assistente (efêmero) |
+| `tool_progress` | servidor → cliente | `studio/chat/progress.py::watch` | F02 (card #86) | progresso do job de uma tool de espera (efêmero) |
 | `user.via` (campo do kind `user`) | servidor → cliente | *(acrescentado pela frente F09 da Wave 11)* | F09 | por onde a mensagem do usuário entrou |
 
-As quatro linhas de F02 e a de F09 estão **reservadas** aqui para que as frentes da mesma wave
+A linha de F09 segue **reservada** aqui (as de F02 já estão preenchidas) para que as frentes da mesma wave
 completem a semântica exata dos seus eventos neste mesmo documento, em vez de abrirem ADRs
 concorrentes sobre o mesmo contrato. A frente que integrar primeiro cria o arquivo; as demais
 acrescentam a sua linha e a sua subseção.
@@ -119,6 +119,96 @@ uma publicação no barramento do shell `frontend/src/shell/events.ts`
 (`emitStudioChange` / `useStudioChange(step, cb, opts?)`), que as telas de etapa assinam com
 debounce de 400 ms e filtro por pid. O contrato do barramento é consumido pelas frentes F08
 (chat-navigate), F11 (base-upscale-chat) e F06 (storyboard-cenas) da mesma wave.
+
+### Ciclo de vida do turno: `turn_started` e `turn_ended` (F02)
+
+Persistidos: passam por `sessions.append_event`, ganham `seq` e `ts` e reaparecem no replay
+`GET /api/chats/{id}/events`. São o **estado ocupado vindo do servidor** — antes disso o cliente
+adivinhava pelo transcript (último `user` depois do último `result`), heurística que errava em
+reinício de servidor e em turno interrompido.
+
+```json
+{"seq": 12, "ts": "2026-09-06T14:03:21Z", "kind": "turn_started", "turn_id": "9f2c1a7b4e30"}
+{"seq": 27, "ts": "2026-09-06T14:04:02Z", "kind": "turn_ended", "turn_id": "9f2c1a7b4e30", "reason": "done"}
+```
+
+- `turn_id` (string) — 12 hex de `uuid4`, opaco; correlaciona o par.
+- `reason` (string) — enum fechado nesta versão: `done` (o `result` do CLI chegou de verdade),
+  `error` (o turno morreu por exceção **ou** terminou sem `result`, e o runtime sintetizou um com
+  `synthetic: true`), `stopped` (o usuário cancelou pelo botão Parar ou por
+  `POST /api/chats/{id}/stop`).
+
+**Invariante:** para todo `turn_started` gravado existe exatamente um `turn_ended` com o mesmo
+`turn_id`, em **todos** os caminhos de saída. Ele se sustenta porque o `turn_ended` sai do `finally`
+de `_run_turn`, e não dos ramos — inclusive no de `CancelledError`, onde é emitido **além** do
+`notify` "Turno interrompido." que já existia, não no lugar dele.
+
+O par também funciona como o **span do turno**: é dele que `GET /api/chats/{id}/trace` deriva os
+campos aditivos `turnos_iniciados`, `turnos_interrompidos` e `duracao_media_s` (ADR-001: não há
+coletor de métricas; a observabilidade é o transcript mais o `/trace`). No mesmo espírito,
+`GET /api/chats` passa a sanear aba com `status == "running"` sem task viva em `_turns` — resíduo de
+reinício do servidor que, sem isso, deixaria o dock preso em "Respondendo…" para sempre.
+
+### Eventos efêmeros: `assistant_delta` e `tool_progress` (F02)
+
+Estes dois **não** são transcript. Vão direto ao `manager.push`, **sem `seq`** e sem
+`events.jsonl`, e nunca são fonte de verdade do que foi dito. O roteamento é único, pela constante
+`EFEMEROS` de `studio/chat/router.py` e sua gêmea em `frontend/src/areas/chat/useChatSocket.ts`:
+evento efêmero novo entra na constante (mais um `case` em `aplicarEfemero`), nunca num `if` paralelo
+no laço do turno ou no `onmessage`.
+
+O motivo de não persistir é de contrato, não de economia: o texto do delta é reemitido **inteiro**
+pelo `assistant_text` do mesmo bloco, e o progresso é transitório. Persistir duplicaria o transcript
+e quebraria o replay.
+
+```json
+{"kind": "assistant_delta", "turn_id": "9f2c1a7b4e30", "text": "Vou conferir o guia da campanha"}
+{"kind": "tool_progress", "turn_id": "9f2c1a7b4e30", "id": "toolu_01A9", "pct": 42, "label": "Etapa refs: 13/31", "state": "running"}
+{"kind": "tool_progress", "turn_id": "9f2c1a7b4e30", "id": "toolu_01B4", "pct": null, "label": "Personagem c3f1: gerando", "state": "running"}
+```
+
+- `assistant_delta.text` (string) — pedaço do bloco em construção. O cliente acumula num `ref` com
+  flush de ~80 ms e **descarta** o buffer quando o `assistant_text` do mesmo bloco chega. Ausente
+  quando o CLI instalado não aceita `--include-partial-messages` (sondado uma vez por processo por
+  `runtime.supports_partial`, com `STUDIO_CHAT_PARTIAL=1|0` como escape hatch).
+- `tool_progress.id` (string) — o `tool_use_id` do `tool_call` correspondente; é por ele que o chip
+  na tela se atualiza.
+- `tool_progress.pct` (int | null) — 0 a 100, ou **`null`** quando o job não declara `total`. Nunca
+  há percentual inventado: a tela omite o `%` em vez de mostrar `0 %`.
+- `tool_progress.label` (string) — texto curto já em pt-BR, montado pelo servidor. Carrega apenas
+  `pid`, `step` ou `cid` e contadores — nunca prompt nem conteúdo de conversa.
+- `tool_progress.state` (string) — o `state` do job: `running | done | error | idle`. Acréscimo ao
+  `{id, pct, label}` do card, porque sem ele o cliente não distingue `running` de `done`/`error` ao
+  encerrar o chip.
+
+`tool_progress` nasce de uma task por `tool_call.id`, aberta quando a tool é de espera
+(`job_wait` → `/api/projects/{pid}/{step}/job`, `character_wait` → `/api/characters/{cid}/job`) e
+encerrada no `tool_result` de mesmo `id`, no `finally` do turno, ao job sair de `running`, após 3
+leituras com erro **em silêncio** ou no teto duro de 1800 s. A leitura é HTTP em loopback
+(`httpx.AsyncClient`), nunca import do serviço da etapa (ADR-037), e só `GET` — o `JobRegistry` em
+memória (ADR-006) continua com um dono só. Progresso é **enfeite honesto**: qualquer falha aqui
+degrada para o comportamento anterior e nunca impede o turno de rodar ou de terminar.
+
+### Mudança de comportamento em `normalize_event` (F02)
+
+`studio/chat/runtime.py::normalize_event` continua **pura** e continua devolvendo lista, mas deixa
+de mandar `stream_event` para `raw`:
+
+- `stream_event / content_block_delta / text_delta` → `[{"kind": "assistant_delta", "text": ...}]`
+  (o `turn_id` é acrescentado pelo router, não pelo normalizador);
+- **qualquer outro** subtipo de `stream_event` (`message_start`, `content_block_start`,
+  `content_block_stop`, `message_delta`, `message_stop`, `input_json_delta`, `thinking_delta`) → `[]`;
+- todo `type` desconhecido que **não** seja `stream_event` continua virando `[{"kind": "raw", ...}]`.
+
+**Invariante: nenhum subtipo de `stream_event` cai em `raw`.** Com partials ligados o CLI emite
+dezenas de linhas de controle por bloco; deixá-las virar `raw` inundaria o transcript e a tela.
+`thinking_delta` e `signature_delta` são descartados por decisão de escopo do card #86 — o
+raciocínio interno do modelo não entra no protocolo.
+
+O impacto retroativo é nulo: `--include-partial-messages` não era usado antes desta frente, então
+nenhuma linha `stream_event` chegava ao normalizador em produção. Ainda assim é alteração de
+comportamento de uma função pura descrita na ADR-036, e por isso está registrada aqui — a ADR-036
+ganhou uma nota de emenda apontando para esta ADR como a lista viva dos eventos do WS.
 
 ## Consequências
 
