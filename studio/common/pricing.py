@@ -17,6 +17,8 @@ Este módulo é puro (sem rede, sem subprocess): só conhece os números. Quem c
 """
 from __future__ import annotations
 
+from pydantic import BaseModel, ConfigDict
+
 #: Custo medido por chave de variação (resolução de imagem ou duração de vídeo/clip). A chave
 #: `"*"` é o custo fixo do modelo (upscale, música, modelos sem variação medida). Valores em
 #: CRÉDITOS Higgsfield, medidos em gerações reais (pedido do dono do produto, 2026-08-27).
@@ -192,3 +194,92 @@ def list_models(kind: str | None = None) -> list[dict]:
     order = {k: i for i, k in enumerate(KIND_ORDER)}
     models = [public_model(m) for m in CATALOG if kind is None or CATALOG[m]["kind"] == kind]
     return sorted(models, key=lambda m: (order.get(m["kind"], 99), m["label"]))
+
+
+# ---------- shape comum das rotas `cost` `[extensão]` (ADR-016, wave 11 · F10) ----------
+#: Fontes do número, da mais forte para a mais fraca (política de fallback do FDD, seção 6):
+#: estimativa ao vivo do CLI › tabela medida deste módulo › nenhum número (nunca um inventado).
+SOURCE_ORDER = ("cli", "measured", "unknown")
+
+
+class CostPreview(BaseModel):
+    """`[extensão]` ADR-016: shape comum de toda rota `cost`. `extra="allow"` preserva as
+    chaves legadas de cada etapa (contrato aditivo, nada é removido).
+
+    O modelo DOCUMENTA o shape; quem produz é `cost_preview()`. Nenhuma rota o declara como
+    `response_model` de propósito (decisão 2 da seção 12 do FDD): revalidar o retorno com
+    Pydantic num caminho pago só acrescentaria risco, e o ganho no `schema.ts` seria um
+    `additionalProperties: true` sem nomes.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    action: str | None = None        # chave de `settings.ACTIONS` (ex.: "base.upscale")
+    model: str | None = None         # id do modelo no CATALOG
+    label: str | None = None         # rótulo humano do modelo
+    variant: str | None = None       # resolução ou duração ("2k", "8s"); None quando o modelo não varia
+    kind: str | None = None          # "image" | "video" | "audio" | ...
+    unit_credits: float | None = None   # custo de UMA geração
+    count: int = 1                   # número de gerações do pedido
+    total: float | None = None       # unit_credits * count, ou None quando não estimável
+    source: str = "unknown"          # "cli" | "measured" | "unknown"
+    balance: dict | None = None      # {installed, logged_in, plan, credits}
+    note: str | None = None          # aviso do CLI, quando houver
+
+
+def _variant_of(spec: dict | None, variant: str | None) -> str | None:
+    """Variação REPORTADA: `None` para modelo sem variação medida (`variants == {"*": …}`)."""
+    if not spec or list(spec["variants"]) == ["*"]:
+        return None
+    return variant
+
+
+def _measured_credits(model: str | None, variant: str | None) -> float | None:
+    """Custo medido do par (modelo, variação), sem I/O. `None` quando não há medição."""
+    spec = CATALOG.get(model) if model else None
+    if not spec:
+        return None
+    variants = spec["variants"]
+    if list(variants) == ["*"]:
+        return variants["*"]
+    key = variant if variant in variants else spec.get("default_variant")
+    return variants.get(key) if key else None
+
+
+def cost_preview(*, action: str | None, model: str | None, count: int = 1,
+                 unit_credits: float | None = None, source: str = "unknown",
+                 variant: str | None = None, balance: dict | None = None,
+                 legacy: dict | None = None) -> dict:
+    """Constrói o dicionário do `CostPreview` já mesclado com as chaves legadas da rota.
+    Em colisão de chave, o valor LEGADO vence (contrato existente é intocável).
+
+    Pura: só lê o `CATALOG` deste módulo — sem rede, sem subprocess, sem disco. Quem consulta o
+    CLI (`unit_credits`/`source="cli"`) e quem lê o saldo (`balance`) é o chamador.
+
+    Sem `unit_credits` o construtor cai na tabela medida (`source="measured"`); sem medição,
+    `unit_credits`/`total` ficam `None` e `source` vira `"unknown"` — a tela mostra
+    "indisponível" em vez de um número inventado. `note` é o aviso do CLI: as rotas em escopo
+    só o carregam na chave legada `error`.
+    """
+    spec = CATALOG.get(model) if model else None
+    n = max(1, int(count or 1))
+    variant = _variant_of(spec, variant)
+    unit, src = unit_credits, (source if source in SOURCE_ORDER else "unknown")
+    if unit is None:
+        unit = _measured_credits(model, variant)
+        src = "measured" if unit is not None else "unknown"
+    legacy = legacy or {}
+    aviso = legacy.get("error") or legacy.get("note")
+    data = {
+        "action": action,
+        "model": model,
+        "label": (spec["label"] if spec else model),
+        "variant": variant,
+        "kind": spec["kind"] if spec else None,
+        "unit_credits": unit,
+        "count": n,
+        "total": round(unit * n, 2) if unit is not None else None,
+        "source": src,
+        "balance": balance,
+        "note": aviso if isinstance(aviso, str) and aviso else None,
+    }
+    return {**data, **legacy}

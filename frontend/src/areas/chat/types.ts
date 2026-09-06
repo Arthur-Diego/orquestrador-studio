@@ -52,6 +52,9 @@ export interface ChatEvent {
   step?: string;
   scope?: string;
   tool?: string;
+  /** `[extensão]` wave 11 (ADR-016): o `CostPreview` inteiro no `ask` de `confirm_cost`, para o
+   *  dock renderizar as mesmas linhas do `CostSheet`. Ausente = cartão legado de duas linhas. */
+  breakdown?: unknown;
   // payload de `ask` (Onda B): kind do widget, imagens, opções…
   [k: string]: unknown;
 }

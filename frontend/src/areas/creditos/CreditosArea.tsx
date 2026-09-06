@@ -15,6 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../../api";
 import { toast } from "../../shell/toast";
+import "./creditos.css";
 
 // ---------- tipos das respostas ----------
 interface Balance {
@@ -52,6 +53,9 @@ interface ActionRow {
 interface Summary {
   total_credits: number;
   count: number;
+  /** `[extensão]` wave 11 (ADR-016): gasto de HOJE em UTC, o mesmo fuso do `at` do livro-caixa. */
+  today_credits?: number;
+  today_count?: number;
   by_step: { step: string; credits: number; count: number }[];
   by_project: { name?: string | null; pid?: string | null; credits: number; count: number }[];
 }
@@ -72,6 +76,9 @@ interface Dashboard {
   kind_order?: string[];
   kind_label?: Record<string, string>;
   summary?: Summary;
+  /** `[extensão]` wave 11: o mesmo agregado SEM o recorte de projeto, para o cartão de saldo
+   *  mostrar "neste projeto" ao lado de "total" numa leitura só (sem uma segunda rota). */
+  summary_global?: Summary;
   history?: HistoryRow[];
 }
 
@@ -215,7 +222,14 @@ export function CreditosArea({ pid, refreshKey = 0 }: CreditosAreaProps) {
         </p>
       </header>
       <div className="cr-grid">
-        <BalanceCard balance={balance} refreshing={refreshing} onRefresh={() => void refreshSaldo()} />
+        <BalanceCard
+          balance={balance}
+          refreshing={refreshing}
+          onRefresh={() => void refreshSaldo()}
+          summary={data.summary}
+          summaryGlobal={data.summary_global}
+          pid={pidState}
+        />
         <AdminSection
           models={models}
           actions={actions}
@@ -237,10 +251,16 @@ function BalanceCard({
   balance,
   refreshing,
   onRefresh,
+  summary,
+  summaryGlobal,
+  pid,
 }: {
   balance: Balance;
   refreshing: boolean;
   onRefresh: () => void;
+  summary?: Summary | undefined;
+  summaryGlobal?: Summary | undefined;
+  pid?: string | null;
 }) {
   let chip: React.ReactNode;
   let msgTxt: React.ReactNode;
@@ -270,6 +290,15 @@ function BalanceCard({
     );
   }
   const saldo = balance.logged_in ? (balance.credits ?? "?") : "—";
+  // `[extensão]` wave 11 (ADR-016): os três números do livro-caixa ao lado do saldo. Eles NÃO
+  // dependem do CLI — com o CLI ausente ou deslogado continuam corretos.
+  const geral = summaryGlobal ?? summary;
+  const gasto: { rotulo: string; valor: number }[] = [
+    { rotulo: "Hoje", valor: summary?.today_credits ?? 0 },
+  ];
+  if (pid) gasto.push({ rotulo: "Nesta campanha", valor: summary?.total_credits ?? 0 });
+  gasto.push({ rotulo: "Total", valor: geral?.total_credits ?? 0 });
+
   return (
     <section className="cr-card cr-balance">
       <div className="cr-balance-main">
@@ -281,6 +310,22 @@ function BalanceCard({
         {chip}
       </div>
       <p className="cr-balance-msg">{msgTxt}</p>
+      <div className="cr-gasto">
+        <span className="eyebrow">Gasto registrado</span>
+        <div className="cr-gasto-linhas">
+          {gasto.map((g) => (
+            <div className="cr-gasto-item" key={g.rotulo}>
+              <span>{g.rotulo}</span>
+              <b>{g.valor}</b>
+            </div>
+          ))}
+        </div>
+        <p className="cr-gasto-msg">
+          O <b>saldo</b> acima vem do CLI da Higgsfield; o <b>gasto</b> vem do livro-caixa local,
+          que só registra o que o Studio gerou pelo CLI. Geração feita na UI da Higgsfield consome
+          o plano e não aparece aqui — por isso os dois números não se somam nem se conferem.
+        </p>
+      </div>
       <button
         className={`ghost${refreshing ? " loading" : ""}`}
         id="crRefresh"

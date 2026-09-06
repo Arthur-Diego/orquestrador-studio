@@ -8,7 +8,8 @@ from pydantic import BaseModel, field_validator
 
 from ... import higgsfield as hf
 from ...base import service as base
-from ...common import prompter, settings
+from ...common import pricing, prompter, settings
+from ...creditos import service as creditos
 from ...refs import service as refs
 
 router = APIRouter(tags=["base"])
@@ -191,10 +192,19 @@ def base_cost(pid: str, req: GenReq):
     if not hf.available():
         raise HTTPException(409, hf.NO_CLI_MSG)
     try:
-        return base.estimate_cost(pid, req.kind, req.model, req.ref_ids, req.count,
-                                  req.aspect_ratio, req.resolution, req.prompt, req.board, req.target)
+        legado = base.estimate_cost(pid, req.kind, req.model, req.ref_ids, req.count,
+                                    req.aspect_ratio, req.resolution, req.prompt, req.board, req.target)
+        modelo = base.cost_model(pid, req.kind, req.model)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+    # `[extensão]` wave 11 (ADR-016): shape comum de custo, ADITIVO — as chaves de cima vencem.
+    # A ação sai da `KIND_ACTION` da etapa, a mesma que o livro-caixa usa depois de gerar.
+    por_item = legado.get("per_item")
+    return pricing.cost_preview(action=base.KIND_ACTION.get(req.kind, base.ACTION_DEFAULT),
+                                model=modelo, count=legado.get("count", 1), unit_credits=por_item,
+                                source="cli" if por_item is not None else "unknown",
+                                variant=req.resolution if req.kind == "situation" else None,
+                                balance=creditos.balance(), legacy=legado)
 
 
 @router.post("/api/projects/{pid}/base/generate")

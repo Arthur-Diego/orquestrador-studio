@@ -13,6 +13,17 @@ from tests.conftest import image_bytes, make_image
 # BACKEND (rotas HTTP, guia, contrato do serviço) permanecem intocados neste arquivo.
 
 
+def custo_legado(body: dict, *args) -> dict:
+    """Só as chaves de custo que a rota devolvia ANTES do `CostPreview` `[extensão]` (wave 11 · F10).
+
+    A adoção do shape comum é ADITIVA (`studio/common/pricing.py`): as chaves de sempre continuam,
+    com o mesmo nome, tipo e valor — e o valor legado vence em colisão. Comparar o corpo INTEIRO
+    com `==` passou a testar também os campos novos, que este arquivo não descreve; quem trava o
+    shape somado é `tests/test_cost_preview.py`.
+    """
+    return {k: body[k] for k in args}
+
+
 @pytest.fixture()
 def pid(client):
     return client.post("/api/projects", json={"name": "Gelo Zero", "product": "energy drink", "vibe": "snow neon"}).json()["id"]
@@ -237,7 +248,8 @@ def test_cli_generate_and_job_polling(client, pid, base, monkeypatch):
     monkeypatch.setattr(hf, "download", lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True),
                                                            dest.write_bytes(image_bytes()), dest)[-1])
     body = {"model": "nano_banana_2", "kind": "edit", "text": "Make it smaller", "count": 1}
-    assert client.post(f"/api/projects/{pid}/storyboard/cost", json=body).json() == {"per_image": 2, "total": 2}
+    custo = client.post(f"/api/projects/{pid}/storyboard/cost", json=body).json()
+    assert custo_legado(custo, "per_image", "total") == {"per_image": 2, "total": 2}
     assert client.post(f"/api/projects/{pid}/storyboard/generate", json=body).json()["state"] == "running"
     for _ in range(100):
         job = client.get(f"/api/projects/{pid}/storyboard/job").json()
@@ -359,10 +371,12 @@ def test_video_prompt_route_returns_template_without_claude(client, pid, monkeyp
 def test_video_cost_route_resolves_model_by_mode(client, pid):
     single = client.post(f"/api/projects/{pid}/storyboard/video/cost",
                          json={"scene_id": "cena01", "mode": "single", "duration": 5})
-    assert single.json() == {"model": "kling2_6", "per_item": 10, "total": 10}
+    assert custo_legado(single.json(), "model", "per_item", "total") == {
+        "model": "kling2_6", "per_item": 10, "total": 10}
     trans = client.post(f"/api/projects/{pid}/storyboard/video/cost",
                         json={"scene_id": "cena01", "mode": "start_end", "duration": 10})
-    assert trans.json() == {"model": "kling3_0", "per_item": 20, "total": 20}   # ADR-023
+    assert custo_legado(trans.json(), "model", "per_item", "total") == {
+        "model": "kling3_0", "per_item": 20, "total": 20}   # ADR-023
 
 
 def test_video_generate_and_job_polling(client, pid, monkeypatch):
@@ -567,7 +581,8 @@ def test_edit_area_cost_and_generate_keep_the_current_response_shape(client, pid
     body = {"model": "nano_banana_2", "kind": "edit_area", "text": "make the rope thinner", "count": 1,
             "annotation_id": ann["id"]}
     cost = client.post(f"/api/projects/{pid}/storyboard/cost", json=body)
-    assert cost.status_code == 200 and cost.json() == {"per_image": 1.0, "total": 1.0}
+    assert cost.status_code == 200
+    assert custo_legado(cost.json(), "per_image", "total") == {"per_image": 1.0, "total": 1.0}
     assert len(seen[-1]["image_references"]) == 2
     assert seen[-1]["image_references"][0].replace("\\", "/").endswith("base/base_final.png")
     gen = client.post(f"/api/projects/{pid}/storyboard/generate", json=body)
@@ -587,7 +602,8 @@ def test_legacy_kinds_are_unchanged_without_annotation_id(client, pid, base, mon
     seen = []
     _fake_cli(monkeypatch, seen)
     body = {"model": "nano_banana_2", "kind": "edit", "text": "Make it smaller", "count": 1}
-    assert client.post(f"/api/projects/{pid}/storyboard/cost", json=body).json() == {"per_image": 1.0, "total": 1.0}
+    custo = client.post(f"/api/projects/{pid}/storyboard/cost", json=body).json()
+    assert custo_legado(custo, "per_image", "total") == {"per_image": 1.0, "total": 1.0}
     assert len(seen[-1]["image_references"]) == 1
     r = client.post(f"/api/projects/{pid}/storyboard/cost", json={**body, "kind": "draw_to_edit"})
     assert r.status_code == 422 and "Draw to Edit" in r.json()["detail"]

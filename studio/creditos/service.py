@@ -25,14 +25,21 @@ def balance(refresh: bool = False) -> dict:
 
 
 def dashboard(pid: str | None = None, refresh: bool = False) -> dict:
-    """Payload completo da tela: saldo, catálogo de custo, defaults efetivos, resumo e histórico."""
+    """Payload completo da tela: saldo, catálogo de custo, defaults efetivos, resumo e histórico.
+
+    `summary_global` `[extensão]` (wave 11, ADR-016): o mesmo agregado SEM o recorte de projeto,
+    para o cartão de saldo mostrar "neste projeto" ao lado de "total" numa leitura só. Aditivo:
+    `summary` continua sendo o resumo do recorte pedido.
+    """
+    resumo = settings.summary(pid)
     return {
         "balance": balance(refresh=refresh),
         "models": pricing.list_models(),
         "kind_label": pricing.KIND_LABEL,
         "kind_order": list(pricing.KIND_ORDER),
         "actions": settings.all_defaults(pid),
-        "summary": settings.summary(pid),
+        "summary": resumo,
+        "summary_global": settings.summary() if pid is not None else resumo,
         "history": settings.history(pid, limit=60),
         "pid": pid,
     }

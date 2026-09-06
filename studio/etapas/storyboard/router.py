@@ -13,7 +13,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, field_validator
 
 from ... import higgsfield as hf
-from ...common import prompter, settings
+from ...common import pricing, prompter, settings
+from ...creditos import service as creditos
 from ...refs import service as refs
 from ...storyboard import angles
 from ...storyboard import local as sblocal
@@ -256,7 +257,14 @@ def storyboard_render(pid: str):
 # ---------- alternativa paga pelo CLI (ideação) ----------
 @router.post("/api/projects/{pid}/storyboard/cost")
 def storyboard_cost(pid: str, req: GenerateReq):
-    return _guard(sb.cost, pid, req.model, req.kind, req.text, req.count, req.source_id, req.annotation_id)
+    legado = _guard(sb.cost, pid, req.model, req.kind, req.text, req.count, req.source_id,
+                    req.annotation_id)
+    # `[extensão]` wave 11 (ADR-016): shape comum de custo, ADITIVO — as chaves de cima vencem.
+    por_imagem = legado.get("per_image")
+    return pricing.cost_preview(action="storyboard.scene", model=req.model, count=req.count,
+                                unit_credits=por_imagem,
+                                source="cli" if por_imagem is not None else "unknown",
+                                balance=creditos.balance(), legacy=legado)
 
 
 @router.post("/api/projects/{pid}/storyboard/generate")
@@ -355,7 +363,14 @@ def storyboard_video_prompt(pid: str, req: VideoPromptReq):
 
 @router.post("/api/projects/{pid}/storyboard/video/cost")
 def storyboard_video_cost(pid: str, req: VideoCostReq):
-    return _guard(sb.video_cost, pid, req.scene_id, req.mode, req.duration, req.model)
+    legado = _guard(sb.video_cost, pid, req.scene_id, req.mode, req.duration, req.model)
+    # `[extensão]` wave 11 (ADR-016): shape comum de custo, ADITIVO — as chaves de cima vencem.
+    # A ação é a MESMA que resolve o modelo (`video_action`): transição no start/end, senão cena.
+    # `balance` fica `None` de propósito: esta rota é offline (custo medido) e o `CostPreview` não
+    # introduz subprocess num caminho que hoje não consulta o CLI.
+    return pricing.cost_preview(action=sb.video_action(req.mode), model=legado.get("model"),
+                                count=1, unit_credits=legado.get("per_item"), source="measured",
+                                variant=f"{req.duration}s", balance=None, legacy=legado)
 
 
 @router.post("/api/projects/{pid}/storyboard/video/generate")
