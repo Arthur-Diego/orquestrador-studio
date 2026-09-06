@@ -1,7 +1,0 @@
-<<<<<<<< HEAD:studio/web/dist/assets/Tile-DJGhC3u8.js
-import{j as a}from"./index-D9DSNrLU.js";function j({src:l,badge:i,term:n,up:e,upOk:c,sel:p,ord:d,wide:r,sq:t,id:o,title:x,cls:u}){const s=["card"];return p&&s.push("sel"),r&&s.push("wide"),t&&s.push("sq"),u&&s.push(u),a.jsxs("div",{className:s.join(" "),"data-id":o!==void 0?o:void 0,"data-ord":d||void 0,title:x,tabIndex:0,children:[l?a.jsx("img",{src:l,loading:"lazy",alt:""}):null,i?a.jsx("span",{className:"src",children:i}):null,n?a.jsx("span",{className:"term",children:n}):null,e?a.jsx("span",{className:c?"up ok":"up",children:e}):null]})}export{j as T};
-//# sourceMappingURL=Tile-DJGhC3u8.js.map
-========
-import{j as a}from"./index-D8ztnDoY.js";function j({src:l,badge:i,term:n,up:e,upOk:c,sel:p,ord:d,wide:r,sq:t,id:o,title:x,cls:u}){const s=["card"];return p&&s.push("sel"),r&&s.push("wide"),t&&s.push("sq"),u&&s.push(u),a.jsxs("div",{className:s.join(" "),"data-id":o!==void 0?o:void 0,"data-ord":d||void 0,title:x,tabIndex:0,children:[l?a.jsx("img",{src:l,loading:"lazy",alt:""}):null,i?a.jsx("span",{className:"src",children:i}):null,n?a.jsx("span",{className:"term",children:n}):null,e?a.jsx("span",{className:c?"up ok":"up",children:e}):null]})}export{j as T};
-//# sourceMappingURL=Tile-By8cnxTZ.js.map
->>>>>>>> 9d30c71 (fix(storyboard): rótulos das tools no chat e artefatos gerados do rebase [extensão]):studio/web/dist/assets/Tile-By8cnxTZ.js
