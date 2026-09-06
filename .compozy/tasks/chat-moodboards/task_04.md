@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Conhecimento e documentação: resource, prompt de sistema, HLD e correção do FDD da biblioteca"
 type: docs
 complexity: low
@@ -63,14 +63,14 @@ uma rota (`POST /api/moodboards/{mbid}/generate`) que **nunca existiu** no códi
 9. Nenhum arquivo de núcleo (ADR-010) e nada em `frontend/` MUST ser alterado. Nenhuma tool nova.
 
 ## Subtasks
-- [ ] 4.1 Ler `_prd.md`, `_techspec.md` (contrato 16, seção 9 critérios 13 a 15) e os arquivos de Relevant Files.
-- [ ] 4.2 Acrescentar `HELP_AREAS` e ajustar o resolvedor de `studio://help/{etapa}` em `studio/mcp/resources.py`.
-- [ ] 4.3 Acrescentar a menção das áreas globais ao `HELP_GERAL`.
-- [ ] 4.4 Escrever a seção "Biblioteca de mood boards `[extensão]`" em `studio/chat/prompts/sistema.md`.
-- [ ] 4.5 Levantar as 29 operações HTTP direto do fonte (router + nome da função) e escrever `docs/domains/moodboards/hld.md` v1.0 com o diagrama Mermaid.
-- [ ] 4.6 Corrigir a §2 de `docs/domains/moodboards/features/moodboard-library-fdd.md` e acrescentar a seção de chat.
-- [ ] 4.7 Acrescentar os casos da seção `## Tests` a `tests/test_mcp_resources.py`.
-- [ ] 4.8 Rodar `make verify` e conferir que só as duas falhas pré-existentes permanecem.
+- [x] 4.1 Ler `_prd.md`, `_techspec.md` (contrato 16, seção 9 critérios 13 a 15) e os arquivos de Relevant Files.
+- [x] 4.2 Acrescentar `HELP_AREAS` e ajustar o resolvedor de `studio://help/{etapa}` em `studio/mcp/resources.py`.
+- [x] 4.3 Acrescentar a menção das áreas globais ao `HELP_GERAL`.
+- [x] 4.4 Escrever a seção "Biblioteca de mood boards `[extensão]`" em `studio/chat/prompts/sistema.md`.
+- [x] 4.5 Levantar as 29 operações HTTP direto do fonte (router + nome da função) e escrever `docs/domains/moodboards/hld.md` v1.0 com o diagrama Mermaid.
+- [x] 4.6 Corrigir a §2 de `docs/domains/moodboards/features/moodboard-library-fdd.md` e acrescentar a seção de chat.
+- [x] 4.7 Acrescentar os casos da seção `## Tests` a `tests/test_mcp_resources.py`.
+- [x] 4.8 Rodar `make verify` e conferir que só as duas falhas pré-existentes permanecem.
 
 ## Implementation Details
 
@@ -139,24 +139,24 @@ Layout em disco a documentar: `MOODBOARDS_DIR/<mbid>/` com `moodboard.json`,
 
 Sem `_tests.md`: os casos abaixo são a definição normativa desta task.
 
-- [ ] `studio://help/moodboards` responde um texto que contém "Biblioteca de mood boards",
+- [x] `studio://help/moodboards` responde um texto que contém "Biblioteca de mood boards",
       "moodboard_create", "moodboard_pick", "mood_pull", "vibes_pick", "mood_run" e
       "moodboard_multishot".
-- [ ] `studio://help/refs` continua respondendo a dica de etapa (contém "Aula 009") — sem regressão.
-- [ ] `studio://help/<desconhecido>` devolve uma mensagem que lista **as etapas e as áreas**
+- [x] `studio://help/refs` continua respondendo a dica de etapa (contém "Aula 009") — sem regressão.
+- [x] `studio://help/<desconhecido>` devolve uma mensagem que lista **as etapas e as áreas**
       (contém `moodboards`).
-- [ ] `"moodboards" not in resources.HELP` — a biblioteca não polui a lista "Etapas:".
-- [ ] `resources.HELP_GERAL` continua contendo "Orquestrador Studio" e passa a mencionar a
+- [x] `"moodboards" not in resources.HELP` — a biblioteca não polui a lista "Etapas:".
+- [x] `resources.HELP_GERAL` continua contendo "Orquestrador Studio" e passa a mencionar a
       biblioteca de mood boards.
-- [ ] `register_resources` continua registrando exatamente as três URIs
+- [x] `register_resources` continua registrando exatamente as três URIs
       (`studio://help`, `studio://help/{etapa}`, `studio://project/{pid}/guide`) — nenhum resource
       concreto novo.
-- [ ] O texto de `studio/chat/prompts/sistema.md` contém a seção da biblioteca, o nome `mood_pull`,
+- [x] O texto de `studio/chat/prompts/sistema.md` contém a seção da biblioteca, o nome `mood_pull`,
       a regra de oferecer o board antes do mood pago, e `mood_run_wait`/`moodboard_multishot_wait`
       (teste que lê o arquivo).
-- [ ] `docs/domains/moodboards/hld.md` existe, começa por `### HLD:` e cita `/mbfiles`,
+- [x] `docs/domains/moodboards/hld.md` existe, começa por `### HLD:` e cita `/mbfiles`,
       `mood_run`, `_vibes`, `_escolhidas` e as ADRs 013/014/034 (teste que lê o arquivo).
-- [ ] `docs/domains/moodboards/features/moodboard-library-fdd.md` **não** contém mais a string
+- [x] `docs/domains/moodboards/features/moodboard-library-fdd.md` **não** contém mais a string
       `/generate` na tabela da §2 referente a `POST /api/moodboards/{mbid}/generate`, e contém
       `multishot`, `prompt/generate`, `downloads-folder` e `open-folder` (teste que lê o arquivo).
 

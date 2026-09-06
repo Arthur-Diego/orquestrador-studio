@@ -46,12 +46,26 @@ ADR-007 (relação: "estende"). Adicionar ao índice `docs/adrs/README.md` (tabe
 | POST | `/api/moodboards/{mbid}/import/upload` | importa imagens (reuso `ingest.import_upload`) |
 | POST | `/api/moodboards/{mbid}/import/downloads` | importa da pasta Downloads |
 | POST | `/api/moodboards/{mbid}/import/history` | importa do histórico do CLI |
-| GET | `/api/moodboards/{mbid}/candidates` | candidatas importadas |
+| GET | `/api/moodboards/{mbid}/candidates` | candidatas importadas (lista pura; `thumb` = `thumbs/<sha12>.jpg`) |
+| DELETE | `/api/moodboards/{mbid}/candidates/{cid}` | remove uma candidata (e a seleção dela); rederiva a paleta |
+| GET | `/api/moodboards/{mbid}/downloads-folder` | caminho da pasta de Downloads |
+| POST | `/api/moodboards/{mbid}/open-folder` | abre a pasta do board (ou a de Downloads) no explorador do sistema |
 | POST | `/api/moodboards/{mbid}/select` | escolhe as imagens do board (curadoria) → `images/` + palette |
 | GET | `/api/moodboards/{mbid}/prompt` | sugere prompt de vibe (reuso do bot da etapa 2) |
-| POST | `/api/moodboards/{mbid}/generate` | (opcional, `[extensão]`) gera via CLI |
+| POST | `/api/moodboards/{mbid}/prompt/generate` | escreve o prompt de vibe (`template` \| `brief` \| `images`) |
+| POST | `/api/moodboards/{mbid}/multishot/cost` | estimativa do multishot da imagem de vibe (não gasta) `[extensão]` |
+| POST | `/api/moodboards/{mbid}/multishot/generate` | gera ângulos da imagem de vibe (**PAGO**, ADR-017) `[extensão]` |
+| GET | `/api/moodboards/{mbid}/multishot/job` | estado do multishot do board `[extensão]` |
 
 Todas as rotas de campanha existentes permanecem inalteradas.
+
+> **Correção (06/09/2026, ADH-OS-20260906-14).** A tabela acima descrevia uma rota
+> de geração direta no board ("gera via CLI") que **nunca foi implementada**: gerar
+> imagem de mood board por IA dentro da biblioteca segue fora de escopo (§8), e o único caminho pago
+> que existe é o multishot da imagem de vibe (ADR-017). A linha foi removida e as operações que
+> nasceram depois deste FDD foram acrescentadas. A superfície completa e vigente do domínio — as
+> **29 operações HTTP em 26 caminhos**, incluindo o painel de vibes e a corrida `mood_` — está em
+> `docs/domains/moodboards/hld.md`.
 
 ### 3. Frontend — área separada "Mood boards" (shell, `studio/web/*` — ADR-010)
 
@@ -111,3 +125,25 @@ Todas as rotas de campanha existentes permanecem inalteradas.
 - Versionar as imagens dos boards no git (gitignore).
 - Gerar imagens de mood board por IA dentro da biblioteca é `[extensão]` opcional (mesmo tratamento do
   `sonilo_music`): o caminho primário é importar.
+
+### 9. Chat e MCP `[extensão]`
+
+O assistente de chat (ADR-036/037) alcança a biblioteca por 15 tools `mcp__studio__*`, todas
+clientes HTTP das rotas da §2 e das rotas do painel de vibes e da corrida `mood_` — nenhuma importa
+`studio/moodboards/*`:
+
+| Grupo | Tools |
+|---|---|
+| Board e curadoria | `moodboard_list`, `moodboard_get`, `moodboard_create`, `moodboard_import`, `moodboard_pick`, `moodboard_prompt`, `moodboard_delete` |
+| Vibes e peneira | `vibes_list`, `vibes_pick`, `escolhidas_list` |
+| Corrida `mood_` (grátis, longa) | `mood_run`, `mood_run_wait` |
+| Multishot (PAGO) | `moodboard_multishot`, `moodboard_multishot_wait` |
+| Ponte com a etapa 2 | `mood_pull` |
+
+Regras que valem no chat: a escolha visual é sempre do usuário (`moodboard_pick`/`vibes_pick` só
+persistem ids vindos de `ui.choose_images`, ADR-038); o agente nunca manipula bytes, então
+`moodboard_import` aceita só `downloads` e `history` e recusa upload (ADR-040); os jobs da
+biblioteca têm URL própria e **não** usam `job_wait`. O conhecimento citável é o resource
+`studio://help/moodboards`.
+
+Contrato completo das 15 tools: `docs/domains/moodboards/features/chat-moodboards-fdd.md`.

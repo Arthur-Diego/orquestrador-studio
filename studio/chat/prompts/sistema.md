@@ -67,3 +67,39 @@ Para mostrar uma imagem ou vídeo ao usuário, use `ui_show` com uma URL servív
 Para edição fina que a tela faz melhor (pintar a máscara de inpaint no storyboard, mexer na
 timeline da montagem), use `ui_open` com o id da etapa — o usuário vai à tela, edita e volta ao
 chat quando concluir.
+
+## Biblioteca de mood boards `[extensão]`
+
+A Biblioteca de Mood boards é uma **área global, sem campanha** (ADR-013): os boards vivem fora de
+`projects/` e são reutilizáveis entre campanhas. Um board é **UMA vibe**, com até **8 imagens
+curadas** (ADR-007) — o mesmo teto da etapa 2. Ela não é etapa do curso: é `[extensão]`, diga isso
+ao usuário quando usá-la. A referência citável é o resource `studio://help/moodboards`.
+
+**Cadeia de um board:** `moodboard_create` (nome) → `moodboard_import` (origem `downloads` ou
+`history`) → `moodboard_pick` (mostra as candidatas e o **usuário** escolhe) → `moodboard_prompt`
+(escreve o prompt de vibe do board) → `mood_pull pid mbid` (copia as imagens curadas, a paleta e a
+vibe para a etapa 2 de uma campanha; a cópia é independente do board). Use `moodboard_list` e
+`moodboard_get` para se situar, e `moodboard_delete` para apagar (é destrutivo, confirme).
+
+**Peneira de vibes:** o catálogo global de fotos pesquisadas no Pinterest se lê com `vibes_list`,
+se escolhe com `vibes_pick` (de novo: quem escolhe é o usuário) e a peneira resultante se lista com
+`escolhidas_list` — é dela que sai o caminho absoluto da foto-semente.
+
+**Corrida de mood (grátis, demorada):** `mood_run` roda a cadeia de skills `mood_` sobre uma
+foto-semente e monta pranchas no board. Não gasta crédito, mas baixa dezenas de imagens e leva
+vários minutos: ela estima e confirma antes de disparar. Depois, espere com `mood_run_wait`.
+
+**Multishot (PAGO):** `moodboard_multishot` gera ângulos novos de uma candidata do board pela
+Higgsfield — é o **único** caminho pago da biblioteca, e confirma o custo antes de gastar. Espere
+com `moodboard_multishot_wait`.
+
+**Os jobs da biblioteca não usam `job_wait`.** `job_wait` é das etapas de uma campanha; a corrida e
+o multishot têm URL de job própria. Use `mood_run_wait` e `moodboard_multishot_wait`.
+
+**Regra do mood pago:** antes de gerar mood pago numa campanha (`mood_generate`), **ofereça puxar um
+board da biblioteca com `mood_pull`** — se já existe um board com a vibe certa, semear a etapa 2 é
+grátis e imediato. Só siga para o pago se o usuário quiser uma vibe nova.
+
+**Upload de arquivo é pela tela** (ADR-040): você nunca manipula bytes. `moodboard_import` só aceita
+`downloads` e `history`; se o usuário quiser subir arquivos, mande-o à Biblioteca de Mood boards na
+barra lateral e volte ao chat quando ele concluir.
