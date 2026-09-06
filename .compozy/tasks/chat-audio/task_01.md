@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Transcrição no servidor — `voice.py`, rota multipart e procedência `via`"
 type: backend
 complexity: high
@@ -73,15 +73,15 @@ consome.
 
 ## Subtasks
 
-- [ ] Escrever `studio/chat/voice.py` com a allowlist, as assinaturas de bytes e `check_audio`.
-- [ ] Implementar `transcribe` com `TemporaryDirectory`, `finally` de descarte e a recusa do
+- [x] Escrever `studio/chat/voice.py` com a allowlist, as assinaturas de bytes e `check_audio`.
+- [x] Implementar `transcribe` com `TemporaryDirectory`, `finally` de descarte e a recusa do
       `FakeTranscribe` (`NoProvider`).
-- [ ] Instrumentar o log `studio.chat.voice` (sucesso e falha) sem vazar texto nem chave.
-- [ ] Acrescentar a rota multipart em `studio/chat/router.py` com a tradução completa de status.
-- [ ] Repassar `via:"voice"` no `_handle_user` (persistido + push), ignorando qualquer outro valor.
-- [ ] Registrar a branch em `TITULARES_DO_NUCLEO` no topo do dict.
-- [ ] Escrever `tests/test_chat_transcribe.py` com todos os casos `UT-` e `IT-` atribuídos.
-- [ ] Rodar `. .venv/bin/activate && pytest -x -q tests/test_chat_transcribe.py` e depois
+- [x] Instrumentar o log `studio.chat.voice` (sucesso e falha) sem vazar texto nem chave.
+- [x] Acrescentar a rota multipart em `studio/chat/router.py` com a tradução completa de status.
+- [x] Repassar `via:"voice"` no `_handle_user` (persistido + push), ignorando qualquer outro valor.
+- [x] Registrar a branch em `TITULARES_DO_NUCLEO` no topo do dict.
+- [x] Escrever `tests/test_chat_transcribe.py` com todos os casos `UT-` e `IT-` atribuídos.
+- [x] Rodar `. .venv/bin/activate && pytest -x -q tests/test_chat_transcribe.py` e depois
       `make verify`; registrar as duas falhas pré-existentes de `tests/test_edit_captions.py` como
       `pre-existing failure` sem tentar corrigi-las.
 
