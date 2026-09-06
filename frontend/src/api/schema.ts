@@ -775,7 +775,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Chats */
+        /**
+         * List Chats
+         * @description Lista as abas. Resposta idêntica à de sempre; antes de listar, sanea aba órfã.
+         *
+         *     Aba com `status == "running"` sem task viva em `_turns` é resíduo de reinício do servidor: sem
+         *     o saneamento, o pontinho da aba e o `busy` derivado do transcript ficariam presos para sempre
+         *     (FDD contrato 8).
+         */
         get: operations["list_chats_api_chats_get"];
         put?: never;
         /** Create Chat */
