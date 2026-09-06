@@ -70,6 +70,16 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-10-chat-navigate": (
+        "`[extensão]` Wave 11 · frente F08 — o assistente leva a tela junto, card #88 "
+        "(ADH-OS-20260906-10), FDD `docs/domains/chat/features/chat-navigate-fdd.md`. A tool "
+        "`ui_navigate` e o registro das tools vivem em `studio/mcp/` (fora de NUCLEO_PREFIXOS). "
+        "No núcleo, só `frontend/src/areas/chat/**`, `frontend/src/shell/"
+        "{router.ts,events.ts}` e o bundle `studio/web/dist/`. Nenhuma rota nova, nenhum modelo "
+        "Pydantic novo (logo `schema.ts` fica intocado), nenhuma etapa tocada. "
+        "ADR-038/010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-04-chat-feedback": (
         "`[extensão]` Feedback ao vivo do assistente de chat (Wave 11 · F02), card #86 "
         "ADH-OS-20260906-04: ciclo de vida do turno, streaming de texto e progresso de job em "
