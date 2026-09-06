@@ -222,11 +222,16 @@ Exemplo de resposta (`kind=edit&edits=Make the helmet visor tinted so the face c
 - 200: `{"scene": "cena01", "base": "shots/cena01/base.png", "candidates": [Candidate]}` com `Candidate = {id, kind:"image", source, name, prompt, file, thumb, width, height, selected, imported, order?, upscaled?, role?, parent?, job_id?, model?}` (campos do `ingest_bytes` + meta desta etapa). `file`/`thumb` relativos à raiz do projeto, servidos por `/files/{pid}/...`.
 
 **Custo e geração por CLI**
-> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
-> ADH-OS-20260829-37 (QA AP-21). O painel 04 do storyboard (onde os ângulos vivem depois da
-> ADR-015) só oferece o checkbox "já upscalei estes na UI": a aula 011 ensina gerar e upscalar na
-> UI da Higgsfield. As rotas (`…/angles/scenes/{cena}/cost|generate`, e as equivalentes de
-> `product`) seguem vivas e testadas. Pinado pelo caso de QA `C-STORYBOARD-50`.
+> **`[extensão]` rota LIGADA na tela desde a wave 11** (era "sem comando na UI" da wave 4 à 10) —
+> card ADH-OS-20260906-09, FDD `docs/domains/storyboard/features/storyboard-geracao-por-cena-fdd.md`.
+> O painel 05 dos ângulos ganhou a barra `[extensão]` "Gerar imagem da cena - local (grátis)" ·
+> "Gerar via CLI (gasta créditos)" · "Upscalar 2x (gasta créditos)", com o gate de custo
+> (`useCostConfirm`, ADR-016) antes de qualquer `generate`/`upscale`, e as tools MCP
+> `storyboard_scene_generate`/`storyboard_scene_pick` (ADR-037). O checkbox "já upscalei estes na
+> UI" e o caminho da aula 011 (gerar e upscalar na UI da Higgsfield e importar) **continuam
+> intactos e são o primeiro caminho da tela** (ADR-004); os botões são atalhos adicionais. Decisão
+> anterior: ADH-OS-20260829-37 (QA AP-21). Pinado pelo caso de QA `C-STORYBOARD-50` e pela guarda
+> `tests/test_storyboard_angles_api.py::test_rotas_por_cena_deixaram_de_ser_orfas_na_tela`.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/shots/scenes/{scene}/cost` e `POST /api/projects/{pid}/shots/scenes/{scene}/generate`
 - Método: POST, corpo `{"model": "nano_banana_2", "prompts": ["…"], "count": 4, "resolution": "2k"}`
@@ -243,8 +248,9 @@ Exemplo de resposta (`kind=edit&edits=Make the helmet visor tinted so the face c
 - 200: `registry.status(pid)` → `{"state": "idle|running|done|error", "done", "total", "added", "error", "log": [], "scene", "op": "generate|upscale"}`
 
 **Upscale por CLI**
-> **`[extensão]` rota sem comando na UI desde a wave 4** — uso por API/coleção Postman; decisão
-> ADH-OS-20260829-37 (QA AP-21). Ver a nota de "Custo e geração por CLI" acima.
+> **`[extensão]` rota LIGADA na tela desde a wave 11** (card ADH-OS-20260906-09) — botão
+> "Upscalar 2x (gasta créditos)" no painel 05, atrás do gate de custo. Ver a nota de "Custo e
+> geração por CLI" acima.
 - Tipo: endpoint
 - Assinatura/Rota: `POST /api/projects/{pid}/shots/scenes/{scene}/upscale`
 - Método: POST, corpo `{"id": "<candidato>", "model": "bytedance_image_upscale"}`
@@ -550,6 +556,31 @@ Hook `guide(pid) -> dict` do contrato transversal (`studio/common/guide.py`), **
 - `POST …/scenes/{scene}/select` — resposta ganha `warning` (ou `null`) e `storyboard_md`.
 - `POST /shots/product/select` — resposta ganha `storyboard_md` e `note`.
 - Novo artefato: `shots/storyboard.md` (o `storyboard.json` mantém as duas chaves de sempre).
+
+#### 12.5 Contrato ampliado na wave 11 (aditivo) — card ADH-OS-20260906-09
+
+FDD dono: `docs/domains/storyboard/features/storyboard-geracao-por-cena-fdd.md`. Os nomes reais
+são `…/storyboard/angles/…` (ADR-015); nada abaixo renomeia, remove ou muda o tipo de campo algum.
+
+- `GET …/angles/scenes` — cada cena ganha `image_prompt` (repasse defensivo de `scenes.json`;
+  string vazia quando a chave não existe). Serve para pré-preencher o prompt da geração por cena.
+- `GET …/angles/scenes/{scene}/prompts` — query nova `preset` com TRÊS estados: ausente resolve o
+  default de `settings.preset_default_for("storyboard.angles", pid)` (projeto → global → código,
+  hoje `None`); `preset=none` desliga nesta chamada; `preset=<id>` usa esse id de
+  `prompter.REALISM_PRESETS` (fora do catálogo → `422`). Resposta ganha `preset` e `preset_source`
+  (`project|global|code|request`). Com preset resolvido, o rig **substitui** o bloco de câmera
+  manual (`camera` volta `null`); com preset `None`, o `text` é byte a byte o de sempre (ADR-004).
+- `GET …/angles/product/prompts` — mesma query `preset` e os mesmos dois campos na resposta; o rig
+  é anexado ao final de cada uma das duas instruções da aula 013, que não mudam de rótulo nem de
+  ordem.
+- `POST …/storyboard/local/generate` — campo `scene` (motor local grátis, ADR-033) permite gerar
+  direto na pasta da cena; ver `motor-local-fdd.md` §5.
+- MCP (ADR-037/040): `storyboard_scene_generate(pid, scene, engine=local|cli, …)` e
+  `storyboard_scene_pick(pid, scene)`. O caminho `cli` passa obrigatoriamente por `_paid`
+  (ADR-016) e nenhuma tool importa `studio.storyboard.*`.
+- Coleção Postman dos ângulos: `docs/domains/storyboard/postman/angles.postman_collection.json`
+  (a coleção histórica `docs/domains/shots/postman/shots.postman_collection.json` ainda usa o
+  prefixo `/shots/` pré-ADR-015).
 
 #### 12.4 Tela (contrato de wave 2)
 

@@ -1,0 +1,77 @@
+%% Etapa 4 — geração POR CENA dos ângulos (aula 011) e da cena do produto (aula 013).
+%% Feature `storyboard-geracao-por-cena` `[extensão]`, card ADH-OS-20260906-09 (wave 11).
+%% FDD: docs/domains/storyboard/features/storyboard-geracao-por-cena-fdd.md (§4, fluxos 1 a 3).
+%%
+%% As TRÊS pontes são independentes (ADR-033) e convergem na MESMA galeria da cena:
+%%   (a) importar o que foi gerado na UI da Higgsfield — o caminho da AULA, sempre disponível;
+%%   (b) motor local (grátis, Flux/ComfyUI) — atalho `[extensão]`;
+%%   (c) CLI da Higgsfield (pago) — atalho `[extensão]`, sempre atrás do gate de custo (ADR-016).
+sequenceDiagram
+    autonumber
+    actor U as Usuário (painel 05)
+    participant T as Angles.tsx
+    participant R as router.py (etapa 4)
+    participant L as storyboard/local.py
+    participant A as storyboard/angles.py
+    participant E as motor local (engine + ComfyUI)
+    participant H as Higgsfield CLI
+    participant D as projects/pid/storyboard/cenaNN/
+
+    Note over U,T: montagem: prontidão das duas pontes (nenhuma delas quebra a tela)
+    T->>R: GET /storyboard/local/status
+    R-->>T: {ready, detail}  %% offline → só o botão local desabilita, com o motivo no title
+    T->>R: GET /api/higgsfield/status
+    R-->>T: {installed, logged_in}  %% deslogado → só os botões pagos desabilitam
+    T->>R: GET /storyboard/angles/scenes
+    R->>A: list_scenes(pid)
+    A-->>T: cenas + image_prompt (pré-preenche o prompt da cena)
+
+    rect rgba(120, 200, 120, 0.10)
+        Note over U,D: Fluxo 1 — "Gerar imagem da cena - local (grátis)" · zero crédito
+        U->>T: clica no botão local
+        T->>R: POST /storyboard/local/generate {prompt, count, model, scene:"cenaNN"}
+        R->>L: start_generate(..., scene)
+        L->>A: _resolve(pid, scene) (sem exigir base)
+        alt cena fora do regex
+            A-->>U: 422
+        else cena ausente de scenes.json
+            A-->>U: 404
+        else motor local offline
+            E-->>U: 409 com detail (ADR-033)
+        else ok
+            L->>E: generate_image × count
+            E-->>L: bytes
+            L->>D: ingest_bytes(step="storyboard/cenaNN")
+            T->>R: GET /storyboard/local/job (progressJob) → {state, done, total, scene}
+        end
+    end
+
+    rect rgba(220, 160, 120, 0.12)
+        Note over U,D: Fluxo 2 — "Gerar via CLI (gasta créditos)" · gate de custo ANTES (ADR-016)
+        U->>T: "Gerar prompt" (builder da aula, resolve o preset de storyboard.angles)
+        T->>R: GET /angles/scenes/{scene}/prompts?preset=…
+        R->>A: build_prompts(...) → text + preset + preset_source
+        U->>T: clica em "Gerar via CLI"
+        T->>R: POST /angles/scenes/{scene}/cost {model, prompts, count, resolution}
+        R-->>T: total estimado
+        T-->>U: useCostConfirm (planilha de custo)
+        alt usuário cancela
+            T-->>U: nada é postado · zero crédito
+        else usuário confirma
+            T->>R: POST /angles/scenes/{scene}/generate
+            R->>A: start_generate (require_base + require_cli)
+            A->>H: hf.generate × (prompts × count)
+            A->>D: ingest_bytes + record_generation(action="storyboard.angles")
+            T->>R: GET /angles/job (progressJob)
+        end
+    end
+
+    Note over U,D: Fluxo 3 — cena do produto (aula 013) repete os dois fluxos em /angles/product/*
+    Note over U,D: Caminho da AULA, sempre presente: gerar na UI da Higgsfield → importar (Downloads/histórico/upload)
+
+    U->>T: "Usar como base da cena" numa candidata
+    T->>R: POST /angles/scenes/{scene}/base {"source":"candidate","id":…}
+    R->>D: storyboard/cenaNN/base.png (só por ação explícita do usuário)
+    U->>T: marca a ordem dos frames → "Salvar ordem da cena"
+    T->>R: POST /angles/scenes/{scene}/select {"shots":[{"id":…}]}
+    R->>D: shotNN_final.png + storyboard.json + frames.md
