@@ -15,7 +15,13 @@ export interface ChatSession {
 export interface ChatEvent {
   seq?: number;
   ts?: string;
-  kind: "user" | "assistant_text" | "tool_call" | "tool_result" | "result" | "ask" | "notify" | "system" | "raw";
+  kind: "user" | "assistant_text" | "tool_call" | "tool_result" | "result" | "ask" | "notify" | "show" | "system" | "raw";
+  widget?: string;
+  media?: unknown;
+  title?: string;
+  options?: unknown;
+  images?: unknown;
+  fields?: unknown;
   text?: string;
   name?: string;
   input?: Record<string, unknown>;
