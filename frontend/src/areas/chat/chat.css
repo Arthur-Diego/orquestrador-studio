@@ -312,3 +312,34 @@
 .chat-pair { display: flex; flex-direction: column; gap: 3px; margin: 0; min-width: 0; }
 .chat-pair-label { font-size: 11px; color: var(--ink-3); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-zoom { display: block; margin: 0 auto; max-width: min(72vw, 720px); max-height: 68vh; width: auto; height: auto; border-radius: 10px; background: var(--bg); }
+
+
+/* Wave 11 · F08 (card #88): toggle "seguir o assistente" e o cartão do evento `navigate`.
+   Aditivo — nenhuma classe existente foi renomeada (contrato com os cenários de QA). */
+.chat-follow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.chat-follow input { margin: 0; cursor: pointer; accent-color: var(--accent); }
+.chat-follow:hover { color: var(--ink-2); }
+.chat-nav {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.chat-nav-text { font-style: italic; }
+/* O itálico narra "isto aconteceu"; o cartão que NÃO trocou a tela (toggle desligado ou navegação
+   recusada) é um convite, não um relato — daí o sinal ser `data-navegou`, e não o toggle. */
+.chat-nav[data-navegou="0"] .chat-nav-text { font-style: normal; color: var(--ink-2); }
+.chat-nav-go { padding: 4px 10px; font-size: 12px; }

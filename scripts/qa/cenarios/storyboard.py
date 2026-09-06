@@ -808,6 +808,61 @@ def p02_persistencia(page, ctx):
                       f"fotos={fotos} desc='{desc[:40]}' prompt_dom='{txt[:50]}' esperado='{prompt[:50]}'", ev)
 
 
+@caso("C-STORYBOARD-52", "gesto de foto persiste SEM 'Salvar cenas': anexar, ★ e ✕ sobrevivem ao reload")
+def p02_persistencia_por_gesto(page, ctx):
+    """Critério B4 da frente storyboard-cenas `[extensão]`: todo gesto de foto grava na hora (fila
+    de um `PUT /scenes`). O caso NÃO clica em `#sbSave` de propósito — se a persistência ainda
+    dependesse do botão, o `page.reload()` traria de volta o estado anterior aos três gestos."""
+    pid = _projeto_qa(page, ctx)
+    sid, imgs = _cena_com_fotos(page, ctx, pid, idx=0, n=2)
+    ideias = _garantir_ideias(page, ctx, pid, 3)
+    livre = next((c for c in ideias if c["file"] not in imgs), None)
+    if livre is None:
+        return H.Resultado.falha("sem uma 3ª ideia livre para anexar à cena")
+    H.abrir_tela(page, ctx, TELA, pid)
+    linha = page.locator(f"#sbScenes .scene-row[data-sid='{sid}']")
+
+    # 1) anexar: o picker SOMA à galeria da cena ("Adicionar à cena" é a ação primária)
+    linha.locator(".sbAddPhoto").click()
+    m = H.modal(page)
+    m.wait_for()
+    card = m.locator(f"#sbGallery .card[data-file='{livre['file']}']")
+    if not card.count():
+        H.fechar_modal(page)
+        return H.Resultado.falha(f"a ideia {livre['file']} não apareceu no picker")
+    card.click()
+    m.locator(".modal-actions button.primary").click()
+    page.wait_for_timeout(900)
+    apos_anexo = linha.locator(".sb-photorow").count()
+
+    # 2) ★ na 2ª foto (vira principal) e 3) ✕ na 1ª — nenhum clique em #sbSave entre eles
+    linha.locator(".sb-photorow").nth(1).locator(".sb-star").click()
+    page.wait_for_timeout(600)
+    linha.locator(".sb-photorow").nth(0).locator(".sb-rm").click()
+    page.wait_for_timeout(1200)
+    antes = linha.locator(".sb-photorow").evaluate_all("els => els.map(e => e.dataset.img)")
+    ev = H.evidencia(page, ctx, "sb-persistencia-gesto")
+
+    page.reload()
+    H.esperar_tela(page)
+    fotos = page.locator(f"#sbScenes .scene-row[data-sid='{sid}'] .sb-photorow")
+    depois = fotos.evaluate_all("els => els.map(e => e.dataset.img)")
+    chaves = page.locator(f"#sbScenes .scene-row[data-sid='{sid}'] .sb-key.primary")
+    principal = chaves.first.get_attribute("data-img") if chaves.count() else ""
+    disco = next((c for c in _cenas(page, ctx, pid) if c["id"] == sid), {})
+    _cena_com_fotos(page, ctx, pid, idx=0, n=2)         # repõe a cena para os casos seguintes
+
+    ok = (apos_anexo == 3 and len(antes) == 2 and depois == antes
+          and disco.get("images") == depois and disco.get("primary") == imgs[1]
+          and imgs[0] not in depois and imgs[1] in depois)
+    return H.verifica(ok,
+                      f"anexo + ★ + ✕ gravados sem salvar: {len(depois)} fotos e principal "
+                      f"{(principal or '').rsplit('/', 1)[-1]} depois do reload",
+                      f"apos_anexo={apos_anexo} (esperado 3) antes={antes} depois={depois} "
+                      f"disco.images={disco.get('images')} disco.primary={disco.get('primary')} "
+                      f"esperado_primary='{imgs[1]}' removida='{imgs[0]}' dom_primary='{principal}'", ev)
+
+
 # ======================================================================================
 # painéis 03/04 — ângulos por cena (aula 011) e cena do produto (aula 013)
 # ======================================================================================

@@ -21,7 +21,16 @@ const STATUS = {
   script_cli: true,
   script_preset_default: "real1",
   script_models: [{ label: "Nano Banana Pro", default: true }],
+  script_cli_diag: {
+    name: "claude",
+    available: false,
+    path: null,
+    searched_path: "/usr/bin:/bin",
+    checked_at: "2026-09-06T14:03:11",
+    hint: "Instale o Claude Code ou suba o Studio por ./run.sh.",
+  },
 };
+const CLI_DIAG = STATUS.script_cli_diag;
 const INSTRUCTIONS = {
   kinds: [
     { kind: "edit", label: "Edição numerada", ui_hint: "uma instrução por vez" },
@@ -38,7 +47,12 @@ const INSTRUCTIONS = {
 };
 const PRESETS = {
   presets: [{ id: "real1", name: "Realista", desc_pt: "mais real" }],
-  defaults: { motion: { preset: "real1" }, "storyboard.script": { preset: "real1" } },
+  // O bloco "Padrão visual da campanha" grava os CINCO `kind` de uma vez, então o estado normal
+  // é `motion` e `storyboard.keyframe` com o MESMO preset — é só aí que o `RealismField` da foto
+  // pode nomear a herança, porque o preset da foto viaja para as duas ações (rodada de review 001,
+  // issue_022).
+  defaults: { motion: { preset: "real1" }, "storyboard.keyframe": { preset: "real1" },
+              "storyboard.script": { preset: "real1" } },
 };
 const IDEAS = [
   { id: "i1", file: "storyboard/candidates/i1.png", prompt: "p1", selected: true },
@@ -64,11 +78,12 @@ const SCRIPT = {
   },
 };
 
-function ideationApi() {
+function ideationApi(status: Partial<typeof STATUS> & { script_cli_diag?: unknown } = {}) {
   return vi.fn(async (path: string, opts?: RequestInit) => {
     const post = opts?.method === "POST";
     if (path.endsWith("/higgsfield/status")) return { installed: true, logged_in: true };
-    if (path.endsWith("/storyboard")) return STATUS;
+    if (path.includes("/script/cli")) return CLI_DIAG;
+    if (path.endsWith("/storyboard")) return { ...STATUS, ...status };
     if (path.includes("/prompter/presets")) return PRESETS;
     if (path.endsWith("/instructions") && post) return { instruction: "INSTRUÇÃO MONTADA", ui_hint: "4 variações" };
     if (path.endsWith("/instructions")) return INSTRUCTIONS;
@@ -109,6 +124,27 @@ describe("Storyboard · metade ideação (aula 010 + `[extensão]`)", () => {
     expect(roteiro.compareDocumentPosition(historia) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("02")).toBeInTheDocument();
     expect(screen.getByText("03")).toBeInTheDocument();
+    // critério A5 (Wave 11 · F06): a ordem 02 → 03 é blindada por teste, e o botão principal do
+    // roteiro diz o que o clique PRODUZ — cenas — em vez de só nomear a ferramenta
+    const gerar = container.querySelector("#sbScriptGen") as HTMLButtonElement;
+    expect(gerar.textContent).toBe("Gerar cenas (roteiro por Claude) [extensão]");
+    expect(
+      (container.querySelector("#sbScript") as HTMLElement).compareDocumentPosition(
+        container.querySelector("#sbScenes") as HTMLElement,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("o botão do roteiro fica HABILITADO mesmo sem o Claude no PATH, com o diagnóstico ao lado (A1)", async () => {
+    const api = ideationApi({ script_cli: false });
+    const { container } = render(<Ideation ctx={makeCtx(api)} refreshGuide={() => {}} bootKey="p1" onScenesReady={() => {}} />);
+    await waitFor(() => expect(container.querySelector("#sbScriptGen")).toBeTruthy());
+    // era `disabled={!scriptCli}`: a tela escondia a funcionalidade em vez de explicar a falta
+    expect((container.querySelector("#sbScriptGen") as HTMLButtonElement).disabled).toBe(false);
+    expect(container.querySelector("#sbScriptCliRecheck")).toBeTruthy();
+    const diag = container.querySelector("#sbScriptCliDiag") as HTMLElement;
+    expect(diag.getAttribute("role")).toBe("status");
+    expect(diag.textContent).toContain("/usr/bin:/bin");
   });
 
   it("mostra o aviso fixo best-effort e o rótulo do painel de área marcada (ADR-004)", async () => {
@@ -148,11 +184,21 @@ describe("Storyboard · metade ideação (aula 010 + `[extensão]`)", () => {
     expect(linha.querySelector(".sbAnim")).toBeTruthy();
     expect(linha.querySelector(".sbAnnotate")).toBeTruthy();
     expect(linha.querySelector(".sbPhotoUp")).toBeTruthy();
-    expect(linha.querySelector(".sbVidPromptText")?.textContent).toBe("vp existente");
-    // preset de realismo `[extensão]` com a rota de fuga
+    // o prompt de vídeo virou CAMPO; o `<p class="txt sbVidPromptText">` continua no DOM como
+    // espelho `hidden` — é ele que `scripts/qa/cenarios/storyboard.py` lê por `text_content()`
+    expect((linha.querySelector(".sbVidPromptField") as HTMLTextAreaElement).value).toBe("vp existente");
+    const espelho = linha.querySelector(".sbVidPromptText") as HTMLParagraphElement;
+    expect(espelho.textContent).toBe("vp existente");
+    expect(espelho.hidden).toBe(true);
+    // e o campo de keyframe (`[extensão]` Wave 11 · F06) nasce ao lado dele
+    expect(linha.querySelector(".sbImgPromptField")).toBeTruthy();
+    // preset de realismo `[extensão]` com a HERANÇA explícita (Wave 11 · F06) e a rota de fuga:
+    // "(padrão da campanha: X)" é o default (valor vazio) e "(sem preset)" continua existindo
     const realism = linha.querySelector(".sbRealismPreset") as HTMLSelectElement;
     expect(realism).toBeTruthy();
     expect(within(realism).getByText("(sem preset)")).toBeInTheDocument();
+    expect(within(realism).getByText("(padrão da campanha: Realista)")).toBeInTheDocument();
+    expect(realism.value).toBe("");
     // a foto vertical é a alça de reordenar (a .sb-key)
     expect(linha.querySelector(".sb-key")).toBeTruthy();
   });

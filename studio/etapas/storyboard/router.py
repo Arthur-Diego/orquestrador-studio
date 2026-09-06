@@ -146,6 +146,31 @@ class ScriptGenerateReq(BaseModel):
         return self.preset if "preset" in self.model_fields_set else settings.PRESET_UNSET
 
 
+# `[extensão]` Wave 11 · F06 (FDD §5.4) — PROMPT DE IMAGEM por foto da cena. Molde idêntico ao do
+# `VideoPromptReq` de propósito: é o mesmo gesto do usuário para o outro campo da mesma foto.
+class ImagePromptReq(BaseModel):
+    scene_id: str
+    #: Caminho relativo da foto sob `storyboard/ideas/` (obrigatório: o prompt descreve ESTA foto).
+    #: Foto fora de lá — inclusive tentativa de path traversal — vira 422 no `_check_image`.
+    photo: str
+    #: O que a foto precisa mostrar, em texto livre. Opcional: a foto já existe e diz muito por si.
+    description: str = ""
+    #: `[extensão]` preset de realismo — NÃO confundir com o `sbPreset` das fórmulas da aula
+    #: (ADR-035). Três estados: campo AUSENTE = o serviço resolve o default da ação
+    #: `storyboard.keyframe`; `null` = sem preset; `"<id>"` = usar esse. Id fora do catálogo → 422
+    #: aqui, pelo validador, ou seja antes de o endpoint rodar e chamar o Claude CLI.
+    preset: str | None = None
+
+    @field_validator("preset")
+    @classmethod
+    def _known_preset(cls, v: str | None) -> str | None:
+        return prompter.valid_preset(v)
+
+    def preset_arg(self) -> settings.PresetArg:
+        """Ausente ≠ `null`: sem o campo no body, quem resolve o default é o serviço."""
+        return self.preset if "preset" in self.model_fields_set else settings.PRESET_UNSET
+
+
 def _guard(fn, *args, **kwargs):
     """Traduz o vocabulário de erros do serviço para HTTP (422 pedido inválido, 409 pré-requisito)."""
     try:
@@ -354,6 +379,15 @@ def storyboard_script(pid: str):
     return sb.load_script(pid)
 
 
+# `[extensão]` Wave 11 · F06 (FDD §5.1): diagnóstico do Claude CLI visto por ESTE processo. Sempre
+# 200 quando o projeto existe (404 só para projeto inexistente) — a ausência do CLI é dado, não
+# erro, e por isso a rota nunca devolve 409. `?refresh=true` re-resolve o PATH e reatribui o `BIN`
+# do processo, que é o que faz o botão "Verificar de novo" da tela valer sem reiniciar o servidor.
+@router.get("/api/projects/{pid}/storyboard/script/cli")
+def storyboard_script_cli(pid: str, refresh: bool = Query(False)):  # noqa: B008
+    return sb.script_cli_diag(pid, refresh)
+
+
 # ---------- `[extensão]` wave 7 (ADR-021): vídeo por cena (Claude + CLI Kling) ----------
 @router.post("/api/projects/{pid}/storyboard/video-prompt")
 def storyboard_video_prompt(pid: str, req: VideoPromptReq):
@@ -384,6 +418,16 @@ def storyboard_video_generate(pid: str, req: VideoGenerateReq):
 def storyboard_video_job(pid: str, scene_id: str = Query(...), photo: str | None = Query(None)):
     refs.project_dir(pid)
     return _guard(sb.video_job_status, pid, scene_id, photo)
+
+
+# ---------- `[extensão]` Wave 11 · F06 (ADR-042 proposta): prompt de IMAGEM por foto da cena ----------
+# Simétrica ao `/video-prompt` acima, para o outro campo da mesma foto. Sem 409: sem Claude no PATH
+# o serviço cai no template determinístico e devolve `source: "template"` (o 409 do ADR-025 é do
+# ROTEIRO, que escreve arquivo). Não persiste nada — quem grava é o cliente, pelo `PUT .../scenes`.
+@router.post("/api/projects/{pid}/storyboard/image-prompt")
+def storyboard_image_prompt(pid: str, req: ImagePromptReq):
+    return _guard(sb.image_prompt, pid, req.scene_id, req.photo, req.description,
+                  preset=req.preset_arg())
 
 
 # ==========================================================================================

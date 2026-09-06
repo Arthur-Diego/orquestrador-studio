@@ -23,6 +23,10 @@ import {
   useAutosize,
 } from "../../../../frontend/src/ui";
 import { useStudio } from "../../../../frontend/src/shell/plugin";
+// O bloco "Padrão visual da campanha" é o MESMO das duas etapas (a ação `base` é uma das cinco
+// que ele nivela). Ele é importado, nunca copiado: duas cópias divergiriam na primeira mudança.
+import { CampaignPreset } from "../../storyboard/ui/CampaignPreset";
+import type { PresetDefaults } from "../../storyboard/ui/types";
 import { useShell } from "../../../../frontend/src/shell/context";
 import { useStudioChange } from "../../../../frontend/src/shell/events";
 
@@ -127,7 +131,7 @@ interface Preset {
   desc_pt: string;
 }
 interface PresetsResp {
-  defaults?: Record<string, { preset?: string } | undefined>;
+  defaults?: PresetDefaults;
   presets?: Preset[];
 }
 interface CostResp {
@@ -171,6 +175,8 @@ interface Estado {
   boardSel: string | null;
   presets: Preset[];
   presetValue: string;
+  /** `defaults` resolvidos de TODAS as ações — o bloco do padrão da campanha lê o conjunto. */
+  presetDefaults: PresetDefaults;
   brandFile: string | null;
   brandV: number;
   cleanTarget: string;
@@ -209,6 +215,7 @@ function estadoInicial(): Estado {
     boardSel: null,
     presets: [],
     presetValue: "",
+    presetDefaults: {},
     brandFile: null,
     brandV: 0,
     cleanTarget: "",
@@ -334,12 +341,14 @@ function BaseInner({ pid }: { pid: string | null }) {
     try {
       const r = (await ctx.api(`/api/prompter/presets?pid=${encodeURIComponent(pid ?? "")}`)) as PresetsResp;
       st.presets = r.presets || [];
-      const def = ((r.defaults || {})["base"] || {}).preset || "";
+      st.presetDefaults = r.defaults || {};
+      const def = (st.presetDefaults["base"] || {}).preset || "";
       st.presetValue = st.presets.some((p) => p.id === def) ? def : "";
       forceRender();
     } catch {
       st.presets = [];
       st.presetValue = "";
+      st.presetDefaults = {};
       forceRender();
     }
   }
@@ -707,6 +716,23 @@ function BaseInner({ pid }: { pid: string | null }) {
           onGuide={ctx.onGuide}
         />
       </section>
+
+      {pid ? (
+        <CampaignPreset
+          id="baseCampaignPreset"
+          api={ctx.api}
+          pid={pid}
+          toast={ctx.toast}
+          presets={st.presets}
+          defaults={st.presetDefaults}
+          onReload={(d) => {
+            st.presetDefaults = d;
+            const def = (d["base"] || {}).preset || "";
+            st.presetValue = st.presets.some((p) => p.id === def) ? def : "";
+            forceRender();
+          }}
+        />
+      ) : null}
 
       <section className="panel">
         <div className="panel-head">

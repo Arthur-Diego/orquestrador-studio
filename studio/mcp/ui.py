@@ -179,3 +179,18 @@ def show(client: StudioClient, images: list[dict], title: str = "") -> str:
     """Mostra mídia no chat (imagens/vídeos). images: [{url, label?, kind?}]."""
     _emit(client, {"kind": "show", "title": title, "media": images})
     return "ok"
+
+
+def navigate(client: StudioClient, target: str, reason: str = "") -> str:
+    """`[extensão]` Leva a tela do Studio para `target` (não bloqueia). ADR-038, adendo Wave 11.
+
+    `target`: id de etapa (`refs`, `mood`, `base`, ...), `"overview"`, ou área global
+    (`"moodboards"`, `"moodboards/<mbid>"`, `"creditos"`, `"characters"`). Quem decide se a
+    navegação acontece é o dock: o usuário pode ter desligado "seguir o assistente" e etapa
+    bloqueada nunca abre.
+    """
+    if not chat_id():
+        return "Sem interface de chat aqui: peça ao usuário para abrir a tela manualmente."
+    _emit(client, {"kind": "navigate", "target": target, "reason": reason})
+    return (f"Pedido de navegação para `{target}` enviado. Se a etapa estiver bloqueada, "
+            "o usuário verá o que falta; confira com `guide_step` antes de insistir.")

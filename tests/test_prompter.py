@@ -1,10 +1,11 @@
 """O 'bot' de prompts (Claude CLI) — comando montado, parse do JSON, fallback e regras da aula 009."""
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from studio.common import prompter
+from studio.common import clibin, prompter
 
 
 def _fake_claude(payload: dict, calls: list):
@@ -478,8 +479,10 @@ def test_script_is_strictly_additive_to_the_single_prompt_path(monkeypatch, tmp_
     """T1.13: regressão de R1 — papéis e caminho do prompt único intocados pelo roteiro.
 
     `character` `[extensão]` (ADR-039) é aditivo, como `script`: não altera mood/base/motion nem o
-    caminho do prompt único; por isso entra no conjunto esperado sem tocar as demais asserções."""
-    assert set(prompter.ROLES) == {"mood", "base", "motion", "script", "character"}
+    caminho do prompt único; por isso entra no conjunto esperado sem tocar as demais asserções.
+    `keyframe` `[extensão]` (Wave 11 · F06, §5.12) entra pelo mesmo motivo: papel novo, aditivo,
+    que reusa o BRIEFING do roteiro e o `_parse` do prompt único sem alterar nenhum dos dois."""
+    assert set(prompter.ROLES) == {"mood", "base", "motion", "script", "character", "keyframe"}
     assert "one single vibe" in prompter.ROLES["mood"] and prompter.PROMPT_FORMAT in prompter.ROLES["mood"]
     assert prompter.PROMPT_FORMAT in prompter.ROLES["base"]
     assert "40–90 words" in prompter.ROLES["motion"] and "Color grading:" not in prompter.ROLES["motion"]
@@ -549,3 +552,211 @@ def test_script_falls_back_to_one_shot_without_shot_prompts(monkeypatch, tmp_pat
                         arcs=["comeco", "desfecho"])
     for s in r["scenes"]:
         assert s["shots"] == 1 and s["shot_prompts"] == [s["image_prompt"]]
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.9/§5.10) — diagnóstico do binário `claude`. O `BIN` resolvido
+# em import time era a causa-raiz do defeito 1 do PRD: instalar o CLI com o Studio no ar não
+# adiantava nada. Todo teste aqui é sem rede e sem subprocess (ADR-008).
+# ==========================================================================================
+DIAG_KEYS = {"name", "available", "path", "searched_path", "checked_at", "hint"}
+
+
+def test_clibin_describe_reports_missing_binary_with_a_hint():
+    """F06.1: sem binário, as seis chaves, `available: False` e uma dica de como resolver."""
+    d = clibin.describe("claude", None)
+    assert set(d) == DIAG_KEYS
+    assert d["name"] == "claude" and d["available"] is False and d["path"] is None
+    assert d["hint"] and "run.sh" in d["hint"]
+    # Com binário resolvido não há conselho a dar: `hint` fica vazia mesmo se for passada.
+    ok = clibin.describe("claude", "/x/claude", hint="ignorada")
+    assert set(ok) == DIAG_KEYS
+    assert ok["available"] is True and ok["path"] == "/x/claude" and ok["hint"] == ""
+
+
+def test_clibin_describe_reports_the_path_of_this_process(monkeypatch):
+    """F06.2: `searched_path` é o PATH DESTE processo — é ele que decide, não o do terminal."""
+    monkeypatch.setenv("PATH", "/so/isto")
+    assert clibin.describe("claude", None)["searched_path"] == "/so/isto"
+    monkeypatch.delenv("PATH", raising=False)
+    assert clibin.describe("claude", None)["searched_path"] == ""
+
+
+def test_cli_status_describes_the_current_bin_without_touching_the_path(monkeypatch):
+    """F06.3: sem `refresh`, `cli_status` só descreve o `BIN` atual — o monkeypatch de `BIN`
+    continua sendo o jeito de fingir o CLI nos testes (ADR-008)."""
+    monkeypatch.setattr(prompter, "BIN", None)
+    monkeypatch.setattr(prompter.clibin, "which", lambda name="claude": "/nao/deveria/ser/chamado")
+    ausente = prompter.cli_status()
+    assert set(ausente) == DIAG_KEYS
+    assert ausente["available"] is False and ausente["path"] is None and prompter.BIN is None
+
+    monkeypatch.setattr(prompter, "BIN", "/x/claude")
+    presente = prompter.cli_status()
+    assert presente["available"] is True and presente["path"] == "/x/claude"
+
+
+def test_cli_status_refresh_reassigns_bin_without_restarting_the_process(monkeypatch):
+    """F06.4 (critério A2): o CLI instalado DEPOIS de o servidor subir passa a valer com
+    `refresh=True` — é isso que faz o botão "Verificar de novo" funcionar sem restart."""
+    monkeypatch.setattr(prompter, "BIN", None)
+    monkeypatch.setattr(prompter.clibin, "which", lambda name="claude": "/novo/claude")
+    d = prompter.cli_status(refresh=True)
+    assert d["available"] is True and d["path"] == "/novo/claude"
+    assert prompter.BIN == "/novo/claude"          # o módulo-global foi REATRIBUÍDO
+    assert prompter.available() is True            # e `available()` enxerga o binário novo
+
+
+def test_available_still_reads_bin_after_cli_status(monkeypatch):
+    """F06.5: `available()` continua sendo `BIN is not None` — nenhuma chamada existente muda."""
+    monkeypatch.setattr(prompter, "BIN", "/x/claude")
+    prompter.cli_status()
+    assert prompter.available() is True
+    monkeypatch.setattr(prompter.clibin, "which", lambda name="claude": None)
+    prompter.cli_status(refresh=True)
+    assert prompter.BIN is None and prompter.available() is False
+
+
+# ------------------------------------------------------------------------------------------
+# `run.sh` (critério A4): inspeção do script, sem subir servidor e sem subprocess (ADR-008).
+# ------------------------------------------------------------------------------------------
+def _run_sh_path_block() -> str:
+    """O trecho de `run.sh` que monta o PATH, do `for` até o `export PATH` (sem subir o uvicorn)."""
+    src = (Path(__file__).resolve().parents[1] / "run.sh").read_text()
+    ini = src.index("for _d in")
+    fim = src.index("export PATH") + len("export PATH")
+    return src[ini:fim]
+
+
+def _path_resultante(herdado: str, home: str) -> str:
+    """Roda SÓ o bloco de PATH num `sh` limpo e devolve o PATH que ele produz.
+
+    Executar em vez de inspecionar o texto: a asserção textual antiga (`valor.startswith('"$PATH')`)
+    aprovava qualquer expansão que começasse com `$PATH` e reprovava a correção do elemento vazio,
+    ou seja, media a FORMA do script em vez do que ele faz (rodada de review 001, issue_006)."""
+    import subprocess
+    script = _run_sh_path_block() + '\nprintf "%s" "$PATH"\n'
+    r = subprocess.run(["/bin/sh", "-c", script], capture_output=True, text=True,
+                       env={"PATH": herdado, "HOME": home} if herdado else {"HOME": home})
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_run_sh_appends_user_bin_dirs_after_the_inherited_path(tmp_path):
+    """Critério A4: `$HOME/.local/bin` entra, e o PATH do usuário continua NA FRENTE."""
+    home = str(tmp_path)
+    got = _path_resultante("/usr/bin:/bin", home)
+    assert got.startswith("/usr/bin:/bin"), f"prepend proibido (FDD §10, Risco 6): {got}"
+    assert f"{home}/.local/bin" in got.split(":")
+
+
+def test_run_sh_never_puts_the_current_directory_on_the_path(tmp_path):
+    """Um elemento VAZIO de PATH é o diretório atual no POSIX — e `run.sh` já fez `cd` no repo.
+
+    Regressão da rodada de review 001 (issue_006): com o PATH herdado vazio — o caso `env -i`, que
+    é justamente o cenário "fora de um shell interativo" que o bloco existe para cobrir — o
+    `PATH="$PATH:$_d"` produzia um dois-pontos INICIAL, e qualquer arquivo com nome de binário na
+    raiz do repositório virava executável por nome para o processo do servidor."""
+    home = str(tmp_path)
+    for herdado in ("", "/usr/bin:/bin"):
+        got = _path_resultante(herdado, home)
+        assert "" not in got.split(":"), f"elemento vazio (= diretório atual) no PATH: {got!r}"
+        assert not got.startswith(":") and not got.endswith(":") and "::" not in got
+
+
+def test_run_sh_does_not_duplicate_a_dir_the_user_already_has(tmp_path):
+    """Diretório já presente fica ONDE o usuário o pôs — o `case` de dedup existe para isso."""
+    home = str(tmp_path)
+    got = _path_resultante(f"{home}/.local/bin:/usr/bin", home)
+    assert got.split(":").count(f"{home}/.local/bin") == 1
+    assert got.startswith(f"{home}/.local/bin:/usr/bin")
+
+
+# ------------------------------------------------------------------------------------------
+# `[extensão]` Wave 11 · F06 (FDD §5.12, Risco 5): papel `keyframe` — UM prompt de imagem por foto.
+# Todo teste finge o binário `claude` (`prompter.BIN` + `subprocess.run`), sem rede (ADR-008).
+# ------------------------------------------------------------------------------------------
+def _keyframe_fake(calls: list, negative="plastic skin"):
+    """Bot OBEDIENTE do papel `keyframe`: devolve, dentro do `prompt`, o rig que lhe foi exigido.
+
+    É assim que o teste mede o PROMPTER: se `script_preset_block` não entrar na montagem, não há
+    rig no prompt enviado e o rig não volta no prompt devolvido (Risco 5 do FDD)."""
+    import re as _re
+
+    def run(args, capture_output=True, text=True, timeout=None, **kw):
+        prompt = args[2]
+        calls.append({"args": args, "prompt": prompt, "timeout": timeout})
+        rig = _re.search(r"MANDATORY RIG, IDENTICAL IN EVERY SCENE: (.+?) — write", prompt, _re.S)
+        rig_text = rig.group(1) if rig else "no fixed rig"
+        body = json.dumps({"prompt": f"A lone courier holds the can at chest height. Shot on {rig_text}.",
+                           "negative": negative, "camera": "irrelevante", "notes_pt": "duas linhas"})
+        return subprocess.CompletedProcess(args, 0, "Segue.\n```json\n" + body + "\n```\n", "")
+
+    return run
+
+
+def test_keyframe_role_shares_the_briefing_order_with_the_script(monkeypatch, tmp_path):
+    """Risco 5: os dois papéis citam a MESMA ordem de briefing, vinda da constante compartilhada.
+
+    A prova de que não é texto duplicado é a constante estar literalmente dentro dos dois papéis —
+    editar `BRIEFING_ORDER` muda os dois de uma vez, que é o ponto da mitigação."""
+    assert prompter.BRIEFING_ORDER in prompter.ROLES["script"]
+    assert prompter.BRIEFING_ORDER in prompter.ROLES["keyframe"]
+    # E o hint de modelo sai do MESMO mapa do roteiro, pelo mesmo acessor.
+    assert prompter.model_hint("nano_banana_2") == prompter.SCRIPT_MODEL_HINTS["nano_banana_2"]
+    assert prompter.model_hint("modelo-que-nao-existe") == prompter._SCRIPT_MODEL_HINT_FALLBACK
+
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _keyframe_fake(calls))
+    prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+    enviado = calls[0]["prompt"]
+    assert prompter.ROLES["keyframe"] in enviado and prompter.KEYFRAME_OUTPUT_SPEC in enviado
+    assert prompter.model_hint("nano_banana_2") in enviado
+    # Caminho do prompt ÚNICO: nada do roteiro (papel, output spec, timeout de 300 s) entra aqui.
+    assert prompter.ROLES["script"] not in enviado and prompter.SCRIPT_OUTPUT_SPEC not in enviado
+    assert calls[0]["timeout"] == prompter.TIMEOUT_S
+
+
+def test_keyframe_returns_one_prompt_and_carries_the_preset_rig_literally(monkeypatch, tmp_path):
+    """§5.12 + Risco 5: contrato de retorno e rig LITERAL no prompt devolvido quando há preset."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _keyframe_fake(calls))
+
+    sem = prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+    assert set(sem) == {"prompt", "negative", "source", "seconds", "preset"}
+    assert sem["source"] == "claude" and sem["preset"] is None and sem["prompt"].strip()
+    assert isinstance(sem["seconds"], float)
+    # Sem preset, nenhum bloco de rig entra no prompt enviado (invariante 7 do gate W3).
+    assert "MANDATORY RIG" not in calls[0]["prompt"]
+
+    com = prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"},
+                            preset="documentary-street")
+    rig = prompter.REALISM_PRESETS["documentary-street"]["rig"]
+    assert com["preset"] == "documentary-street"
+    for parte in (rig["camera"], rig["lens"], rig["format"]):
+        assert parte in com["prompt"], parte
+    # O bloco do rig é o MESMO do roteiro (reuso de `script_preset_block`, não uma segunda cópia).
+    assert prompter.script_preset_block("documentary-street") in calls[1]["prompt"]
+    # E os negativos do catálogo entram no campo `negative`, como em todo caminho com preset.
+    for termo in prompter.REALISM_PRESETS["documentary-street"]["negative"]:
+        assert termo in com["negative"], termo
+
+
+def test_keyframe_without_the_cli_raises_for_the_caller_to_fall_back(monkeypatch, tmp_path):
+    """§5.12: o fallback é do SERVIÇO, não do prompter — sem CLI o erro SOBE, não vira texto."""
+    monkeypatch.setattr(prompter, "BIN", None)
+    with pytest.raises(RuntimeError):
+        prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+
+    # Falha do bot (returncode ≠ 0) também sobe: o prompter nunca inventa prompt por conta própria.
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "boom"))
+    with pytest.raises(RuntimeError):
+        prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+
+    # Foto inexistente é erro do chamador, antes de qualquer subprocess.
+    with pytest.raises(FileNotFoundError):
+        prompter.keyframe([tmp_path / "nao-existe.png"], {})

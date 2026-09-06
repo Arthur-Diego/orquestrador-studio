@@ -33,8 +33,29 @@ export interface SbStatus {
   video_models?: string[];
   video_model_defaults?: { single: string; start_end: string };
   script_cli?: boolean;
+  /**
+   * `[extensão]` Wave 11 · F06 (FDD §5.2): diagnóstico do `claude` visto pelo processo do servidor.
+   * Campo ADITIVO — instalação antiga responde sem ele, e a tela cai em `script_cli`.
+   */
+  script_cli_diag?: ScriptCliDiag;
   script_preset_default?: string;
   script_models?: { label?: string; default?: boolean }[];
+}
+
+/**
+ * Diagnóstico do Claude CLI (`GET .../storyboard/script/cli`, FDD §5.1). A ausência do binário é
+ * DADO, não erro: a rota é sempre 200 e a tela mostra `searched_path` e `hint` em vez de esconder
+ * o botão do roteiro (critério A1).
+ */
+export interface ScriptCliDiag {
+  name: string;
+  available: boolean;
+  path: string | null;
+  /** `PATH` do processo do servidor — o que o usuário precisa ver para entender a falta. */
+  searched_path: string;
+  checked_at: string;
+  /** Dica pronta em pt-BR (instalar o Claude Code / subir pelo `run.sh`). */
+  hint: string;
 }
 
 export interface Idea {
@@ -43,12 +64,42 @@ export interface Idea {
   thumb?: string;
   prompt?: string;
   selected?: boolean;
+  /** Origem do candidato (`_idea_row`): `cli`, `local`, `upload`, `downloads`, `higgsfield`. */
+  source?: string;
+  /**
+   * `[extensão]` Wave 11 · F06: só o motor local preenche. Os valores REAIS que `local.py` grava
+   * são `"keyframe_local"` e `"inpaint_local"` (`null` para todo o resto) — o FDD §4 os
+   * parafraseia como `"inpaint"`, mas o badge tem de casar com o que vem do servidor.
+   */
+  local_kind?: string | null;
+}
+
+/**
+ * Procedência de UM campo da foto (`[extensão]` Wave 11 · F06, FDD §5.5). Metadado LENIENTE: o
+ * backend descarta em silêncio o que não bate com o enum, nunca 422.
+ */
+export interface PhotoOrigin {
+  /** `ia` (o Claude escreveu), `manual` (o usuário digitou) ou `template` (fallback sem CLI). */
+  source: string;
+  /** Preset de realismo RESOLVIDO na geração, ou `null` quando não houve preset. */
+  preset: string | null;
+  /** ISO 8601. */
+  at: string;
 }
 
 export interface PhotoEntry {
   video_desc?: string;
   video_prompt?: string;
+  image_prompt?: string;
   videos?: string[];
+  /**
+   * `[extensão]` preset de realismo por foto — TRÊS estados preservados literalmente
+   * (invariante 6 do FDD): chave **AUSENTE** herda o default da ação, `null` é "sem preset" e
+   * `"<id>"` é o id escolhido. Colapsar ausente em `null` apaga a rota de fuga do usuário.
+   */
+  preset?: string | null;
+  /** `{campo: {source, preset, at}}`, com `campo ∈ {image_prompt, video_prompt}`. */
+  origin?: Record<string, PhotoOrigin>;
 }
 
 export interface Scene {
@@ -60,14 +111,36 @@ export interface Scene {
   videos?: string[];
 }
 
+/**
+ * Escolha de preset de realismo no cliente — os MESMOS três valores do `<select>` do
+ * `RealismField`, para que a tela não precise de uma segunda tradução: `""` herda o padrão da
+ * campanha (a chave sai AUSENTE do corpo e do arquivo), `"off"` é "sem preset" (vira `null`) e
+ * qualquer outro valor é o id do catálogo. Invariante 6 do FDD.
+ */
+export type PresetChoice = string;
+
 /** Estado por foto no ponto único da tela (o mapa `photoState` do vanilla). */
 export interface PhotoMeta {
   desc: string;
+  /** Prompt de VÍDEO (motion) da foto — editável na tela desde a Wave 11 · F06. */
   prompt: string;
+  /** `[extensão]` prompt de IMAGEM (keyframe) da foto — o campo aberto novo (FDD §4 fluxo 4). */
+  imgPrompt: string;
   videos: string[];
-  /** `null` = o usuário não mexeu no seletor → vale o default resolvido; string = escolha explícita. */
-  preset: string | null;
+  /** Três estados (`PresetChoice`): `""` herda · `"off"` sem preset · `"<id>"` esse id. */
+  preset: PresetChoice;
+  /** Procedência por campo, relida do servidor e reenviada no `PUT /scenes` seguinte. */
+  origin: Record<string, PhotoOrigin>;
 }
+
+/**
+ * `defaults` de `GET /api/prompter/presets?pid=` — preset resolvido por ação, com a camada que
+ * venceu a cadeia projeto → global → código.
+ */
+export type PresetDefaults = Record<
+  string,
+  { preset?: string | null; source?: string } | undefined
+>;
 
 export interface RealismPreset {
   id: string;

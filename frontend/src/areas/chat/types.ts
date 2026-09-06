@@ -59,7 +59,10 @@ export interface ChatEvent {
     | "turn_ended"
     // …e os efêmeros, que chegam sem `seq` e nunca são gravados no `events.jsonl`.
     | "assistant_delta"
-    | "tool_progress";
+    | "tool_progress"
+    // Wave 11 · F08 (ADR-038, adendo): "leve a tela para `target`". Aditivo pela mesma razão que
+    // `state_changed` — lista aberta, cliente antigo cai no `default` do `switch` (Contrato 2).
+    | "navigate";
   widget?: string;
   media?: unknown;
   title?: string;
@@ -89,8 +92,19 @@ export interface ChatEvent {
   tool?: string;
   /** `turn_started`/`turn_ended`/`assistant_delta`/`tool_progress`: o turno a que o evento pertence. */
   turn_id?: string;
-  /** `turn_ended`: por que o turno terminou. */
-  reason?: ChatTurnReason;
+  /**
+   * Dois kinds usam este campo, com vocabulários diferentes — daí a união.
+   *
+   * - `turn_ended` (Wave 11 · F02): por que o turno terminou, do enum fechado `ChatTurnReason`.
+   * - `navigate` (Wave 11 · F08, Contrato 2): motivo curto e livre que o agente escreveu para
+   *   justificar a troca de tela ("referências escolhidas"). O backend manda sempre o campo,
+   *   vazio quando o agente o omite — daí ser exibido só quando tem conteúdo.
+   *
+   * Quem lê sabe de qual kind veio (o `switch` do `Message` já discriminou), então cada leitor
+   * estreita para o seu lado. Uma união é mais honesta aqui do que dois campos com nomes
+   * diferentes para a mesma palavra no protocolo.
+   */
+  reason?: ChatTurnReason | string;
   /** `tool_progress`: 0 a 100, ou `null` quando o job não expõe `total` (nunca inventar 0 %). */
   pct?: number | null;
   /** `tool_progress`: o `state` do job lido pelo servidor. */
@@ -98,6 +112,9 @@ export interface ChatEvent {
   /** `[extensão]` wave 11 (ADR-016): o `CostPreview` inteiro no `ask` de `confirm_cost`, para o
    *  dock renderizar as mesmas linhas do `CostSheet`. Ausente = cartão legado de duas linhas. */
   breakdown?: unknown;
+  // payload de `ask` de widget `open` (Wave 11 · F08, Contrato 3): dados de abertura da tela
+  // (`{"scene": "cena02"}`). Viajam pelo barramento de intenção do shell, não pelo hash.
+  params?: Record<string, unknown>;
   // payload de `ask` (Onda B): kind do widget, imagens, opções…
   [k: string]: unknown;
 }

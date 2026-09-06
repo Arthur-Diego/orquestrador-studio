@@ -134,6 +134,31 @@ def build_server(client: StudioClient | None = None):
     @t(name="storyboard_scene_pick", description="Mostra os candidatos de UMA cena para o USUÁRIO escolher e ORDENAR os frames (shot01, shot02…) e salva a ordem.")
     def storyboard_scene_pick(pid: str, scene: str) -> str:
         return actions.storyboard_scene_pick(cli, pid, scene)
+    @t(name="storyboard_script", description="Pede ao Claude um roteiro de N cenas para a campanha (`[extensão]`, sem crédito). Acompanhe com `storyboard_script_wait`.")
+    def storyboard_script(pid: str, count: int = 5, arc: str = "", preset: str | None = None) -> str:
+        return actions.storyboard_script(cli, pid, count, arc, preset)
+
+    @t(name="storyboard_script_wait", description="Espera o roteiro terminar e resume (cenas, arco, fotos por cena, preset). Depois use `storyboard_apply_script`.")
+    def storyboard_script_wait(pid: str, timeout: int = 600) -> str:
+        return actions.storyboard_script_wait(cli, pid, timeout=timeout)
+
+    @t(name="storyboard_apply_script", description="Aplica o roteiro às cenas (mode: empty|replace) DEPOIS de o usuário confirmar. Nunca escreve sem autorização.")
+    def storyboard_apply_script(pid: str, mode: str = "empty", with_prompts: bool = False,
+                                confirm: bool = False) -> str:
+        return actions.storyboard_apply_script(cli, pid, mode, with_prompts, confirm=confirm)
+
+    @t(name="storyboard_scene_attach", description="Mostra as ideias ESCOLHIDAS para o USUÁRIO anexar fotos a uma cena (soma à galeria, não substitui).")
+    def storyboard_scene_attach(pid: str, scene: str, ids: list[str] = []) -> str:  # noqa: B006
+        return actions.storyboard_scene_attach(cli, pid, scene, ids)
+
+    @t(name="storyboard_keyframe_prompt", description="Escreve com o Claude o prompt de uma foto da cena (kind: image|video) e grava. Sem crédito.")
+    def storyboard_keyframe_prompt(pid: str, scene: str, image: str, kind: str = "image",
+                                   description: str = "") -> str:
+        return actions.storyboard_keyframe_prompt(cli, pid, scene, image, kind, description)
+
+    @t(name="storyboard_keyframe_set", description="Grava à mão um campo de uma foto da cena (field: image_prompt|video_prompt|video_desc) e marca a origem como manual.")
+    def storyboard_keyframe_set(pid: str, scene: str, image: str, field: str, text: str) -> str:
+        return actions.storyboard_keyframe_set(cli, pid, scene, image, field, text)
 
     # ---------- ações: 5-9 ----------
     @t(name="animate_shots", description="Lista os shots prontos para animar (etapa 5).")
@@ -239,6 +264,14 @@ def build_server(client: StudioClient | None = None):
     def ui_choose_one(title: str, options: list[dict]) -> dict:
         return ui.choose_one(cli, title, options)
 
+    @t(name="ui_choose_images", description="Mostra uma grade de imagens para o USUÁRIO escolher (ele decide, ADR-038). images: [{id, thumb, label?}]; thumb é URL servível (/files, /mbfiles, /cfiles).")
+    def ui_choose_images(title: str, images: list[dict], minimum: int = 1, maximum: int | None = None) -> dict:
+        return ui.choose_images(cli, title, images, minimum, maximum)
+
+    @t(name="ui_form", description="Pede vários campos de uma vez ao usuário. fields: [{name, label, type?, value?}]. Retorna {answered, values}.")
+    def ui_form(title: str, fields: list[dict]) -> dict:
+        return ui.form(cli, title, fields)
+
     @t(name="ui_confirm", description="Pede uma confirmação sim/não ao usuário antes de uma ação relevante.")
     def ui_confirm(title: str, detail: str = "") -> dict:
         return ui.confirm(cli, title, detail)
@@ -251,9 +284,13 @@ def build_server(client: StudioClient | None = None):
     def ui_show(images: list[dict], title: str = "") -> str:
         return ui.show(cli, images, title)
 
-    @t(name="ui_open", description="Pede ao usuário para abrir uma tela do Studio (ex.: 'storyboard') e concluir a edição fina lá (máscara, timeline). target = id da etapa.")
-    def ui_open(target: str, title: str = "", detail: str = "", label: str = "") -> dict:
-        return ui.open_screen(cli, target, title, detail, label)
+    @t(name="ui_open", description="Pede ao usuário para abrir uma tela do Studio (ex.: 'storyboard') e concluir a edição fina lá (máscara, timeline). target = id da etapa. params = dados de abertura da tela (ex.: {'scene': 'cena02'}).")
+    def ui_open(target: str, title: str = "", detail: str = "", label: str = "", params: dict | None = None) -> dict:
+        return ui.open_screen(cli, target, title, detail, label, params)
+
+    @t(name="ui_navigate", description="Leva a tela do Studio para uma etapa ou área (não espera resposta). target: id de etapa, 'overview', 'moodboards' ou 'moodboards/<mbid>', 'creditos', 'characters'. Use depois de uma *_pick bem-sucedida, com o next_step que ela devolveu.")
+    def ui_navigate(target: str, reason: str = "") -> str:
+        return ui.navigate(cli, target, reason)
 
     # ---------- personagem e identidade (ADR-039) ----------
     @t(name="character_list", description="Lista os personagens da biblioteca (identidade reutilizável entre campanhas).")

@@ -11,12 +11,15 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import time
 from pathlib import Path
 
-BIN = shutil.which("claude")
+from . import clibin
+
+#: Nome do binário do CLI. Fonte única: `cli_status` re-resolve por ele e o diagnóstico o cita.
+CLI_NAME = "claude"
+BIN = clibin.which(CLI_NAME)
 #: Modelo usado pelo bot (pedido do dono do produto: Opus 4.8). Sobrescreva com STUDIO_PROMPTER_MODEL.
 MODEL = os.environ.get("STUDIO_PROMPTER_MODEL", "claude-opus-4-8")
 TIMEOUT_S = 180
@@ -113,6 +116,18 @@ PROMPT_FORMAT = (
     "STRUCTURE and level of detail, never the content):\n---\n" + EXAMPLE_PROMPT + "\n---"
 )
 
+#: `[extensão]` Wave 11 · F06 (FDD §5.12, Risco 5) — ORDEM DE BRIEFING de um prompt de imagem em
+#: formato "briefing de diretor de fotografia". Constante COMPARTILHADA entre `ROLES["script"]` (o
+#: roteiro, que escreve um destes por foto de cada cena) e `ROLES["keyframe"]` (uma foto só). É o
+#: que garante que o prompt escrito foto a foto tenha a MESMA estrutura dos `shot_prompts` do
+#: roteiro — sem isso, as fotos de uma mesma cena deixam de ser visualmente coesas. Texto único:
+#: nenhum dos dois papéis repete a lista à mão.
+BRIEFING_ORDER = (
+    "subject → action → environment → camera/lens/aperture from the given rig → lighting with ONE "
+    "dominant source → textures and real imperfections → color/film grade → composition + aspect "
+    "ratio → fidelity block → negatives"
+)
+
 # Papel do bot por tipo de prompt — o que a aula manda em cada caso.
 ROLES = {
     # Aula 009: o mood é a VIBE (luz, cor, atmosfera). O instrutor NÃO proíbe o produto — o mood
@@ -144,11 +159,24 @@ ROLES = {
         "script from the given brand images (base image first, then mood frames), following the course arc "
         "(opening → discovery → action → payoff) that is given to you per scene. For each scene return: a short "
         "scene description in Brazilian Portuguese (\"text\", max 500 chars) and ONE photorealistic image prompt in "
-        "English (\"image_prompt\") written as a director-of-photography briefing, in this order: subject → action → "
-        "environment → camera/lens/aperture from the given rig → lighting with ONE dominant source → textures and "
-        "real imperfections → color/film grade → composition + aspect ratio → fidelity block → negatives. Use "
+        "English (\"image_prompt\") written as a director-of-photography briefing, in this order: "
+        + BRIEFING_ORDER + ". Use "
         "EXACTLY the camera rig given below in EVERY scene (same body, same lens, same format — a commercial is shot "
         "with one rig). No contradictions between scenes: same product, same palette, same world."
+    ),
+    # `[extensão]` (ADR-004 + ADR-042 proposta, Wave 11 · F06 §5.12): NENHUMA aula ensina prompt de
+    # imagem por FOTO do storyboard — a aula 010 manda o aluno descrever a cena em pt-BR. Este papel
+    # escreve UM briefing de diretor de fotografia para UMA foto já anexada a uma cena, na MESMA
+    # ordem do roteiro (`BRIEFING_ORDER`) e com o MESMO rig (`script_preset_block`), para que as
+    # fotos de uma cena continuem visualmente coesas entre si e com os `shot_prompts` do roteiro.
+    # O texto é SUGESTÃO editável: quem grava no `scenes.json` é o usuário, pelo `PUT /scenes`.
+    "keyframe": (
+        "You are a commercial film director and director of photography. Task: write ONE photorealistic image "
+        "prompt in English for ONE photo (a single keyframe) of one scene of an advertising video, written as a "
+        "director-of-photography briefing, in this order: " + BRIEFING_ORDER + ". Stay faithful to the reference "
+        "photo you are given: same subject, same product, same palette, same world — the prompt re-generates THAT "
+        "photo with professional photographic control, it does not invent another scene. If a camera rig is given "
+        "below, use EXACTLY that rig (same body, same lens, same format — a commercial is shot with one rig)."
     ),
     # `[extensão]` (ADR-039): biblioteca de personagem. NENHUMA aula ensina character sheet — é
     # extensão. Este papel escreve o DESCRITOR CANÔNICO de identidade: os traços que NÃO podem
@@ -289,6 +317,23 @@ def _with_preset(result: dict, preset: str | None) -> dict:
 
 def available() -> bool:
     return BIN is not None
+
+
+def cli_status(refresh: bool = False) -> dict:
+    """`[extensão]` Diagnóstico do binário `claude` VISTO POR ESTE PROCESSO (FDD Wave 11 · F06 §5.10).
+
+    `refresh=True` re-resolve o PATH e **reatribui o módulo-global `BIN`** — é isso que faz o botão
+    "Verificar de novo" funcionar sem reiniciar o servidor (o `BIN` de import time é a causa-raiz do
+    defeito: instalar o CLI com o Studio no ar não adiantava nada).
+
+    `refresh=False` apenas descreve o `BIN` atual (leitura barata, sem tocar o sistema de arquivos),
+    então `monkeypatch.setattr(prompter, "BIN", …)` continua sendo o jeito de fingir o CLI nos
+    testes (ADR-008). `available()` segue sendo `BIN is not None` nos dois casos.
+    """
+    global BIN
+    if refresh:
+        BIN = clibin.which(CLI_NAME)
+    return clibin.describe(CLI_NAME, BIN)
 
 
 def _run(prompt: str, images: list[Path] | None = None, timeout: int = TIMEOUT_S) -> tuple[str, float]:
@@ -519,6 +564,18 @@ _SCRIPT_MODEL_HINT_FALLBACK = (
 )
 
 
+def model_hint(model_target: str) -> str:
+    """`[extensão]` Wave 11 · F06 (§5.12, Risco 5): hint de formato COMPARTILHADO pelos dois papéis.
+
+    `script` e `keyframe` escrevem o MESMO tipo de texto (briefing de diretor de fotografia) para o
+    MESMO modelo alvo, então o ajuste de formato por modelo tem de sair da mesma fonte
+    (`SCRIPT_MODEL_HINTS`) — duplicar o texto é exatamente como os dois divergiriam. O id não é
+    validado aqui: quem tem o catálogo (`SCRIPT_MODELS`) é o serviço da etapa 4, que devolve 422
+    antes de chamar o CLI.
+    """
+    return SCRIPT_MODEL_HINTS.get(model_target, _SCRIPT_MODEL_HINT_FALLBACK)
+
+
 def script_preset_block(preset_id: str) -> str:
     """Bloco de rig do ROTEIRO: o `preset_block` da provedora + o que o formato por cena exige.
 
@@ -637,10 +694,61 @@ def script(images: list[Path], brief: dict, preset: str | None = None, count: in
                      f"atmosphere of the script faithful to them:\n{paths}")
     parts.append(f"Write EXACTLY {count} scenes. Arc of each scene (decided by the server, keep it as given):\n{plan}")
     parts.append(f"Brief:\n{_brief_text(brief)}")
-    parts.append(SCRIPT_MODEL_HINTS.get(model_target, _SCRIPT_MODEL_HINT_FALLBACK))
+    parts.append(model_hint(model_target))
     parts.append(SCRIPT_OUTPUT_SPEC)
     text, secs = _run("\n\n".join(parts), images, timeout=SCRIPT_TIMEOUT_S)
     parsed = _parse_script(text, count, arcs)
     return {**parsed, "source": "claude", "seconds": secs, "preset": preset,
             "model_target": model_target, "count": len(parsed["scenes"]),
             "images": [str(p) for p in images]}
+
+
+# --------------------------------------------------------------------------------------------
+# Prompt de imagem por FOTO do storyboard `[extensão]` — Wave 11 · F06 (FDD §5.12, ADR-042 proposta).
+#
+# Caminho do PROMPT ÚNICO (papel `keyframe`, `_parse`), com o BRIEFING do roteiro: reusa
+# `BRIEFING_ORDER`, `script_preset_block` (o rig) e `model_hint` para não divergir dos
+# `shot_prompts` (Risco 5 do FDD). Nada aqui toca o roteiro nem os papéis da aula.
+# --------------------------------------------------------------------------------------------
+
+KEYFRAME_OUTPUT_SPEC = (
+    'Return ONLY a JSON object inside a ```json fence, with exactly these keys: "prompt" (the full '
+    'director-of-photography briefing for THIS single photo, one dense paragraph of natural English prose), '
+    '"negative" (comma-separated things to avoid, English), "camera" (camera/lens/aperture summary) and '
+    '"notes_pt" (2 short lines in Brazilian Portuguese explaining the choices). Write the briefing in "prompt" '
+    '(this is one photo, not a script: there is no "image_prompt" key and no list of scenes). No prose outside '
+    'the fence, no extra keys.'
+)
+
+
+def keyframe(images: list[Path], brief: dict, preset: str | None = None,
+             model_target: str = "nano_banana_2") -> dict:
+    """`[extensão]` UM prompt de imagem (briefing de diretor de fotografia) para UMA foto da cena.
+
+    Reusa a ordem de briefing (`BRIEFING_ORDER`) e o hint de modelo (`model_hint`) do roteiro, o
+    `script_preset_block` para o rig — com preset, o corpo/lente/formato saem literais no prompt —
+    e o `_parse` do prompt único para a resposta. Devolve `{prompt, negative, source, seconds,
+    preset}`, onde `seconds` é quanto o CLI demorou.
+
+    Sem CLI (ou com falha/timeout dele) `_run` levanta `RuntimeError` e a exceção SOBE: o fallback
+    para o template determinístico é do SERVIÇO da etapa (`sb.image_prompt`), não deste módulo —
+    o prompter nunca inventa texto por conta própria. Com `preset=None` nenhum bloco de rig entra.
+    """
+    images = [Path(p) for p in images][:MAX_IMAGES]
+    for p in images:
+        if not p.exists():
+            raise FileNotFoundError(str(p))
+    parts = [ROLES["keyframe"]]
+    if preset:
+        parts.append(script_preset_block(preset))
+    if images:
+        paths = "\n".join(f"- {p}" for p in images)
+        parts.append("First, read this photo file with the Read tool and study its subject, framing, light, "
+                     f"palette, materials and mood — the prompt must describe THIS photo:\n{paths}")
+    parts.append(f"Brief:\n{_brief_text(brief)}")
+    parts.append(model_hint(model_target))
+    parts.append(KEYFRAME_OUTPUT_SPEC)
+    text, secs = _run("\n\n".join(parts), images)
+    parsed = _parse(text)
+    return _with_preset({"prompt": parsed["prompt"], "negative": parsed["negative"],
+                         "source": "claude", "seconds": secs}, preset)

@@ -68,6 +68,14 @@ class StudioClient:
     def post(self, path: str, json: dict | None = None, *, params: dict | None = None) -> Any:
         return self._call("POST", path, json=json, params=params)
 
+    def put(self, path: str, json: dict | None = None, *, params: dict | None = None) -> Any:
+        """PUT (escrita idempotente de recurso inteiro, como `PUT .../storyboard/scenes`).
+
+        Mesmo `_call` do `post`: `>=400` vira `StudioApiError` com mensagem pronta e 204/corpo
+        vazio vira `None`. Só as tools que escrevem por gesto humano confirmado usam este método.
+        """
+        return self._call("PUT", path, json=json, params=params)
+
     def post_form(self, path: str, data: dict | None = None, files: dict | None = None) -> Any:
         return self._call("POST", path, data=data, files=files)
 

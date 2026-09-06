@@ -6,8 +6,8 @@ import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEBOUNCE_GUIA_MS } from "../api/guide-sync";
-import { emitStudioChange, useStudioChange } from "./events";
-import type { MudancaDoStudio } from "./events";
+import { emitNavIntent, emitStudioChange, useNavIntent, useStudioChange } from "./events";
+import type { MudancaDoStudio, NavIntent } from "./events";
 
 /** Atalho: o evento que o `ChatDock` publica a partir de um `state_changed` do WebSocket. */
 function mudanca(pid: string | null, step: string, tool = "refs_search"): MudancaDoStudio {
@@ -240,5 +240,120 @@ describe("useStudioChange — debounce por par (pid do evento, step) (UT-20)", (
     vi.advanceTimersByTime(DEBOUNCE_GUIA_MS * 3);
 
     expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+// UT-28…UT-32 do `_tests.md` (Wave 11 · F08, card #88): o barramento de INTENÇÃO DE ABERTURA.
+//
+// `useNavIntent` tem prefixo `use` porque é o nome publicado no Contrato 6 do FDD, mas não é um hook
+// React (nem estado, nem efeito — ver o comentário no `events.ts`). Chamá-la direto de dentro de um
+// `it` é o uso previsto, e é o que o `rules-of-hooks` não tem como saber.
+/* eslint-disable react-hooks/rules-of-hooks */
+describe("emitNavIntent/useNavIntent — intenção sticky de um disparo (UT-28…UT-31)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    // Nenhum teste pode deixar intenção retida para o seguinte: consumir é a única forma de limpar.
+    useNavIntent("storyboard", () => {});
+    useNavIntent("mood", () => {});
+    vi.useRealTimers();
+  });
+
+  const intencao = (target: string, params: Record<string, unknown> = {}): NavIntent => ({
+    pid: "campanha-a",
+    target,
+    params,
+    askId: "9f2c",
+  });
+
+  it("UT-28 publica e o consumidor do mesmo target recebe uma vez", () => {
+    const cb = vi.fn();
+    const i = intencao("storyboard", { scene: "cena02" });
+
+    emitNavIntent(i);
+    useNavIntent("storyboard", cb);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith(i);
+  });
+
+  it("UT-29 consumir limpa: o segundo consumidor não recebe nada", () => {
+    const cb1 = vi.fn();
+    const cb2 = vi.fn();
+
+    emitNavIntent(intencao("storyboard", { scene: "cena02" }));
+    useNavIntent("storyboard", cb1);
+    useNavIntent("storyboard", cb2);
+
+    expect(cb1).toHaveBeenCalledTimes(1);
+    expect(cb2).not.toHaveBeenCalled();
+  });
+
+  it("UT-30 consumidor de outro target não consome e deixa a intenção intacta", () => {
+    const errado = vi.fn();
+    const certo = vi.fn();
+    const i = intencao("storyboard", { scene: "cena02" });
+
+    emitNavIntent(i);
+    useNavIntent("mood", errado);
+    expect(errado).not.toHaveBeenCalled();
+
+    useNavIntent("storyboard", certo);
+    expect(certo).toHaveBeenCalledTimes(1);
+    expect(certo).toHaveBeenCalledWith(i);
+  });
+
+  it("UT-31 publicar duas vezes antes do consumo mantém só a última", () => {
+    const cb = vi.fn();
+    const ultima = intencao("storyboard", { scene: "cena05" });
+
+    emitNavIntent(intencao("storyboard", { scene: "cena02" }));
+    emitNavIntent(ultima);
+    useNavIntent("storyboard", cb);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith(ultima);
+    // E a fila não existe: depois do consumo não sobra a primeira.
+    const depois = vi.fn();
+    useNavIntent("storyboard", depois);
+    expect(depois).not.toHaveBeenCalled();
+  });
+
+  it("sem intenção publicada, consumir não chama ninguém", () => {
+    const cb = vi.fn();
+    useNavIntent("storyboard", cb);
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it("intenção sem askId e sem params é válida (a tela alvo só quer saber que foi pedida)", () => {
+    const cb = vi.fn();
+    const i: NavIntent = { pid: null, target: "moodboards", params: {} };
+
+    emitNavIntent(i);
+    useNavIntent("moodboards", cb);
+
+    expect(cb).toHaveBeenCalledWith(i);
+  });
+});
+
+describe("UT-32 os dois barramentos são independentes", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("publicar intenção não dispara assinante de mudança, e vice-versa", () => {
+    const daMudanca = vi.fn();
+    const daIntencao = vi.fn();
+    renderHook(() => useStudioChange("storyboard", daMudanca, { pid: "p1" }));
+
+    emitNavIntent({ pid: "p1", target: "storyboard", params: { scene: "cena02" } });
+    vi.advanceTimersByTime(DEBOUNCE_GUIA_MS);
+    expect(daMudanca).not.toHaveBeenCalled();
+
+    emitStudioChange({ pid: "p1", step: "storyboard", scope: "job" });
+    vi.advanceTimersByTime(DEBOUNCE_GUIA_MS);
+    expect(daMudanca).toHaveBeenCalledTimes(1);
+
+    // A intenção seguiu retida o tempo todo: o barramento de mudanças não a consumiu.
+    useNavIntent("storyboard", daIntencao);
+    expect(daIntencao).toHaveBeenCalledTimes(1);
   });
 });

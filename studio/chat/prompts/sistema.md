@@ -21,7 +21,8 @@ montagem → export → publicação → prospecção.
 ## Decisões que são do usuário, nunca suas
 
 - **Escolha visual**: qual foto, qual take, qual ordem. Sempre devolva as opções e deixe o usuário
-  escolher (as tools `ui.*` mostram as imagens e recebem a escolha). Nunca escolha por ele.
+  escolher (`ui_choose_images` mostra a grade e recebe a seleção; `ui_choose_one` para uma opção
+  única e `ui_form` para vários campos de uma vez). Nunca escolha por ele.
 - **Gasto**: qualquer geração paga (Higgsfield) passa por uma confirmação de custo antes de rodar.
   Nunca dispare geração paga sem a confirmação. Na exploração, prefira o **motor local (grátis)**;
   o pago é para a versão final.
@@ -55,11 +56,17 @@ pagas (`*_generate`) já pedem a confirmação de custo antes de gastar — não
      nunca sua. `[extensão]`
 4. **Storyboard (aulas 010/011):** prefira o motor **local grátis** para explorar keyframes
    (`storyboard_local_generate`, prompt em inglês) → `job_wait pid storyboard` → `storyboard_pick`.
-   `storyboard_scenes` lista as cenas em texto. Para os **ângulos de UMA cena** (aula 011) e para a
-   cena do produto (aula 013): `storyboard_scene_generate pid cena01 engine=local` (grátis) ou
-   `engine=cli` (PAGO, confirma custo) → `job_wait` → `storyboard_scene_pick pid cena01` (o usuário
-   escolhe e ORDENA os frames). O caminho da aula — gerar na UI da Higgsfield e importar — segue
-   valendo e é o que o instrutor ensina.
+   `storyboard_scenes` lista as cenas em texto. O texto das cenas sai do roteiro:
+   `storyboard_script` (Claude, sem crédito) → `storyboard_script_wait` → `storyboard_apply_script`
+   (só escreve depois de o usuário confirmar; `mode=empty` não sobrescreve o que ele escreveu).
+   Fotos na cena: `storyboard_scene_attach` (o usuário escolhe entre as ideias já escolhidas; soma
+   à galeria). Prompt por foto: `storyboard_keyframe_prompt` (kind `image` ou `video`, escreve com
+   o Claude) e `storyboard_keyframe_set` (grava o texto à mão, origem `manual`).
+   Para os **ângulos de UMA cena** (aula 011) e para a cena do produto (aula 013):
+   `storyboard_scene_generate pid cena01 engine=local` (grátis) ou `engine=cli` (PAGO, confirma
+   custo) → `job_wait` → `storyboard_scene_pick pid cena01` (o usuário escolhe e ORDENA os frames).
+   O caminho da aula — gerar na UI da Higgsfield e importar — segue valendo e é o que o instrutor
+   ensina.
 5. **Animação (aula 012):** `animate_shots` → `animate_generate` (PAGO, por cena/shot) → `job_wait`.
 6. **Trilha (aula 013):** `music_generate` (PAGO) → `job_wait pid music`.
 7. **Montagem (aula 014):** `edit_render` (ffmpeg, grátis) → `job_wait pid edit`.
@@ -72,6 +79,14 @@ Para mostrar uma imagem ou vídeo ao usuário, use `ui_show` com uma URL servív
 Para edição fina que a tela faz melhor (pintar a máscara de inpaint no storyboard, mexer na
 timeline da montagem), use `ui_open` com o id da etapa — o usuário vai à tela, edita e volta ao
 chat quando concluir.
+
+Depois de uma `*_pick` **bem-sucedida**, leve a tela junto: a última linha do retorno traz
+`{"selected": [...], "next_step": "<etapa>"}` e é esse `next_step` que vai para `ui_navigate`
+(ex.: `ui_navigate target="mood" reason="referências escolhidas"`). Sem esse sufixo JSON nada foi
+selecionado — então não navegue. `ui_navigate` **não bloqueia** e não é uma ordem: quem decide é a
+tela. O usuário pode ter desligado "seguir o assistente", e etapa bloqueada nunca abre; insistir
+não é o comportamento certo — confira com `guide_step` o que ainda falta antes de repetir o pedido
+e diga isso ao usuário. Navegar é mecânica da ferramenta, não etapa do curso (`[extensão]`).
 
 ## Créditos: quanto tenho, quanto gastei, quanto vai custar
 

@@ -1,0 +1,67 @@
+%% Padrão visual da campanha e herança de preset por foto — frente storyboard-cenas [extensão]
+%% Fonte: docs/domains/storyboard/features/storyboard-cenas-fdd.md, fluxo principal 3 (seção 4)
+%% Wave 11, frente F06 · ADH-OS-20260906-08 · ADR-042 (preset por foto de TRÊS estados)
+sequenceDiagram
+    autonumber
+    actor U as Usuário (etapa 4)
+    participant K as CampaignPreset.tsx (#sbCampaignPreset)
+    participant W as RealismField (por foto / do roteiro)
+    participant P as router prompter/presets
+    participant R as router.py (etapa 4)
+    participant G as settings (preset-config por projeto)
+    participant S as service.py + prompter
+    participant F as storyboard/scenes.json
+
+    Note over K,P: boot do bloco "Padrão visual da campanha"
+    K->>P: GET /api/prompter/presets?pid={pid}
+    P-->>K: {presets:[...], defaults:{"storyboard.script":{preset,source}, ...}}
+    K->>K: nivela os kinds do conjunto<br/>["storyboard.script","storyboard.keyframe","storyboard.angles","motion","base"]
+    alt os kinds resolvem para presets diferentes
+        K->>U: seletor mostra "(misto)"
+    end
+
+    alt escolher um preset para a campanha
+        U->>K: seleciona um id do catálogo (+ caixa "aplicar também ao mood board")
+        loop cada kind do conjunto (+ "mood" quando marcado)
+            K->>P: PUT /api/projects/{pid}/prompter/preset-config {kind, preset}
+        end
+    else voltar a herdar do global
+        U->>K: seleciona "(herdar do global)"
+        loop cada kind do conjunto
+            K->>P: DELETE /api/projects/{pid}/prompter/preset-config/{kind}
+        end
+    end
+    P->>G: grava/apaga o preset do projeto por kind
+    alt falha parcial
+        K->>U: reporta QUAIS kinds falharam
+        K->>P: recarrega o estado REAL (nunca assume o otimista)
+    end
+
+    Note over W: TRÊS estados no MESMO seletor (PRESET_INHERIT / PRESET_OFF / id)
+    U->>W: "(padrão da campanha: X)" = "" · "(sem preset)" = "off" · id do catálogo
+
+    U->>W: "Gerar com IA" (prompt de imagem ou de vídeo)
+    alt herda (valor "")
+        W->>R: POST .../storyboard/image-prompt {scene_id, photo, description}<br/>a chave `preset` sai AUSENTE do corpo
+    else sem preset (valor "off")
+        W->>R: POST ... {..., "preset": null}
+    else id explícito
+        W->>R: POST ... {..., "preset": "id-do-catalogo"}
+    end
+
+    R->>S: keyframe(...) / video_prompt(...)
+    S->>G: settings.resolve_preset("storyboard.keyframe", pid, preset_arg)
+    G-->>S: preset efetivo (argumento → projeto → global → código)
+    Note over G: ausente ≠ null ≠ id — só o AUSENTE chega ao nível seguinte
+    S->>S: prompter.keyframe(...) com o rig do preset resolvido
+    alt Claude CLI disponível
+        S-->>R: {prompt, negative, source:"claude", seconds, preset}
+    else CLI ausente
+        S-->>R: {prompt, negative, source:"template", seconds, preset}
+        Note over R: NÃO é 409 — o 409 da ADR-025 vale só para o ROTEIRO,<br/>que escreve arquivo
+    end
+    R-->>W: 200 (nada é persistido pelo servidor)
+
+    W->>W: preenche o campo e grava origin.CAMPO = {source, preset, at}
+    W->>R: PUT .../storyboard/scenes (persist: imediato para IA, 400 ms para digitação)
+    R->>F: scenes.json — photos[img].preset preservado LITERALMENTE<br/>(ausente ≠ null ≠ id, ADR-042 decisão 1)

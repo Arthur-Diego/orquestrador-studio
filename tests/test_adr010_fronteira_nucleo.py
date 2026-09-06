@@ -86,6 +86,29 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "`response_model`). ADR-036/037/038/040, ADR-004, ADR-010/031/032.",
         ("frontend/", "studio/web/"),
     ),
+    "feature/adh-os-20260906-08-storyboard-cenas": (
+        "`[extensão]` Wave 11 · frente F06 storyboard-cenas, cards #95 (leitura A), #97, #98 e "
+        "#99 (ADH-OS-20260906-08): a etapa 4 é plugin e todo o trabalho vive em "
+        "`studio/etapas/storyboard/`, `studio/storyboard/`, `studio/common/` e `studio/mcp/` "
+        "(fora de NUCLEO_PREFIXOS). O núcleo tocado é só o GERADO: `frontend/src/api/schema.ts` "
+        "e `frontend/openapi.json` (rotas novas `GET .../storyboard/script/cli` e "
+        "`POST .../storyboard/image-prompt`, `make frontend-schema`) e o bundle "
+        "`studio/web/dist/` (`make frontend-build`), mais o item OPCIONAL C5 em "
+        "`frontend/src/areas/creditos/`. Nada de `frontend/src/shell/`, `studio/app.py`, "
+        "`steps.py`, `config.py`, `higgsfield.py` ou `etapas/__init__.py`. "
+        "ADR-042, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
+    "feature/adh-os-20260906-10-chat-navigate": (
+        "`[extensão]` Wave 11 · frente F08 — o assistente leva a tela junto, card #88 "
+        "(ADH-OS-20260906-10), FDD `docs/domains/chat/features/chat-navigate-fdd.md`. A tool "
+        "`ui_navigate` e o registro das tools vivem em `studio/mcp/` (fora de NUCLEO_PREFIXOS). "
+        "No núcleo, só `frontend/src/areas/chat/**`, `frontend/src/shell/"
+        "{router.ts,events.ts}` e o bundle `studio/web/dist/`. Nenhuma rota nova, nenhum modelo "
+        "Pydantic novo (logo `schema.ts` fica intocado), nenhuma etapa tocada. "
+        "ADR-038/010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-04-chat-feedback": (
         "`[extensão]` Feedback ao vivo do assistente de chat (Wave 11 · F02), card #86 "
         "ADH-OS-20260906-04: ciclo de vida do turno, streaming de texto e progresso de job em "

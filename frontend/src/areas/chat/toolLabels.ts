@@ -37,6 +37,14 @@ export const TOOL_LABELS: Record<string, string> = {
   // `tests/test_chat_tool_labels.py`.
   storyboard_scene_generate: "Gerando os ângulos da cena",
   storyboard_scene_pick: "Aguardando você escolher e ordenar os frames da cena",
+  // Wave 11 · F06 (roteiro, fotos nas cenas e prompts por foto): rótulos acrescentados no rebase,
+  // cobrados pela guarda `tests/test_chat_tool_labels.py`.
+  storyboard_script: "Escrevendo o roteiro das cenas",
+  storyboard_script_wait: "Esperando o roteiro ficar pronto",
+  storyboard_apply_script: "Aguardando você confirmar o roteiro nas cenas",
+  storyboard_scene_attach: "Aguardando você escolher as fotos da cena",
+  storyboard_keyframe_prompt: "Escrevendo o prompt da foto",
+  storyboard_keyframe_set: "Gravando o texto que você escreveu",
   animate_shots: "Listando os shots para animar",
   animate_generate: "Animando o take",
   music_generate: "Gerando a trilha",
@@ -49,6 +57,11 @@ export const TOOL_LABELS: Record<string, string> = {
   ui_notify: "Avisando você",
   ui_show: "Mostrando as imagens",
   ui_open: "Aguardando você concluir na tela",
+  // Wave 11 · F08 (card #88): as três tools que a frente da navegação acrescentou.
+  // `ui_navigate` não bloqueia — o rótulo diz o que ela PEDE, não o que ela espera.
+  ui_navigate: "Levando você para a tela",
+  ui_choose_images: "Aguardando sua escolha das imagens",
+  ui_form: "Aguardando você preencher",
   character_list: "Listando os personagens",
   character_create: "Criando o personagem",
   character_explore: "Explorando variações do personagem",

@@ -59,10 +59,15 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     "escolhidas_list": None,
     # interação com o humano (ADR-038): não muda artefato
     "ui_choose_one": None,
+    "ui_choose_images": None,
+    "ui_form": None,
     "ui_confirm": None,
     "ui_notify": None,
     "ui_show": None,
     "ui_open": None,
+    # pedido de troca de tela (F08 da wave 11, card ADH-OS-20260906-10): quem decide navegar é o
+    # dock, e navegar não escreve artefato nenhum.
+    "ui_navigate": None,
     # ---------- ação: a etapa vem do argumento da tool ----------
     "job_wait": (DO_ARGUMENTO, "candidates"),
     # ---------- ação: etapas do método do curso ----------
@@ -81,6 +86,16 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     # dispara-job / grava-seleção das duas acima, só que com o recorte de UMA cena.
     "storyboard_scene_generate": ("storyboard", "job"),
     "storyboard_scene_pick": ("storyboard", "selection"),
+    # Roteiro, fotos e prompts por foto (frente F06 da wave 11, card ADH-OS-20260906-08).
+    # `storyboard_script` dispara o job do roteiro; `_wait` termina com `script.json` novo em
+    # disco (artefato que o painel 02 mostra, logo `candidates`); as outras quatro escrevem
+    # `scenes.json` por gesto humano confirmado (ADR-025/038), logo `selection`.
+    "storyboard_script": ("storyboard", "job"),
+    "storyboard_script_wait": ("storyboard", "candidates"),
+    "storyboard_apply_script": ("storyboard", "selection"),
+    "storyboard_scene_attach": ("storyboard", "selection"),
+    "storyboard_keyframe_prompt": ("storyboard", "selection"),
+    "storyboard_keyframe_set": ("storyboard", "selection"),
     "animate_generate": ("animate", "job"),
     "music_generate": ("music", "job"),
     "edit_render": ("edit", "job"),
