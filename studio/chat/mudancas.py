@@ -65,6 +65,10 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     "base_pick": ("base", "selection"),
     "storyboard_local_generate": ("storyboard", "job"),
     "storyboard_pick": ("storyboard", "selection"),
+    # Geração por cena (frente F09 da wave 11, card ADH-OS-20260906-09): mesma etapa, mesmo par
+    # dispara-job / grava-seleção das duas acima, só que com o recorte de UMA cena.
+    "storyboard_scene_generate": ("storyboard", "job"),
+    "storyboard_scene_pick": ("storyboard", "selection"),
     "animate_generate": ("animate", "job"),
     "music_generate": ("music", "job"),
     "edit_render": ("edit", "job"),
