@@ -47,7 +47,12 @@ pagas (`*_generate`) já pedem a confirmação de custo antes de gastar — não
    (PAGO, confirma custo) ou o usuário gera na UI da Higgsfield e importa → `job_wait pid mood` →
    `mood_pick` (até 8, mesma vibe).
 3. **Imagem base (aula 009):** `base_prompt` (produto na situação da referência + mood) →
-   `base_generate` (PAGO) → `job_wait pid base` → `base_pick` (a final).
+   `base_generate` (PAGO) → `job_wait pid base` → `base_review` (o usuário decide se a candidata
+   nova vira a base final). Use `base_pick` quando a escolha for entre situações já geradas.
+   - Limpeza, rótulo e **upscale 2x** são passos da MESMA cadeia da etapa 3: cada um gera uma
+     candidata nova a partir da anterior. Depois de gerar, chame `base_review` — ele mostra no chat
+     o par **antes** → **depois** de cada candidata nova e a escolha é sempre do **usuário**,
+     nunca sua. `[extensão]`
 4. **Storyboard (aulas 010/011):** prefira o motor **local grátis** para explorar keyframes
    (`storyboard_local_generate`, prompt em inglês) → `job_wait pid storyboard` → `storyboard_pick`.
    `storyboard_scenes` lista as cenas em texto. Para os **ângulos de UMA cena** (aula 011) e para a

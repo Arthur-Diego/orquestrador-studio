@@ -104,6 +104,13 @@ def build_server(client: StudioClient | None = None):
     def base_pick(pid: str, note: str = "") -> str:
         return actions.base_pick(cli, pid, note)
 
+    @t(name="base_review",
+       description="[extensão] Mostra no chat as candidatas NOVAS da etapa 3 (upscale/limpeza/rótulo) com "
+                   "antes→depois e deixa o USUÁRIO definir a imagem base final. "
+                   "Chame depois de base_generate + job_wait.")
+    def base_review(pid: str, ids: list[str] = [], note: str = "") -> str:  # noqa: B006
+        return actions.base_review(cli, pid, ids or None, note)
+
     # ---------- ações: 4 Storyboard (motor local grátis) ----------
     @t(name="storyboard_local_generate", description="Gera keyframes do storyboard no motor LOCAL (grátis, Flux). Prompt em inglês.")
     def storyboard_local_generate(pid: str, prompt: str, count: int = 4, model: str = "flux-schnell") -> str:

@@ -72,6 +72,9 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     "mood_pick": ("mood", "selection"),
     "base_generate": ("base", "job"),
     "base_pick": ("base", "selection"),
+    # `[extensão]` F11 (card ADH-OS-20260906-13): a revisão das candidatas NOVAS grava a base
+    # final pelo mesmo `POST /base/select` do `base_pick` — mesmo par etapa/escopo.
+    "base_review": ("base", "selection"),
     "storyboard_local_generate": ("storyboard", "job"),
     "storyboard_pick": ("storyboard", "selection"),
     # Geração por cena (frente F09 da wave 11, card ADH-OS-20260906-09): mesma etapa, mesmo par

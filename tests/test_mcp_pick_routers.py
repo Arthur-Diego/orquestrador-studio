@@ -137,6 +137,34 @@ def test_base_pick_contra_o_router_com_dict_e_thumb_prefixado(client, studio_env
     assert client.get(f"/api/projects/{pid}/base/candidates").json()["final"] == "base/base_final.png"
 
 
+
+# ---------- 3b · base_review `[extensão]` (F11: mesmo dict + thumb prefixado, com `ui.show`) ----------
+def test_base_review_contra_o_router_no_fallback_de_candidatas(client, studio_env, pid, monkeypatch):
+    """`base_review` lê DUAS rotas reais (`/base/job` e `/base/candidates`) e monta URLs de arquivo,
+    não só de thumb — é o caminho que o cliente fake não consegue provar."""
+    ids = semeia(studio_env, pid, "base")
+    assert client.get(f"/api/projects/{pid}/base/job").json()["new_candidates"] == []   # sem job
+
+    visto: dict = {"shows": [], "asks": []}
+    monkeypatch.setattr(ui, "show",
+                        lambda cli, images, title="": visto["shows"].append(images) or "ok")
+    monkeypatch.setattr(ui, "choose_images",
+                        lambda cli, title, images, **kw: visto["asks"].append({"images": images, **kw})
+                        or {"answered": True, "selected": ids[:1]})
+    out = actions.base_review(mcp_client(client), pid, note="a escolhida")
+
+    ask = visto["asks"][0]
+    assert ask["minimum"] == 0 and ask["maximum"] == 1
+    assert [a["label"] for a in ask["actions"]][-1] == "Manter a atual"
+    thumbs_respondem_200(client, {"images": ask["images"]})
+    for item in visto["shows"][0]:                       # o `ui.show` serve ARQUIVO, não thumb
+        assert client.get(item["url"]).status_code == 200
+        assert item["url"].count("base/candidates") == 1
+    assert out.splitlines()[0].startswith("Imagem base atualizada:")
+    assert sufixo(out) == {"selected": ids[:1],
+                           "next_step": client.get(f"/api/projects/{pid}/guide").json()["current"]}
+    assert client.get(f"/api/projects/{pid}/base/candidates").json()["final"] == "base/base_final.png"
+
 # ---------- 4 · storyboard (DICT `{ideas}` + thumb prefixado — bug encontrado na conferência) ----------
 def test_storyboard_pick_contra_o_router_com_chave_ideas(client, studio_env, pid, monkeypatch):
     ids = semeia(studio_env, pid, "storyboard")
