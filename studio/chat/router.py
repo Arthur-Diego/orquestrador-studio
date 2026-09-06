@@ -12,7 +12,7 @@ import os
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from . import runtime, sessions
+from . import mudancas, runtime, sessions
 from .uibridge import bridge
 
 router = APIRouter()
@@ -238,10 +238,15 @@ async def _handle_user(chat_id: str, msg: dict) -> None:
 
 async def _run_turn(chat_id: str, text: str) -> None:
     sessions.patch(chat_id, status="running")
+    # `tool_call.id` -> mudança pendente. Local ao turno: um `tool_call` órfão morre com ele.
+    pendentes: dict[str, tuple[str, str, str, str | None]] = {}
     try:
         async for event in runtime.run_turn(chat_id, text):
             seq = sessions.append_event(chat_id, event)
             await manager.push(chat_id, {"seq": seq, **event})
+            for mudanca in mudancas.derivar(event, pendentes):
+                seq = sessions.append_event(chat_id, mudanca)
+                await manager.push(chat_id, {"seq": seq, **mudanca})
         sessions.patch(chat_id, status="idle")
     except asyncio.CancelledError:
         sessions.append_event(chat_id, {"kind": "notify", "level": "info", "text": "Turno interrompido."})

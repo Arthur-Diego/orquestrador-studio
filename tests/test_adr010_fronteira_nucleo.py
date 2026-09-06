@@ -70,6 +70,15 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-05-chat-sync": (
+        "`[extensão]` Wave 11 · frente F03 — sincronização chat → telas, card #87 "
+        "(ADH-OS-20260906-05): o evento `state_changed` nasce em `studio/chat/` e o mapa de tools "
+        "em `studio/chat/mudancas.py` (fora de NUCLEO_PREFIXOS). O núcleo tocado é `frontend/` "
+        "(barramento `src/shell/events.ts`, ponte no ChatDock, export de `invalidarGuia`) e o "
+        "bundle `studio/web/dist/`. Nenhuma rota nova, nenhum modelo Pydantic novo, nenhuma etapa "
+        "tocada. ADR-036/040, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-09-storyboard-geracao-por-cena": (
         "`[extensão]` Geração por cena na etapa 4 (ângulos da aula 011 + cena do produto da aula "
         "013), card ADH-OS-20260906-09 (wave 11): liga os endpoints por cena que já existiam e "
