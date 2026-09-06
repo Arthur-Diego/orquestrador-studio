@@ -71,7 +71,7 @@ A decisão de navegação é uma função pura, testada sem React e sem rede.
 - **UT-27** A resolução de rota das áreas globais (`parseHash` + o efeito) continua igual: os casos
   já cobertos pelo arquivo permanecem verdes.
 
-## Unidade — barramento de intenção (vitest, `frontend/src/shell/events.test.ts`)
+## Unidade — barramento de intenção (vitest, `frontend/src/shell/events.test.ts`, arquivo EXISTENTE)
 
 - **UT-28** `emitNavIntent({pid, target: "storyboard", params: {scene: "cena02"}})` seguido de
   `useNavIntent("storyboard", cb)` chama `cb` uma vez com a intenção.
@@ -83,9 +83,12 @@ A decisão de navegação é uma função pura, testada sem React e sem rede.
 - **UT-32** Os casos existentes de `emitStudioChange`/`useStudioChange` (F03) continuam verdes: o
   arquivo só cresce.
 
-## Componente — dock (vitest, `frontend/src/areas/chat/ChatDock.test.tsx`, arquivo NOVO)
+## Componente — dock (vitest, `frontend/src/areas/chat/ChatDock.test.tsx`, arquivo EXISTENTE)
 
-Com `QueryClient` real e WebSocket falso; `navigate` e o `POST /emit` observados por spy.
+O arquivo já existe (criado pela F03) e traz a classe `FakeWS` local, o `vi.stubGlobal("WebSocket", …)`,
+o `vi.mock("../../shell/events", …)` e o array mutável `replay` do transcript. Os casos abaixo
+**crescem** esse arquivo reusando esse setup; nenhum teste existente pode regredir. `navigate` e o
+`POST /emit` são observados por spy, com `QueryClient` real.
 
 - **CT-01** Evento `navigate` ao vivo, toggle ligado, etapa navegável e liberada: `navigate(target)`
   é chamado **exatamente uma vez**, e a chamada acontece **depois** de o refresh do guia terminar
