@@ -59,10 +59,15 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     "escolhidas_list": None,
     # interação com o humano (ADR-038): não muda artefato
     "ui_choose_one": None,
+    "ui_choose_images": None,
+    "ui_form": None,
     "ui_confirm": None,
     "ui_notify": None,
     "ui_show": None,
     "ui_open": None,
+    # pedido de troca de tela (F08 da wave 11, card ADH-OS-20260906-10): quem decide navegar é o
+    # dock, e navegar não escreve artefato nenhum.
+    "ui_navigate": None,
     # ---------- ação: a etapa vem do argumento da tool ----------
     "job_wait": (DO_ARGUMENTO, "candidates"),
     # ---------- ação: etapas do método do curso ----------
