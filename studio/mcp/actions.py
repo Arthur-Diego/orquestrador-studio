@@ -9,6 +9,7 @@ Dois padrões estruturantes:
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from . import ui
@@ -303,7 +304,31 @@ def character_explore(client: StudioClient, cid: str, brief: str, count: int = 6
         client.post(f"/api/characters/{cid}/explore", {"brief": brief, "count": count})
     except StudioApiError as e:
         return str(e)
-    return f"Explorando {count} variações no motor local (grátis). Acompanhe e depois use `character_pick`."
+    return (f"Explorando {count} variações no motor local (grátis). É GPU, leva alguns minutos — "
+            "espere com `character_wait` e então use `character_pick`.")
+
+
+def character_wait(client: StudioClient, cid: str, timeout: int = 900, _sleep=time.sleep) -> str:
+    """Espera o job do personagem (explore/sheet) terminar. O job de personagem tem URL própria
+    (`/api/characters/{cid}/job`), diferente da URL de job das etapas — por isso NÃO use `job_wait`."""
+    deadline = time.monotonic() + max(1, timeout)
+    viu_running = False
+    while time.monotonic() < deadline:
+        try:
+            g = client.get(f"/api/characters/{cid}/job")
+        except StudioApiError as e:
+            return str(e)
+        state = g.get("state", "idle")
+        if state == "running":
+            viu_running = True
+            _sleep(2.0)
+            continue
+        if state == "idle" and not viu_running:
+            return f"Personagem {cid}: nenhum trabalho em andamento."
+        if g.get("error"):
+            return f"Personagem {cid}: o job falhou — {g['error']}"
+        return f"Personagem {cid}: {g.get('mode', 'job')} concluído ({g.get('added', 0)}/{g.get('total', 0)})."
+    return f"Personagem {cid}: ainda gerando após {timeout}s (rode `character_wait` de novo)."
 
 
 def character_pick(client: StudioClient, cid: str) -> str:
@@ -314,6 +339,15 @@ def character_pick(client: StudioClient, cid: str) -> str:
         return str(e)
     imgs = _char_images(cid, "explore", cands)
     if not imgs:
+        try:
+            job = client.get(f"/api/characters/{cid}/job")
+        except StudioApiError:
+            job = {}
+        if job.get("state") == "running":
+            return (f"Ainda gerando as variações ({job.get('added', 0)}/{job.get('total', 0)}). "
+                    "Espere com `character_wait` e chame de novo.")
+        if job.get("error"):
+            return f"A exploração falhou: {job['error']} (o motor local/ComfyUI está no ar?)."
         return "Nenhuma variação ainda — rode `character_explore` antes."
     ans = ui.choose_images(client, "Escolha o personagem (o que você acertou)", imgs, minimum=1, maximum=1)
     if ans.get("no_ui"):
@@ -329,7 +363,7 @@ def character_sheet(client: StudioClient, cid: str) -> str:
         client.post(f"/api/characters/{cid}/sheet", {})
     except StudioApiError as e:
         return str(e)
-    return "Gerando o character sheet (frente, 3/4, perfil, corpo inteiro) no motor local. Acompanhe o job."
+    return "Gerando o character sheet (frente, 3/4, perfil, corpo inteiro) no motor local. Espere com `character_wait`."
 
 
 def character_apply(client: StudioClient, pid: str, cid: str) -> str:

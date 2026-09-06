@@ -185,6 +185,10 @@ def build_server(client: StudioClient | None = None):
     def character_sheet(cid: str) -> str:
         return actions.character_sheet(cli, cid)
 
+    @t(name="character_wait", description="Espera o job de um personagem (explore/sheet) terminar. USE ESTA (não job_wait) para personagem — a URL do job é própria.")
+    def character_wait(cid: str, timeout: int = 900) -> str:
+        return actions.character_wait(cli, cid, timeout=timeout)
+
     @t(name="character_apply", description="Aplica o personagem a uma campanha: o descritor passa a reancorar os prompts das etapas 3–5.")
     def character_apply(pid: str, cid: str) -> str:
         return actions.character_apply(cli, pid, cid)
