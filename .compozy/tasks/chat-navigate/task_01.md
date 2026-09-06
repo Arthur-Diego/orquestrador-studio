@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Tool ui_navigate, registro das tools ui.* e params do ui_open
 type: backend
 complexity: medium
@@ -48,20 +48,20 @@ o turno — a decisão de navegar continua sendo do dock (ADR-038).
 
 ## Subtasks
 
-- [ ] 1.1 Acrescentar o helper `navigate` em `studio/mcp/ui.py` com o docstring da §5 do
+- [x] 1.1 Acrescentar o helper `navigate` em `studio/mcp/ui.py` com o docstring da §5 do
       `_techspec.md` (Contrato 1), marcado como parte da extensão do chat.
-- [ ] 1.2 Registrar a tool `ui_navigate` em `studio/mcp/server.py`, ao final do bloco `ui.*`.
-- [ ] 1.3 Registrar as tools `ui_choose_images` e `ui_form` (helpers que já existem em `ui.py` e
+- [x] 1.2 Registrar a tool `ui_navigate` em `studio/mcp/server.py`, ao final do bloco `ui.*`.
+- [x] 1.3 Registrar as tools `ui_choose_images` e `ui_form` (helpers que já existem em `ui.py` e
       nunca foram expostos ao agente).
-- [ ] 1.4 Expor `params` no registro de `ui_open` e repassá-lo ao helper.
-- [ ] 1.5 Classificar as três tools novas em `studio/chat/mudancas.py::TOOL_STEPS` como `None`,
+- [x] 1.4 Expor `params` no registro de `ui_open` e repassá-lo ao helper.
+- [x] 1.5 Classificar as três tools novas em `studio/chat/mudancas.py::TOOL_STEPS` como `None`,
       junto das demais `ui_*`.
-- [ ] 1.6 Escrever os casos de `tests/test_mcp_ui.py` atribuídos abaixo, reusando a classe `Fake`
+- [x] 1.6 Escrever os casos de `tests/test_mcp_ui.py` atribuídos abaixo, reusando a classe `Fake`
       que o arquivo já tem.
-- [ ] 1.7 Criar `tests/test_mcp_server_registry.py` com um cliente falso e uma leitura do
+- [x] 1.7 Criar `tests/test_mcp_server_registry.py` com um cliente falso e uma leitura do
       `list_tools()` do servidor construído por `build_server`, cobrindo presença das tools e o
       schema de entrada de `ui_navigate` e `ui_open`.
-- [ ] 1.8 Rodar `pytest tests/test_mcp_ui.py tests/test_mcp_server_registry.py tests/test_chat_mudancas.py -x -q`
+- [x] 1.8 Rodar `pytest tests/test_mcp_ui.py tests/test_mcp_server_registry.py tests/test_chat_mudancas.py -x -q`
       e depois `make verify`, registrando o output real.
 
 ## Implementation Details
@@ -123,13 +123,13 @@ transcript com `sessions.append_event` e empurra pelo WebSocket acrescentando `s
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] UT-01, UT-02, UT-03, UT-04 — `ui.navigate`: posta o evento certo, degrada sem `STUDIO_CHAT_ID`,
+- [x] UT-01, UT-02, UT-03, UT-04 — `ui.navigate`: posta o evento certo, degrada sem `STUDIO_CHAT_ID`,
       `reason` sempre presente, exceção do POST engolida.
-- [ ] UT-05 — `ui.open_screen` com e sem `params`.
-- [ ] UT-06, UT-07, UT-08 — registro do servidor: presença das três tools e schemas de entrada de
+- [x] UT-05 — `ui.open_screen` com e sem `params`.
+- [x] UT-06, UT-07, UT-08 — registro do servidor: presença das três tools e schemas de entrada de
       `ui_navigate` e `ui_open`.
-- [ ] UT-09 — classificação das tools novas em `TOOL_STEPS`.
-- [ ] GT-02 — a guarda de drift por AST (`tests/test_chat_mudancas.py`) continua verde.
+- [x] UT-09 — classificação das tools novas em `TOOL_STEPS`.
+- [x] GT-02 — a guarda de drift por AST (`tests/test_chat_mudancas.py`) continua verde.
 
 ## Success Criteria
 

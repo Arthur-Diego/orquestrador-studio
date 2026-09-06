@@ -232,6 +232,14 @@ def build_server(client: StudioClient | None = None):
     def ui_choose_one(title: str, options: list[dict]) -> dict:
         return ui.choose_one(cli, title, options)
 
+    @t(name="ui_choose_images", description="Mostra uma grade de imagens para o USUÁRIO escolher (ele decide, ADR-038). images: [{id, thumb, label?}]; thumb é URL servível (/files, /mbfiles, /cfiles).")
+    def ui_choose_images(title: str, images: list[dict], minimum: int = 1, maximum: int | None = None) -> dict:
+        return ui.choose_images(cli, title, images, minimum, maximum)
+
+    @t(name="ui_form", description="Pede vários campos de uma vez ao usuário. fields: [{name, label, type?, value?}]. Retorna {answered, values}.")
+    def ui_form(title: str, fields: list[dict]) -> dict:
+        return ui.form(cli, title, fields)
+
     @t(name="ui_confirm", description="Pede uma confirmação sim/não ao usuário antes de uma ação relevante.")
     def ui_confirm(title: str, detail: str = "") -> dict:
         return ui.confirm(cli, title, detail)
@@ -244,9 +252,13 @@ def build_server(client: StudioClient | None = None):
     def ui_show(images: list[dict], title: str = "") -> str:
         return ui.show(cli, images, title)
 
-    @t(name="ui_open", description="Pede ao usuário para abrir uma tela do Studio (ex.: 'storyboard') e concluir a edição fina lá (máscara, timeline). target = id da etapa.")
-    def ui_open(target: str, title: str = "", detail: str = "", label: str = "") -> dict:
-        return ui.open_screen(cli, target, title, detail, label)
+    @t(name="ui_open", description="Pede ao usuário para abrir uma tela do Studio (ex.: 'storyboard') e concluir a edição fina lá (máscara, timeline). target = id da etapa. params = dados de abertura da tela (ex.: {'scene': 'cena02'}).")
+    def ui_open(target: str, title: str = "", detail: str = "", label: str = "", params: dict | None = None) -> dict:
+        return ui.open_screen(cli, target, title, detail, label, params)
+
+    @t(name="ui_navigate", description="Leva a tela do Studio para uma etapa ou área (não espera resposta). target: id de etapa, 'overview', 'moodboards' ou 'moodboards/<mbid>', 'creditos', 'characters'. Use depois de uma *_pick bem-sucedida, com o next_step que ela devolveu.")
+    def ui_navigate(target: str, reason: str = "") -> str:
+        return ui.navigate(cli, target, reason)
 
     # ---------- personagem e identidade (ADR-039) ----------
     @t(name="character_list", description="Lista os personagens da biblioteca (identidade reutilizável entre campanhas).")

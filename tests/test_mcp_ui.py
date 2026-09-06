@@ -158,3 +158,61 @@ def test_emissao_nova_substitui_a_anterior(monkeypatch):
     assert velho != novo
     assert ui.consume_confirm_token(velho, action="Gerar", model="m") is False
     assert ui.consume_confirm_token(novo, action="Gerar", model="m") is True
+# ---------- `ui.navigate` (F08 chat-navigate, ADR-038 adendo Wave 11) ----------
+#: A string exata que a tool devolve fora da aba do chat (E1 da matriz de erros do FDD).
+SEM_UI = "Sem interface de chat aqui: peça ao usuário para abrir a tela manualmente."
+
+
+def test_ut01_navigate_posta_o_evento_no_emit(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake()
+    txt = ui.navigate(cli, "mood", reason="x")
+    assert cli.posts == [("/api/chats/cid/emit",
+                          {"event": {"kind": "navigate", "target": "mood", "reason": "x"}})]
+    assert isinstance(txt, str) and "mood" in txt
+
+
+def test_ut02_navigate_sem_chat_id_degrada_e_nao_posta(monkeypatch):
+    monkeypatch.delenv("STUDIO_CHAT_ID", raising=False)
+    cli = Fake()
+    assert ui.navigate(cli, "mood") == SEM_UI
+    assert cli.posts == []  # não chamou a ponte
+
+
+def test_ut03_navigate_sem_reason_posta_string_vazia(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake()
+    ui.navigate(cli, "mood")
+    _, body = cli.posts[0]
+    assert body["event"]["reason"] == ""  # o campo existe sempre no evento
+
+
+def test_ut04_navigate_engole_a_falha_do_post(monkeypatch):
+    """E2/A12: a ponte pode cair, o turno do agente não."""
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+
+    class Explode(Fake):
+        def post(self, path, json=None, params=None):
+            raise RuntimeError("loopback caiu")
+
+    cli = Explode()
+    esperado = ui.navigate(Fake(), "mood", reason="x")  # a mesma string do caminho feliz
+    assert ui.navigate(cli, "mood", reason="x") == esperado
+    assert esperado != SEM_UI
+
+
+def test_ut05_open_screen_leva_params_quando_dados(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "done": True})
+    ui.open_screen(cli, "storyboard", params={"scene": "cena02"})
+    _, body = cli.posts[0]
+    assert body["payload"]["widget"] == "open"
+    assert body["payload"]["params"] == {"scene": "cena02"}
+
+
+def test_ut05_open_screen_sem_params_manda_dicionario_vazio(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "done": True})
+    ui.open_screen(cli, "storyboard")
+    _, body = cli.posts[0]
+    assert body["payload"]["params"] == {}  # comportamento atual preservado
