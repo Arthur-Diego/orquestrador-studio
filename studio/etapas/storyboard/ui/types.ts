@@ -33,8 +33,29 @@ export interface SbStatus {
   video_models?: string[];
   video_model_defaults?: { single: string; start_end: string };
   script_cli?: boolean;
+  /**
+   * `[extensão]` Wave 11 · F06 (FDD §5.2): diagnóstico do `claude` visto pelo processo do servidor.
+   * Campo ADITIVO — instalação antiga responde sem ele, e a tela cai em `script_cli`.
+   */
+  script_cli_diag?: ScriptCliDiag;
   script_preset_default?: string;
   script_models?: { label?: string; default?: boolean }[];
+}
+
+/**
+ * Diagnóstico do Claude CLI (`GET .../storyboard/script/cli`, FDD §5.1). A ausência do binário é
+ * DADO, não erro: a rota é sempre 200 e a tela mostra `searched_path` e `hint` em vez de esconder
+ * o botão do roteiro (critério A1).
+ */
+export interface ScriptCliDiag {
+  name: string;
+  available: boolean;
+  path: string | null;
+  /** `PATH` do processo do servidor — o que o usuário precisa ver para entender a falta. */
+  searched_path: string;
+  checked_at: string;
+  /** Dica pronta em pt-BR (instalar o Claude Code / subir pelo `run.sh`). */
+  hint: string;
 }
 
 export interface Idea {
@@ -101,7 +122,10 @@ export type PresetChoice = string;
 /** Estado por foto no ponto único da tela (o mapa `photoState` do vanilla). */
 export interface PhotoMeta {
   desc: string;
+  /** Prompt de VÍDEO (motion) da foto — editável na tela desde a Wave 11 · F06. */
   prompt: string;
+  /** `[extensão]` prompt de IMAGEM (keyframe) da foto — o campo aberto novo (FDD §4 fluxo 4). */
+  imgPrompt: string;
   videos: string[];
   /** Três estados (`PresetChoice`): `""` herda · `"off"` sem preset · `"<id>"` esse id. */
   preset: PresetChoice;

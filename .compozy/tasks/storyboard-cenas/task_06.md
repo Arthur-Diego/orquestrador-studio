@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Frontend — campos abertos de prompt por foto e roteiro visível na tela
 type: frontend
 complexity: critical
@@ -80,23 +80,23 @@ Build Order (§11) e a última da cadeia de frontend.
 
 ## Subtasks
 
-- [ ] 6.1 Transformar o prompt de vídeo em `textarea.sbVidPromptField`, mantendo
+- [x] 6.1 Transformar o prompt de vídeo em `textarea.sbVidPromptField`, mantendo
       `<p class="txt sbVidPromptText" hidden>` como espelho sincronizado dentro de
       `.sbVidPromptBox`.
-- [ ] 6.2 Acrescentar `textarea.sbImgPromptField` com "Gerar com IA", "Copiar" e chip de origem.
-- [ ] 6.3 Ligar `button.sbImgPrompt` a `POST .../storyboard/image-prompt`.
-- [ ] 6.4 Implementar a confirmação "Substituir?" pós-resposta, só sobre origem `manual`.
-- [ ] 6.5 Implementar o `persist` com debounce de 400 ms na digitação e imediato no resultado da
+- [x] 6.2 Acrescentar `textarea.sbImgPromptField` com "Gerar com IA", "Copiar" e chip de origem.
+- [x] 6.3 Ligar `button.sbImgPrompt` a `POST .../storyboard/image-prompt`.
+- [x] 6.4 Implementar a confirmação "Substituir?" pós-resposta, só sobre origem `manual`.
+- [x] 6.5 Implementar o `persist` com debounce de 400 ms na digitação e imediato no resultado da
       IA, gravando `origin.<campo>`.
-- [ ] 6.6 Renomear o botão do roteiro e torná-lo sempre habilitado.
-- [ ] 6.7 Criar o bloco `#sbScriptCliDiag` (`role="status"`, `aria-live="polite"`) e o botão
+- [x] 6.6 Renomear o botão do roteiro e torná-lo sempre habilitado.
+- [x] 6.7 Criar o bloco `#sbScriptCliDiag` (`role="status"`, `aria-live="polite"`) e o botão
       `#sbScriptCliRecheck`.
-- [ ] 6.8 Implementar o clique com `available` falso: `refresh=true` e, se virar verdadeiro,
+- [x] 6.8 Implementar o clique com `available` falso: `refresh=true` e, se virar verdadeiro,
       seguir para o job na mesma interação.
-- [ ] 6.9 Acrescentar a caixa "trazer também os prompts de imagem" a `applyScript`.
-- [ ] 6.10 Acrescentar o botão "usar este" por `shot_prompt` no painel 02.
-- [ ] 6.11 Fazer "Gerar animação" usar o campo e "Usar no motor local" preencher `#sbLocalPrompt`.
-- [ ] 6.12 Escrever `studio/etapas/storyboard/ui/ideation-prompts.test.tsx` e estender
+- [x] 6.9 Acrescentar a caixa "trazer também os prompts de imagem" a `applyScript`.
+- [x] 6.10 Acrescentar o botão "usar este" por `shot_prompt` no painel 02.
+- [x] 6.11 Fazer "Gerar animação" usar o campo e "Usar no motor local" preencher `#sbLocalPrompt`.
+- [x] 6.12 Escrever `studio/etapas/storyboard/ui/ideation-prompts.test.tsx` e estender
       `storyboard.test.tsx` com o rótulo novo e a ordem dos painéis.
 
 ## Implementation Details
@@ -191,41 +191,41 @@ Pontos exatos do código (levantados nesta worktree):
 
 Não há `_tests.md` — casos completos abaixo. Vitest com jsdom, sem rede.
 
-- [ ] `.sbVidPromptBox` contém **os dois**: o `textarea.sbVidPromptField` visível e o
+- [x] `.sbVidPromptBox` contém **os dois**: o `textarea.sbVidPromptField` visível e o
       `<p class="txt sbVidPromptText">` com `hidden`, e o `textContent` do `<p>` acompanha o valor
       do campo depois de digitar e depois de gerar (C-STORYBOARD-27/33).
-- [ ] `.sbVidPrompt` continua sendo um `button` (não um campo).
-- [ ] `genVideoPrompt` com `video_desc` **vazio** ainda faz o POST (C-STORYBOARD-28) e a mensagem
+- [x] `.sbVidPrompt` continua sendo um `button` (não um campo).
+- [x] `genVideoPrompt` com `video_desc` **vazio** ainda faz o POST (C-STORYBOARD-28) e a mensagem
       de erro da API aparece.
-- [ ] `button.sbImgPrompt` chama `POST .../storyboard/image-prompt` com `scene_id`, `photo` e o
+- [x] `button.sbImgPrompt` chama `POST .../storyboard/image-prompt` com `scene_id`, `photo` e o
       `description` vindo do `video_desc` quando a instrução está vazia.
-- [ ] A resposta com `source: "claude"` preenche o campo e o chip de origem mostra `ia` com o
+- [x] A resposta com `source: "claude"` preenche o campo e o chip de origem mostra `ia` com o
       preset; com `source: "template"`, o chip mostra `template` (critérios D1 e D4).
-- [ ] Gerar com IA sobre um campo de origem `manual` pede confirmação **depois** da resposta;
+- [x] Gerar com IA sobre um campo de origem `manual` pede confirmação **depois** da resposta;
       recusar mantém o texto do usuário intacto e oferece "Copiar" (critério D3).
-- [ ] Gerar com IA sobre um campo de origem `ia` **não** pergunta nada.
-- [ ] Digitar no campo dispara **um** `PUT /scenes` após o debounce de 400 ms (timers falsos), não
+- [x] Gerar com IA sobre um campo de origem `ia` **não** pergunta nada.
+- [x] Digitar no campo dispara **um** `PUT /scenes` após o debounce de 400 ms (timers falsos), não
       um por tecla; o corpo traz `origin.<campo>.source == "manual"` (critério D2).
-- [ ] O resultado da IA persiste **imediatamente**, sem esperar o debounce.
-- [ ] O botão `#sbScriptGen` está no DOM, **habilitado**, com o texto "Gerar cenas (roteiro por
+- [x] O resultado da IA persiste **imediatamente**, sem esperar o debounce.
+- [x] O botão `#sbScriptGen` está no DOM, **habilitado**, com o texto "Gerar cenas (roteiro por
       Claude) [extensão]" mesmo com `script_cli: false` (critérios A1 e A5).
-- [ ] Com `script_cli_diag.available: false`, `#sbScriptCliDiag` existe com `role="status"`,
+- [x] Com `script_cli_diag.available: false`, `#sbScriptCliDiag` existe com `role="status"`,
       `aria-live="polite"` e mostra o `searched_path` e a `hint` (critério A1).
-- [ ] Clicar no botão com `available: false` chama `.../script/cli?refresh=true` e, quando a
+- [x] Clicar no botão com `available: false` chama `.../script/cli?refresh=true` e, quando a
       resposta volta `false`, **não** dispara `POST /script/generate`.
-- [ ] Clicar no botão com `available: false` e a re-checagem voltando `true` segue para o
+- [x] Clicar no botão com `available: false` e a re-checagem voltando `true` segue para o
       `POST /script/generate` **na mesma interação** (critério A2 no cliente).
-- [ ] `#sbScriptCliRecheck` chama a rota com `refresh=true` e atualiza o bloco.
-- [ ] O painel 02 precede o painel 03 no DOM (asserção mantida e estendida, critério A5).
-- [ ] "Aplicar às cenas vazias" com "trazer também os prompts de imagem" preenche o `image_prompt`
+- [x] `#sbScriptCliRecheck` chama a rota com `refresh=true` e atualiza o bloco.
+- [x] O painel 02 precede o painel 03 no DOM (asserção mantida e estendida, critério A5).
+- [x] "Aplicar às cenas vazias" com "trazer também os prompts de imagem" preenche o `image_prompt`
       da k-ésima foto de cada cena a partir de `shot_prompts[k]`, **sem tocar** em cenas com texto,
       e marca `origin.image_prompt.source == "ia"` (critério D5).
-- [ ] `shot_prompts` sobrando **não** criam foto nenhuma e continuam listados no painel 02.
-- [ ] "usar este" grava o texto no `image_prompt` da foto correspondente (critério D6); numa cena
+- [x] `shot_prompts` sobrando **não** criam foto nenhuma e continuam listados no painel 02.
+- [x] "usar este" grava o texto no `image_prompt` da foto correspondente (critério D6); numa cena
       sem a foto `k`, a tela avisa quantas fotos a cena tem.
-- [ ] "Gerar animação" com `video_prompt` **escrito à mão e nunca gerado** inicia o fluxo de custo
+- [x] "Gerar animação" com `video_prompt` **escrito à mão e nunca gerado** inicia o fluxo de custo
       sem bloquear; com o campo vazio, avisa (critério D7).
-- [ ] "Usar no motor local" preenche `#sbLocalPrompt` com o `image_prompt` da foto e move o foco
+- [x] "Usar no motor local" preenche `#sbLocalPrompt` com o `image_prompt` da foto e move o foco
       (critério D8).
 
 ## Success Criteria

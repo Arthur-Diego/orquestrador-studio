@@ -35,6 +35,7 @@ import type {
   PresetDefaults,
   RealismPreset,
   Scene,
+  ScriptCliDiag,
   ScriptScene,
   SbStatus,
 } from "./types";
@@ -49,6 +50,19 @@ const MOTION_ACTION = "motion";
 const SCRIPT_COUNT_DEFAULT = 5;
 const SCRIPT_COUNT_MAX = 10;
 const SCRIPT_IDEA_IMAGES = 3;
+/**
+ * Rótulo do botão principal do roteiro (critério A5). Ele diz o que o clique PRODUZ — cenas — e
+ * não só a ferramenta; era "Gerar roteiro (Claude) [extensão]" e ficava `disabled` sem o CLI, o
+ * que escondia da tela a única funcionalidade que o card #95 pede que fique visível.
+ */
+const SCRIPT_GEN_LABEL = "Gerar cenas (roteiro por Claude) [extensão]";
+/** Pergunta da substituição (FDD §4 fluxo 4, item 4). Só aparece sobre texto de origem `manual`. */
+const SUBSTITUIR_Q = "Substituir o texto que você escreveu?";
+/**
+ * Espera da digitação antes de gravar (FDD §4 fluxo 4, item 5). O resultado da IA NÃO espera: ele
+ * persiste na hora, porque é o único conteúdo da tela que o usuário não consegue redigitar.
+ */
+const PERSIST_DEBOUNCE_MS = 400;
 const AREA_NO_CLI =
   "Sem CLI: marque e gere pelo inpaint na própria interface da Higgsfield (ilimitado no plano).";
 
@@ -72,6 +86,12 @@ interface PhotoDrag {
 }
 
 const pkey = (sid: string, img: string) => `${sid}:${img}`;
+
+/** Mapa sem uma chave, preservando a identidade quando a chave não existe (evita render à toa). */
+function semChave<T>(mapa: Record<string, T>, k: string): Record<string, T> {
+  if (!(k in mapa)) return mapa;
+  return Object.fromEntries(Object.entries(mapa).filter(([kk]) => kk !== k));
+}
 
 /**
  * Chave de origem de uma ideia para o filtro e para o badge. O motor local produz DOIS tipos com
@@ -113,7 +133,14 @@ const filtrarIdeias = (list: Idea[], filtro: string) =>
 /** Ordem preservada, sem repetir — o `dedup` do FDD §4 fluxo 2, passo 4. */
 const dedup = (list: string[]) => [...new Set(list)];
 /** Foto ainda sem estado na tela: herda o padrão da campanha e não tem procedência. */
-const EMPTY_PHOTO_META: PhotoMeta = { desc: "", prompt: "", videos: [], preset: PRESET_INHERIT, origin: {} };
+const EMPTY_PHOTO_META: PhotoMeta = {
+  desc: "",
+  prompt: "",
+  imgPrompt: "",
+  videos: [],
+  preset: PRESET_INHERIT,
+  origin: {},
+};
 const DIACRITICS = /[̀-ͯ]/g;
 const momOf = (label: string) =>
   String(label || "")
@@ -178,6 +205,7 @@ function seedPhotos(sc: Scene[]): PhotoState {
       out[pkey(s.id || "", img)] = {
         desc: e.video_desc || "",
         prompt: e.video_prompt || "",
+        imgPrompt: e.image_prompt || "",
         videos: (e.videos || []).slice(),
         // Os três estados voltam do arquivo do jeito que foram: chave ausente herda, `null` é a
         // rota de fuga "(sem preset)" e a string é o id escolhido (invariante 6).
@@ -202,10 +230,29 @@ function originOf(source: string | undefined, preset: string | null | undefined)
   };
 }
 
+/** Campos da foto que carregam procedência (`origin`), com o nome que vai para o arquivo. */
+type PromptField = "image_prompt" | "video_prompt";
+
+/**
+ * Procedência de um texto DIGITADO pelo usuário. É ela que faz a pergunta "Substituir?" existir:
+ * sem marcar `manual` na digitação, uma regeração posterior apagaria o texto autoral em silêncio.
+ */
+function manualOrigin(): PhotoOrigin {
+  return { source: "manual", preset: null, at: new Date().toISOString() };
+}
+
+/** Texto do chip `.sbPromptOrigin` (critério D4): `ia` mostra também o preset que gerou. */
+function originLabel(o?: PhotoOrigin): string {
+  if (!o || !o.source) return "sem origem";
+  if (o.source === "ia") return `ia · ${o.preset || "sem preset"}`;
+  return o.source;
+}
+
 /** Uma foto no corpo do `PUT /scenes`. `preset` e `origin` são opcionais de propósito (§5.5). */
 interface PhotoPayload {
   video_desc: string;
   video_prompt: string;
+  image_prompt: string;
   videos: string[];
   preset?: string | null;
   origin?: Record<string, PhotoOrigin>;
@@ -221,6 +268,7 @@ function buildPayload(sc: Scene[], ph: PhotoState): Scene[] {
       const photo: PhotoPayload = {
         video_desc: m.desc || "",
         video_prompt: m.prompt || "",
+        image_prompt: m.imgPrompt || "",
         videos: (m.videos || []).slice(),
       };
       // A chave `preset` só existe no corpo quando o usuário decidiu algo: herdar é a AUSÊNCIA
@@ -294,6 +342,15 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
 
   // roteiro por Claude
   const [scriptCli, setScriptCli] = useState(false);
+  /** Diagnóstico do `claude` (FDD §5.1). `null` = servidor antigo, sem o campo aditivo. */
+  const [scriptCliDiag, setScriptCliDiag] = useState<ScriptCliDiag | null>(null);
+  /** Caixa "trazer também os prompts de imagem" do painel 02 (critério D5). */
+  const [scriptWithPrompts, setScriptWithPrompts] = useState(false);
+  /**
+   * Sugestões RECUSADAS na pergunta "Substituir?", por `sid:img:campo`. Recusar não pode custar a
+   * geração: o texto do usuário fica de pé e a sugestão continua copiável (FDD §4 fluxo 4, item 4).
+   */
+  const [suggestions, setSuggestions] = useState<Record<string, string>>({});
   const [scriptPresetDefault, setScriptPresetDefault] = useState("");
   const [scriptModels, setScriptModels] = useState<{ label?: string; default?: boolean }[]>([]);
   const [scriptSelectedIdeas, setScriptSelectedIdeas] = useState(0);
@@ -362,6 +419,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     setVideoModels(st.video_models || []);
     setVideoModelDefaults(st.video_model_defaults || { single: "", start_end: "" });
     setScriptCli(!!st.script_cli);
+    setScriptCliDiag(st.script_cli_diag || null);
     setScriptPresetDefault(st.script_preset_default || "");
     setScriptModels(st.script_models || []);
     setScriptSelectedIdeas(+st.selected || 0);
@@ -548,6 +606,14 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
    */
   const pendingPayload = useRef<Scene[] | null>(null);
   const putBusy = useRef(false);
+  /** Timer da digitação (400 ms). Toda persistência IMEDIATA o cancela: ela já é mais nova. */
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelDebounce = useCallback(() => {
+    if (debounceTimer.current === null) return;
+    clearTimeout(debounceTimer.current);
+    debounceTimer.current = null;
+  }, []);
+  useEffect(() => () => cancelDebounce(), [cancelDebounce]);
 
   const flushScenes = useCallback(async () => {
     if (putBusy.current) return;
@@ -569,11 +635,25 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
    */
   const persist = useCallback(
     (sc: Scene[], ph: PhotoState) => {
+      cancelDebounce();
       pendingPayload.current = buildPayload(sc, ph);
       void flushScenes();
     },
-    [flushScenes],
+    [flushScenes, cancelDebounce],
   );
+
+  /**
+   * Persistência de DIGITAÇÃO: um `PUT` por pausa de 400 ms, não um por tecla (FDD §4 fluxo 4,
+   * item 5). Lê as refs só na hora de disparar, então o payload sai com tudo que foi digitado — e
+   * com qualquer outro gesto que tenha acontecido no meio.
+   */
+  const persistDebounced = useCallback(() => {
+    cancelDebounce();
+    debounceTimer.current = setTimeout(() => {
+      debounceTimer.current = null;
+      persist(scenesRef.current, photosRef.current);
+    }, PERSIST_DEBOUNCE_MS);
+  }, [persist, cancelDebounce]);
 
   const saveScenesAndReseed = useCallback(
     async (sc: Scene[], ph: PhotoState) => {
@@ -797,51 +877,152 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     }
   }
 
+  // ---------------- campos abertos de prompt por foto (`[extensão]` critérios D2-D8) ----------------
+  /** Chave de uma sugestão recusada no mapa `suggestions`. */
+  const skey = (sid: string, img: string, field: PromptField) => `${pkey(sid, img)}:${field}`;
+
+  /**
+   * Digitação em um dos dois campos de prompt. Marca a origem `manual` (é ela que faz a pergunta
+   * "Substituir?" existir na geração seguinte) e agenda UM `PUT` para 400 ms depois.
+   */
+  const typePrompt = (sid: string, img: string, field: PromptField, v: string) => {
+    const k = pkey(sid, img);
+    const cur = photosRef.current[k] || EMPTY_PHOTO_META;
+    putPhotosState({
+      ...photosRef.current,
+      [k]: {
+        ...cur,
+        ...(field === "image_prompt" ? { imgPrompt: v } : { prompt: v }),
+        origin: { ...cur.origin, [field]: manualOrigin() },
+      },
+    });
+    persistDebounced();
+  };
+
+  /**
+   * Aplica o texto que a IA devolveu a um campo. A pergunta acontece AQUI — depois da resposta, e
+   * só sobre texto de origem `manual` (decisão auto-aceita 14: perguntar ANTES quebraria
+   * C-STORYBOARD-27/28, que geram prompt sem interação extra). Texto de origem `ia`/`template` é
+   * regeração e some sem pergunta. Recusar guarda a sugestão para o botão "Copiar" e não grava
+   * nada. Devolve `true` quando o campo foi escrito.
+   */
+  function aplicarSugestao(
+    sid: string,
+    img: string,
+    field: PromptField,
+    texto: string,
+    r: { source?: string; preset?: string | null },
+    descOverride?: string,
+  ): boolean {
+    const k = pkey(sid, img);
+    const cur = photosRef.current[k] || EMPTY_PHOTO_META;
+    const atual = field === "image_prompt" ? cur.imgPrompt : cur.prompt;
+    const autoral = (atual || "").trim() && cur.origin?.[field]?.source === "manual";
+    if (autoral && !window.confirm(SUBSTITUIR_Q)) {
+      setSuggestions((prev) => ({ ...prev, [skey(sid, img, field)]: texto }));
+      return false;
+    }
+    const nextPhotos: PhotoState = {
+      ...photosRef.current,
+      [k]: {
+        ...cur,
+        ...(descOverride === undefined ? {} : { desc: descOverride }),
+        ...(field === "image_prompt" ? { imgPrompt: texto } : { prompt: texto }),
+        // O preset RESOLVIDO pelo servidor vira procedência do campo; a escolha do usuário
+        // (`cur.preset`) continua intacta — herdar não pode virar escolha explícita ao gerar.
+        origin: { ...cur.origin, [field]: originOf(r.source, r.preset) },
+      },
+    };
+    putPhotosState(nextPhotos);
+    // Resultado da IA persiste IMEDIATAMENTE, sem esperar o debounce (FDD §4 fluxo 4, item 5).
+    persist(scenesRef.current, nextPhotos);
+    setSuggestions((prev) => semChave(prev, skey(sid, img, field)));
+    return true;
+  }
+
+  const dismissSuggestion = (sid: string, img: string, field: PromptField) =>
+    setSuggestions((prev) => semChave(prev, skey(sid, img, field)));
+
+  /** Corpo comum das duas rotas de prompt: `preset` só entra quando a foto NÃO herda (C2/C3). */
+  const withPreset = (body: Record<string, unknown>, m: PhotoMeta) => {
+    if (m.preset === PRESET_OFF) body.preset = null;
+    else if (m.preset) body.preset = m.preset;
+    return body;
+  };
+
+  const notaFonte = (r: { source?: string; seconds?: number }) => (
+    <span className="fine">
+      fonte: {r.source || "claude"}
+      {r.seconds ? ` · sugestão ${r.seconds}s` : ""}
+    </span>
+  );
+
   // vídeo por foto
   async function genVideoPrompt(sid: string, img: string) {
     if (!sid) return toast("Salve as cenas primeiro.");
-    const m = pm(sid, img);
+    const m = photosRef.current[pkey(sid, img)] || EMPTY_PHOTO_META;
     const description = (m.desc || "").trim();
     prog.progress({ title: "Gerar prompt de vídeo", subtitle: "o Claude escreve o prompt de movimento" });
     prog.step("Chamando o Claude…");
     try {
-      // A chave `preset` só entra no corpo quando a foto NÃO herda. Mandar `null` sempre — o que a
-      // tela fazia — significava "sem preset explícito" e anulava o default da ação `motion`, que é
-      // justamente o padrão visual da campanha (critérios C2 e C3).
-      const body: Record<string, unknown> = {
-        scene_id: sid,
-        description,
-        frames: { mode: "single", image: img },
-      };
-      if (m.preset === PRESET_OFF) body.preset = null;
-      else if (m.preset) body.preset = m.preset;
+      // O POST acontece MESMO com descrição vazia: o 422 do servidor é a mensagem que o usuário
+      // precisa ler (C-STORYBOARD-28), e adivinhá-la no cliente é como as duas divergem.
+      const body = withPreset(
+        { scene_id: sid, description, frames: { mode: "single", image: img } },
+        m,
+      );
       const r = (await api(url("/video-prompt"), {
         method: "POST",
         body: JSON.stringify(body),
       })) as { prompt?: string; source?: string; seconds?: number; preset?: string | null };
-      const nextPhotos: PhotoState = {
-        ...photosRef.current,
-        [pkey(sid, img)]: {
-          ...m,
-          desc: description,
-          prompt: r.prompt || "",
-          // O preset RESOLVIDO pelo servidor vira procedência do campo; a escolha do usuário
-          // (`m.preset`) continua intacta — herdar não pode virar escolha explícita ao gerar.
-          origin: { ...m.origin, video_prompt: originOf(r.source, r.preset) },
-        },
-      };
-      putPhotosState(nextPhotos);
-      prog.ok("Prompt pronto");
-      prog.note(
-        <span className="fine">
-          fonte: {r.source || "claude"}
-          {r.seconds ? ` · sugestão ${r.seconds}s` : ""}
-        </span>,
-      );
-      persist(scenesRef.current, nextPhotos);
+      const escrito = aplicarSugestao(sid, img, "video_prompt", r.prompt || "", r, description);
+      prog.ok(escrito ? "Prompt pronto" : "Seu texto foi mantido · a sugestão ficou copiável");
+      prog.note(notaFonte(r));
     } catch (err) {
       prog.fail((err as Error).message);
     }
+  }
+
+  /**
+   * `[extensão]` prompt de IMAGEM (keyframe) da foto — `POST .../storyboard/image-prompt` (FDD
+   * §5.4). Sem Claude no PATH a rota NÃO dá 409: devolve o template determinístico com
+   * `source: "template"`, e é isso que o chip de origem mostra (decisão auto-aceita 3).
+   */
+  async function genImagePrompt(sid: string, img: string) {
+    if (!sid) return toast("Salve as cenas primeiro.");
+    const m = photosRef.current[pkey(sid, img)] || EMPTY_PHOTO_META;
+    // O `video_desc` da foto vale como contexto quando não há instrução própria (FDD §4 fluxo 4).
+    const description = (m.desc || "").trim();
+    prog.progress({ title: "Gerar prompt de imagem", subtitle: "o Claude escreve o keyframe desta foto" });
+    prog.step("Chamando o Claude…");
+    try {
+      const body = withPreset({ scene_id: sid, photo: img, description }, m);
+      const r = (await api(url("/image-prompt"), {
+        method: "POST",
+        body: JSON.stringify(body),
+      })) as { prompt?: string; source?: string; seconds?: number; preset?: string | null };
+      const escrito = aplicarSugestao(sid, img, "image_prompt", r.prompt || "", r);
+      prog.ok(escrito ? "Prompt pronto" : "Seu texto foi mantido · a sugestão ficou copiável");
+      prog.note(notaFonte(r));
+    } catch (err) {
+      prog.fail((err as Error).message);
+    }
+  }
+
+  /**
+   * "Usar no motor local" (critério D8): leva o prompt de imagem da foto para o `#sbLocalPrompt` do
+   * painel 01b e move o foco para lá. A geração POR CENA com saída em `cenaNN/` é de F07.
+   */
+  function enviarAoMotorLocal(sid: string, img: string) {
+    const m = photosRef.current[pkey(sid, img)] || EMPTY_PHOTO_META;
+    const t = (m.imgPrompt || "").trim();
+    if (!t) return toast("Escreva ou gere o prompt de imagem desta foto primeiro.");
+    setLocalPrompt(t);
+    const el = document.getElementById("sbLocalPrompt") as HTMLTextAreaElement | null;
+    // `scrollIntoView` não existe no jsdom; rolar é conforto, mover o FOCO é o critério D8.
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    el?.focus();
+    toast("Prompt copiado para o motor local (painel 01b).");
   }
 
   const onVideoDone = (sid: string, img: string, j: { video?: string }) => {
@@ -894,8 +1075,42 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   }
 
   // ---------------- roteiro por Claude ----------------
+  /**
+   * Prontidão do CLI vista pela tela. O diagnóstico aditivo manda quando existe; sem ele (servidor
+   * antigo) vale o `script_cli` booleano de sempre.
+   */
+  const cliOk = scriptCliDiag ? scriptCliDiag.available : scriptCli;
+
+  /**
+   * "Verificar de novo" (critério A2 no cliente): UMA requisição a
+   * `GET .../storyboard/script/cli?refresh=true`, sem job. O `refresh` re-resolve o PATH e reatribui
+   * o `BIN` do processo do servidor, então um `claude` instalado depois de o Studio subir passa a
+   * valer sem reiniciar nada. Devolve a prontidão nova.
+   */
+  const recheckCli = useCallback(async (): Promise<boolean> => {
+    try {
+      const d = (await api(url("/script/cli?refresh=true"))) as ScriptCliDiag;
+      setScriptCliDiag(d);
+      setScriptCli(!!d.available);
+      return !!d.available;
+    } catch (err) {
+      toast((err as Error).message);
+      return false;
+    }
+  }, [api, url, toast]);
+
   async function runScript() {
-    if (!scriptCli) return toast(SCRIPT_NO_CLI);
+    // O botão está SEMPRE habilitado (critério A1): sem CLI ele não some, re-checa. Se a re-checagem
+    // achar o binário, o fluxo segue para o job na MESMA interação; se não achar, a tela atualiza o
+    // diagnóstico e não dispara `POST /script/generate` — o 409 do ADR-025 seria inútil aqui.
+    if (!cliOk) {
+      const agora = await recheckCli();
+      if (!agora) {
+        document.getElementById("sbScriptCliDiag")?.focus();
+        toast(SCRIPT_NO_CLI);
+        return;
+      }
+    }
     const count = Math.min(SCRIPT_COUNT_MAX, Math.max(1, scriptCount || SCRIPT_COUNT_DEFAULT));
     // Mesmo contrato de três estados do `/video-prompt`: herdar é OMITIR a chave (o serviço resolve
     // o default de `storyboard.script`), `off` manda `null` e o id vai como está.
@@ -926,7 +1141,37 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     }
   }
 
-  async function applyScript(all: boolean) {
+  /**
+   * "usar este" (critério D6): grava um `shot_prompt` do painel 02 no `image_prompt` da foto `k` da
+   * cena correspondente. Prompt sobrando NÃO cria foto (decisão auto-aceita 13) — a tela diz
+   * quantas fotos a cena tem e o usuário anexa mais uma se quiser.
+   */
+  function aplicarShotPrompt(i: number, k: number, texto: string) {
+    const s = scenesRef.current[i];
+    if (!s) return toast(`O roteiro tem mais cenas do que o painel 03 — crie a cena ${i + 1} com “+ cena”.`);
+    const img = (s.images || [])[k];
+    if (!img)
+      return toast(
+        `A cena ${i + 1} tem ${(s.images || []).length} foto(s) — anexe mais uma para usar a foto ${k + 1}.`,
+      );
+    const key = pkey(s.id || "", img);
+    const cur = photosRef.current[key] || EMPTY_PHOTO_META;
+    // O texto veio do roteiro, que o Claude escreveu: `originOf` traduz `claude` em `ia` e guarda
+    // o preset com que o roteiro foi gerado (decisão auto-aceita 9).
+    const nextPhotos: PhotoState = {
+      ...photosRef.current,
+      [key]: {
+        ...cur,
+        imgPrompt: texto,
+        origin: { ...cur.origin, image_prompt: originOf("claude", script?.preset ?? null) },
+      },
+    };
+    putPhotosState(nextPhotos);
+    persist(scenesRef.current, nextPhotos);
+    toast(`Prompt aplicado à foto ${k + 1} da cena ${i + 1}.`);
+  }
+
+  async function applyScript(all: boolean, withPrompts: boolean) {
     const cenas = script ? script.scenes || [] : [];
     if (!cenas.length) return toast("Gere o roteiro primeiro.");
     if (!scenes.length) return toast("Nenhuma cena no painel 03 para preencher.");
@@ -955,10 +1200,38 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     if (!n)
       return toast("Nenhuma cena vazia para preencher — use “Substituir tudo” se quiser trocar o texto.");
     const sobra = cenas.length - alvo;
+    // Com a caixa marcada, a cena `i` também recebe os prompts de imagem: `shot_prompts[k]` vai
+    // para a k-ésima foto JÁ ANEXADA. Prompt sobrando não cria foto nenhuma — segue no painel 02,
+    // com o botão "usar este" (decisão auto-aceita 13).
+    let nextPhotos = photosRef.current;
+    let nPrompts = 0;
+    if (withPrompts) {
+      const copia: PhotoState = { ...nextPhotos };
+      list.forEach((s, i) => {
+        const c = i < alvo ? cenas[i] : undefined;
+        if (!c) return;
+        // Mesma regra do texto: sem "Substituir tudo", cena já escrita fica intocada.
+        if (!all && String(scenes[i]?.text || "").trim()) return;
+        (s.images || []).forEach((img, k) => {
+          const sp = (c.shot_prompts || [])[k];
+          if (!sp) return;
+          const key = pkey(s.id || "", img);
+          const cur = copia[key] || EMPTY_PHOTO_META;
+          copia[key] = {
+            ...cur,
+            imgPrompt: sp,
+            origin: { ...cur.origin, image_prompt: originOf("claude", script?.preset ?? null) },
+          };
+          nPrompts++;
+        });
+      });
+      nextPhotos = copia;
+      putPhotosState(copia);
+    }
     try {
-      await saveScenesAndReseed(list, photos);
+      await saveScenesAndReseed(list, nextPhotos);
       toast(
-        `${n} cena(s) preenchida(s) pelo roteiro${sobra > 0 ? ` · ${sobra} sugestão(ões) sobraram (use “+ cena”)` : ""}`,
+        `${n} cena(s) preenchida(s) pelo roteiro${nPrompts ? ` · ${nPrompts} prompt(s) de imagem` : ""}${sobra > 0 ? ` · ${sobra} sugestão(ões) sobraram (use “+ cena”)` : ""}`,
       );
     } catch (err) {
       toast((err as Error).message);
@@ -1561,15 +1834,36 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           onChange={(e) => setScriptInstruction(e.target.value)}
         />
         <div className="row wrap">
-          <button id="sbScriptGen" type="button" className="primary" disabled={!scriptCli} title={scriptCli ? "" : SCRIPT_NO_CLI} onClick={() => void runScript()}>
-            Gerar roteiro (Claude) [extensão]
+          {/* SEMPRE habilitado (critério A1): sem CLI o clique re-checa o PATH em vez de sumir. */}
+          <button id="sbScriptGen" type="button" className="primary" onClick={() => void runScript()}>
+            {SCRIPT_GEN_LABEL}
           </button>
-          {scriptCli ? null : (
+          <button
+            id="sbScriptCliRecheck"
+            type="button"
+            className="ghost"
+            title="re-resolve o PATH do processo e procura o claude de novo, sem reiniciar o Studio"
+            onClick={() => void recheckCli()}
+          >
+            Verificar de novo
+          </button>
+          {cliOk ? null : (
             <span id="sbScriptHint" className="fine">
               {SCRIPT_NO_CLI}
             </span>
           )}
         </div>
+        {/* Diagnóstico do binário (critério A1): o PATH que o PROCESSO enxerga é a informação que
+            falta para o usuário entender por que o `claude` do terminal dele não aparece aqui. */}
+        {cliOk ? null : (
+          <div id="sbScriptCliDiag" className="sb-cli-diag" role="status" aria-live="polite" tabIndex={-1}>
+            <span className="fine">
+              Claude CLI não encontrado. PATH do processo:{" "}
+              <span className="term">{scriptCliDiag?.searched_path || "(desconhecido)"}</span>
+            </span>
+            {scriptCliDiag?.hint ? <span className="fine">{scriptCliDiag.hint}</span> : null}
+          </div>
+        )}
         {/* Sempre no DOM (`.hidden` quando não há sugestão): os botões "Aplicar às cenas vazias" e
             "Substituir tudo" e o meta ficam presentes (ocultos por CSS) como no vanilla — o texto
             deles conta no dump de textContent. As cenas sugeridas (dinâmicas) só entram com a sugestão. */}
@@ -1580,12 +1874,22 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                 ? `${(script.scenes || []).length} cenas · preset ${script.preset || "(sem preset)"} · ${script.aspect_ratio || ""} · ${scriptModelLabel()}`
                 : ""}
             </span>
-            <button id="sbScriptApplyEmpty" type="button" className="ghost" onClick={() => void applyScript(false)}>
+            <button id="sbScriptApplyEmpty" type="button" className="ghost" onClick={() => void applyScript(false, scriptWithPrompts)}>
               Aplicar às cenas vazias
             </button>
-            <button id="sbScriptApplyAll" type="button" className="ghost" onClick={() => void applyScript(true)}>
+            <button id="sbScriptApplyAll" type="button" className="ghost" onClick={() => void applyScript(true, scriptWithPrompts)}>
               Substituir tudo
             </button>
+            {/* Critério D5: o `shot_prompts[k]` do roteiro vai para a k-ésima foto JÁ anexada. */}
+            <label className="inline" title="preenche o prompt de imagem das fotos já anexadas a cada cena">
+              <input
+                id="sbScriptWithPrompts"
+                type="checkbox"
+                checked={scriptWithPrompts}
+                onChange={(e) => setScriptWithPrompts(e.target.checked)}
+              />{" "}
+              trazer também os prompts de imagem
+            </label>
           </div>
           <p id="sbScriptNotes" className="fine" hidden={!(script && script.notes_pt)}>
             {(script && script.notes_pt) || ""}
@@ -1622,6 +1926,14 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                                   }}
                                 >
                                   Copiar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="link sbScriptUse"
+                                  title={`gravar este prompt na foto ${j + 1} da cena ${i + 1}`}
+                                  onClick={() => aplicarShotPrompt(i, j, p || "")}
+                                >
+                                  usar este
                                 </button>
                                 <span className="ok">
                                   {scriptCopied === key ? "copiado ✓" : scriptCopied === `${key}-fail` ? "copie à mão" : ""}
@@ -1714,12 +2026,21 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                       moveTargets={scenes
                         .map((_, k) => ({ i: k, label: `cena ${k + 1}` }))
                         .filter((t) => t.i !== i)}
+                      suggestions={{
+                        image_prompt: suggestions[skey(sid, img, "image_prompt")],
+                        video_prompt: suggestions[skey(sid, img, "video_prompt")],
+                      }}
                       onDesc={(v) => updatePhoto(sid, img, { desc: v })}
                       onPreset={(v) => updatePhoto(sid, img, { preset: v })}
+                      onImgPrompt={(v) => typePrompt(sid, img, "image_prompt", v)}
+                      onVidPrompt={(v) => typePrompt(sid, img, "video_prompt", v)}
+                      onDismissSuggestion={(field) => dismissSuggestion(sid, img, field)}
                       onStar={() => setPrimary(i, img)}
                       onRemove={() => removeImage(i, img)}
                       onLightbox={() => setModal({ kind: "lightbox", rel: img })}
                       onGenPrompt={() => void genVideoPrompt(sid, img)}
+                      onGenImgPrompt={() => void genImagePrompt(sid, img)}
+                      onUseLocal={() => enviarAoMotorLocal(sid, img)}
                       onAnim={() => (sid ? setModal({ kind: "animate", sid, img }) : toast("Salve as cenas primeiro."))}
                       onAnnotate={() => annotatePhoto(img)}
                       onUp={() => reorderPhoto(i, img, -1)}
@@ -1882,15 +2203,20 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           realismPresets={realismPresets}
           inheritedPreset={inheritedPreset(MOTION_ACTION)}
           filesUrl={(rel) => ctx.files(rel)}
+          suggestion={suggestions[skey(modal.sid, modal.img, "video_prompt")]}
           onDesc={(v) => updatePhoto(modal.sid, modal.img, { desc: v })}
           onPreset={(v) => updatePhoto(modal.sid, modal.img, { preset: v })}
+          onVidPrompt={(v) => typePrompt(modal.sid, modal.img, "video_prompt", v)}
+          onDismissSuggestion={() => dismissSuggestion(modal.sid, modal.img, "video_prompt")}
           onGenPrompt={() => void genVideoPrompt(modal.sid, modal.img)}
           onClose={() => setModal(null)}
           onVideoOpen={(rel) => window.open(ctx.files(rel), "_blank")}
           onRun={async (opts) => {
-            const m = pm(modal.sid, modal.img);
+            // Critério D7: o que vale é o CAMPO (estado da tela), não o último valor gerado — um
+            // prompt escrito à mão e nunca gerado tem de animar igual. Só o campo VAZIO bloqueia.
+            const m = photosRef.current[pkey(modal.sid, modal.img)] || EMPTY_PHOTO_META;
             const prompt = (m.prompt || "").trim();
-            if (!prompt) return toast("Gere o prompt de vídeo primeiro.");
+            if (!prompt) return toast("Escreva ou gere o prompt de vídeo desta foto.");
             if (opts.mode === "start_end" && !opts.endImage) return toast("Escolha a 2ª imagem (end frame).");
             const sid = modal.sid;
             const img = modal.img;
@@ -2050,6 +2376,113 @@ function RealismField({
   );
 }
 
+/**
+ * Campo ABERTO de prompt de uma foto (`[extensão]` Wave 11 · F06, FDD §4 fluxo 4). Um só componente
+ * para os dois campos e para as duas telas que os mostram (a linha de foto e o modal de animação),
+ * porque o bloco de vídeo estava duplicado e as duas cópias precisam do mesmo contrato de DOM.
+ *
+ * Três coisas não são negociáveis aqui:
+ *   1. `genClass` é um BOTÃO ("Gerar com IA"), nunca um campo — `.sbVidPrompt` é o que
+ *      C-STORYBOARD-27/28 clicam;
+ *   2. quando há `mirrorClass`, o `<p class="txt {mirrorClass}">` fica dentro da caixa com o
+ *      atributo `hidden`, espelhando o valor do campo: invisível ao usuário, legível por
+ *      `text_content()` (C-STORYBOARD-27/33 e o dump de `textContent` do baseline);
+ *   3. a caixa fica SEMPRE visível — ela deixou de ser um resultado e virou um campo.
+ */
+function PromptField({
+  boxClass,
+  fieldClass,
+  genClass,
+  copyClass,
+  mirrorClass,
+  label,
+  placeholder,
+  value,
+  origin,
+  suggestion,
+  onChange,
+  onGen,
+  onDismiss,
+}: {
+  boxClass: string;
+  fieldClass: string;
+  genClass: string;
+  copyClass: string;
+  /** Espelho de leitura para o oráculo de QA; só o prompt de vídeo tem um. */
+  mirrorClass?: string | undefined;
+  label: string;
+  placeholder: string;
+  value: string;
+  origin?: PhotoOrigin | undefined;
+  /** Sugestão recusada na pergunta "Substituir?" — fica copiável até o usuário dispensá-la. */
+  suggestion?: string | undefined;
+  onChange: (v: string) => void;
+  onGen: () => void;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState("");
+  const [copiedSug, setCopiedSug] = useState("");
+  return (
+    <div className={`prompt sm ${boxClass}`}>
+      <div className="row wrap">
+        <span className="eyebrow">{label}</span>
+        <span className="chip sbPromptOrigin" title="procedência deste texto">
+          {originLabel(origin)}
+        </span>
+        <button type="button" className={`ghost mini ${genClass}`} aria-label={`Gerar ${label} com IA`} onClick={onGen}>
+          Gerar com IA
+        </button>
+        <button
+          type="button"
+          className={`link ${copyClass}`}
+          onClick={async () => {
+            const ok = await copy(value);
+            setCopied(ok ? "copiado ✓" : "copie à mão");
+            setTimeout(() => setCopied(""), 1500);
+          }}
+        >
+          Copiar
+        </button>
+        <span className="ok">{copied}</span>
+      </div>
+      <AutoTextarea
+        className={`txt ${fieldClass}`}
+        rows={2}
+        placeholder={placeholder}
+        value={value}
+        ariaLabel={label}
+        onChange={onChange}
+      />
+      {mirrorClass ? (
+        <p className={`txt ${mirrorClass}`} hidden>
+          {value}
+        </p>
+      ) : null}
+      {suggestion ? (
+        <div className="row wrap sbPromptSuggestion">
+          <span className="eyebrow">sugestão não aplicada</span>
+          <button
+            type="button"
+            className="link sbSuggestCopy"
+            onClick={async () => {
+              const ok = await copy(suggestion);
+              setCopiedSug(ok ? "copiado ✓" : "copie à mão");
+              setTimeout(() => setCopiedSug(""), 1500);
+            }}
+          >
+            Copiar
+          </button>
+          <button type="button" className="link sbSuggestDismiss" onClick={onDismiss}>
+            dispensar
+          </button>
+          <span className="ok">{copiedSug}</span>
+          <p className="txt sbSuggestText">{suggestion}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 interface PhotoRowProps {
   sid: string;
   img: string;
@@ -2068,12 +2501,20 @@ interface PhotoRowProps {
   isDragOver: boolean;
   /** As DEMAIS cenas, para o "Mover para…" (alternativa por teclado ao arrasto, critério B7). */
   moveTargets: { i: number; label: string }[];
+  /** Sugestões RECUSADAS por campo (a pergunta "Substituir?" continua copiável, critério D3). */
+  suggestions: { image_prompt?: string | undefined; video_prompt?: string | undefined };
   onDesc: (v: string) => void;
   onPreset: (v: string) => void;
+  /** Digitação nos campos abertos — o chamador marca `origin` como `manual` e agenda o debounce. */
+  onImgPrompt: (v: string) => void;
+  onVidPrompt: (v: string) => void;
+  onDismissSuggestion: (field: PromptField) => void;
   onStar: () => void;
   onRemove: () => void;
   onLightbox: () => void;
   onGenPrompt: () => void;
+  onGenImgPrompt: () => void;
+  onUseLocal: () => void;
   onAnim: () => void;
   onAnnotate: () => void;
   onUp: () => void;
@@ -2087,10 +2528,8 @@ interface PhotoRowProps {
   onVideoOpen: (rel: string) => void;
 }
 function PhotoRow(p: PhotoRowProps) {
-  const has = !!p.meta.prompt;
   const videos = (p.meta.videos || []).filter(Boolean);
   const last = videos.length ? videos[videos.length - 1] : null;
-  const [copied, setCopied] = useState<string>("");
   return (
     <div className={`sb-photorow${p.isDragging ? " dragging" : ""}`} data-img={p.img} data-pi={p.pi}>
       <div
@@ -2130,24 +2569,40 @@ function PhotoRow(p: PhotoRowProps) {
           inherited={p.inheritedPreset}
           onChange={p.onPreset}
         />
-        <div className={`prompt sm sbVidPromptBox${has ? "" : " hidden"}`}>
-          <div className="row">
-            <span className="eyebrow">Prompt de vídeo</span>
-            <button
-              type="button"
-              className="link sbVidCopy"
-              onClick={async () => {
-                const ok = await copy(p.meta.prompt);
-                setCopied(ok ? "copiado ✓" : "copie à mão");
-                setTimeout(() => setCopied(""), 1500);
-              }}
-            >
-              Copiar
-            </button>
-            <span className="ok">{copied}</span>
-          </div>
-          <p className="txt sbVidPromptText">{p.meta.prompt}</p>
-        </div>
+        {/* `[extensão]` campo aberto de KEYFRAME (critério D2). Nasce nesta wave: antes o prompt de
+            imagem da foto não existia na tela — só o do roteiro, que não era editável. */}
+        <PromptField
+          boxClass="sbImgPromptBox"
+          fieldClass="sbImgPromptField"
+          genClass="sbImgPrompt"
+          copyClass="sbImgCopy"
+          label="Prompt de imagem (keyframe)"
+          placeholder="o keyframe desta foto (em inglês, aula 007) — escreva ou gere com IA"
+          value={p.meta.imgPrompt}
+          origin={p.meta.origin?.image_prompt}
+          suggestion={p.suggestions.image_prompt}
+          onChange={p.onImgPrompt}
+          onGen={p.onGenImgPrompt}
+          onDismiss={() => p.onDismissSuggestion("image_prompt")}
+        />
+        {/* A `.sbVidPromptBox` fica SEMPRE visível agora (ela contém o campo) e o
+            `<p class="txt sbVidPromptText">` continua dentro dela como espelho `hidden`: invisível
+            ao usuário, legível por `text_content()` (C-STORYBOARD-27/33, decisão auto-aceita 8). */}
+        <PromptField
+          boxClass="sbVidPromptBox"
+          fieldClass="sbVidPromptField"
+          genClass="sbVidPrompt"
+          copyClass="sbVidCopy"
+          mirrorClass="sbVidPromptText"
+          label="Prompt de vídeo"
+          placeholder="o movimento desta foto (em inglês) — escreva ou gere com IA"
+          value={p.meta.prompt}
+          origin={p.meta.origin?.video_prompt}
+          suggestion={p.suggestions.video_prompt}
+          onChange={p.onVidPrompt}
+          onGen={p.onGenPrompt}
+          onDismiss={() => p.onDismissSuggestion("video_prompt")}
+        />
         <div className="sbVidView">
           {last ? (
             <>
@@ -2165,8 +2620,14 @@ function PhotoRow(p: PhotoRowProps) {
         </div>
       </div>
       <div className="sb-photoacts">
-        <button type="button" className="ghost mini sbVidPrompt" title="gerar o prompt de vídeo desta foto (Claude)" onClick={p.onGenPrompt}>
-          Gerar prompt
+        {/* Critério D8: leva o prompt de imagem desta foto para o motor local (painel 01b). */}
+        <button
+          type="button"
+          className="ghost mini sbUseLocal"
+          title="levar o prompt de imagem desta foto para o motor local (grátis) [extensão]"
+          onClick={p.onUseLocal}
+        >
+          Usar no motor local
         </button>
         <button type="button" className="primary mini sbAnim" title="gerar a animação desta foto (Higgsfield)" onClick={p.onAnim}>
           Gerar animação
@@ -2416,8 +2877,11 @@ interface AnimateModalProps {
   /** Preset que a campanha resolve para a ação `motion`. */
   inheritedPreset: string | null;
   filesUrl: (rel: string) => string;
+  suggestion?: string | undefined;
   onDesc: (v: string) => void;
   onPreset: (v: string) => void;
+  onVidPrompt: (v: string) => void;
+  onDismissSuggestion: () => void;
   onGenPrompt: () => void;
   onClose: () => void;
   onVideoOpen: (rel: string) => void;
@@ -2428,8 +2892,6 @@ function AnimateModal(p: AnimateModalProps) {
   const [duration, setDuration] = useState("5");
   const [model, setModel] = useState(p.modelDefaults.single && p.models.includes(p.modelDefaults.single) ? p.modelDefaults.single : p.models[0] || "");
   const [endImage, setEndImage] = useState(p.others[0] || "");
-  const [copied, setCopied] = useState("");
-  const has = !!p.meta.prompt;
   const videos = (p.meta.videos || []).filter(Boolean);
   const last = videos.length ? videos[videos.length - 1] : null;
 
@@ -2466,29 +2928,22 @@ function AnimateModal(p: AnimateModalProps) {
           inherited={p.inheritedPreset}
           onChange={p.onPreset}
         />
-          <div className="row wrap">
-            <button type="button" className="ghost mini sbVidPrompt" onClick={p.onGenPrompt}>
-              Gerar prompt de vídeo
-            </button>
-          </div>
-          <div className={`prompt sm sbVidPromptBox${has ? "" : " hidden"}`}>
-            <div className="row">
-              <span className="eyebrow">Prompt de vídeo</span>
-              <button
-                type="button"
-                className="link sbVidCopy"
-                onClick={async () => {
-                  const ok = await copy(p.meta.prompt);
-                  setCopied(ok ? "copiado ✓" : "copie à mão");
-                  setTimeout(() => setCopied(""), 1500);
-                }}
-              >
-                Copiar
-              </button>
-              <span className="ok">{copied}</span>
-            </div>
-            <p className="txt sbVidPromptText">{p.meta.prompt}</p>
-          </div>
+          {/* Mesmo bloco da linha de foto — inclusive o espelho `hidden` (decisão auto-aceita 8). */}
+          <PromptField
+            boxClass="sbVidPromptBox"
+            fieldClass="sbVidPromptField"
+            genClass="sbVidPrompt"
+            copyClass="sbVidCopy"
+            mirrorClass="sbVidPromptText"
+            label="Prompt de vídeo"
+            placeholder="o movimento desta foto (em inglês) — escreva ou gere com IA"
+            value={p.meta.prompt}
+            origin={p.meta.origin?.video_prompt}
+            suggestion={p.suggestion}
+            onChange={p.onVidPrompt}
+            onGen={p.onGenPrompt}
+            onDismiss={p.onDismissSuggestion}
+          />
           <div className="row wrap">
             <label className="field">
               <span className="eyebrow lbl">duração</span>
@@ -2746,6 +3201,14 @@ const STYLE = `
   .sb-script-scene{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;
     padding:12px 0;border-top:1px solid var(--line)}
   .sb-script-scene:first-child{border-top:0;padding-top:0}
+  /* [extensão] Wave 11 · F06 — campos abertos de prompt e diagnóstico do CLI */
+  .sbPromptOrigin{font-size:11px;text-transform:none}
+  .sbImgPromptField,.sbVidPromptField{width:100%;min-height:52px;resize:vertical}
+  .sbPromptSuggestion{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line-2)}
+  .sbSuggestText{margin:4px 0 0;flex:1 1 100%;font-size:var(--fs-sm);color:var(--ink-3)}
+  .sb-cli-diag{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-left:10px;
+    border-left:2px solid var(--line-2)}
+  .sb-cli-diag .term{overflow-wrap:anywhere}
   .sb-script-txt{margin:0 0 8px;font-size:var(--fs-sm);color:var(--ink-row)}
   @media (max-width:620px){.sb-script-scene{grid-template-columns:1fr}}
 `;
