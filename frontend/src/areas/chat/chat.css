@@ -304,6 +304,16 @@
   .chat-chip-spin { animation: none; border-top-color: var(--accent); }
 }
 
+/* Cartão de mídia com ações, par antes/depois e lightbox — Wave 11 · F11 `[extensão]` (ADR-038).
+   Só ADIÇÃO: nenhuma classe acima é renomeada ou removida (contrato com `scripts/qa/cenarios/`). */
+.chat-media img.chat-thumb { cursor: zoom-in; }
+.chat-media-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chat-media-act { height: 32px; font-size: 12.5px; }
+.chat-pair { display: flex; flex-direction: column; gap: 3px; margin: 0; min-width: 0; }
+.chat-pair-label { font-size: 11px; color: var(--ink-3); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-zoom { display: block; margin: 0 auto; max-width: min(72vw, 720px); max-height: 68vh; width: auto; height: auto; border-radius: 10px; background: var(--bg); }
+
+
 /* Wave 11 · F08 (card #88): toggle "seguir o assistente" e o cartão do evento `navigate`.
    Aditivo — nenhuma classe existente foi renomeada (contrato com os cenários de QA). */
 .chat-follow {

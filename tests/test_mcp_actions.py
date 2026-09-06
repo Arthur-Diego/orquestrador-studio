@@ -630,6 +630,257 @@ def test_as_duas_tools_por_cena_estao_no_catalogo_curado():
     for nome in ("storyboard_scene_generate", "storyboard_scene_pick"):
         assert f'name="{nome}"' in fonte
     assert "GRÁTIS" in fonte and "PAGO" in fonte
+# ---------- base_review `[extensão]` (F11, critérios 5-8 e 14) ----------
+JOB = "/api/projects/p/base/job"
+CANDS = "/api/projects/p/base/candidates"
+SELECT = "/api/projects/p/base/select"
+
+
+def espia(monkeypatch, resposta: dict) -> dict:
+    """Substitui `ui.show` e `ui.choose_images` pelo dock: conta as chamadas e guarda os payloads.
+
+    É assim que os critérios 5 a 7 medem "exatamente 1 `ui.show` e 1 `ui.choose_images`" sem subir
+    o WebSocket do chat.
+    """
+    visto: dict = {"shows": [], "asks": []}
+
+    def _show(cli, images, title=""):
+        visto["shows"].append({"images": images, "title": title})
+        return "ok"
+
+    def _choose(cli, title, images, **kw):
+        visto["asks"].append({"title": title, "images": images, **kw})
+        return resposta
+
+    monkeypatch.setattr(ui, "show", _show)
+    monkeypatch.setattr(ui, "choose_images", _choose)
+    return visto
+
+
+def job_upscale(source_id="s1", state="done", **extra) -> dict:
+    return {"state": state, "done": 1, "total": 1, "added": 1, "error": None, "new_candidates": [
+        {"id": "n1", "kind": "upscale", "source_id": source_id,
+         "thumb_url": "/files/p/base/candidates/thumbs/n1.jpg",
+         "file_url": "/files/p/base/candidates/n1.png"}], **extra}
+
+
+def etapa_com_origem() -> dict:
+    return {"candidates": [
+        {"id": "s1", "kind": "situation", "source_id": None, "selected": True,
+         "file": "base/candidates/s1.png", "thumb": "base/candidates/thumbs/s1.jpg"}],
+        "final": "base/base_final.png"}
+
+
+def test_base_review_mostra_o_par_antes_depois_e_abre_a_grade(monkeypatch):
+    """Critério 5: 1 `ui.show` com o par, 1 `ui.choose_images` com `media` e `actions`."""
+    visto = espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: job_upscale(), CANDS: etapa_com_origem()})
+    actions.base_review(cli, "p")
+
+    assert len(visto["shows"]) == 1 and len(visto["asks"]) == 1
+    assert visto["shows"][0]["title"] == "Upscale 2x pronto"
+    assert [i["role"] for i in visto["shows"][0]["images"]] == ["before", "after"]
+    ask = visto["asks"][0]
+    assert ask["minimum"] == 0 and ask["maximum"] == 1
+    assert [i["id"] for i in ask["images"]] == ["n1"]
+    assert ask["images"][0]["thumb"] == "/files/p/base/candidates/thumbs/n1.jpg"
+    antes = [m for m in ask["media"] if m["role"] == "before"]
+    depois = [m for m in ask["media"] if m["role"] == "after"]
+    assert len(antes) == 1 and len(depois) == 1
+    assert antes[0]["pair"] == "n1" and depois[0]["pair"] == "n1"
+    assert antes[0]["url"] == "/files/p/base/candidates/s1.png"     # origem: sem prefixo duplicado
+    assert depois[0]["url"] == "/files/p/base/candidates/n1.png"
+    assert ask["actions"] == [
+        {"label": "Usar como imagem base", "value": {"selected": ["n1"]}, "for": "n1"},
+        {"label": "Manter a atual", "value": {"selected": [], "keep": True}}]
+
+
+def test_base_review_sem_origem_mostra_so_a_imagem_nova(monkeypatch):
+    """Critério 5 (origem nula): `source_id: null` não bloqueia a escolha, só omite o par (§6)."""
+    visto = espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: job_upscale(source_id=None), CANDS: etapa_com_origem()})
+    actions.base_review(cli, "p")
+
+    assert len(visto["shows"]) == 1
+    assert visto["shows"][0]["images"] == [
+        {"url": "/files/p/base/candidates/n1.png", "label": "depois (upscale 2x)", "kind": "image"}]
+    ask = visto["asks"][0]
+    assert [i["id"] for i in ask["images"]] == ["n1"]
+    assert [m for m in ask["media"] if m.get("pair") == "n1"] == []
+
+
+def test_base_review_com_origem_apagada_tambem_omite_o_par(monkeypatch):
+    """§6: `source_id` apontando para candidata que sumiu do JSON degrada como origem nula."""
+    visto = espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: job_upscale(source_id="sumiu"), CANDS: {"candidates": [], "final": None}})
+    actions.base_review(cli, "p")
+    assert visto["asks"][0]["media"] == []
+    assert [i["id"] for i in visto["asks"][0]["images"]] == ["n1"]
+
+
+def test_base_review_seleciona_o_que_o_usuario_escolheu(monkeypatch):
+    """Critério 6: exatamente 1 `POST /base/select` e o sufixo JSON de F04 na última linha."""
+    espia(monkeypatch, {"answered": True, "selected": ["n1"]})
+    cli = Fake({JOB: job_upscale(), CANDS: etapa_com_origem(),
+                "/api/projects/p/guide": {"current": "storyboard"}})
+    out = actions.base_review(cli, "p")
+
+    assert cli.posts == [(SELECT, {"id": "n1", "note": ""})]
+    assert "Imagem base atualizada" in out and "`n1`" in out and "origem `s1`" in out
+    assert sufixo(out) == {"selected": ["n1"], "next_step": "storyboard"}
+    assert out.splitlines()[-1] == actions._result_json(["n1"], "storyboard")
+
+
+def test_base_review_repassa_a_nota_ao_select(monkeypatch):
+    espia(monkeypatch, {"answered": True, "selected": ["n1"]})
+    cli = Fake({JOB: job_upscale(), CANDS: etapa_com_origem()})
+    actions.base_review(cli, "p", note="ficou melhor")
+    assert cli.posts == [(SELECT, {"id": "n1", "note": "ficou melhor"})]
+
+
+@pytest.mark.parametrize("resposta, trecho", [
+    ({"answered": True, "selected": [], "keep": True}, "Mantive a imagem base atual."),
+    ({"answered": True, "selected": []}, "Mantive a imagem base atual."),
+    ({"answered": False}, "O usuário não escolheu (sem resposta)"),
+])
+def test_base_review_sem_selecao_nao_chama_select(monkeypatch, resposta, trecho):
+    """Critério 7: `keep`, seleção vazia e ausência de resposta não gravam nada e não têm sufixo."""
+    espia(monkeypatch, resposta)
+    cli = Fake({JOB: job_upscale(), CANDS: etapa_com_origem()})
+    out = actions.base_review(cli, "p")
+    assert cli.posts == []
+    assert trecho in out and not tem_sufixo(out)
+
+
+def test_base_review_sem_interface_lista_ids_e_urls(monkeypatch):
+    """Critério 7 (sem UI): degradação do terminal, mesma do `_pick` (ADR-038 §3)."""
+    espia(monkeypatch, {"answered": False, "no_ui": True})
+    cli = Fake({JOB: job_upscale(), CANDS: etapa_com_origem()})
+    out = actions.base_review(cli, "p")
+    assert cli.posts == []
+    assert out.startswith("Sem interface para escolher aqui.")
+    assert "n1" in out and "/files/p/base/candidates/n1.png" in out and not tem_sufixo(out)
+
+
+def test_base_review_sem_nenhuma_candidata_nao_abre_ask(monkeypatch):
+    """Critério 8: sem job e sem candidatas na etapa, orientação em texto e nenhum `ask`."""
+    visto = espia(monkeypatch, {"answered": True, "selected": ["n1"]})
+    cli = Fake({JOB: {"state": "idle", "new_candidates": []}, CANDS: {"candidates": [], "final": None}})
+    out = actions.base_review(cli, "p")
+    assert "Nenhuma candidata nova na etapa 3" in out
+    assert visto["asks"] == [] and cli.posts == []
+
+
+def test_base_review_cai_para_as_candidatas_da_etapa(monkeypatch):
+    """Fallback: sem job, a grade vem de `_images_for` sobre o `kind` mais avançado sem seleção."""
+    visto = espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: {"state": "idle", "new_candidates": []}, CANDS: {"candidates": [
+        {"id": "s1", "kind": "situation", "selected": True, "source_id": None,
+         "file": "base/candidates/s1.png", "thumb": "base/candidates/thumbs/s1.jpg"},
+        {"id": "u1", "kind": "upscale", "selected": False, "source_id": "s1",
+         "file": "base/candidates/u1.png", "thumb": "base/candidates/thumbs/u1.jpg"}],
+        "final": "base/base_final.png"}})
+    actions.base_review(cli, "p")
+
+    assert len(visto["asks"]) == 1
+    assert visto["asks"][0]["images"] == [
+        {"id": "u1", "thumb": "/files/p/base/candidates/thumbs/u1.jpg", "label": "upscale 2x"}]
+    assert [m["url"] for m in visto["asks"][0]["media"]] == [
+        "/files/p/base/candidates/s1.png", "/files/p/base/candidates/u1.png"]
+
+
+def test_base_review_com_ids_filtra_a_grade_e_avisa_o_que_nao_existe(monkeypatch):
+    """Fallback com `ids`: o parâmetro substitui a heurística de `kind`; id inexistente vira aviso."""
+    visto = espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: {"state": "idle", "new_candidates": []}, CANDS: {"candidates": [
+        {"id": "s1", "kind": "situation", "selected": True, "source_id": None,
+         "file": "base/candidates/s1.png", "thumb": "base/candidates/thumbs/s1.jpg"},
+        {"id": "u1", "kind": "upscale", "selected": False, "source_id": "s1",
+         "file": "base/candidates/u1.png", "thumb": "base/candidates/thumbs/u1.jpg"}],
+        "final": "base/base_final.png"}})
+    out = actions.base_review(cli, "p", ids=["u1", "x"])
+
+    assert [i["id"] for i in visto["asks"][0]["images"]] == ["u1"]
+    assert "x" in out and "Ignorei ids que não existem" in out
+
+
+def test_base_review_com_ids_todos_invalidos_nao_abre_ask(monkeypatch):
+    visto = espia(monkeypatch, {"answered": True, "selected": ["u1"]})
+    cli = Fake({JOB: {"state": "idle", "new_candidates": []}, CANDS: {"candidates": [
+        {"id": "u1", "kind": "upscale", "selected": False, "source_id": None,
+         "file": "base/candidates/u1.png", "thumb": "base/candidates/thumbs/u1.jpg"}],
+        "final": None}})
+    out = actions.base_review(cli, "p", ids=["x"])
+    assert visto["asks"] == [] and cli.posts == []
+    assert "Ignorei ids que não existem" in out and "Nenhuma candidata nova na etapa 3" in out
+
+
+def test_base_review_com_job_rodando_pede_job_wait(monkeypatch):
+    visto = espia(monkeypatch, {"answered": True, "selected": ["n1"]})
+    cli = Fake({JOB: {"state": "running", "done": 0, "total": 1, "new_candidates": []}})
+    out = actions.base_review(cli, "p")
+    assert out.startswith("Ainda gerando (0/1).") and "job_wait" in out
+    assert visto["asks"] == [] and visto["shows"] == [] and cli.posts == []
+
+
+def test_base_review_com_job_com_erro_reporta_e_segue(monkeypatch):
+    """§6: `state:"error"` informa o erro e, havendo candidatas, continua para a escolha."""
+    visto = espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: job_upscale(state="error", error="boom"), CANDS: etapa_com_origem()})
+    out = actions.base_review(cli, "p")
+    assert "falhou: boom" in out
+    assert len(visto["asks"]) == 1
+
+
+def test_base_review_com_job_com_erro_e_sem_candidata_so_reporta(monkeypatch):
+    visto = espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: {"state": "error", "error": "boom", "new_candidates": []},
+                CANDS: {"candidates": [], "final": None}})
+    out = actions.base_review(cli, "p")
+    assert "falhou: boom" in out and "Nenhuma candidata nova na etapa 3" in out
+    assert visto["asks"] == []
+
+
+def test_base_review_erro_de_api_no_job_vira_texto(monkeypatch):
+    espia(monkeypatch, {"answered": False})
+    cli = Fake({JOB: StudioApiError("404 projeto não encontrado")})
+    assert actions.base_review(cli, "p") == "404 projeto não encontrado"
+
+
+def test_base_review_erro_de_api_no_select_vira_texto_sem_sufixo(monkeypatch):
+    espia(monkeypatch, {"answered": True, "selected": ["n1"]})
+    cli = Fake({JOB: job_upscale(), CANDS: etapa_com_origem(),
+                SELECT: StudioApiError("404 candidata não encontrada")})
+    out = actions.base_review(cli, "p")
+    assert out == "404 candidata não encontrada" and not tem_sufixo(out)
+
+
+def test_base_review_nunca_chama_rota_de_custo(monkeypatch):
+    """Decisão auto-aceita 7: `base_review` não gera, então não passa por `_paid` nem por `/cost`."""
+    espia(monkeypatch, {"answered": True, "selected": ["n1"]})
+    cli = Fake({JOB: job_upscale(), CANDS: etapa_com_origem()})
+    actions.base_review(cli, "p")
+    assert not any("cost" in path or "generate" in path for path, _ in cli.posts)
+
+
+def test_base_review_esta_no_catalogo_curado():
+    """ADR-040: a tool só existe para o agente se estiver registrada no `server.py`."""
+    from pathlib import Path
+    fonte = (Path(__file__).resolve().parents[1] / "studio" / "mcp" / "server.py").read_text()
+    assert 'name="base_review"' in fonte
+    bloco = fonte.split("ações: 3 Imagem base")[1].split("ações: 4 Storyboard")[0]
+    assert 'name="base_review"' in bloco and "[extensão]" in bloco
+
+
+def test_prompt_do_sistema_manda_chamar_base_review_depois_do_job_wait():
+    """Critério 14: a cadeia da etapa 3 e o tópico do par antes/depois no prompt do agente."""
+    from pathlib import Path
+    texto = (Path(__file__).resolve().parents[1] / "studio" / "chat" / "prompts" / "sistema.md").read_text()
+    etapa3 = texto.split("**Imagem base (aula 009):**")[1].split("**Storyboard")[0]
+    assert etapa3.index("job_wait pid base") < etapa3.index("base_review")
+    assert "antes" in etapa3 and "depois" in etapa3 and "upscale" in etapa3
+
+
 # ---------- `[extensão]` Wave 11 · F06: roteiro, anexo e prompt por foto ----------
 # Nenhum destes toca rede: o `StudioClient` é fingido e o `claude` nunca é invocado (quem chamaria
 # o CLI é o servidor, do outro lado do HTTP). Invariante 8 do FDD: nada é escrito em `scenes.json`

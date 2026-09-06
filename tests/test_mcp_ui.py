@@ -158,6 +158,62 @@ def test_emissao_nova_substitui_a_anterior(monkeypatch):
     assert velho != novo
     assert ui.consume_confirm_token(velho, action="Gerar", model="m") is False
     assert ui.consume_confirm_token(novo, action="Gerar", model="m") is True
+# ---------- choose_images: media/actions são [extensão] aditiva (ADR-038) ----------
+IMGS = [{"id": "a", "thumb": "/t.jpg", "label": "x"}]
+MEDIA = [
+    {"url": "/files/p/base/candidates/s.png", "label": "antes", "kind": "image",
+     "role": "before", "pair": "a"},
+    {"url": "/files/p/base/candidates/a.png", "label": "depois", "kind": "image",
+     "role": "after", "pair": "a"},
+]
+ACTIONS = [
+    {"label": "Usar como imagem base", "value": {"selected": ["a"]}, "for": "a"},
+    {"label": "Manter a atual", "value": {"selected": [], "keep": True}},
+]
+
+
+def test_choose_images_sem_campos_novos_mantem_payload_de_hoje(monkeypatch):
+    """Regressão: sem media/actions o dicionário é byte a byte o de antes da extensão."""
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "selected": ["a"]})
+    ui.choose_images(cli, "T", IMGS, minimum=1, maximum=1)
+    path, body = cli.posts[0]
+    assert path == "/api/chats/cid/ask"
+    assert body["payload"] == {"widget": "choose_images", "title": "T", "images": IMGS,
+                               "min": 1, "max": 1}
+    assert list(body["payload"].keys()) == ["widget", "title", "images", "min", "max"]
+
+
+def test_choose_images_com_media_e_actions(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "selected": ["a"]})
+    ui.choose_images(cli, "T", IMGS, minimum=0, maximum=1, media=MEDIA, actions=ACTIONS)
+    _, body = cli.posts[0]
+    assert body["payload"] == {"widget": "choose_images", "title": "T", "images": IMGS,
+                               "min": 0, "max": 1, "media": MEDIA, "actions": ACTIONS}
+
+
+def test_choose_images_inclui_so_o_campo_passado(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True})
+    ui.choose_images(cli, "T", IMGS, media=None, actions=ACTIONS)
+    _, body = cli.posts[0]
+    assert "actions" in body["payload"] and "media" not in body["payload"]
+
+    cli2 = Fake({"answered": True})
+    ui.choose_images(cli2, "T", IMGS, media=MEDIA, actions=None)
+    _, body2 = cli2.posts[0]
+    assert "media" in body2["payload"] and "actions" not in body2["payload"]
+
+
+def test_choose_images_estendido_sem_chat_id_degrada(monkeypatch):
+    monkeypatch.delenv("STUDIO_CHAT_ID", raising=False)
+    cli = Fake()
+    ans = ui.choose_images(cli, "T", IMGS, minimum=0, maximum=1, media=MEDIA, actions=ACTIONS)
+    assert ans == {"answered": False, "no_ui": True}
+    assert cli.posts == []
+
+
 # ---------- `ui.navigate` (F08 chat-navigate, ADR-038 adendo Wave 11) ----------
 #: A string exata que a tool devolve fora da aba do chat (E1 da matriz de erros do FDD).
 SEM_UI = "Sem interface de chat aqui: peça ao usuário para abrir a tela manualmente."

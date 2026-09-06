@@ -352,6 +352,166 @@ def base_pick(client: StudioClient, pid: str, note: str = "") -> str:
                  no_answer_text="O usuário não escolheu a base.")
 
 
+# ---------- 3 · Imagem base · revisão das candidatas NOVAS `[extensão]` ----------
+#: Ordem de avanço da cadeia da etapa 3, do passo mais cru ao mais acabado. Espelha `KINDS` do
+#: serviço de propósito: o MCP é cliente HTTP da própria API e NUNCA importa `studio.base.*`
+#: (ADR-037); o `kind` é contrato público, publicado em `GET /base/candidates`.
+BASE_KINDS = ("situation", "clean", "label", "upscale")
+BASE_KIND_LABEL = {"situation": "situação", "clean": "limpeza", "label": "rótulo",
+                   "upscale": "upscale 2x"}
+BASE_KIND_TITULO = {"situation": "Imagem de situação pronta", "clean": "Limpeza pronta",
+                    "label": "Rótulo pronto", "upscale": "Upscale 2x pronto"}
+
+
+def _base_rows(cands: Any, *, thumb_key: str, file_key: str) -> list[dict]:
+    """Normaliza candidatas da etapa 3 para a linha única que a grade e os pares consomem.
+
+    As duas fontes publicam shapes diferentes, por design: `new_candidates` traz `thumb_url`/
+    `file_url` já absolutos (e `thumb_url` pode ser `None`), `GET /base/candidates` traz
+    `thumb`/`file` relativos à raiz do projeto. A prefixação continua sendo de `_media_url`,
+    chamado por `_images_for` e por `_base_media` — aqui só se escolhe a URL disponível.
+    """
+    out = []
+    for c in _candidate_rows(cands):
+        cid = c.get("id")
+        thumb, arquivo = c.get(thumb_key), c.get(file_key)
+        url = arquivo if isinstance(arquivo, str) and arquivo else thumb
+        if not cid or not isinstance(url, str) or not url:
+            continue
+        kind = c.get("kind") if isinstance(c.get("kind"), str) else ""
+        out.append({"id": cid, "kind": kind, "source_id": c.get("source_id"), "file": url,
+                    "thumb": thumb if isinstance(thumb, str) and thumb else url,
+                    "label": BASE_KIND_LABEL.get(kind, kind)})
+    return out
+
+
+def _base_pendentes(brutas: Any, rows: list[dict]) -> list[dict]:
+    """Candidatas do `kind` mais avançado que ainda NÃO tem seleção — o que falta revisar na etapa.
+
+    É o fallback de quando não houve job (`state:"idle"`): sem candidata nova, o que interessa ao
+    usuário é o último passo da cadeia que ele ainda não decidiu.
+    """
+    selecionados = {c.get("kind") for c in _candidate_rows(brutas) if c.get("selected")}
+    presentes = {r["kind"] for r in rows}
+    alvo = next((k for k in reversed(BASE_KINDS) if k in presentes and k not in selecionados), None)
+    return [r for r in rows if r["kind"] == alvo] if alvo else []
+
+
+def _base_media(pid: str, rows: list[dict], origem: dict[str, dict]) -> tuple[list[dict], list[dict]]:
+    """`(itens do ui.show, itens media do ask)`. O par antes/depois só existe quando a origem ainda
+    está na etapa; sem `source_id` (ou com a origem apagada) só a imagem nova aparece (§6)."""
+    prefixo = f"/files/{pid}"
+    mostra: list[dict] = []
+    media: list[dict] = []
+    for r in rows:
+        depois = {"url": _media_url(prefixo, "base", r["file"]),
+                  "label": f"depois ({r['label']})" if r["label"] else "depois",
+                  "kind": "image", "role": "after", "pair": r["id"]}
+        src = origem.get(r.get("source_id") or "")
+        if src is None or src["id"] == r["id"]:
+            mostra.append({k: v for k, v in depois.items() if k not in ("role", "pair")})
+            continue
+        antes = {"url": _media_url(prefixo, "base", src["file"]),
+                 "label": f"antes ({src['label']})" if src["label"] else "antes",
+                 "kind": "image", "role": "before", "pair": r["id"]}
+        mostra += [antes, depois]
+        media += [antes, depois]
+    return mostra, media
+
+
+def _base_texto(avisos: list[str], texto: str) -> str:
+    """Junta os avisos (job com erro, ids ignorados) ao texto, numa linha só — o sufixo JSON da
+    seleção precisa continuar sendo a ÚLTIMA linha do retorno."""
+    return " ".join([*avisos, texto])
+
+
+def base_review(client: StudioClient, pid: str, ids: list[str] | None = None, note: str = "") -> str:
+    """`[extensão]` Revisão das candidatas NOVAS da etapa 3 (upscale/limpeza/rótulo) pelo chat.
+
+    Lê `new_candidates` do job, mostra o par antes→depois (`ui.show`) e abre a grade com
+    `min=0`/`max=1` mais os botões de ação, para que "não trocar" seja resposta válida
+    (ADR-038, decisão 6). `POST /base/select` só acontece com um `ask` respondido e um id vindo
+    da resposta. Não gera nada: nunca passa por `_paid` nem por rota de custo (ADR-016).
+    """
+    try:
+        job = client.get(f"/api/projects/{pid}/base/job")
+    except StudioApiError as e:
+        return str(e)
+    if not isinstance(job, dict):
+        job = {}
+    if job.get("state") == "running":
+        return (f"Ainda gerando ({job.get('done') or 0}/{job.get('total') or 0}). "
+                "Espere com `job_wait` e chame `base_review` de novo.")
+    avisos: list[str] = []
+    if job.get("state") == "error":
+        avisos.append(f"O job da etapa base falhou: {job.get('error') or 'erro desconhecido'}.")
+    rows = _base_rows(job.get("new_candidates"), thumb_key="thumb_url", file_key="file_url")
+
+    # `GET /base/candidates` é opcional (§5): só é buscado quando falta a origem do par, quando o
+    # usuário passou ids ou quando não houve job (fallback).
+    origem: dict[str, dict] = {}
+    if not rows or ids or any(r.get("source_id") for r in rows):
+        try:
+            etapa = client.get(f"/api/projects/{pid}/base/candidates")
+        except StudioApiError as e:
+            if not rows:
+                return str(e)   # sem job E sem candidatas: o erro é a única informação útil
+            etapa = None
+        todas = _base_rows(etapa, thumb_key="thumb", file_key="file")
+        origem = {r["id"]: r for r in todas}
+        if not rows:
+            rows = todas if ids else _base_pendentes(etapa, todas)
+
+    if ids:
+        faltando: list[str] = []
+        escolhidas: list[dict] = []
+        for i in ids:
+            alvo = next((r for r in rows if r["id"] == i), None) or origem.get(i)
+            if alvo is None:
+                faltando.append(i)
+            elif all(e["id"] != alvo["id"] for e in escolhidas):
+                escolhidas.append(alvo)
+        if faltando:
+            avisos.append("Ignorei ids que não existem na etapa 3: " + ", ".join(faltando) + ".")
+        rows = escolhidas
+
+    imgs = _images_for(pid, "base", rows, label_key="label")
+    if not imgs:
+        return _base_texto(avisos, "Nenhuma candidata nova na etapa 3. Gere com `base_generate` "
+                                   "ou importe pela tela.")
+
+    kind = next((k for k in reversed(BASE_KINDS) if any(r["kind"] == k for r in rows)), "")
+    titulo = BASE_KIND_TITULO.get(kind, "Novas candidatas da etapa 3")
+    mostra, media = _base_media(pid, rows, origem)
+    acoes = [{"label": "Usar como imagem base", "value": {"selected": [r["id"]]}, "for": r["id"]}
+             for r in rows]
+    acoes.append({"label": "Manter a atual", "value": {"selected": [], "keep": True}})
+    ui.show(client, mostra, titulo)
+    ans = ui.choose_images(client, f"{titulo}. Qual imagem vira a base final?", imgs,
+                           minimum=0, maximum=1, media=media, actions=acoes) or {}
+
+    if ans.get("no_ui"):
+        lista = ", ".join(f"{r['id']} ({_media_url(f'/files/{pid}', 'base', r['file'])})" for r in rows)
+        return _base_texto(avisos, f"Sem interface para escolher aqui. Novas candidatas: {lista}. "
+                                   "Diga qual usar como base.")
+    if not ans.get("answered"):
+        return _base_texto(avisos, "O usuário não escolheu (sem resposta). Você pode perguntar de novo.")
+    escolha = ans.get("selected") or []
+    if ans.get("keep") or not escolha:
+        return _base_texto(avisos, "Mantive a imagem base atual.")
+
+    cid = escolha[0]
+    try:
+        client.post(f"/api/projects/{pid}/base/select", {"id": cid, "note": note})
+    except StudioApiError as e:
+        return str(e)
+    alvo = next((r for r in rows if r["id"] == cid), {})
+    rot = alvo.get("label") or ""
+    src = origem.get(alvo.get("source_id") or "")
+    detalhe = f" ({rot}, origem `{src['id']}`)" if rot and src else (f" ({rot})" if rot else "")
+    texto = f"Imagem base atualizada: `{cid}`{detalhe}.\nFinal gravada em `base/base_final.png`."
+    return f"{_base_texto(avisos, texto)}\n{_result_json([cid], _next_step(client, pid))}"
+
 # ---------- 4 · Storyboard (motor local grátis + escolha) ----------
 def storyboard_local_generate(client: StudioClient, pid: str, prompt: str, count: int = 4,
                               model: str = "flux-schnell") -> str:

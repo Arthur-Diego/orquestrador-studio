@@ -37,9 +37,15 @@ Em cada um dos 3 passos (situação, rótulo, upscale), além de "importar do Hi
 
 - Reusar `base/cost`, `base/generate`, `base/job` (já existem para os 3 kinds). Garantir que `cost`
   devolva `{per_item,total,raw}` e trate CLI deslogado (credits null + error) sem 500.
-- Para o "antes/depois": expor, no retorno do job/candidatos ou num helper, a imagem de ORIGEM de
+- ~~Para o "antes/depois": expor, no retorno do job/candidatos ou num helper, a imagem de ORIGEM de
   cada resultado (a candidata selecionada da cadeia: upscale←label←situação) para a UI parear.
-  `upscale_ratio()` já dá origem/destino do upscale; generalizar para os 3 kinds se necessário.
+  `upscale_ratio()` já dá origem/destino do upscale; generalizar para os 3 kinds se necessário.~~
+  **FECHADO em 2026-09-06** pela frente F11 da Wave 11 (`base-upscale-chat-fdd.md`, Task-Id
+  ADH-OS-20260906-13, card #94): a origem virou o campo persistido `source_id` na candidata
+  (`studio/base/service.py::source_candidate`, generalizado para os 3 kinds derivados) e o job passa
+  a devolver `new_candidates: [{id, kind, thumb_url, file_url, source_id}]`
+  (`studio/base/service.py::new_candidates`, injetado por `job_status`). A tela deixou de inferir a
+  origem no cliente e passou a ler o campo do servidor.
 - Endpoint de download não é preciso (os arquivos já são servidos por `/files/{pid}/...`); a UI usa
   `<a download>`.
 
