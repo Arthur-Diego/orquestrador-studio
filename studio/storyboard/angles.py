@@ -30,7 +30,7 @@ from pathlib import Path
 from PIL import Image
 
 from .. import higgsfield as hf
-from ..common import atomic, ingest, settings
+from ..common import atomic, ingest, prompter, settings
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
 
@@ -57,6 +57,16 @@ DOWNLOADS_DEFAULT = ingest.DOWNLOADS_DEFAULT
 IMG_EXT = ingest.MEDIA_EXT["image"]
 
 registry = JobRegistry()
+
+#: `[extensão]` preset de realismo dos prompts de ângulo/produto (FDD storyboard-geracao-por-cena §5).
+#: Registrado por `setdefault` em import time, no precedente de `service.py` (`storyboard.script`):
+#: idempotente nos dois sentidos do rebase e sem editar `studio/common/settings.py`. Default de
+#: código `None` porque NENHUMA aula ensina presets (ADR-004, gate 2 do CLAUDE.md) — é opt-in.
+PRESET_ACTION = "storyboard.angles"
+settings.PRESET_ACTIONS.setdefault(PRESET_ACTION, None)
+#: Valor da query `preset` que expressa "null explícito" (o `PresetUnset` dos bodies não cabe numa
+#: query string): `?preset=none` desliga o preset só nesta chamada.
+PRESET_NONE = "none"
 
 
 class NotReady(RuntimeError):
@@ -149,6 +159,10 @@ def list_scenes(pid: str) -> dict:
         sel = _selection(root, sid)
         scenes.append({
             "id": sid, "n": s.get("n"), "text": s.get("text") or "",
+            # `[extensão]` geração por cena: prompt de imagem da cena (repasse DEFENSIVO de
+            # `scenes.json` — string vazia enquanto ninguém o persistir), para a barra de geração
+            # pré-preencher o campo sem depender da persistência de outra frente.
+            "image_prompt": s.get("image_prompt") or "",
             # `[extensão]` cena-multi-keyframe (ADR-018): a base da cena vem da `primary`; expomos
             # também a galeria `images` para o front dos ângulos.
             "primary": _scene_primary(s), "images": s.get("images") or [],
@@ -277,23 +291,58 @@ def _camera(lens: float, aperture: float, scale: str, angle: str, camera: str | 
             f"{angle} angle. Realistic.")
 
 
+def _resolve_preset(pid: str, preset: str | None) -> tuple[str | None, str]:
+    """`[extensão]` Três estados da query `preset` (FDD §5, contrato 4).
+
+    Ausente (`None`) resolve o default da ação por `settings.preset_default_for` (projeto → global →
+    código, hoje `None`); o literal `"none"` desliga o preset nesta chamada; qualquer outro valor é
+    um id do catálogo `prompter.REALISM_PRESETS` (desconhecido → `ValueError`, que o router vira 422).
+    """
+    if preset is None:
+        r = settings.preset_default_for(PRESET_ACTION, pid)
+        return r["preset"], r["source"]
+    if preset == PRESET_NONE:
+        return None, "request"
+    return prompter.valid_preset(preset), "request"
+
+
+def _preset_rig(preset_id: str) -> str:
+    """`[extensão]` Bloco de câmera derivado do preset de realismo — SUBSTITUI o bloco manual.
+
+    Fonte única dos valores é `prompter.REALISM_PRESETS` (a composição mora aqui, e não no
+    `prompter`, para não colidir com a frente que mexe em `ROLES`). Somar os dois blocos produziria
+    instruções de câmera contraditórias, então o preset entra no lugar do `_camera` (decisão P1 do
+    gate em lote da wave 11).
+    """
+    p = prompter.REALISM_PRESETS[preset_id]
+    r = p["rig"]
+    return (f"Shot on {r['camera']}, {r['lens']}, {r['format']}, {r['focal']}, {r['aperture']}. "
+            f"Dominant light: {p['light']}. Color grade: {p['grade']}. Realistic.")
+
+
 def _subject(root: Path) -> str:
     meta = json.loads((root / "project.json").read_text())
     return meta.get("product") or "the product"
 
 
-def build_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None = None,
+def build_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None = None,  # noqa: PLR0913
                   scale: str = "close", realism: bool = True, lens: float = 35, aperture: float = 2.8,
                   angle: str = "eye-level", edits: list[str] | None = None,
-                  model: str = DEFAULT_MODEL, count: int = 4, camera: str | None = None) -> dict:
+                  model: str = DEFAULT_MODEL, count: int = 4, camera: str | None = None,
+                  preset: str | None = None) -> dict:
     """Prompts em inglês, determinísticos para os mesmos parâmetros (rótulos e avisos em pt-BR).
 
     `camera` é o preset (ou o texto livre) do bloco de câmera. Em `kind="angle"` o bloco entra
     quando `realism` está ligado; em `kind="edit"` ele é **opt-in** — só entra quando `camera` é
     informado, porque a edição da aula é uma lista de modificações, não um pedido de câmera
-    (auditoria 5.3: o bloco passa a ser oferecido também na edição, sem virar padrão)."""
+    (auditoria 5.3: o bloco passa a ser oferecido também na edição, sem virar padrão).
+
+    `preset` (`[extensão]`, opt-in) é o preset de realismo da ação `storyboard.angles`: quando
+    resolvido, o rig do catálogo SUBSTITUI o bloco de câmera manual. Com o preset resolvido em
+    `None` (default de código) o `text` é byte a byte o de sempre."""
     root, _ = _resolve(pid, scene)
     ratio = _aspect_ratio(root)
+    rig, source = _resolve_preset(pid, preset)
     if scale not in _SHOT_PHRASE:
         raise ValueError(f"escala inválida: {scale} (close, medium ou wide)")
     if kind == "edit":
@@ -302,13 +351,15 @@ def build_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None
             raise ValueError("kind=edit exige pelo menos uma instrução em `edits`.")
         numbered = " ".join(f"{i}. {e if e.endswith('.') else e + '.'}" for i, e in enumerate(items, 1))
         text = f"I want the following modifications. {numbered} {_KEEP}"
-        if realism and camera:
-            text += " " + _camera(lens, aperture, scale, angle, camera)
+        if realism and (rig or camera):
+            text += " " + (_preset_rig(rig) if rig else _camera(lens, aperture, scale, angle, camera))
         return {"model": model, "aspect_ratio": ratio, "count": 1, "scene": scene,
                 "ui_hint": ("Uma rodada de edição por vez. O resultado que ficar bom vira a NOVA BASE "
                             "da cena (\"Usar como base da cena\") — só depois faça o Multi Shot, "
                             "porque toda variação herda as cores e a luz da base."),
-                "warning": WARNING_COLORS, "cameras": CAMERA_PRESETS, "camera": camera,
+                "warning": WARNING_COLORS, "cameras": CAMERA_PRESETS,
+                "camera": None if rig else camera,
+                "preset": rig, "preset_source": source,
                 "focus_examples": FOCUS_EXAMPLES,
                 "prompts": [{"label": _EDIT_LABEL, "text": text}]}
     if kind != "angle":
@@ -317,33 +368,41 @@ def build_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None
     text = (f"Bring me another point of view of this image. I want {_SHOT_PHRASE[scale]} {subj}. "
             "Same scene, same lighting and colors.")
     if realism:
-        text += " " + _camera(lens, aperture, scale, angle, camera)
+        text += " " + (_preset_rig(rig) if rig else _camera(lens, aperture, scale, angle, camera))
     return {"model": model, "aspect_ratio": ratio, "count": count, "scene": scene,
             "ui_hint": (f"Na Higgsfield: abra {STEP}/{scene}/base.png, use Multi Shot com este prompt. "
                         "Para realismo use o Cinema Studio (câmera, lente, abertura) ou mantenha o "
                         "bloco de câmera do prompt."),
             "warning": WARNING_COLORS, "cameras": CAMERA_PRESETS,
-            "camera": camera or DEFAULT_CAMERA, "focus_examples": FOCUS_EXAMPLES,
+            "camera": None if rig else (camera or DEFAULT_CAMERA),
+            "preset": rig, "preset_source": source,
+            "focus_examples": FOCUS_EXAMPLES,
             "prompts": [{"label": _ANGLE_LABEL, "text": text}]}
 
 
-def product_prompts(pid: str, model: str = DEFAULT_MODEL) -> dict:
-    """Aula 013: duas instruções, uma rodada por vez, a segunda sobre o resultado da primeira."""
+def product_prompts(pid: str, model: str = DEFAULT_MODEL, preset: str | None = None) -> dict:
+    """Aula 013: duas instruções, uma rodada por vez, a segunda sobre o resultado da primeira.
+
+    `preset` (`[extensão]`) segue a semântica de três estados do contrato 4: sem preset resolvido os
+    dois textos são byte a byte os de sempre; com preset, o rig é anexado ao final de cada um."""
     root = project_dir(pid)
     if not (root / STEP / PRODUCT / "ref.png").exists():
         raise FileNotFoundError("Envie a imagem de referência (imagem 1) da cena do produto.")
+    rig, source = _resolve_preset(pid, preset)
+    suffix = " " + _preset_rig(rig) if rig else ""
     return {
         "model": model, "aspect_ratio": _aspect_ratio(root), "count": 1,
         "image_references": [f"{STEP}/{PRODUCT}/ref.png", "base/base_final.png"],
         "note": PRODUCT_NOTE,
+        "preset": rig, "preset_source": source,
         "ui_hint": ("Nano Banana com as duas imagens como referência (imagem 1 = a cena, imagem 2 = "
                     "base/base_final.png). Rode a instrução 1; depois rode a instrução 2 sobre o resultado."),
         "prompts": [
             {"label": "1. Trocar a lata (aula 013: 'troque a lata da imagem 1 pela da imagem 2')",
-             "text": f"Replace the can in image 1 with the can from image 2. {_KEEP}"},
+             "text": f"Replace the can in image 1 with the can from image 2. {_KEEP}{suffix}"},
             {"label": ("2. Congelar tudo ao redor (aula 013: 'retire o texto abaixo da lata e faça com "
                        "que tudo ao redor dela esteja congelado')"),
-             "text": f"Remove the text below the can and make everything around it frozen. {_KEEP}"},
+             "text": f"Remove the text below the can and make everything around it frozen. {_KEEP}{suffix}"},
         ],
     }
 

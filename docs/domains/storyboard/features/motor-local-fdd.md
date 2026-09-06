@@ -73,10 +73,19 @@ Base: `/api/projects/{pid}/storyboard/local`. Todos 404 se o projeto não existe
   Nunca 5xx: motor offline é `ready:false` com `detail`, não erro.
 - `POST /generate` → `200 {state,done,total,added,error,log,mode:"generate",result,result_id}` (forma
   de job; start-de-job devolve 200, convenção do studio — igual à ideação paga).
-  Body `{prompt:str, count:int=4, model:str="flux-schnell", steps?:int, seed?:int}`.
+  Body `{prompt:str, count:int=4, model:str="flux-schnell", steps?:int, seed?:int, scene?:str}`.
   `409` se motor offline (gate) ou job local em andamento; `422` prompt vazio / count ∉ {1,4} /
   modelo desconhecido; `403`/precondição se base ausente NÃO se aplica (generate não exige base).
-- `GET /job` → `200` estado do job local (mesmo formato de `job_status`, + `mode`, `result`, `result_id`).
+  > **Campo `scene` (aditivo, wave 11 · `storyboard-geracao-por-cena`, card ADH-OS-20260906-09).**
+  > Ausente ou `null` = o comportamento descrito aqui, byte a byte (ingestão em
+  > `storyboard/candidates/`, galeria de ideação do painel 01b). Com `scene="cenaNN"` (presente em
+  > `storyboard/scenes.json`) ou `scene="product"`, a ingestão vai para
+  > `storyboard/<scene>/candidates/` e o resultado aparece na galeria da cena
+  > (`GET .../angles/scenes/{scene}/candidates`). A cena é validada ANTES do gate do motor:
+  > fora do regex `^cena\d{2}$` → `422`; ausente do `scenes.json` → `404`; `scenes.json`
+  > inexistente → `409`. Nenhum registro de job novo (ADR-006): o job local continua por `pid`.
+- `GET /job` → `200` estado do job local (mesmo formato de `job_status`, + `mode`, `result`,
+  `result_id` e — wave 11 — `scene`: o id da cena de destino, `null` nos jobs de ideação).
 - `POST /inpaint` → `200` job (multipart). Campos: `mask` (file PNG), `instruction` (form),
   `source_id?` (form), `model` (form="flux-dev"), `steps?`,`guidance?`,`denoise?` (form).
   `409` motor offline / job em andamento; `422` instrução vazia / máscara inválida / fonte
@@ -98,7 +107,8 @@ Convenção de erro do studio preservada: `EngineUnavailable`→409 (com `detail
 
 ### 7. Observabilidade
 - `log.info("local_job", {...})` com `pid`, `mode`, `model` e o `count` (generate) ou `parent`
-  (inpaint). O gate/health não gera log de nível info.
+  (inpaint); desde a wave 11 o `generate` carrega também `scene` (`None` na ideação). O gate/health
+  não gera log de nível info.
 - Sem livro-caixa (grátis): registra apenas evento informativo `settings.record_generation` com
   custo zero? **Não** — para não poluir o livro-caixa de créditos pagos; apenas `log.info`.
 

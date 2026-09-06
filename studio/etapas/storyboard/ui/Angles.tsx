@@ -2,12 +2,24 @@
 // do `view.js` vanilla. Painel 04 (lista de cenas + card do produto) e painel 05 (cena aberta:
 // prompts de ângulo, galeria de candidatos, ordem dos frames). Escreve `storyboard/storyboard.json`.
 import { useCallback, useEffect, useState } from "react";
-import { Modal, useUpload } from "../../../../frontend/src/ui";
+import {
+  Modal,
+  progressJob,
+  useCostConfirm,
+  useProgress,
+  useUpload,
+} from "../../../../frontend/src/ui";
 import type { StudioCtx } from "../../../../frontend/src/shell/plugin";
-import type { AngleScene, Candidate, ProductScene, PromptOut } from "./types";
+import type { AngleScene, Candidate, LocalStatus, ProductScene, PromptOut, Script } from "./types";
 
 const PRODUCT = "__produto__"; // cena virtual: o card "produto" do painel 04
 const sceneLabel = (id: string) => String(id || "").replace(/^cena/, "cena ");
+/** Id de cena que o BACKEND entende (o card virtual do painel 04 é o literal `product`). */
+const sceneId = (s: string | null) => (s === PRODUCT ? "product" : s || "");
+//: `[extensão]` — o caminho da aula 011 (gerar na UI da Higgsfield e importar) continua sendo o
+//: primeiro da tela; os dois atalhos abaixo são adicionais e trazem o custo no rótulo (ADR-004).
+const AULA_NOTE =
+  "O caminho da aula continua sendo gerar na UI da Higgsfield e importar (chip acima). Os atalhos abaixo são extras.";
 
 interface AnglesProps {
   ctx: StudioCtx;
@@ -21,6 +33,8 @@ type ModalKind = null | { kind: "import" } | { kind: "base"; id: string };
 export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
   const { api, apiUpload, toast } = ctx;
   const base = useCallback(() => `/api/projects/${ctx.pid()}/storyboard/angles`, [ctx]);
+  //: `[extensão]` as rotas do motor local vivem FORA do namespace `angles` (`.../storyboard/local`).
+  const sbBase = useCallback(() => `/api/projects/${ctx.pid()}/storyboard`, [ctx]);
 
   const [scenes, setScenes] = useState<AngleScene[]>([]);
   const [scene, setScene] = useState<string | null>(null);
@@ -45,8 +59,21 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
   const [minutes, setMinutes] = useState(120);
   const [copied, setCopied] = useState<number | null>(null);
 
+  // `[extensão]` barra de geração por cena (motor local grátis + CLI pago) — ADR-016/033.
+  const [localSt, setLocalSt] = useState<LocalStatus | null>(null);
+  const [hf, setHf] = useState<{ installed?: boolean; logged_in?: boolean } | null>(null);
+  const [script, setScript] = useState<Script | null>(null);
+  const [genPrompt, setGenPrompt] = useState("");
+  const [genCount, setGenCount] = useState(4);
+  const [prog, progEl] = useProgress();
+  const { confirm, element: costEl } = useCostConfirm();
+
   const isProduct = scene === PRODUCT;
   const prodPick = () => prod.find((c) => c.selected) || null;
+  const localReady = !!localSt?.ready;
+  const cliReady = !!hf && !!hf.installed && !!hf.logged_in;
+  const localWhy = localReady ? "" : localSt?.detail || "Motor local offline: suba o ComfyUI (porta 8188).";
+  const cliWhy = cliReady ? "" : "CLI da Higgsfield ausente ou deslogado — gere na UI da Higgsfield e importe.";
 
   // ------- carregamentos -------
   const loadScenes = useCallback(async () => {
@@ -97,18 +124,36 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
     [api, base, toast],
   );
 
+  /**
+   * Prompt sugerido da cena, na ordem do FDD §4: `image_prompt` da cena → `image_prompt` da cena
+   * correspondente do roteiro (`script.json`) → o texto da cena. Tudo opcional: F07 não depende da
+   * persistência que outra frente vai criar.
+   */
+  const promptOf = useCallback(
+    (id: string, lista: AngleScene[], sc: Script | null): string => {
+      const s = lista.find((x) => x.id === id);
+      if (!s) return "";
+      if (s.image_prompt) return s.image_prompt;
+      const i = (s.n || lista.indexOf(s) + 1) - 1;
+      const doRoteiro = (sc?.scenes || [])[i];
+      return doRoteiro?.image_prompt || s.text || "";
+    },
+    [],
+  );
+
   const openScene = useCallback(
-    async (id: string) => {
+    async (id: string, lista?: AngleScene[], sc?: Script | null) => {
       setScene(id);
       setOrder([]);
       setPrompts([]);
+      setGenPrompt(id === PRODUCT ? "" : promptOf(id, lista ?? scenes, sc === undefined ? script : sc));
       if (id === PRODUCT) {
         await loadProd();
       } else {
         await loadCands(id);
       }
     },
-    [loadCands, loadProd],
+    [loadCands, loadProd, promptOf, scenes, script],
   );
 
   // Boot / troca de projeto: carrega tudo e abre a 1ª cena (ou o produto) — o `onProject` do vanilla.
@@ -135,9 +180,29 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
       } catch (err) {
         if (vivo) setErroLista((err as Error).message);
       }
+      // `[extensão]`: prontidão das pontes + roteiro (para o prompt sugerido), uma vez por montagem.
+      let roteiro: Script | null = null;
+      try {
+        const st = (await api(`${sbBase()}/local/status`)) as LocalStatus;
+        if (vivo) setLocalSt(st);
+      } catch {
+        if (vivo) setLocalSt(null);
+      }
+      try {
+        const st = (await api("/api/higgsfield/status")) as { installed?: boolean; logged_in?: boolean };
+        if (vivo) setHf(st);
+      } catch {
+        if (vivo) setHf(null);
+      }
+      try {
+        roteiro = ((await api(`${sbBase()}/script`)) as { script?: Script }).script || null;
+      } catch {
+        roteiro = null;
+      }
+      if (vivo) setScript(roteiro);
       await loadProd();
       if (!vivo) return;
-      await openScene(sc[0] ? sc[0].id : PRODUCT);
+      await openScene(sc[0] ? sc[0].id : PRODUCT, sc, roteiro);
     })();
     return () => {
       vivo = false;
@@ -178,7 +243,10 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
     if (!scene) return toast("Abra uma cena primeiro.");
     if (isProduct) {
       try {
-        setPrompts(((await api(`${base()}/product/prompts`)) as { prompts: PromptOut[] }).prompts);
+        const ps = ((await api(`${base()}/product/prompts`)) as { prompts: PromptOut[] }).prompts;
+        setPrompts(ps);
+        // `[extensão]`: o prompt montado alimenta a barra de geração — um só campo é enviado.
+        if (ps[0]) setGenPrompt(ps[0].text);
       } catch (err) {
         toast((err as Error).message);
       }
@@ -197,6 +265,112 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
     try {
       const r = (await api(`${base()}/scenes/${scene}/prompts?${q}`)) as { prompts: PromptOut[] };
       setPrompts(r.prompts);
+      if (r.prompts[0]) setGenPrompt(r.prompts[0].text);
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  }
+
+  // ---------- `[extensão]` atalhos de geração da cena (FDD storyboard-geracao-por-cena §4) ----------
+  // Duas pontes ADICIONAIS ao caminho da aula (gerar na UI da Higgsfield e importar), que continua
+  // sendo o primeiro da tela. A grátis (motor local, ADR-033) não gasta nada; a paga (CLI, ADR-002)
+  // NUNCA parte sem o gate de custo (ADR-016) — `confirm` antes de qualquer POST de generate.
+  /** Rota da cena aberta: as do produto vivem em `/product/...`, as demais em `/scenes/{id}/...`. */
+  const sceneUrl = useCallback(
+    (sufixo: string) => (isProduct ? `${base()}/product/${sufixo}` : `${base()}/scenes/${scene}/${sufixo}`),
+    [base, isProduct, scene],
+  );
+
+  /** Corpo de custo/geração paga: a cena manda `prompts[]`, o produto manda `prompt` (contrato). */
+  function paidBody(texto: string, count: number, model = "nano_banana_2") {
+    return isProduct
+      ? { model, prompt: texto, count, resolution: "2k" }
+      : { model, prompts: [texto], count, resolution: "2k" };
+  }
+
+  async function runSceneLocal() {
+    if (!scene) return toast("Abra uma cena primeiro.");
+    if (!localReady) return toast(localWhy);
+    const p = genPrompt.trim();
+    if (!p) return toast("Escreva o prompt (em inglês, aula 007).");
+    try {
+      await progressJob(prog, {
+        title: "Gerar imagem da cena — motor local (grátis) [extensão]",
+        subtitle: "Flux via ComfyUI — sem gastar crédito; o resultado cai na galeria desta cena",
+        start: () =>
+          api(`${sbBase()}/local/generate`, {
+            method: "POST",
+            body: JSON.stringify({ prompt: p, count: genCount, model: "flux-schnell", scene: sceneId(scene) }),
+          }),
+        jobUrl: `${sbBase()}/local/job`,
+        done: async () => {
+          await reload();
+        },
+        label: "Imagens da cena geradas",
+      });
+      refreshGuide();
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  }
+
+  async function runSceneCli() {
+    if (!scene) return toast("Abra uma cena primeiro.");
+    if (!cliReady) return toast(cliWhy);
+    const p = genPrompt.trim();
+    if (!p) return toast("Escreva ou gere o prompt do ângulo antes.");
+    const body = paidBody(p, 1);
+    try {
+      // Modo SIMPLES do gate de custo: `costFn` bate na rota `cost` REAL dos ângulos, porque
+      // `storyboard.angles` ainda não está em `settings.ACTIONS` (FDD §12, auto-aceite 2).
+      const ok = await confirm({
+        costFn: () => api(sceneUrl("cost"), { method: "POST", body: JSON.stringify(body) }),
+        label: "Gerar via CLI (gasta créditos)",
+      });
+      if (!ok) return;
+      await progressJob(prog, {
+        title: "Gerar ângulos via CLI (gasta créditos) [extensão]",
+        subtitle: "Higgsfield via CLI oficial — a base da cena vai como referência",
+        start: () => api(sceneUrl("generate"), { method: "POST", body: JSON.stringify(body) }),
+        jobUrl: `${base()}/job`,
+        done: async () => {
+          await reload();
+        },
+        label: "Ângulos gerados",
+      });
+      refreshGuide();
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  }
+
+  async function runSceneUpscale() {
+    if (!scene) return toast("Abra uma cena primeiro.");
+    if (!cliReady) return toast(cliWhy);
+    if (order.length !== 1) return toast("Marque exatamente um candidato para upscalar.");
+    const id = order[0] as string;
+    const model = "bytedance_image_upscale";
+    const body = { id, model };
+    try {
+      // A estimativa usa o MODELO DO UPSCALE (não o de geração): a planilha tem de mostrar o custo
+      // do que vai ser feito. `cost` é grátis — consultar preço nunca gasta crédito (ADR-016).
+      const ok = await confirm({
+        costFn: () =>
+          api(sceneUrl("cost"), { method: "POST", body: JSON.stringify(paidBody("upscale 2x", 1, model)) }),
+        label: "Upscalar 2x (gasta créditos)",
+      });
+      if (!ok) return;
+      await progressJob(prog, {
+        title: "Upscalar 2x (gasta créditos) [extensão]",
+        subtitle: "O 2x High Fidelity da aula 011, sem sair do Studio",
+        start: () => api(sceneUrl("upscale"), { method: "POST", body: JSON.stringify(body) }),
+        jobUrl: `${base()}/job`,
+        done: async () => {
+          await reload();
+        },
+        label: "Upscale pronto",
+      });
+      refreshGuide();
     } catch (err) {
       toast((err as Error).message);
     }
@@ -514,6 +688,60 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
             onChange={(e) => setEdits(e.target.value)}
           />
         </div>
+        {/* `[extensão]` atalhos de geração da cena — o caminho da aula continua acima e intacto. */}
+        <p className="note" id="shotsGenNote">
+          {AULA_NOTE}
+        </p>
+        <div className="row wrap sh-builder" id="shotsGenBar">
+          <span className="eyebrow lbl">[extensão]</span>
+          <input
+            id="shotsGenPrompt"
+            className="grow-md"
+            placeholder="prompt desta cena (em inglês, aula 007)"
+            title="Sugestão: o prompt de imagem da cena; edite à vontade antes de gerar"
+            value={genPrompt}
+            onChange={(e) => setGenPrompt(e.target.value)}
+          />
+          <select
+            id="shotsGenCount"
+            aria-label="Quantas imagens no motor local"
+            value={genCount}
+            onChange={(e) => setGenCount(+e.target.value)}
+          >
+            <option value={4}>4 (quando está incerto)</option>
+            <option value={1}>1 (só um tweak)</option>
+          </select>
+          <button
+            type="button"
+            id="btnSceneLocal"
+            className="ghost"
+            disabled={!localReady}
+            title={localWhy}
+            onClick={() => void runSceneLocal()}
+          >
+            Gerar imagem da cena - local (grátis)
+          </button>
+          <button
+            type="button"
+            id="btnSceneCli"
+            className="primary"
+            disabled={!cliReady}
+            title={cliWhy}
+            onClick={() => void runSceneCli()}
+          >
+            Gerar via CLI (gasta créditos)
+          </button>
+          <button
+            type="button"
+            id="btnSceneUpscale"
+            className="ghost"
+            disabled={!cliReady}
+            title={cliWhy || "Marque exatamente um candidato e upscale o 2x High Fidelity da aula 011"}
+            onClick={() => void runSceneUpscale()}
+          >
+            Upscalar 2x (gasta créditos)
+          </button>
+        </div>
         <div id="shotsPrompts" className={`prompts one${prompts.length ? "" : " hidden"}`}>
           {prompts.map((p, i) => (
             <div className="prompt sm" key={i}>
@@ -672,6 +900,10 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
           }}
         />
       ) : null}
+
+      {/* `[extensão]` gate de custo (ADR-016) e progresso honesto dos jobs por cena. */}
+      {costEl}
+      {progEl}
     </>
   );
 }

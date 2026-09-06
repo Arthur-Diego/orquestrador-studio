@@ -279,6 +279,96 @@ def storyboard_pick(client: StudioClient, pid: str) -> str:
                  select_body=lambda ids: {"ids": ids})
 
 
+# `[extensão]` geração POR CENA (FDD storyboard-geracao-por-cena §5, contratos 6 e 7). Paridade
+# tela × agente: as duas pontes que a tela ganhou (motor local grátis e CLI pago) e a escolha dos
+# frames da cena. Como toda tool do MCP, são clientes HTTP da própria API — nada importa
+# `studio.storyboard.*` (ADR-037).
+SCENE_ENGINES = ("local", "cli")
+
+
+def _scene_prompt(client: StudioClient, pid: str, scene: str) -> str:
+    """1º prompt de ângulo da cena, para o modo `cli` sem prompt (leitura DEFENSIVA: falhou, vazio)."""
+    try:
+        resp = client.get(f"/api/projects/{pid}/storyboard/angles/scenes/{scene}/prompts") or {}
+    except StudioApiError:
+        return ""
+    prompts = resp.get("prompts") if isinstance(resp, dict) else None
+    first = (prompts or [{}])[0] if prompts else {}
+    return (first.get("text") or "").strip() if isinstance(first, dict) else ""
+
+
+def storyboard_scene_generate(client: StudioClient, pid: str, scene: str, engine: str = "local",
+                              prompt: str = "", count: int = 4, model: str = "",
+                              confirm: bool = False) -> str:
+    """Gera a imagem/os ângulos de UMA cena. `engine="local"` é grátis; `"cli"` passa por `_paid`."""
+    if engine not in SCENE_ENGINES:
+        return f"engine inválido: {engine} (use local ou cli)."
+    if engine == "local":
+        body = (prompt or "").strip()
+        if not body:
+            return f"Escreva o prompt da cena {scene} (em inglês, aula 007)."
+        prefix = _character_prefix(client, pid)
+        if prefix:
+            body = f"{body}. Character identity (keep identical): {prefix}"
+        gen_model = model or "flux-schnell"
+        try:
+            client.post(f"/api/projects/{pid}/storyboard/local/generate",
+                        {"prompt": body, "count": count, "model": gen_model, "scene": scene})
+        except StudioApiError as e:
+            return str(e)  # 409 motor offline · 404 cena desconhecida · 422 pedido inválido
+        return (f"Imagem da cena {scene} sendo gerada no motor LOCAL (grátis) com {gen_model}. "
+                "Acompanhe com `job_wait` (etapa storyboard).")
+    texto = (prompt or "").strip() or _scene_prompt(client, pid, scene)
+    if not texto:
+        return f"Sem prompt para a cena {scene}: escreva um ou prepare a base para o builder de ângulos."
+    gen_model = model or "nano_banana_2"
+    body = {"model": gen_model, "prompts": [texto], "count": count, "resolution": "2k"}
+    return _paid(client, step=f"storyboard/{scene}",
+                 cost_path=f"/api/projects/{pid}/storyboard/angles/scenes/{scene}/cost", cost_body=body,
+                 gen_path=f"/api/projects/{pid}/storyboard/angles/scenes/{scene}/generate", gen_body=body,
+                 action=f"Gerar ângulos da cena {scene}", model=gen_model, confirm=confirm)
+
+
+def storyboard_scene_pick(client: StudioClient, pid: str, scene: str) -> str:
+    """Mostra os candidatos DA CENA para o usuário escolher e ordenar (ADR-038, humano no laço).
+
+    Normaliza a resposta localmente (`{scene, base, candidates}`) em vez de usar o `_pick` genérico,
+    que trata a resposta como lista — e monta a thumb com o caminho JÁ relativo à raiz do projeto
+    que `angles.list_candidates` devolve (`storyboard/cenaNN/candidates/thumbs/<sha12>.jpg`).
+    """
+    try:
+        resp = client.get(f"/api/projects/{pid}/storyboard/angles/scenes/{scene}/candidates") or {}
+    except StudioApiError as e:
+        return str(e)
+    cands = resp.get("candidates") if isinstance(resp, dict) else resp
+    imgs = [{"id": c["id"], "thumb": f"/files/{pid}/{c['thumb']}",
+             "label": c.get("prompt") or c.get("name") or ""}
+            for c in (cands or []) if c.get("thumb")]
+    if not imgs:
+        return (f"Nenhum candidato na cena {scene} ainda: gere (local ou CLI) ou importe antes "
+                "de escolher.")
+    ans = ui.choose_images(client, f"Escolha e ORDENE os frames da cena {scene}", imgs,
+                           minimum=1, maximum=None)
+    if ans.get("no_ui"):
+        return ("Sem interface para escolher aqui. Candidatas disponíveis: "
+                + ", ".join(i["id"] for i in imgs) + ". Diga quais escolher.")
+    if not ans.get("answered"):
+        return "O usuário não escolheu (sem resposta). Você pode perguntar de novo."
+    ids = ans.get("selected") or []
+    if not ids:
+        return "O usuário não selecionou nenhuma imagem."
+    try:
+        saved = client.post(f"/api/projects/{pid}/storyboard/angles/scenes/{scene}/select",
+                            {"shots": [{"id": i} for i in ids]}) or {}
+    except StudioApiError as e:
+        return str(e)
+    shots = saved.get("shots") if isinstance(saved, dict) else None
+    nomes = [str(s.get("file") or "").rsplit("/", 1)[-1] for s in (shots or [])] or \
+        [f"shot{i:02d}_final.png" for i in range(1, len(ids) + 1)]
+    return (f"{len(ids)} shot(s) escolhido(s) e ordenado(s) na cena {scene} "
+            f"({', '.join(n for n in nomes if n)}).")
+
+
 def storyboard_scenes(client: StudioClient, pid: str) -> str:
     resp = client.get(f"/api/projects/{pid}/storyboard/scenes") or {}
     scenes = resp.get("scenes") if isinstance(resp, dict) else resp

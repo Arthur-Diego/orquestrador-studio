@@ -1,0 +1,1837 @@
+{
+  "info": {
+    "name": "storyboard - geracao por cena / angles (ADH-OS-20260906-09) - Etapa 4 [extensao]",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Coleção gerada a partir da SEÇÃO 5 (Contratos públicos) do FDD\n`docs/domains/storyboard/features/storyboard-geracao-por-cena-fdd.md`.\n\nFeature 'storyboard-geracao-por-cena': liga as duas pontes de geração (motor local grátis, ADR-033; Higgsfield CLI paga, ADR-002) à metade 'Ângulos por cena' da etapa 4, que hoje só sabe importar.\n\nCobre os contratos 1 a 5 do FDD (campo `scene` no motor local, `scene` no job local, `image_prompt` em `angles/scenes`, `preset` de realismo nos prompts de ângulo e do produto) e os endpoints EXISTENTES que a frente só passou a chamar (FDD §5, L374-380): `angles/scenes/{scene}/{cost,generate,upscale,base,select}`, `angles/job`, `angles/product/{cost,generate,upscale,select,candidates}`.\n\nBase das rotas: /api/projects/{pid}/storyboard. Requer {{pid}} de um projeto existente com `storyboard/scenes.json` e o serviço FastAPI no ar (PORT=8767 nesta worktree).\n\nAMBIENTE: as requisições PAGAS exigem o CLI da Higgsfield instalado E logado (`hf.require_cli` → 409, ADR-028) e as LOCAIS exigem o motor `engine` + ComfyUI no ar (`EngineUnavailable` → 409, ADR-033). Por isso os testes dessas rotas aceitam 200 OU 409-com-motivo: a coleção roda inteira numa máquina sem CLI e sem ComfyUI, afirmando o gate em vez de exigir o caminho feliz.\n\nNÃO substitui `storyboard.postman_collection.json` (OS-004) nem `motor-local.postman_collection.json` (ADH-OS-20260905-01): são arquivos separados na mesma pasta."
+  },
+  "variable": [
+    {
+      "key": "pid",
+      "value": "",
+      "description": "id de um projeto existente, com storyboard/scenes.json concluído (path param {pid})"
+    },
+    {
+      "key": "scene",
+      "value": "cena01",
+      "description": "cena alvo; `cena01..cena99` presente em scenes.json (FDD sec.5 contrato 1, L216-217)"
+    },
+    {
+      "key": "pidInexistente",
+      "value": "projeto-que-nao-existe",
+      "description": "para o 404 do núcleo (FDD sec.6, L390)"
+    },
+    {
+      "key": "sceneInvalida",
+      "value": "cena1",
+      "description": "fora do regex ^cena\\d{2}$ => 422 (FDD sec.6, L391)"
+    },
+    {
+      "key": "sceneInexistente",
+      "value": "cena99",
+      "description": "válida no regex mas ausente de scenes.json => 404 (FDD sec.6, L392)"
+    },
+    {
+      "key": "presetId",
+      "value": "red-commercial-precision",
+      "description": "id do catálogo prompter.REALISM_PRESETS usado no exemplo do FDD (sec.5, L301-312)"
+    },
+    {
+      "key": "presetInexistente",
+      "value": "preset-que-nao-existe",
+      "description": "fora do catálogo => 422 (FDD sec.6, L404; criterio 9, L509)"
+    },
+    {
+      "key": "candidateId",
+      "value": "",
+      "description": "preenchido pelo teste de GET angles/scenes/{scene}/candidates; consumido por base/select/upscale"
+    },
+    {
+      "key": "productCandidateId",
+      "value": "",
+      "description": "preenchido pelo teste de GET angles/product/candidates; consumido por product/select e product/upscale"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 contrato 1 — geracao local por cena",
+      "item": [
+        {
+          "name": "POST local/generate scene=cena01 (galeria da cena)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 contrato 1 (L211-235) e Fluxo 1 (L133-150). Body: LocalGenerateReq + `scene` opcional. Com scene=cenaNN os candidatos vão para storyboard/cenaNN/candidates/ (invariante sec.6 L420). 200 = job aberto; 409 = motor local offline / job em andamento (sec.5 L222-223).\n\nAMBIENTE: sem `engine` + ComfyUI no ar a resposta é 409 com `detail` — o teste aceita os dois.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"close-up on the astronaut walking through the blizzard, cinematic\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\",\n  \"scene\": \"{{scene}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// FDD sec.5 L219-223: 200 job iniciado; 409 motor offline / job em andamento.",
+                  "pm.test(\"local/generate por cena -> 200 ou 409 (motor local offline)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 = forma de job com scene; 409 = motivo em detail\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) {",
+                  "        pm.expect(j).to.have.property(\"detail\");",
+                  "        return;",
+                  "    }",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "    pm.expect(j).to.have.property(\"mode\");",
+                  "    pm.expect(j).to.have.property(\"scene\");",
+                  "    pm.expect(j.scene).to.eql(pm.collectionVariables.get(\"scene\"));",
+                  "});",
+                  "// Exemplo do FDD (L234): {state, done, total, added, error, log, mode, scene, result, result_id}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST local/generate scene=product (cena do produto, aula 013)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 contrato 1 (L216-217: literal `product`) e Fluxo 3 passo 3 (L173-174): ingere em storyboard/product/candidates/ e NÃO exige ref.png. Criterio de aceite 14 (L521-523).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"the frozen can standing on a snow drift, product hero shot\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\",\n  \"scene\": \"product\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"local/generate product -> 200 ou 409 (motor local offline)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 => scene = product\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"scene\");",
+                  "    pm.expect(j.scene).to.eql(\"product\");",
+                  "});",
+                  "// FDD sec.5 L216-217 + criterio 14 (L521-523)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST local/generate SEM scene (compatibilidade, galeria de ideacao)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 contrato 1 (L215-216) e sec.8 (L474-475): sem `scene` o comportamento de hoje fica byte a byte idêntico — ingestão em storyboard/candidates/ (galeria de ideação do painel 01b). Invariante sec.6 L419; criterio 1 (L487-490).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"a cinematic wide shot of a neon city at night\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"local/generate sem scene -> 200 ou 409 (motor local offline)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 => scene null (job de ideacao, compatibilidade)\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"scene\");",
+                  "    pm.expect(j.scene).to.eql(null);",
+                  "});",
+                  "// FDD sec.5 L245-246: `null` para os jobs de ideacao (comportamento de hoje)."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 contrato 2 — job local com a cena de destino",
+      "item": [
+        {
+          "name": "GET local/job (campo scene)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "job"
+              ]
+            },
+            "description": "FDD sec.5 contrato 2 (L239-251). 200 SEMPRE (inclusive job `idle`); 404 só se o pid não existe. O dicionário ganhou `scene: str | null`, vindo do `extras` do JobRegistry.start — a tela usa esse campo para recarregar só a galeria certa. Criterio 3 (L493-494)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"local/job -> 200 (sempre, inclusive idle)\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"estado do job + campo scene presente\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "    pm.expect(j).to.have.property(\"mode\");",
+                  "    pm.expect(j).to.have.property(\"scene\");",
+                  "});",
+                  "pm.test(\"scene e string de cena ou null\", function () {",
+                  "    var s = pm.response.json().scene;",
+                  "    if (s !== null) { pm.expect(s).to.be.a(\"string\"); }",
+                  "});",
+                  "// FDD sec.5 L244-246 e exemplo L250."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 contrato 3 — cenas dos angulos com image_prompt",
+      "item": [
+        {
+          "name": "GET angles/scenes (image_prompt por cena)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes"
+              ]
+            },
+            "description": "FDD sec.5 contrato 3 (L255-275). Cada item de `scenes` ganha `image_prompt: str` (repasse defensivo de scenes.json; string vazia quando a chave não existe). Nenhum outro campo muda. 200; 409 se storyboard/scenes.json ausente (L261). Criterio 10 (L510-511)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"angles/scenes -> 200 (ou 409 sem scenes.json)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"toda cena expoe image_prompt (string, vazia quando ausente)\", function () {",
+                  "    if (pm.response.code === 409) { pm.expect(pm.response.json()).to.have.property(\"detail\"); return; }",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"scenes\");",
+                  "    pm.expect(j.scenes).to.be.an(\"array\");",
+                  "    j.scenes.forEach(function (s) {",
+                  "        pm.expect(s).to.have.property(\"image_prompt\");",
+                  "        pm.expect(s.image_prompt).to.be.a(\"string\");",
+                  "    });",
+                  "});",
+                  "pm.test(\"campos existentes preservados (mudanca aditiva)\", function () {",
+                  "    if (pm.response.code === 409) { return; }",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"warning\");",
+                  "    pm.expect(j).to.have.property(\"product_scene\");",
+                  "    if (j.scenes.length) {",
+                  "        var s = j.scenes[0];",
+                  "        [\"id\", \"n\", \"text\", \"base_ready\", \"candidates\", \"selected\"].forEach(function (k) {",
+                  "            pm.expect(s).to.have.property(k);",
+                  "        });",
+                  "    }",
+                  "});",
+                  "// FDD sec.5 L258-260 e exemplo L264-275."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 contrato 4 — prompts de angulo com preset de realismo",
+      "item": [
+        {
+          "name": "GET scenes/{scene}/prompts SEM preset (default de codigo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/prompts?kind=angle&scale=close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "angle"
+                },
+                {
+                  "key": "scale",
+                  "value": "close"
+                }
+              ]
+            },
+            "description": "FDD sec.5 contrato 4 (L279-314). Sem a query `preset`, o default resolve por settings.preset_default_for(\"storyboard.angles\", pid) — projeto → global → código, hoje `None`. Resposta traz `preset: null` e `preset_source: \"code\"`, e o `text` é byte a byte o de hoje (criterio 9, L506-509).\n\nNOTA: num projeto que já configurou o preset (F06), `preset_source` vale \"project\" ou \"global\" — o teste aceita os quatro valores contratados e só fixa a coerência entre `preset` e `preset_source`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"prompts sem preset -> 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"resposta expoe preset e preset_source\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"preset\");",
+                  "    pm.expect(j).to.have.property(\"preset_source\");",
+                  "    pm.expect(j.preset_source).to.be.oneOf([\"project\", \"global\", \"code\", \"request\"]);",
+                  "});",
+                  "pm.test(\"sem preset configurado => preset null e preset_source code\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (j.preset === null) { pm.expect(j.preset_source).to.eql(\"code\"); }",
+                  "    else { pm.expect(j.preset_source).to.be.oneOf([\"project\", \"global\"]); }",
+                  "});",
+                  "pm.test(\"forma dos prompts preservada (mudanca aditiva)\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"scene\");",
+                  "    pm.expect(j).to.have.property(\"model\");",
+                  "    pm.expect(j).to.have.property(\"count\");",
+                  "    pm.expect(j).to.have.property(\"ui_hint\");",
+                  "    pm.expect(j.prompts).to.be.an(\"array\").that.is.not.empty;",
+                  "    pm.expect(j.prompts[0]).to.have.property(\"label\");",
+                  "    pm.expect(j.prompts[0]).to.have.property(\"text\");",
+                  "});",
+                  "// FDD sec.5 L283-290 + criterio 9 (L506-509)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET scenes/{scene}/prompts ?preset=<id> (rig no text, preset_source=request)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/prompts?kind=angle&scale=close&preset={{presetId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "angle"
+                },
+                {
+                  "key": "scale",
+                  "value": "close"
+                },
+                {
+                  "key": "preset",
+                  "value": "{{presetId}}"
+                }
+              ]
+            },
+            "description": "FDD sec.5 contrato 4 (L285-286, L291-297) e exemplo L301-313. Com `preset=<id>` do catálogo prompter.REALISM_PRESETS, `preset_source` vale \"request\", `camera` volta `null` e o bloco de câmera manual é SUBSTITUÍDO pelo rig do preset dentro de cada `text` (decisão P1, L705-712). Criterio 9 (L508-509)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"prompts com ?preset=<id> -> 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"preset ecoado e preset_source = request\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j.preset).to.eql(pm.collectionVariables.get(\"presetId\"));",
+                  "    pm.expect(j.preset_source).to.eql(\"request\");",
+                  "});",
+                  "pm.test(\"camera manual desligada quando ha preset\", function () {",
+                  "    pm.expect(pm.response.json().camera).to.eql(null);",
+                  "});",
+                  "pm.test(\"rig do preset presente no text (red-commercial-precision)\", function () {",
+                  "    var j = pm.response.json();",
+                  "    var t = j.prompts.map(function (p) { return p.text; }).join(\" \");",
+                  "    pm.expect(t).to.include(\"Shot on RED V-Raptor\");",
+                  "    pm.expect(t).to.include(\"Zeiss Supreme Prime\");",
+                  "    pm.expect(t).to.include(\"Realistic.\");",
+                  "});",
+                  "// FDD sec.5 exemplo L311 (rig completo do red-commercial-precision)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET scenes/{scene}/prompts ?preset=none (null explicito)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/prompts?kind=angle&scale=close&preset=none",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "angle"
+                },
+                {
+                  "key": "scale",
+                  "value": "close"
+                },
+                {
+                  "key": "preset",
+                  "value": "none"
+                }
+              ]
+            },
+            "description": "FDD sec.5 contrato 4 (L284-285) e auto-aceite 3 (L685-687): o literal `none` é a forma de expressar \"null explícito\" numa query string, espelhando settings.PresetUnset. Desliga o preset SÓ nesta chamada — não persiste nada."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"prompts com ?preset=none -> 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"?preset=none desliga o preset nesta chamada\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j.preset).to.eql(null);",
+                  "});",
+                  "pm.test(\"sem preset, o rig nao aparece no text\", function () {",
+                  "    var t = pm.response.json().prompts.map(function (p) { return p.text; }).join(\" \");",
+                  "    pm.expect(t).to.not.include(\"Shot on RED V-Raptor\");",
+                  "});",
+                  "// FDD sec.5 L284-285 (tres estados da query preset)."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 contrato 5 — prompts da cena do produto com preset",
+      "item": [
+        {
+          "name": "GET product/prompts SEM preset",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/prompts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "prompts"
+              ]
+            },
+            "description": "FDD sec.5 contrato 5 (L318-325) e Fluxo 3 passo 2 (L172). 200 com as DUAS instruções da aula 013, nos mesmos rótulos e na mesma ordem; 409 sem storyboard/product/ref.png (L325). O teste aceita o 409 porque a coleção não envia a imagem 1."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product/prompts -> 200 ou 409 (sem product/ref.png)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 => preset/preset_source e as duas instrucoes da aula 013\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"preset\");",
+                  "    pm.expect(j).to.have.property(\"preset_source\");",
+                  "    pm.expect(j.preset_source).to.be.oneOf([\"project\", \"global\", \"code\", \"request\"]);",
+                  "    pm.expect(j.prompts).to.be.an(\"array\").with.lengthOf(2);",
+                  "});",
+                  "// FDD sec.5 L322-324: resposta ganha preset/preset_source; rotulos e ordem inalterados."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET product/prompts ?preset=<id> (rig anexado ao final de cada text)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/prompts?preset={{presetId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "preset",
+                  "value": "{{presetId}}"
+                }
+              ]
+            },
+            "description": "FDD sec.5 contrato 5 (L322-324): mesma semântica de três estados do contrato 4; com preset, o rig é ANEXADO ao final de cada `text` (diferente do contrato 4, onde ele SUBSTITUI o bloco de câmera manual)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product/prompts com preset -> 200 ou 409 (sem product/ref.png)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 => preset_source request e rig no final de cada text\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j.preset).to.eql(pm.collectionVariables.get(\"presetId\"));",
+                  "    pm.expect(j.preset_source).to.eql(\"request\");",
+                  "    j.prompts.forEach(function (p) { pm.expect(p.text).to.include(\"Shot on RED V-Raptor\"); });",
+                  "});",
+                  "// FDD sec.5 L322-324."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 endpoints ligados — cena (CLI pago, FDD sec.5 L374-380)",
+      "item": [
+        {
+          "name": "GET scenes/{scene}/candidates (encadeia candidateId)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "candidates"
+              ]
+            },
+            "description": "FDD sec.5 contrato 7 (L362-364) — a tool storyboard_scene_pick lê esta rota, que devolve o dicionário {scene, base, candidates}. Aqui ela serve de ELO: grava o primeiro id em {{candidateId}} para os requests de base, select e upscale abaixo. Sem candidatos na cena, a variável fica vazia e os requests seguintes falham por 422/404 — esperado num projeto recém-criado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"candidates da cena -> 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"forma de dicionario {scene, candidates}\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"scene\");",
+                  "    pm.expect(j).to.have.property(\"candidates\");",
+                  "    pm.expect(j.candidates).to.be.an(\"array\");",
+                  "});",
+                  "// Encadeamento (FDD sec.4 fluxo 1 passo 6 / fluxo 2 passo 3):",
+                  "var j = pm.response.json();",
+                  "if (j.candidates && j.candidates.length) {",
+                  "    pm.collectionVariables.set(\"candidateId\", j.candidates[0].id);",
+                  "    console.log(\"candidateId = \" + j.candidates[0].id);",
+                  "} else {",
+                  "    console.log(\"sem candidatos na cena: base/select/upscale abaixo vao falhar (esperado)\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/cost (gate de custo antes de gerar)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "cost"
+              ]
+            },
+            "description": "FDD sec.5 L376 (endpoint existente, agora com chamador) e Fluxo 2 passo 2 (L156-158): useCostConfirm em modo simples, costFn na rota `cost` REAL. Nenhum crédito é gasto aqui — só estimativa (ADR-016).\n\nAMBIENTE: gate `hf.require_cli` (ADR-028) => 409 sem o CLI da Higgsfield logado. O teste aceita 200 OU 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"nano_banana_2\",\n  \"prompts\": [\"Bring me another point of view of this image. I want a close-up on the astronaut. Same scene, same lighting and colors.\"],\n  \"count\": 1,\n  \"resolution\": \"2k\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"cost -> 200 ou 409 (CLI ausente/deslogado, base nao preparada)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 = planilha de custo; 409 = motivo em detail\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"model\");",
+                  "    pm.expect(j).to.have.property(\"count\");",
+                  "    pm.expect(j).to.have.property(\"total\");",
+                  "});",
+                  "// FDD sec.6 L399 (CLI ausente/deslogado -> 409) e L400 (base nao preparada -> 409)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/generate (apos o cost confirmado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 L376 e Fluxo 2 passo 3 (L161-162). GASTA CRÉDITOS quando o CLI está logado e a base da cena existe: só rode este request de propósito. A ordem cost → confirmação → generate é o invariante do ADR-016 (criterios 4 e 5, L495-499).\n\nAMBIENTE: 409 sem CLI logado ou sem base preparada; 422 com `prompts` vazio ou `count` fora de 1..8 (sec.6 L401).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"nano_banana_2\",\n  \"prompts\": [\"Bring me another point of view of this image. I want a close-up on the astronaut. Same scene, same lighting and colors.\"],\n  \"count\": 1,\n  \"resolution\": \"2k\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"generate -> 200 (job) ou 409 (CLI/base/job em andamento)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 = forma de job; 409 = motivo em detail\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "});",
+                  "// FDD sec.6 L399-402: 409 CLI ausente, base nao preparada, job de angulos em andamento."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET angles/job (progresso do job pago)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "job"
+              ]
+            },
+            "description": "FDD sec.5 L377 (endpoint existente) e Fluxo 2 passo 3 (L162): jobUrl do progressJob. Registro `angles.registry` chaveado por pid — um job por projeto (ADR-006, sec.2 L84-86)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"angles/job -> 200 (sempre, inclusive idle)\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"contadores do job (done/total/added, sec.7 L434)\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "    pm.expect(j).to.have.property(\"done\");",
+                  "    pm.expect(j).to.have.property(\"total\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/base source=candidate (Usar como base da cena)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/base",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "base"
+              ]
+            },
+            "description": "FDD sec.5 L378 e sec.3 B1-UX (L100-102): promove um candidato gerado (local OU CLI) a storyboard/cenaNN/base.png. Criterio 8 (L504-505): 200 e `base_ready` vira true.\n\nConsome {{candidateId}}, gravado pelo GET candidates acima. Sem candidato na cena a resposta é 422/404 — esperado num projeto vazio.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"candidate\",\n  \"id\": \"{{candidateId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"base(candidate) -> 200 (ou 404/422 sem candidato na cena)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409, 422]);",
+                  "});",
+                  "pm.test(\"200 => base_ready true (criterio 8)\", function () {",
+                  "    if (pm.response.code !== 200) { pm.expect(pm.response.json()).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(pm.response.json()).to.have.property(\"base_ready\");",
+                  "    pm.expect(pm.response.json().base_ready).to.eql(true);",
+                  "});",
+                  "// FDD criterio 8 (L504-505). Invariante sec.6 L423-424: a base so muda por acao explicita."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/upscale (gasta creditos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/upscale",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "upscale"
+              ]
+            },
+            "description": "FDD sec.5 L377 e Fluxo 2 passo 5 (L166-168): mesmo par custo → confirmação, ledger em `storyboard.upscale`. GASTA CRÉDITOS com o CLI logado.\n\nAMBIENTE: 409 sem CLI logado / base não preparada; 404 se o candidato não existe (sec.6 L403).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{candidateId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"upscale -> 200 ou 409 (CLI/base) ou 404 (candidato inexistente)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409, 422]);",
+                  "});",
+                  "pm.test(\"200 = forma de job; erro = motivo em detail\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code !== 200) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "});",
+                  "// FDD sec.6 L399-403."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/select (escolha e ordem dos shots)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "select"
+              ]
+            },
+            "description": "FDD sec.5 L378 e contrato 7 (L364-365): a tool storyboard_scene_pick posta AQUI no formato {\"shots\": [{\"id\": …}, …]}, na ordem escolhida (ADR-038, humano no laço). Criterio 12 (L516-518).\n\nConsome {{candidateId}}. Candidato inexistente => 422 (sec.6 L403).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shots\": [\n    {\"id\": \"{{candidateId}}\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"select -> 200 (ou 422 sem candidato valido)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409, 422]);",
+                  "});",
+                  "pm.test(\"200 => resposta descreve os shots gravados\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code !== 200) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.be.an(\"object\");",
+                  "});",
+                  "// FDD sec.5 contrato 7 (L364-365) e criterio 12 (L516-518)."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 endpoints ligados — cena do produto (aula 013)",
+      "item": [
+        {
+          "name": "GET product/candidates (encadeia productCandidateId)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/candidates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "candidates"
+              ]
+            },
+            "description": "FDD sec.5 L379 (endpoint existente ligado). Galeria da cena do produto — recebe tanto os candidatos do motor local (scene=product) quanto os do CLI. Grava o primeiro id em {{productCandidateId}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product/candidates -> 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"forma de dicionario {scene, candidates}\", function () {",
+                  "    var j = pm.response.json();",
+                  "    pm.expect(j).to.have.property(\"scene\");",
+                  "    pm.expect(j).to.have.property(\"candidates\");",
+                  "});",
+                  "var j = pm.response.json();",
+                  "if (j.candidates && j.candidates.length) {",
+                  "    pm.collectionVariables.set(\"productCandidateId\", j.candidates[0].id);",
+                  "} else {",
+                  "    console.log(\"sem candidatos do produto: select/upscale abaixo vao falhar (esperado)\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST product/cost (gate de custo do produto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/cost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "cost"
+              ]
+            },
+            "description": "FDD sec.5 L379 e Fluxo 3 passo 4 (L175-177). Corpo do produto usa `prompt` (singular), diferente da cena (`prompts`, lista). Estimativa apenas — não gasta crédito.\n\nAMBIENTE: 409 sem CLI logado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"nano_banana_2\",\n  \"prompt\": \"Replace the can in image 1 with the can from image 2.\",\n  \"count\": 1,\n  \"resolution\": \"2k\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product/cost -> 200 ou 409 (CLI ausente/deslogado)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "});",
+                  "pm.test(\"200 = planilha de custo; 409 = motivo em detail\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code === 409) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"model\");",
+                  "    pm.expect(j).to.have.property(\"total\");",
+                  "});",
+                  "// FDD sec.6 L399."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST product/generate (gasta creditos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 L379 e Fluxo 3 passo 4 (L175-177). Regra da aula 013 preservada no `ui_hint`: uma rodada por vez, a segunda sobre o resultado da primeira. GASTA CRÉDITOS com o CLI logado — só rode de propósito, depois do `product/cost` confirmado (ADR-016).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"nano_banana_2\",\n  \"prompt\": \"Replace the can in image 1 with the can from image 2.\",\n  \"count\": 1,\n  \"resolution\": \"2k\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product/generate -> 200 ou 409 (CLI/ref.png/job em andamento)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409, 422]);",
+                  "});",
+                  "pm.test(\"200 = forma de job; erro = motivo em detail\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code !== 200) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "});",
+                  "// FDD sec.6 L399-402."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST product/upscale (gasta creditos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/upscale",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "upscale"
+              ]
+            },
+            "description": "FDD sec.5 L379 e Fluxo 3 passo 4 (L177): upscale por `…/product/upscale`. Consome {{productCandidateId}}.\n\nAMBIENTE: 409 sem CLI logado; 404 se o candidato não existe (sec.6 L403).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{productCandidateId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product/upscale -> 200 ou 409/404/422\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409, 422]);",
+                  "});",
+                  "pm.test(\"200 = forma de job; erro = motivo em detail\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code !== 200) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.have.property(\"state\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST product/select (escolha da cena do produto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "select"
+              ]
+            },
+            "description": "FDD sec.5 L379 (endpoint existente ligado). Corpo `{id, upscaled}`; `id: null` remove a escolha do produto. Consome {{productCandidateId}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{productCandidateId}}\",\n  \"upscaled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product/select -> 200 (ou 404/422 sem candidato)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409, 422]);",
+                  "});",
+                  "pm.test(\"200 => resposta e objeto de estado do produto\", function () {",
+                  "    var j = pm.response.json();",
+                  "    if (pm.response.code !== 200) { pm.expect(j).to.have.property(\"detail\"); return; }",
+                  "    pm.expect(j).to.be.an(\"object\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "erros",
+      "item": [
+        {
+          "name": "POST local/generate scene fora do regex -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 contrato 1 (L223-224) e sec.6 (L391): `scene` fora do regex ^cena\\d{2}$ e diferente de `product` => ValueError => 422, em angles._resolve. Barra path traversal. Determinístico e SEM tocar o motor local (criterio 2, L491-492).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"x\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\",\n  \"scene\": \"{{sceneInvalida}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"scene fora do regex -> 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"422 traz o motivo em detail\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"detail\");",
+                  "});",
+                  "// FDD sec.6 L391 + criterio 2 (L491-492). Deterministico: nao depende de ComfyUI."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST local/generate cena inexistente em scenes.json -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 contrato 1 (L220) e sec.6 (L392): `scene` válida no regex mas ausente de scenes.json => LookupError => 404. Determinístico e SEM tocar o motor local (criterio 2, L491-492).\n\nSe o projeto ainda não tem storyboard/scenes.json, a resposta é 409 (sec.6 L393) — o teste aceita os dois e distingue no log.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"x\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\",\n  \"scene\": \"{{sceneInexistente}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"cena inexistente -> 404 (ou 409 sem scenes.json)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([404, 409]);",
+                  "});",
+                  "pm.test(\"erro traz o motivo em detail\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"detail\");",
+                  "});",
+                  "if (pm.response.code === 409) {",
+                  "    console.log(\"409: storyboard/scenes.json ausente neste projeto (FDD sec.6 L393)\");",
+                  "}",
+                  "// FDD sec.6 L392 (LookupError -> 404) e L393 (FileNotFoundError -> 409)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST local/generate prompt vazio -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 contrato 1 (L223) e sec.6 (L396): prompt vazio => Invalid => 422 (\"Escreva o prompt (em inglês, aula 007)\"). Mensagem existente preservada.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"\",\n  \"count\": 4,\n  \"model\": \"flux-schnell\",\n  \"scene\": \"{{scene}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"prompt vazio -> 422\", function () { pm.response.to.have.status(422); });",
+                  "// FDD sec.6 L396."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST local/generate count fora de {1,4} -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/local/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "local",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.5 contrato 1 (L224-225) e sec.6 (L397): count fora de {1,4} => 422. Regra da aula 007 preservada.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"x\",\n  \"count\": 3,\n  \"model\": \"flux-schnell\",\n  \"scene\": \"{{scene}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"count fora de {1,4} -> 422\", function () { pm.response.to.have.status(422); });",
+                  "// FDD sec.6 L397 (regra da aula 007)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET scenes/{scene}/prompts ?preset=inexistente -> 422",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/prompts?kind=angle&scale=close&preset={{presetInexistente}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "kind",
+                  "value": "angle"
+                },
+                {
+                  "key": "scale",
+                  "value": "close"
+                },
+                {
+                  "key": "preset",
+                  "value": "{{presetInexistente}}"
+                }
+              ]
+            },
+            "description": "FDD sec.5 contrato 4 (L298-299) e sec.6 (L404): preset fora do catálogo prompter.REALISM_PRESETS => ValueError => 422. Criterio 9 (L509). Determinístico."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"preset fora do catalogo -> 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"422 traz o motivo em detail\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"detail\");",
+                  "});",
+                  "// FDD sec.6 L404 (prompter.valid_preset) + criterio 9 (L509)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET product/prompts ?preset=inexistente -> 422",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/product/prompts?preset={{presetInexistente}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "product",
+                "prompts"
+              ],
+              "query": [
+                {
+                  "key": "preset",
+                  "value": "{{presetInexistente}}"
+                }
+              ]
+            },
+            "description": "FDD sec.5 contrato 5 (L325): 422 preset desconhecido.\n\nOrdem de validação: a rota checa storyboard/product/ref.png ANTES do preset, então num projeto sem a imagem 1 a resposta é 409. O teste aceita os dois e distingue no log."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"preset desconhecido no produto -> 422 (ou 409 sem product/ref.png)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409, 422]);",
+                  "});",
+                  "if (pm.response.code === 409) {",
+                  "    console.log(\"409: product/ref.png ausente — a checagem da imagem 1 vem antes do preset (FDD sec.5 L325)\");",
+                  "}",
+                  "// FDD sec.5 L325 + sec.6 L404."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET angles/scenes projeto inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/angles/scenes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "angles",
+                "scenes"
+              ]
+            },
+            "description": "FDD sec.5 (L205: `pid` inexistente devolve 404 pelo núcleo) e sec.6 (L390: refs.project_dir, sem código próprio). Determinístico."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"projeto inexistente -> 404\", function () { pm.response.to.have.status(404); });",
+                  "// FDD sec.5 L205 e sec.6 L390."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET local/job projeto inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pidInexistente}}/storyboard/local/job",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pidInexistente}}",
+                "storyboard",
+                "local",
+                "job"
+              ]
+            },
+            "description": "FDD sec.5 contrato 2 (L243): 200 sempre; 404 se o `pid` não existe."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"local/job com projeto inexistente -> 404\", function () { pm.response.to.have.status(404); });",
+                  "// FDD sec.5 L243."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/generate prompts vazio -> 422 (ou 409 do gate do CLI)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "generate"
+              ]
+            },
+            "description": "FDD sec.6 (L401): `prompts` vazio ou `count` fora de 1..8 => ValueError => 422, em angles._check_gen.\n\nORDEM: o gate `hf.require_cli` roda ANTES da validação do corpo, então numa máquina sem o CLI logado a resposta é 409 (sec.6 L399). O teste aceita os dois — é o comportamento contratado, não defeito.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"nano_banana_2\",\n  \"prompts\": [],\n  \"count\": 1,\n  \"resolution\": \"2k\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"prompts vazio -> 422 (ou 409 do gate do CLI, que vem antes)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409, 422]);",
+                  "});",
+                  "pm.test(\"nenhum job aberto: a resposta e erro com detail\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"detail\");",
+                  "});",
+                  "if (pm.response.code === 409) {",
+                  "    console.log(\"409: CLI da Higgsfield ausente ou deslogado (FDD sec.6 L399) — gate antes da validacao\");",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/upscale candidato inexistente -> 404 (ou 409 do gate do CLI)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/upscale",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "upscale"
+              ]
+            },
+            "description": "FDD sec.6 (L403): candidato inexistente no upscale => LookupError => 404 (angles._candidate).\n\nORDEM: `hf.require_cli` vem antes => 409 numa máquina sem CLI logado (sec.6 L399).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"candidato-que-nao-existe\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"candidato inexistente -> 404 (ou 409 do gate do CLI)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([404, 409]);",
+                  "});",
+                  "pm.test(\"erro traz o motivo em detail\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"detail\");",
+                  "});",
+                  "// FDD sec.6 L403 (angles._candidate) e L399 (gate do CLI, que vem antes)."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST scenes/{scene}/select candidato inexistente -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/projects/{{pid}}/storyboard/angles/scenes/{{scene}}/select",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "projects",
+                "{{pid}}",
+                "storyboard",
+                "angles",
+                "scenes",
+                "{{scene}}",
+                "select"
+              ]
+            },
+            "description": "FDD sec.6 (L403): candidato inexistente no `select` => ValueError => 422 (angles.select_shots). NÃO passa pelo gate do CLI — `select` é local, então este caso é determinístico com scenes.json presente.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shots\": [\n    {\"id\": \"candidato-que-nao-existe\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"select com candidato inexistente -> 422\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([404, 409, 422]);",
+                  "});",
+                  "pm.test(\"erro traz o motivo em detail\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"detail\");",
+                  "});",
+                  "// FDD sec.6 L403 (select_shots -> ValueError -> 422); 409 se scenes.json ausente (L393)."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

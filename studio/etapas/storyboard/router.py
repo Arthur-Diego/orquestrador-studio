@@ -287,6 +287,11 @@ class LocalGenerateReq(BaseModel):
     model: str = "flux-schnell"
     steps: int | None = None
     seed: int | None = None
+    #: `[extensão]` geração por cena (FDD storyboard-geracao-por-cena §5, contrato 1). Campo
+    #: ADITIVO: ausente ou `null` = comportamento de hoje (galeria de ideação em
+    #: `storyboard/candidates/`). `cena01..cena99` (presente em `scenes.json`) ou `product`
+    #: ingere na pasta da cena (`storyboard/<scene>/candidates/`).
+    scene: str | None = None
 
 
 @router.get("/api/projects/{pid}/storyboard/local/status")
@@ -296,7 +301,13 @@ def storyboard_local_status(pid: str):
 
 @router.post("/api/projects/{pid}/storyboard/local/generate")
 def storyboard_local_generate(pid: str, req: LocalGenerateReq):
-    return _guard(sblocal.start_generate, pid, req.prompt, req.count, req.model, req.steps, req.seed)
+    # `scene` desconhecida no `scenes.json` é 404 (LookupError); o resto do vocabulário já é do
+    # serviço da etapa (`_guard`: Invalid→422, Precondition→409).
+    try:
+        return _guard(sblocal.start_generate, pid, req.prompt, req.count, req.model, req.steps,
+                      req.seed, req.scene)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
 
 
 @router.get("/api/projects/{pid}/storyboard/local/job")
@@ -461,12 +472,15 @@ async def angles_base_upload(pid: str, scene: str, file: UploadFile = File(...))
 
 
 @router.get("/api/projects/{pid}/storyboard/angles/scenes/{scene}/prompts")
-def angles_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None = None,
+def angles_prompts(pid: str, scene: str, kind: str = "angle", subject: str | None = None,  # noqa: PLR0913
                    scale: str = "close", realism: bool = True, lens: float = 35, aperture: float = 2.8,
                    angle: str = "eye-level", edits: list[str] | None = Query(None),  # noqa: B008
-                   model: str = angles.DEFAULT_MODEL, count: int = 4, camera: str | None = None):
+                   model: str = angles.DEFAULT_MODEL, count: int = 4, camera: str | None = None,
+                   preset: str | None = None):
+    # `preset` (`[extensão]`) tem TRÊS estados: ausente = default da ação `storyboard.angles`;
+    # `none` = sem preset nesta chamada; `<id>` = esse preset (fora do catálogo → 422).
     return _acall(angles.build_prompts, pid, scene, kind, subject, scale, realism, lens, aperture,
-                  angle, edits, model, count, camera)
+                  angle, edits, model, count, camera, preset)
 
 
 # ---------- importação ----------
@@ -555,8 +569,9 @@ async def angles_product_ref(pid: str, file: UploadFile = File(...)):  # noqa: B
 
 
 @router.get("/api/projects/{pid}/storyboard/angles/product/prompts")
-def angles_product_prompts(pid: str, model: str = angles.DEFAULT_MODEL):
-    return _acall(angles.product_prompts, pid, model)
+def angles_product_prompts(pid: str, model: str = angles.DEFAULT_MODEL, preset: str | None = None):
+    # `preset` com a mesma semântica de três estados do contrato 4 (ver `angles_prompts`).
+    return _acall(angles.product_prompts, pid, model, preset)
 
 
 @router.post("/api/projects/{pid}/storyboard/angles/product/import/upload")

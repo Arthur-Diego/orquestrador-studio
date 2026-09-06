@@ -104,12 +104,21 @@ export interface AnnResult {
 // ----- ângulos por cena (metade 2) -----
 export interface AngleScene {
   id: string;
+  n?: number;
   text?: string;
+  /** `[extensão]` geração por cena: prompt de imagem da cena (string vazia quando não há). */
+  image_prompt?: string;
   base: string;
   base_ready: boolean;
   candidates: number;
   selected: number;
   upscaled: number;
+}
+
+/** `[extensão]` prontidão do motor local (ADR-033) — mesmo contrato do painel 01b. */
+export interface LocalStatus {
+  ready?: boolean;
+  detail?: string;
 }
 export interface ProductScene {
   ref_ready: boolean;

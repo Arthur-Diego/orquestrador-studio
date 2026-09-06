@@ -316,3 +316,77 @@ def test_angles_upscale_route_stays_published(client):
     """Decisão AP-21: o caminho pago de upscale/geração da metade ângulos saiu da tela, mas a rota fica."""
     paths = client.get("/openapi.json").json()["paths"]
     assert paths.get("/api/projects/{pid}/storyboard/angles/scenes/{scene}/upscale")
+
+
+# ---------- `[extensão]` geração por cena: preset, image_prompt e fim da órfandade ----------
+def _ui_source() -> str:
+    from pathlib import Path
+    return (Path(__file__).resolve().parents[1] / "studio" / "etapas" / "storyboard" / "ui"
+            / "Angles.tsx").read_text()
+
+
+def test_prompts_preset_tem_tres_estados_pela_query(client, project, studio_env):
+    """Critério 9 pela API: ausente → default de código; `<id>` → request; desconhecido → 422."""
+    url = f"/api/projects/{project}/storyboard/angles/scenes/cena01/prompts"
+    plain = client.get(url).json()
+    assert plain["preset"] is None and plain["preset_source"] == "code"
+    assert "RED Komodo 6K" in plain["prompts"][0]["text"]
+
+    com = client.get(url, params={"preset": "red-commercial-precision"}).json()
+    assert com["preset"] == "red-commercial-precision" and com["preset_source"] == "request"
+    assert "RED V-Raptor" in com["prompts"][0]["text"] and "RED Komodo" not in com["prompts"][0]["text"]
+
+    assert client.get(url, params={"preset": "inexistente"}).status_code == 422
+    assert client.get(url, params={"preset": "none"}).json()["preset"] is None
+
+
+def test_product_prompts_aceitam_preset(client, project, studio_env):
+    root = studio_env["refs"].project_dir(project)
+    make_image(root / "storyboard" / "product" / "ref.png")
+    url = f"/api/projects/{project}/storyboard/angles/product/prompts"
+    assert client.get(url).json()["preset"] is None
+    com = client.get(url, params={"preset": "sony-venice-night"}).json()
+    assert com["preset_source"] == "request"
+    assert all("Sony Venice 2" in p["text"] for p in com["prompts"])
+    assert client.get(url, params={"preset": "zzz"}).status_code == 422
+
+
+def test_scenes_expoem_image_prompt(client, project, studio_env):
+    """Critério 10 pela API."""
+    root = studio_env["refs"].project_dir(project)
+    f = root / "storyboard" / "scenes.json"
+    data = json.loads(f.read_text())
+    data["scenes"][0]["image_prompt"] = "A lone astronaut, wide shot"
+    f.write_text(json.dumps(data))
+    cenas = client.get(f"/api/projects/{project}/storyboard/angles/scenes").json()["scenes"]
+    assert cenas[0]["image_prompt"] == "A lone astronaut, wide shot"
+    assert all("image_prompt" in c for c in cenas)
+
+
+def test_rotas_por_cena_deixaram_de_ser_orfas_na_tela(client):
+    """Critério 4 / §7: TODA rota paga por cena e do produto tem chamador em `Angles.tsx`.
+
+    Guarda contra regressão de desligamento (as rotas existiam e eram testadas desde a wave 4,
+    mas nenhuma tela as chamava — `shots-fdd.md:225-229`).
+    """
+    fonte = _ui_source()
+    # a tela compõe `cost`/`generate`/`upscale` por um helper único, que resolve cena × produto
+    assert "${base()}/scenes/${scene}/${sufixo}" in fonte and "${base()}/product/${sufixo}" in fonte
+    for sufixo in ("cost", "generate", "upscale"):
+        assert f'sceneUrl("{sufixo}")' in fonte, f"rota sem chamador na tela: .../{sufixo}"
+    # motor local por cena e os dois endpoints de job (pago e grátis)
+    for caminho in ("/local/generate", "/local/status", "/local/job", "${base()}/job"):
+        assert caminho in fonte, f"rota sem chamador na tela: {caminho}"
+    assert 'scene: sceneId(scene)' in fonte, "a geração local precisa mandar a cena de destino"
+
+
+def test_nenhum_registro_de_job_novo_no_storyboard():
+    """Critério 15 / ADR-006: a geração por cena NÃO cria registro novo — a contagem é a de hoje.
+
+    Registro por cena ficaria invisível ao `studio/common/reset.py::_registries` (lista fechada de
+    atributos) e vazaria estado entre resets; a decisão está no FDD §12 (auto-aceite 6).
+    """
+    from pathlib import Path
+    raiz = Path(__file__).resolve().parents[1] / "studio" / "storyboard"
+    achados = {p.name: p.read_text().count("JobRegistry()") for p in raiz.glob("*.py")}
+    assert achados == {"__init__.py": 0, "angles.py": 1, "local.py": 1, "service.py": 3}
