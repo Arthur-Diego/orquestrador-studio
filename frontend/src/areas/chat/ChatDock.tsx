@@ -4,9 +4,11 @@
 // paralelas** (várias conversas ao mesmo tempo, cada uma ligada a uma campanha), status por aba
 // e o widget `open` (o agente abre uma tela e espera o usuário concluir — ADR-038).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { api } from "../../api";
+import { api, invalidarGuia } from "../../api";
 import { useShell } from "../../shell/context";
+import { emitStudioChange, type EscopoDaMudanca, type MudancaDoStudio } from "../../shell/events";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { useChatSocket } from "./useChatSocket";
 import type { ChatEvent, ChatSession } from "./types";
@@ -14,6 +16,34 @@ import "./chat.css";
 
 const ABERTO_KEY = "studio.chat.open";
 const ATIVO_KEY = "studio.chat.active";
+
+/** Enum fechado do campo `scope` do evento `state_changed` (Contrato 1 da Wave 11 · F03). */
+const ESCOPOS: readonly EscopoDaMudanca[] = ["job", "candidates", "selection", "library"];
+
+/**
+ * Traduz um evento `state_changed` do WS para a mudança que o barramento transporta.
+ *
+ * `step` e `scope` são obrigatórios no Contrato 1, mas opcionais em `ChatEvent` (a interface
+ * cobre todos os kinds de uma vez). Um evento sem os dois é "evento sem destino" e some em
+ * silêncio, como o `job_wait` sem `step` do lado do backend (matriz de erros da §6). `pid`
+ * normaliza para `null` tudo que não seja string não vazia — `null` significa mudança global.
+ */
+function mudancaDoEvento(ev: ChatEvent): MudancaDoStudio | null {
+  const step = typeof ev.step === "string" ? ev.step : "";
+  const scope = ESCOPOS.find((e) => e === ev.scope);
+  if (!step || !scope) {
+    // O descarte é comportamento previsto (por isso `warn`, não `error`), mas silencioso ele torna
+    // um "não sincronizou" indiagnosticável do lado do cliente: o transcript e `/trace` são do
+    // SERVIDOR e vão mostrar o evento emitido certinho. Este é o único rastro do lado que o engoliu
+    // — e faz falta justamente no caso que a ADR-041 prevê, o de um `scope` novo num backend mais
+    // recente que este dock.
+    console.warn("[studio] state_changed fora do Contrato 1, ignorado", ev.step, ev.scope, ev.tool);
+    return null;
+  }
+  const pid = typeof ev.pid === "string" && ev.pid ? ev.pid : null;
+  // Spread condicional por causa do `exactOptionalPropertyTypes`: `tool: undefined` não vale.
+  return { pid, step, scope, ...(typeof ev.tool === "string" ? { tool: ev.tool } : {}) };
+}
 
 export function ChatDock() {
   const { pid, project } = useShell();
@@ -166,7 +196,29 @@ function ChatTabs({
 /** Uma conversa: log com streaming, cartões e composer. */
 function Conversation({ chatId }: { chatId: string }) {
   const { pid, view, navigate } = useShell();
-  const { events, connected, send, answer } = useChatSocket(chatId);
+  const qc = useQueryClient();
+
+  /**
+   * A ponte chat → telas (Wave 11 · F03). Roda só para mensagem ao vivo do socket: o replay do
+   * transcript ao abrir a aba não passa por aqui, senão abrir uma conversa antiga recarregaria
+   * todas as etapas tocadas na história dela.
+   *
+   * O dock só INVALIDA o guia e avisa o barramento; nenhuma prontidão de etapa é calculada aqui
+   * (ADR-010 item a). Sem `pid` (biblioteca de personagens) não há guia a invalidar, mas o aviso
+   * vale para qualquer campanha aberta e é publicado do mesmo jeito.
+   */
+  const aoEventoAoVivo = useCallback(
+    (ev: ChatEvent) => {
+      if (ev.kind !== "state_changed") return;
+      const mudanca = mudancaDoEvento(ev);
+      if (!mudanca) return;
+      if (mudanca.pid) invalidarGuia(qc, mudanca.pid);
+      emitStudioChange(mudanca);
+    },
+    [qc],
+  );
+
+  const { events, connected, send, answer } = useChatSocket(chatId, aoEventoAoVivo);
   const [draft, setDraft] = useState("");
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);

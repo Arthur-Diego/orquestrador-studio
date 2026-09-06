@@ -16,6 +16,7 @@ import {
 import { Annotate } from "./Annotate";
 import { MaskEditor } from "./MaskEditor";
 import type { StudioCtx } from "../../../../frontend/src/shell/plugin";
+import { useStudioChange } from "../../../../frontend/src/shell/events";
 import type {
   HistoryItem,
   Idea,
@@ -353,6 +354,24 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootKey]);
+
+  // Sincronização com o chat `[extensão]` (Wave 11 · F03): `storyboard_local_generate` e
+  // `storyboard_pick` mexem nas ideias/candidatas desta metade. Recarregamos SÓ as listas de
+  // leitura — status (contadores, base, catálogos) e ideias. `scenes`/`photos` ficam de fora de
+  // propósito: são o texto das cenas que o usuário digita e ainda não salvou, e sobrescrevê-los
+  // por um evento do chat é exatamente o que a §10 Risco 5 do FDD proíbe.
+  useStudioChange(
+    "storyboard",
+    () => {
+      void (async () => {
+        await loadStatus();
+        await loadIdeas();
+      })().catch(() => {
+        /* aviso do chat é best-effort: falha de rede aqui não pode derrubar a tela */
+      });
+    },
+    { pid: ctx.pid() },
+  );
 
   // Preset default do roteiro reage ao catálogo/status.
   useEffect(() => {

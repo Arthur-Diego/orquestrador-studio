@@ -24,6 +24,7 @@ import {
 } from "../../../../frontend/src/ui";
 import { useStudio } from "../../../../frontend/src/shell/plugin";
 import { useShell } from "../../../../frontend/src/shell/context";
+import { useStudioChange } from "../../../../frontend/src/shell/events";
 
 // ---------- constantes espelhadas do view.js ----------
 type Step = "situation" | "clean" | "label" | "upscale";
@@ -609,6 +610,21 @@ function BaseInner({ pid }: { pid: string | null }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid]);
+
+  // ---------- sincronização com o chat `[extensão]` (Wave 11 · F03) ----------
+  // `base_generate` e `base_pick` escrevem as candidatas desta etapa por fora da tela. Reusamos o
+  // `load()` do painel 03, que é idempotente e já reconstrói cadeia, seleção e passo ativo.
+  // Só ele: `loadPrompts()` alimenta o textarea do painel 02, e recarregar campo de texto em
+  // edição é exatamente o que a §10 Risco 5 do FDD proíbe.
+  useStudioChange(
+    "base",
+    () => {
+      void load().catch(() => {
+        /* aviso do chat é best-effort: falha de rede aqui não pode derrubar a tela */
+      });
+    },
+    { pid },
+  );
 
   // ---------- drag & drop do painel 03 ----------
   // `useUpload` da E2 cuida do <input type=file> (#baseUpload) — reset de `value`, seleção múltipla.

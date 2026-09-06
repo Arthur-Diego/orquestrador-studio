@@ -10,6 +10,7 @@ import {
   useUpload,
 } from "../../../../frontend/src/ui";
 import type { StudioCtx } from "../../../../frontend/src/shell/plugin";
+import { useStudioChange } from "../../../../frontend/src/shell/events";
 import type { AngleScene, Candidate, LocalStatus, ProductScene, PromptOut, Script } from "./types";
 
 const PRODUCT = "__produto__"; // cena virtual: o card "produto" do painel 04
@@ -220,6 +221,20 @@ export function Angles({ ctx, refreshGuide, bootKey }: AnglesProps) {
       await loadScenes();
     }
   }, [isProduct, scene, loadProd, loadScenes, loadCands]);
+
+  // ------- sincronização com o chat `[extensão]` (Wave 11 · F03) -------
+  // As duas metades da etapa compartilham o step `storyboard`. Aqui recarregamos só `loadScenes()`,
+  // a lista de leitura do painel 04 (cenas, cena do produto, paleta): é ela que muda quando o
+  // assistente fecha a ideação. NÃO usamos o `reload()` acima porque ele passa por
+  // `loadCands(scene)`, que reescreve `order` — a ordem de frames que o usuário está montando e
+  // ainda não salvou (§10 Risco 5 do FDD).
+  useStudioChange(
+    "storyboard",
+    () => {
+      void loadScenes();
+    },
+    { pid: ctx.pid() },
+  );
 
   async function prepareBase(source: string, file?: File, id?: string) {
     if (!scene || isProduct) return toast("Abra uma cena primeiro.");

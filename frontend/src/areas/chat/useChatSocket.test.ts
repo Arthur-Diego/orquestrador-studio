@@ -60,6 +60,32 @@ describe("useChatSocket", () => {
     expect(enviado).toMatchObject({ type: "user", text: "gera aí", context: { pid: "gelo" } });
   });
 
+  // Wave 11 · F03: o `onEvent` é o seam "isto acabou de acontecer" — só mensagem ao vivo o aciona.
+  it("chama onEvent só no que chega pelo socket, nunca no replay do transcript", async () => {
+    const vistos: string[] = [];
+    const { result } = renderHook(() => useChatSocket("c1", (ev) => vistos.push(String(ev.kind))));
+    await waitFor(() => expect(result.current.events.length).toBe(1));
+    // O replay já entrou em `events` ("user"), e mesmo assim não passou pelo callback.
+    expect(vistos).toEqual([]);
+    act(() =>
+      FakeWS.last!.onmessage?.({
+        data: JSON.stringify({ seq: 1, kind: "state_changed", pid: "p1", step: "refs", scope: "job" }),
+      }),
+    );
+    expect(vistos).toEqual(["state_changed"]);
+  });
+
+  it("um onEvent inline não reconecta o socket a cada render", async () => {
+    // A arrow é nova a cada render de propósito: é exatamente o que o ChatDock faz. Sem a ref, o
+    // `onEvent` entraria no array de dependências do efeito e cada render fecharia e reabriria o WS.
+    const { rerender } = renderHook(() => useChatSocket("c1", () => undefined));
+    await waitFor(() => expect(FakeWS.last).not.toBeNull());
+    const socket = FakeWS.last;
+    rerender();
+    rerender();
+    expect(FakeWS.last).toBe(socket);
+  });
+
   it("sem chatId não conecta e zera eventos", async () => {
     const { result } = renderHook(() => useChatSocket(null));
     expect(result.current.events).toEqual([]);

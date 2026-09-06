@@ -15,7 +15,20 @@ export interface ChatSession {
 export interface ChatEvent {
   seq?: number;
   ts?: string;
-  kind: "user" | "assistant_text" | "tool_call" | "tool_result" | "result" | "ask" | "notify" | "show" | "system" | "raw";
+  kind:
+    | "user"
+    | "assistant_text"
+    | "tool_call"
+    | "tool_result"
+    | "result"
+    | "ask"
+    | "notify"
+    | "show"
+    | "system"
+    | "raw"
+    // Wave 11 · F03 (ADR-041): aviso de "a etapa X da campanha Y mudou". Aditivo — nenhum kind
+    // existente muda de forma, e um cliente antigo o ignora (o `switch` do dock cai em `default`).
+    | "state_changed";
   widget?: string;
   media?: unknown;
   title?: string;
@@ -32,6 +45,13 @@ export interface ChatEvent {
   cost?: number | null;
   level?: string;
   ask_id?: string;
+  // payload de `state_changed` (Wave 11 · F03): campanha afetada (`null` = mudança global da
+  // biblioteca), id da etapa, o que mudou e o nome curto da tool que causou. A interface já tem
+  // index signature, então isto é precisão de tipo, não campo novo no wire.
+  pid?: string | null;
+  step?: string;
+  scope?: string;
+  tool?: string;
   // payload de `ask` (Onda B): kind do widget, imagens, opções…
   [k: string]: unknown;
 }

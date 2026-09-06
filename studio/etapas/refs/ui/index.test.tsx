@@ -5,10 +5,12 @@
 // React e asseverando DOM + comportamento (recon §7.2), inclusive as fidelidades à aula 009
 // (ADR-004). Os endpoints de backend (marca validada, suggest-terms, import por URL) seguem cobertos
 // em pytest.
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { api, apiUpload } from "../../../../frontend/src/api";
+import { DEBOUNCE_GUIA_MS } from "../../../../frontend/src/api/guide-sync";
 import { StudioProvider, type StudioCtx } from "../../../../frontend/src/shell/plugin";
+import { emitStudioChange } from "../../../../frontend/src/shell/events";
 import Refs from "./index";
 
 function jsonResp(data: unknown, status = 200): Response {
@@ -40,22 +42,22 @@ function router(url: string): Response {
   return jsonResp({});
 }
 
-function ctxFalso(): StudioCtx {
+function ctxFalso(pid = "camp-1"): StudioCtx {
   return {
     api,
     apiUpload,
     toast: vi.fn(),
-    pid: () => "camp-1",
-    project: () => ({ id: "camp-1", product: "energy drink", vibe: "" }) as never,
-    files: (p) => `/files/camp-1/${p}`,
+    pid: () => pid,
+    project: () => ({ id: pid, product: "energy drink", vibe: "" }) as never,
+    files: (p) => `/files/${pid}/${p}`,
     guide: vi.fn(),
     onGuide: vi.fn(),
   };
 }
 
-function renderTela() {
+function renderTela(pid = "camp-1") {
   return render(
-    <StudioProvider value={ctxFalso()}>
+    <StudioProvider value={ctxFalso(pid)}>
       <Refs />
     </StudioProvider>,
   );
@@ -158,5 +160,46 @@ describe("refs — contrato de tela (aula 009)", () => {
     fireEvent.click(container.querySelector("#refsFilters .rf-clear") as Element);
     await waitFor(() => expect(container.querySelectorAll("#gallery .card").length).toBe(2));
     expect(container.querySelector("#refsFilters .rf-clear")).toBeNull();
+  });
+});
+
+// UT-19 — sincronização com o chat `[extensão]` (Wave 11 · F03, card #87).
+//
+// A tela assina o barramento do shell (`useStudioChange`) com o SEU step e o SEU pid. O que se
+// afirma aqui é o contrato observável do card: o chat mexeu em `refs` da campanha aberta, logo a
+// tela refaz o GET das candidatas; mexeu em `refs` de OUTRA campanha, logo a tela não faz nada.
+// Sem rede: o `fetch` está stubado pelo `router` acima.
+describe("refs — barramento de mudanças do chat", () => {
+  const candidatesDe = (p: string) =>
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: unknown[]) => String(c[0]) === `/api/projects/${p}/refs/candidates`,
+    ).length;
+
+  it("recarrega as candidatas ao receber a mudança do seu step e do seu pid", async () => {
+    const { container } = renderTela("p1");
+    await waitFor(() => expect(container.querySelectorAll("#gallery .card").length).toBe(2));
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockClear();
+
+    act(() => emitStudioChange({ pid: "p1", step: "refs", scope: "candidates", tool: "refs_pick" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, DEBOUNCE_GUIA_MS + 200));
+    });
+
+    expect(candidatesDe("p1")).toBe(1);
+  });
+
+  it("ignora a mudança de outra campanha", async () => {
+    const { container } = renderTela("p1");
+    await waitFor(() => expect(container.querySelectorAll("#gallery .card").length).toBe(2));
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockClear();
+
+    act(() => emitStudioChange({ pid: "p2", step: "refs", scope: "candidates", tool: "refs_pick" }));
+    // Espera a janela inteira do debounce mais folga: se fosse recarregar, já teria recarregado.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, DEBOUNCE_GUIA_MS + 200));
+    });
+
+    expect(candidatesDe("p1")).toBe(0);
+    expect(candidatesDe("p2")).toBe(0);
   });
 });

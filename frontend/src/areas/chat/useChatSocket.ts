@@ -11,10 +11,27 @@ interface EventsResponse {
   pending: ChatEvent[];
 }
 
-export function useChatSocket(chatId: string | null) {
+export function useChatSocket(
+  chatId: string | null,
+  /**
+   * Chamado APENAS para mensagens que chegam ao vivo pelo WebSocket, nunca no replay de
+   * `GET /api/chats/{id}/events` (Wave 11 · F03, Contrato 5). É o seam que separa "o transcript
+   * tem isto" de "isto acabou de acontecer": um efeito sobre o array `events` reprocessaria o
+   * replay inteiro ao abrir a aba e dispararia recarga de todas as etapas tocadas na história da
+   * conversa. O parâmetro é opcional e o retorno não muda — chamadores atuais seguem válidos.
+   */
+  onEvent?: (ev: ChatEvent) => void,
+) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // A ref existe para o efeito NÃO depender da identidade do callback: o dock passa uma arrow nova
+  // a cada render, e pôr `onEvent` no array de dependências reconectaria o socket a cada render.
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
 
   useEffect(() => {
     if (!chatId) {
@@ -40,6 +57,8 @@ export function useChatSocket(chatId: string | null) {
       try {
         const ev = JSON.parse(m.data) as ChatEvent;
         setEvents((prev) => (ev.seq != null && prev.some((p) => p.seq === ev.seq) ? prev : [...prev, ev]));
+        // Só aqui: o replay acima (`GET /events`) alimenta `setEvents` e não passa por este ramo.
+        onEventRef.current?.(ev);
       } catch {
         /* linha inválida ignorada */
       }

@@ -814,3 +814,20 @@ autoral. Reconcilia o antigo PR #103 (ADH-OS-20260831-16), escrito antes do cort
 que reivindicava o ADR-033 (já do motor local) — reimplementado na versão React e renumerado para 035.
 NÃO toca o preset de REALISMO (`REALISM_PRESETS`), que é outra feature. Relaciona ADR-004 (fidelidade:
 a aula manda escrever a instrução; o combo era só conveniência), ADR-015/ADR-031/ADR-032.
+
+---
+
+**ADR nova: ADR-041** (STUDIO) — o protocolo do WebSocket do chat (`/ws/chat/{id}`) passa a ser
+**estritamente aditivo** (v2): kind novo entra sem que nenhum kind existente mude de forma, o
+cliente ignora o desconhecido (`switch` com `default`) e o servidor persiste tudo no transcript com
+`seq`. Registra o kind `state_changed {pid, step, scope, tool}` da frente F03 da Wave 11 (card #87,
+ADH-OS-20260906-05), emitido pelo `_run_turn` depois de um `tool_result` bem-sucedido de tool de
+**ação**, com a classificação tool → (etapa, escopo) num mapa explícito (`studio/chat/mudancas.py`)
+protegido por teste de drift AST sobre `studio/mcp/server.py`. Reserva as linhas de `turn_started`,
+`turn_ended`, `assistant_delta` e `tool_progress` (frente F02) e do campo `user.via` (frente F09),
+para que as frentes da mesma wave completem o contrato neste documento em vez de abrirem ADRs
+concorrentes. **Amplia** ADR-036 §2 (a lista fechada de kinds deixa de ser fechada e passa a ser
+versionada); não supera nada. Relaciona ADR-006 (o push não substitui o polling das telas),
+ADR-010 item a (o evento **invalida** o guia, jamais deriva prontidão no cliente), ADR-037 (as tools
+rodam no subprocess do MCP, por isso o mapa é explícito e não derivado do path da API) e ADR-038
+(a ponte humano-no-laço segue intocada).

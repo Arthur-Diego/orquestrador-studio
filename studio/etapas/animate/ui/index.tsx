@@ -25,6 +25,7 @@ import {
 } from "../../../../frontend/src/ui";
 import type { HiggsfieldStatus } from "../../../../frontend/src/api";
 import { useStudio } from "../../../../frontend/src/shell/plugin";
+import { useStudioChange } from "../../../../frontend/src/shell/events";
 import { StepGuide } from "../../../../frontend/src/ui";
 
 interface Take {
@@ -282,6 +283,22 @@ export default function AnimateScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid]);
+
+  // ---------- sincronização com o chat `[extensão]` (Wave 11 · F03) ----------
+  // `animate_generate` acrescenta takes por fora da tela; o artefato novo é candidata, e é isso que
+  // `loadCandidates()` relê. NÃO chamamos `loadPlan()`: o plano realimenta `promptValues`, que é o
+  // buffer dos inputs de prompt por take — recarregar campo em edição é o que a §10 Risco 5 do FDD
+  // proíbe. Quando o job ainda está rodando, quem mostra o progresso é o `startPoll()` que já
+  // existe, armado por quem disparou o job.
+  useStudioChange(
+    "animate",
+    () => {
+      void loadCandidates().catch(() => {
+        /* aviso do chat é best-effort: falha de rede aqui não pode derrubar a tela */
+      });
+    },
+    { pid },
+  );
 
   // ---------- ações de take (delegação no #anShots) ----------
   const saveShot = useCallback(

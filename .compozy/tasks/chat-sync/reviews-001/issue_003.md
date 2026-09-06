@@ -1,0 +1,68 @@
+---
+provider: manual
+pr:
+round: 1
+round_created_at: 2026-09-06T09:16:18Z
+status: resolved
+file: frontend/src/shell/events.ts
+line: 52
+severity: low
+author: claude-code
+provider_ref:
+---
+
+# Issue 003: assinante global colapsa eventos de campanhas diferentes na mesma janela
+
+## Review Comment
+
+O comentário de `Assinante` justifica o debounce por assinante afirmando que ele equivale ao "por
+par `(pid, step)`" que a §5 do `_techspec.md` especifica:
+
+```ts
+/**
+ * Uma assinatura viva. O par `(pid, step)` do debounce é o DO ASSINANTE, não o do evento: os dois
+ * são fixos na assinatura … Por isso um timer por assinante já é "um timer por par".
+ */
+```
+
+Isso vale para assinante com `pid` declarado, que é o caso das sete telas de etapa. **Não vale para
+o assinante global**, aquele que passa `opts` sem `pid` — hoje `CharactersArea`. Para ele
+`aceita()` devolve `true` para qualquer campanha (linha 77), então um único timer recebe eventos de
+`p1` e de `p2` na mesma janela de 400 ms e entrega **um só** callback, com o último. O evento de
+`p1` é perdido, não adiado.
+
+Não há defeito hoje: o callback de `CharactersArea` ignora o payload por completo
+(`() => { void recarregar(); }`) e recarrega a lista global de qualquer jeito, então colapsar dois
+eventos numa recarga é o comportamento desejado. O risco é de **contrato**: `useStudioChange` é
+citado no Contrato 4 como consumido por F06, F08 e F11 da mesma wave, e um futuro assinante global
+que **use** `m.pid` no callback (por exemplo, para decidir a que campanha o item pertence) vai
+perder eventos de forma silenciosa e difícil de reproduzir — só acontece com duas abas de chat
+ligadas a campanhas diferentes agindo dentro de 400 ms, que é justamente o cenário que o
+`STUDIO_CHAT_MAX_ACTIVE` permite.
+
+**Correção sugerida (escolher uma):**
+
+1. **Barata e suficiente:** corrigir o comentário para dizer a verdade — que o par do debounce é
+   `(opts.pid, step)` do assinante, e que um assinante **sem** `pid` declarado colapsa campanhas
+   diferentes na mesma janela; portanto o callback de um assinante global não deve depender de
+   `m.pid`. Acrescentar a mesma advertência ao JSDoc de `OpcoesDeAssinatura.pid`.
+2. **Completa:** dar ao assinante um `Map<string, {timer, ultima}>` chaveado pelo `pid` do **evento**
+   (com `"__global__"` para `null`), de modo que o debounce seja por par `(pid do evento, step)` de
+   verdade. Custa uma estrutura a mais e um cleanup que percorre o `Map` no unmount.
+
+Recomendo a opção 1 nesta entrega: o contrato publicado é o que as outras frentes vão ler, e a
+opção 2 acrescenta estado sem nenhum consumidor que precise dele. Se F06/F08/F11 vierem a precisar
+do `pid` no callback global, a opção 2 vira uma mudança local e testável.
+
+## Triage
+
+- Decision: `VALID`
+- Notes: A equivalência "um timer por assinante = um timer por par (pid, step)" afirmada no
+  comentário de `Assinante` só vale para assinante com `pid` declarado. Para o assinante global
+  (`pid === undefined`), `aceita()` devolve `true` para qualquer campanha e um único timer colapsa
+  eventos de `p1` e `p2` na mesma janela — o de `p1` é perdido, não adiado. Sem defeito hoje
+  (`CharactersArea` ignora o payload), mas é uma armadilha de contrato para F06/F08/F11.
+  Correção aplicada: opção 1 do issue — o comentário de `Assinante` passa a declarar a exceção do
+  assinante global, e o JSDoc de `OpcoesDeAssinatura.pid` ganha a advertência "assinante global: não
+  dependa de `m.pid`". A opção 2 (Map por pid do evento) foi recusada por acrescentar estado sem
+  nenhum consumidor que precise dele; vira mudança local e testável se F06/F08/F11 pedirem.

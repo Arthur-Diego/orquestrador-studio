@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../../api";
 import { useShell } from "../../shell/context";
+import { useStudioChange } from "../../shell/events";
 
 interface Character {
   id: string;
@@ -47,6 +48,13 @@ export function CharactersArea({ pid, refreshKey = 0 }: CharactersAreaProps) {
   useEffect(() => {
     void recarregar();
   }, [recarregar, refreshKey]);
+
+  // Sincronização com o chat `[extensão]` (Wave 11 · F03): as tools de personagem recebem `cid`, não
+  // `pid`, então o evento sai com `pid: null` — "vale para qualquer campanha". Esta é uma área
+  // GLOBAL: assina sem `opts.pid`, o que aceita qualquer campanha aberta (inclusive nenhuma).
+  useStudioChange("characters", () => {
+    void recarregar();
+  });
 
   if (selId) return <CharacterDetail cid={selId} pid={pid} onBack={() => { setSelId(null); void recarregar(); }} />;
 
@@ -144,6 +152,26 @@ function CharacterDetail({ cid, pid, onBack }: { cid: string; pid: string | null
       if (timer.current) window.clearInterval(timer.current);
     };
   }, [busy, cid, carregar]);
+
+  // Sincronização com o chat `[extensão]` (Wave 11 · F03, review 001 issue_001). A ficha é a tela
+  // que MOSTRA o artefato das tools de personagem, e o poll acima só liga quando ela mesma disparou
+  // o job (`busy`). Sem esta assinatura, um `character_explore`/`character_sheet` vindo do chat
+  // termina, o `character_wait` emite o `state_changed`, e a ficha aberta continua no estado velho
+  // até o usuário voltar e entrar de novo — o defeito do card #87 uma tela mais fundo.
+  //
+  // `brief` fica de fora de propósito: é o texto que o usuário está digitando e sobrescrevê-lo por
+  // um evento do chat é o que a §10 Risco 5 do FDD proíbe.
+  useStudioChange("characters", () => {
+    void (async () => {
+      await carregar();
+      const j = (await api(`/api/characters/${cid}/job`).catch(() => null)) as Job | null;
+      setJob(j);
+      // Religa o poll que já existe quando o job foi disparado por fora desta tela.
+      if (j && j.state === "running") setBusy(true);
+    })().catch(() => {
+      /* aviso do chat é best-effort: falha de rede aqui não pode derrubar a ficha */
+    });
+  });
 
   const explorar = async () => {
     if (!brief.trim()) return;
