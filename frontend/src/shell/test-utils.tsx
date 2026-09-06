@@ -54,6 +54,7 @@ export function mockShellApi(over: Partial<ShellApi> = {}): ShellApi {
     selectProject: vi.fn(),
     irParaMoodboards: vi.fn(),
     irParaCreditos: vi.fn(),
+    irParaPersonagens: vi.fn(),
     continuar: vi.fn(),
     openWizard: vi.fn(),
     openEdit: vi.fn(),

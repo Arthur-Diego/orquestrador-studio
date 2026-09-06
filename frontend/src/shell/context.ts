@@ -35,6 +35,7 @@ export interface ShellApi {
   selectProject: (pid: string) => void;
   irParaMoodboards: () => void;
   irParaCreditos: () => void;
+  irParaPersonagens: () => void;
   continuar: () => void;
   openWizard: () => void;
   openEdit: () => void;

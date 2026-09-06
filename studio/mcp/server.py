@@ -164,6 +164,39 @@ def build_server(client: StudioClient | None = None):
     def ui_open(target: str, title: str = "", detail: str = "", label: str = "") -> dict:
         return ui.open_screen(cli, target, title, detail, label)
 
+    # ---------- personagem e identidade (ADR-039) ----------
+    @t(name="character_list", description="Lista os personagens da biblioteca (identidade reutilizável entre campanhas).")
+    def character_list() -> str:
+        return actions.character_list(cli)
+
+    @t(name="character_create", description="Cria um personagem novo. style: foto|anime|3d.")
+    def character_create(name: str, style: str = "foto") -> str:
+        return actions.character_create(cli, name, style)
+
+    @t(name="character_explore", description="Explora variações do personagem no motor LOCAL (grátis) a partir de um brief em inglês.")
+    def character_explore(cid: str, brief: str, count: int = 6) -> str:
+        return actions.character_explore(cli, cid, brief, count)
+
+    @t(name="character_pick", description="Mostra as variações para o USUÁRIO escolher o personagem e o fixa (gera o descritor de identidade).")
+    def character_pick(cid: str) -> str:
+        return actions.character_pick(cli, cid)
+
+    @t(name="character_sheet", description="Gera o character sheet (frente/3-4/perfil/corpo) no motor local, ancorado no descritor.")
+    def character_sheet(cid: str) -> str:
+        return actions.character_sheet(cli, cid)
+
+    @t(name="character_apply", description="Aplica o personagem a uma campanha: o descritor passa a reancorar os prompts das etapas 3–5.")
+    def character_apply(pid: str, cid: str) -> str:
+        return actions.character_apply(cli, pid, cid)
+
+    @t(name="character_bind_soul", description="Treina um Soul ID (Higgsfield, PAGO, plano Basic+) para identidade fiel em foto/vídeo. Confirma antes.")
+    def character_bind_soul(cid: str, variant: str = "soul-2") -> str:
+        return actions.character_bind_soul(cli, cid, variant)
+
+    @t(name="character_score", description="Nota de identidade (similaridade facial) entre o personagem fixado e uma candidata (motor local, opcional).")
+    def character_score(cid: str, candidate_id: str, step: str = "explore") -> str:
+        return actions.character_score(cli, cid, candidate_id, step)
+
     return server
 
 

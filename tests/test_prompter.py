@@ -475,8 +475,11 @@ def test_script_without_the_cli_is_a_runtime_error(monkeypatch, tmp_path):
 
 
 def test_script_is_strictly_additive_to_the_single_prompt_path(monkeypatch, tmp_path):
-    """T1.13: regressão de R1 — papéis e caminho do prompt único intocados pelo roteiro."""
-    assert set(prompter.ROLES) == {"mood", "base", "motion", "script"}
+    """T1.13: regressão de R1 — papéis e caminho do prompt único intocados pelo roteiro.
+
+    `character` `[extensão]` (ADR-039) é aditivo, como `script`: não altera mood/base/motion nem o
+    caminho do prompt único; por isso entra no conjunto esperado sem tocar as demais asserções."""
+    assert set(prompter.ROLES) == {"mood", "base", "motion", "script", "character"}
     assert "one single vibe" in prompter.ROLES["mood"] and prompter.PROMPT_FORMAT in prompter.ROLES["mood"]
     assert prompter.PROMPT_FORMAT in prompter.ROLES["base"]
     assert "40–90 words" in prompter.ROLES["motion"] and "Color grading:" not in prompter.ROLES["motion"]
