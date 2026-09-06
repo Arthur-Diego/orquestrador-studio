@@ -24,6 +24,9 @@ export const TOOL_LABELS: Record<string, string> = {
   base_prompt: "Escrevendo o prompt da imagem base",
   base_generate: "Gerando a imagem base",
   base_pick: "Aguardando você escolher a imagem base",
+  // Wave 11 · F11 (revisão do upscale pelo chat): rótulo acrescentado no rebase, cobrado pela
+  // guarda `tests/test_chat_tool_labels.py`.
+  base_review: "Aguardando você revisar as novas imagens da base",
   storyboard_local_generate: "Gerando keyframes no motor local",
   storyboard_pick: "Aguardando você escolher os keyframes",
   // Wave 11 · F10 (créditos no chat): rótulo acrescentado no merge, cobrado pela guarda

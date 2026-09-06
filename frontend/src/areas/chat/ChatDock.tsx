@@ -11,11 +11,12 @@ import { useShell } from "../../shell/context";
 import { emitStudioChange, type EscopoDaMudanca, type MudancaDoStudio } from "../../shell/events";
 import { avisoCli, costRows, costWarn, CreditsChip, NOTA_PADRAO, saldoInsuficiente } from "../../ui";
 import type { CostInfoLike } from "../../ui";
+import { MediaCard } from "./MediaCard";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { DEBOUNCE_SALDO_MS, isToolPaga } from "./toolCredits";
 import { useChatSocket } from "./useChatSocket";
 import { toolLabel } from "./toolLabels";
-import type { ChatEvent, ChatSession, ChatToolProgress } from "./types";
+import type { AskAction, AskMediaItem, ChatEvent, ChatSession, ChatToolProgress } from "./types";
 import "./chat.css";
 
 const ABERTO_KEY = "studio.chat.open";
@@ -530,37 +531,12 @@ export function Message({ ev, onAnswer, onOpen, done, chip }: MessageProps) {
     case "result":
       return ev.is_error ? <div className="chat-note" data-err="1">{ev.text || "o turno falhou"}</div> : null;
     case "show":
-      return <MediaCard title={ev.title as string | undefined} media={(ev.media as MediaItem[]) ?? []} />;
+      return <MediaCard title={ev.title as string | undefined} media={(ev.media as AskMediaItem[]) ?? []} />;
     case "ask":
       return <AskCard ev={ev} onAnswer={onAnswer} onOpen={onOpen} done={done} />;
     default:
       return null;
   }
-}
-
-interface MediaItem {
-  url: string;
-  label?: string;
-  kind?: string;
-}
-
-function MediaCard({ title, media }: { title: string | undefined; media: MediaItem[] }) {
-  return (
-    <div className="chat-msg assistant">
-      <div className="chat-bubble chat-media">
-        {title ? <div className="chat-media-title">{title}</div> : null}
-        <div className="chat-grid">
-          {media.map((m, i) =>
-            m.kind === "video" ? (
-              <video key={i} src={m.url} controls className="chat-thumb" />
-            ) : (
-              <img key={i} src={m.url} alt={m.label ?? ""} className="chat-thumb" />
-            ),
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 interface AskImage {
@@ -602,8 +578,47 @@ function AskCard({
   if (widget === "choose_images") {
     const images = (ev.images as AskImage[]) ?? [];
     const max = (ev.max as number | null) ?? undefined;
+    const acoes = (ev.actions as AskAction[]) ?? [];
     const toggle = (id: string) =>
       setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : max === 1 ? [id] : [...s, id]));
+
+    // Caminho do Contrato 4 (Wave 11 · F11): com `actions`, cada imagem vira um `MediaCard` com o
+    // botão que já carrega a resposta pronta — nada de acumular seleção nem de "Confirmar seleção".
+    // A guarda é `actions.length`, não `media`: `ask` de `refs_pick`/`mood_pick`/`storyboard_pick`/
+    // `character_pick` não traz nenhum dos dois campos e tem de cair no caminho de baixo (Risco 5).
+    if (acoes.length) {
+      const pares = (ev.media as AskMediaItem[]) ?? [];
+      const globais = acoes.filter((a) => !a.for);
+      return (
+        <div className="chat-ask">
+          <div className="chat-ask-title">{title}</div>
+          {images.map((im) => {
+            const par = pares.filter((m) => m.pair === im.id);
+            return (
+              <MediaCard
+                key={im.id}
+                // Sem par antes/depois (candidata sem `source_id`, §6 do FDD) o cartão mostra só a
+                // imagem nova, com o mesmo thumb que a grade antiga usaria.
+                media={par.length ? par : [{ url: im.thumb, label: im.label ?? im.id, kind: "image" }]}
+                actions={acoes.filter((a) => a.for === im.id)}
+                askId={askId}
+                onAnswer={onAnswer}
+              />
+            );
+          })}
+          {globais.length ? (
+            <div className="chat-ask-opts">
+              {globais.map((a, i) => (
+                <button key={i} type="button" className="chat-optbtn" onClick={() => onAnswer(askId, a.value)}>
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
     return (
       <div className="chat-ask">
         <div className="chat-ask-title">{title}</div>

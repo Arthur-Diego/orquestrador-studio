@@ -11,6 +11,31 @@ export interface ChatSession {
   updated: string;
 }
 
+/**
+ * Item de mídia de um cartão do dock — formato do `ui.show` (`{url, label?, kind?}`) mais os dois
+ * campos de pareamento do Contrato 4 (Wave 11 · F11): `role` diz de que lado do antes/depois o item
+ * está e `pair` é o `id` da candidata nova a que ele pertence. Os dois só existem quando o produtor
+ * é `base_review`; item de `ui.show` (e dos `*_pick`) não tem nenhum dos dois.
+ */
+export interface AskMediaItem {
+  url: string;
+  label?: string;
+  kind?: string;
+  role?: "before" | "after";
+  pair?: string;
+}
+
+/**
+ * Botão de ação de um `ask` estendido (Contrato 4, ADR-038). `value` é o objeto EXATO que o dock
+ * devolve como resposta do `ask`; `for` amarra o botão ao cartão daquela candidata e, sem ele, o
+ * botão é global e aparece abaixo da grade.
+ */
+export interface AskAction {
+  label: string;
+  value: unknown;
+  for?: string;
+}
+
 /** Evento do transcript/stream (protocolo do WebSocket, `studio/chat/runtime.normalize_event`). */
 export interface ChatEvent {
   seq?: number;
@@ -40,6 +65,10 @@ export interface ChatEvent {
   title?: string;
   options?: unknown;
   images?: unknown;
+  // payload `ask` estendido (Wave 11 · F11, Contrato 4): botões que respondem o ask com um `value`
+  // pronto. Aditivo e opcional — `ask` vindo dos `*_pick` não traz a chave, e o dock guarda o ramo
+  // novo por `actions?.length`. `unknown` como as irmãs acima: a validação é do consumidor.
+  actions?: unknown;
   fields?: unknown;
   target?: string;
   label?: string;
