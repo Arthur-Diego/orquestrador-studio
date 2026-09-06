@@ -4,6 +4,7 @@
 // e 03 (a história em cenas, com uma linha por foto). Contrato DOM idêntico ao vanilla (ids/classes),
 // oráculo em `scripts/qa/cenarios/storyboard.py`.
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DragEvent } from "react";
 import {
   Modal,
   copy,
@@ -51,7 +52,66 @@ const SCRIPT_IDEA_IMAGES = 3;
 const AREA_NO_CLI =
   "Sem CLI: marque e gere pelo inpaint na própria interface da Higgsfield (ilimitado no plano).";
 
+/** Mensagem de vazio do picker — cita o motor local do painel 01b (critério B8). */
+const PICKER_EMPTY =
+  "Nenhuma ideia ainda — gere na Higgsfield com a instrução do painel 01 e importe, ou gere de graça no motor local (painel 01b).";
+const PICKER_EMPTY_FILTRO = "Nenhuma ideia com essa origem — mude o filtro por origem.";
+
+/**
+ * MIME internos do arrasto (FDD §4 fluxo 2, passo 6). São dois de propósito: o `drop` só age
+ * quando reconhece um deles, e por isso arquivo arrastado do sistema operacional (que chega como
+ * `Files`) é IGNORADO pelas cenas — quem importa arquivo é o painel 01/`ImportIdeasModal`.
+ */
+const DND_IDEA = "application/x-studio-idea";
+const DND_PHOTO = "application/x-studio-photo";
+
+/** Foto arrastada: qual cena ela deixou e qual arquivo é. */
+interface PhotoDrag {
+  sid: string;
+  img: string;
+}
+
 const pkey = (sid: string, img: string) => `${sid}:${img}`;
+
+/**
+ * Chave de origem de uma ideia para o filtro e para o badge. O motor local produz DOIS tipos com
+ * o mesmo `source: "local"` (geração e inpaint) e só o `local_kind` os distingue (FDD §5.6).
+ */
+function ideaSourceKey(c: Idea): string {
+  if (String(c.local_kind || "").includes("inpaint")) return "inpaint";
+  return String(c.source || "");
+}
+
+/**
+ * Badge legível de origem (FDD §4 fluxo 2, passo 1). `history` é o nome do FDD; `higgsfield` é o
+ * valor que `ingest.import_history` grava de verdade — os dois caem no mesmo rótulo.
+ */
+function ideaSourceLabel(c: Idea): string {
+  switch (ideaSourceKey(c)) {
+    case "inpaint":
+      return "Inpaint local";
+    case "cli":
+      return "Higgsfield (CLI)";
+    case "local":
+      return "Motor local (grátis)";
+    case "upload":
+      return "Enviada";
+    case "downloads":
+      return "Downloads";
+    case "history":
+    case "higgsfield":
+      return "Histórico HF";
+    default:
+      return "Origem desconhecida";
+  }
+}
+
+/** Ideias que passam pelo filtro de origem (vazio = todas). Galeria e picker usam a MESMA função. */
+const filtrarIdeias = (list: Idea[], filtro: string) =>
+  filtro ? list.filter((c) => ideaSourceKey(c) === filtro) : list;
+
+/** Ordem preservada, sem repetir — o `dedup` do FDD §4 fluxo 2, passo 4. */
+const dedup = (list: string[]) => [...new Set(list)];
 /** Foto ainda sem estado na tela: herda o padrão da campanha e não tem procedência. */
 const EMPTY_PHOTO_META: PhotoMeta = { desc: "", prompt: "", videos: [], preset: PRESET_INHERIT, origin: {} };
 const DIACRITICS = /[̀-ͯ]/g;
@@ -200,6 +260,23 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [photos, setPhotos] = useState<PhotoState>({});
+  /** Filtro por origem, compartilhado entre `#sbIdeasGallery` e o `PickerModal` (critério B1). */
+  const [ideaFilter, setIdeaFilter] = useState("");
+  /** O que está sendo arrastado agora — só para pintar `.dragging` (critério B6). */
+  const [dragging, setDragging] = useState<{ idea?: string; photo?: PhotoDrag; fromIdx?: number } | null>(null);
+  /** Alvo do arrasto: índice da cena sob o cursor e/ou a `.sb-key` sob o cursor (`.dragover`). */
+  const [dragOverScene, setDragOverScene] = useState<number | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+
+  /**
+   * Estado NOVO de cenas e fotos, sempre atualizado no MESMO instante em que a tela muda — a
+   * mitigação do Risco 3 (§10). Todo gesto calcula o próximo estado a partir DESTAS refs (nunca
+   * das variáveis de closure, que ficam congeladas no render em que o handler nasceu) e entrega o
+   * resultado pronto ao `persist`. Era exatamente isso que faltava no `reorderPhoto` antigo, que
+   * lia `photos` de fora do `setScenes`.
+   */
+  const scenesRef = useRef<Scene[]>([]);
+  const photosRef = useRef<PhotoState>({});
   const [hasBase, setHasBase] = useState(false);
   const [baseImage, setBaseImage] = useState<string>("");
   const [counts, setCounts] = useState<{ ideas: number; selected: number }>({ ideas: 0, selected: 0 });
@@ -371,8 +448,8 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
       try {
         const sc = ((await api(url("/scenes"))) as { scenes: Scene[] }).scenes;
         if (!vivo) return;
-        setScenes(sc);
-        setPhotos(seedPhotos(sc));
+        putScenesState(sc);
+        putPhotosState(seedPhotos(sc));
       } catch (err) {
         toast((err as Error).message);
       }
@@ -449,23 +526,65 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     [api, url],
   );
 
+  /**
+   * Escrita de estado que mantém a ref em dia NO MESMO instante (antes do re-render). Todo caminho
+   * que muda cenas ou fotos passa por aqui; nenhum `setScenes`/`setPhotos` solto sobrevive, senão
+   * a ref envelhece e o payload volta a ser obsoleto (Risco 3).
+   */
+  const putScenesState = useCallback((sc: Scene[]) => {
+    scenesRef.current = sc;
+    setScenes(sc);
+  }, []);
+  const putPhotosState = useCallback((ph: PhotoState) => {
+    photosRef.current = ph;
+    setPhotos(ph);
+  }, []);
+
+  /**
+   * Fila de UM `PUT /scenes` (§10 Risco 3). O último payload mora numa ref; enquanto uma requisição
+   * está no ar, os gestos seguintes só sobrescrevem essa ref. Quando ela volta, o laço manda o
+   * payload mais recente — nunca dois `PUT` concorrentes, e a resposta de um `PUT` já superado é
+   * simplesmente descartada (nada aqui lê o corpo da resposta).
+   */
+  const pendingPayload = useRef<Scene[] | null>(null);
+  const putBusy = useRef(false);
+
+  const flushScenes = useCallback(async () => {
+    if (putBusy.current) return;
+    putBusy.current = true;
+    try {
+      while (pendingPayload.current) {
+        const payload = pendingPayload.current;
+        pendingPayload.current = null;
+        await putScenes(payload).catch(() => {});
+      }
+    } finally {
+      putBusy.current = false;
+    }
+  }, [putScenes]);
+
+  /**
+   * Persistência imediata de um gesto. Recebe o estado NOVO explicitamente — quem chama já o
+   * calculou a partir de `scenesRef`/`photosRef` — e nunca lê estado de closure.
+   */
+  const persist = useCallback(
+    (sc: Scene[], ph: PhotoState) => {
+      pendingPayload.current = buildPayload(sc, ph);
+      void flushScenes();
+    },
+    [flushScenes],
+  );
+
   const saveScenesAndReseed = useCallback(
     async (sc: Scene[], ph: PhotoState) => {
       const r = (await putScenes(buildPayload(sc, ph))) as { scenes: Scene[] };
-      setScenes(r.scenes);
-      setPhotos(seedPhotos(r.scenes));
+      putScenesState(r.scenes);
+      putPhotosState(seedPhotos(r.scenes));
       await loadStatus();
       refreshGuide();
       return r;
     },
-    [putScenes, loadStatus, refreshGuide],
-  );
-
-  const persist = useCallback(
-    (sc: Scene[], ph: PhotoState) => {
-      void putScenes(buildPayload(sc, ph)).catch(() => {});
-    },
-    [putScenes],
+    [putScenes, putScenesState, putPhotosState, loadStatus, refreshGuide],
   );
 
   // ---------------- painel 01: ideias ----------------
@@ -511,18 +630,34 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   const pm = (sid: string, img: string): PhotoMeta =>
     photos[pkey(sid, img)] || EMPTY_PHOTO_META;
 
-  const updatePhoto = (sid: string, img: string, patch: Partial<PhotoMeta>) =>
-    setPhotos((prev) => {
-      const k = pkey(sid, img);
-      const cur = prev[k] || EMPTY_PHOTO_META;
-      return { ...prev, [k]: { ...cur, ...patch } };
-    });
+  const updatePhoto = (sid: string, img: string, patch: Partial<PhotoMeta>) => {
+    const k = pkey(sid, img);
+    const cur = photosRef.current[k] || EMPTY_PHOTO_META;
+    putPhotosState({ ...photosRef.current, [k]: { ...cur, ...patch } });
+  };
+
+  /**
+   * Ponto único de mudança de cenas: calcula o próximo estado a partir da ref (sempre o mais
+   * novo), grava estado e ref juntos e, quando o gesto é de FOTO, persiste na mesma interação com
+   * o estado recém-calculado. Devolver o mesmo array significa "nada mudou" e não gera `PUT`.
+   */
+  const mutateScenes = useCallback(
+    (fn: (prev: Scene[]) => Scene[], opts?: { persist?: boolean }) => {
+      const prev = scenesRef.current;
+      const next = fn(prev);
+      if (next === prev) return prev;
+      putScenesState(next);
+      if (opts?.persist) persist(next, photosRef.current);
+      return next;
+    },
+    [putScenesState, persist],
+  );
 
   const addScene = () =>
-    setScenes((prev) => [...prev, { id: null, text: "", images: [], primary: null, photos: {} }]);
-  const delScene = (i: number) => setScenes((prev) => prev.filter((_, k) => k !== i));
+    mutateScenes((prev) => [...prev, { id: null, text: "", images: [], primary: null, photos: {} }]);
+  const delScene = (i: number) => mutateScenes((prev) => prev.filter((_, k) => k !== i));
   const moveScene = (i: number, dir: -1 | 1) =>
-    setScenes((prev) => {
+    mutateScenes((prev) => {
       const to = i + dir;
       if (to < 0 || to >= prev.length) return prev;
       const next = prev.slice();
@@ -532,55 +667,128 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
       return next;
     });
   const setSceneText = (i: number, t: string) =>
-    setScenes((prev) => prev.map((s, k) => (k === i ? { ...s, text: t } : s)));
+    mutateScenes((prev) => prev.map((s, k) => (k === i ? { ...s, text: t } : s)));
 
+  // Estrelar, remover e reordenar persistem na MESMA interação (critérios B3 e B4): nenhum gesto
+  // de foto depende mais de "Salvar cenas", que segue existindo só como rede de segurança.
   const setPrimary = (i: number, file: string) =>
-    setScenes((prev) =>
-      prev.map((s, k) => (k === i && s.images.includes(file) ? { ...s, primary: file } : s)),
+    mutateScenes(
+      (prev) => prev.map((s, k) => (k === i && s.images.includes(file) ? { ...s, primary: file } : s)),
+      { persist: true },
     );
   const removeImage = (i: number, file: string) =>
-    setScenes((prev) =>
-      prev.map((s, k) => {
-        if (k !== i) return s;
-        const images = s.images.filter((x) => x !== file);
-        return { ...s, images, primary: s.primary === file ? images[0] || null : s.primary };
-      }),
+    mutateScenes(
+      (prev) =>
+        prev.map((s, k) => {
+          if (k !== i) return s;
+          const images = s.images.filter((x) => x !== file);
+          return { ...s, images, primary: s.primary === file ? images[0] || null : s.primary };
+        }),
+      { persist: true },
     );
-  const reorderPhoto = (i: number, img: string, dir: -1 | 1) => {
-    setScenes((prev) => {
-      const s = prev[i];
-      if (!s) return prev;
-      const from = s.images.indexOf(img);
-      const to = from + dir;
-      if (from < 0 || to < 0 || to >= s.images.length) return prev;
-      const images = s.images.slice();
-      const moved = images.splice(from, 1)[0];
-      if (moved === undefined) return prev;
-      images.splice(to, 0, moved);
-      const next = prev.map((x, k) => (k === i ? { ...x, images } : x));
-      persist(next, photos);
-      return next;
+  const reorderPhoto = (i: number, img: string, dir: -1 | 1) =>
+    mutateScenes(
+      (prev) => {
+        const s = prev[i];
+        if (!s) return prev;
+        const from = s.images.indexOf(img);
+        const to = from + dir;
+        if (from < 0 || to < 0 || to >= s.images.length) return prev;
+        const images = s.images.slice();
+        const moved = images.splice(from, 1)[0];
+        if (moved === undefined) return prev;
+        images.splice(to, 0, moved);
+        return prev.map((x, k) => (k === i ? { ...x, images } : x));
+      },
+      { persist: true },
+    );
+
+  /** Índice da cena com este `sid` (o `data-sid` do arrasto), ou -1. */
+  const sceneIndexOf = (sid: string) => scenesRef.current.findIndex((s) => (s.id || "") === sid);
+
+  /**
+   * Move uma foto de uma cena para outra: some da origem e aparece no fim do destino, num único
+   * `PUT` consistente (critérios B6 e B7). O estado por foto (`desc`/`prompt`/`preset`/`origin`)
+   * viaja junto — a chave do mapa é `sid:img`, então trocar de cena trocaria a chave e o texto que
+   * o usuário escreveu se perderia sem esta cópia.
+   */
+  const movePhotoToScene = (from: PhotoDrag, toIdx: number, origem?: number) => {
+    const list = scenesRef.current;
+    // Cena ainda não salva não tem `id`, e o `sid` do payload vira "" para TODAS elas. Quando o
+    // gesto nasceu nesta tela o índice exato é conhecido; a busca por `sid` é só o fallback.
+    const fromIdx = origem !== undefined && list[origem] ? origem : sceneIndexOf(from.sid);
+    const dest = list[toIdx];
+    if (!dest || fromIdx < 0 || fromIdx === toIdx || dest.images.includes(from.img)) return;
+    const next = list.map((s, k) => {
+      if (k === fromIdx) {
+        const images = s.images.filter((x) => x !== from.img);
+        return { ...s, images, primary: s.primary === from.img ? images[0] || null : s.primary };
+      }
+      if (k === toIdx) {
+        const images = [...s.images, from.img];
+        return { ...s, images, primary: s.primary || images[0] || null };
+      }
+      return s;
     });
+    const meta = photosRef.current[pkey(from.sid, from.img)];
+    const nextPhotos = meta
+      ? { ...photosRef.current, [pkey(dest.id || "", from.img)]: { ...meta } }
+      : photosRef.current;
+    putScenesState(next);
+    if (meta) putPhotosState(nextPhotos);
+    persist(next, nextPhotos);
+    refreshGuide();
   };
 
-  async function attachImages(i: number, ideaIds: string[]) {
+  /** Reordena dentro da MESMA cena soltando uma `.sb-key` sobre outra (critério B6). */
+  const dropPhotoOnPhoto = (from: PhotoDrag, i: number, alvo: string) => {
+    if (from.img === alvo) return;
+    mutateScenes(
+      (prev) => {
+        const s = prev[i];
+        if (!s) return prev;
+        const de = s.images.indexOf(from.img);
+        const para = s.images.indexOf(alvo);
+        if (de < 0 || para < 0) return prev;
+        const images = s.images.slice();
+        const moved = images.splice(de, 1)[0];
+        if (moved === undefined) return prev;
+        images.splice(para, 0, moved);
+        return prev.map((x, k) => (k === i ? { ...x, images } : x));
+      },
+      { persist: true },
+    );
+  };
+
+  /**
+   * Anexa ideias a uma cena. `mode="add"` (default) SOMA à galeria da cena, com dedup e ordem
+   * preservada, mantendo a `primary` atual; `mode="replace"` substitui (é o que "Sem imagem" e
+   * "Substituir tudo" usam). Antes do anexo, as ideias novas viram `selected`
+   * (`POST /candidates/select` com a união) — se esse passo falhar, NADA é anexado e o erro aparece
+   * (fluxo alternativo do FDD §4).
+   */
+  async function attachImages(i: number, ideaIds: string[], mode: "add" | "replace" = "add") {
     try {
       let lista = ideas;
       if (ideaIds.length) {
         const already = ideas.filter((c) => c.selected).map((c) => c.id);
-        const ids = [...new Set(already.concat(ideaIds))];
+        const ids = dedup(already.concat(ideaIds));
         if (ids.length !== already.length) {
           await api(url("/candidates/select"), { method: "POST", body: JSON.stringify({ ids }) });
           lista = await loadIdeas();
         }
       }
       const files = ideaIds.map((id) => lista.find((x) => x.id === id)?.file).filter(Boolean) as string[];
-      setScenes((prev) =>
-        prev.map((s, k) => {
-          if (k !== i) return s;
-          const primary = !s.primary || !files.includes(s.primary) ? files[0] || null : s.primary;
-          return { ...s, images: files, primary };
-        }),
+      mutateScenes(
+        (prev) =>
+          prev.map((s, k) => {
+            if (k !== i) return s;
+            const images = mode === "replace" ? dedup(files) : dedup([...s.images, ...files]);
+            // A principal atual continua principal enquanto sobreviver à operação.
+            const primary = s.primary && images.includes(s.primary) ? s.primary : images[0] || null;
+            return { ...s, images, primary };
+          }),
+        { persist: true },
       );
       await loadStatus();
       refreshGuide();
@@ -612,7 +820,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
         body: JSON.stringify(body),
       })) as { prompt?: string; source?: string; seconds?: number; preset?: string | null };
       const nextPhotos: PhotoState = {
-        ...photos,
+        ...photosRef.current,
         [pkey(sid, img)]: {
           ...m,
           desc: description,
@@ -622,7 +830,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           origin: { ...m.origin, video_prompt: originOf(r.source, r.preset) },
         },
       };
-      setPhotos(nextPhotos);
+      putPhotosState(nextPhotos);
       prog.ok("Prompt pronto");
       prog.note(
         <span className="fine">
@@ -630,7 +838,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           {r.seconds ? ` · sugestão ${r.seconds}s` : ""}
         </span>,
       );
-      persist(scenes, nextPhotos);
+      persist(scenesRef.current, nextPhotos);
     } catch (err) {
       prog.fail((err as Error).message);
     }
@@ -643,12 +851,13 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     }
     const m = pm(sid, img);
     const nextPhotos: PhotoState = {
-      ...photos,
+      ...photosRef.current,
       [pkey(sid, img)]: { ...m, videos: (m.videos || []).concat(j.video) },
     };
-    setPhotos(nextPhotos);
+    putPhotosState(nextPhotos);
     toast("Vídeo gerado · usado na etapa 6 (animação)");
-    persist(scenes, nextPhotos);
+    persist(scenesRef.current, nextPhotos);
+    void loadIdeas();
     refreshGuide();
   };
 
@@ -706,6 +915,9 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           } catch {
             setScript(null);
           }
+          // A galeria se atualiza no `done` de todo job desta tela (FDD §4 fluxo 2): o roteiro lê
+          // as ideias escolhidas, e voltar dele sem a grade em dia esconde o que mudou no disco.
+          await loadIdeas();
         },
         label: "Roteiro pronto",
       });
@@ -906,8 +1118,62 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     }
   }, [area]);
 
+  // ---------------- arrastar e soltar (`[extensão]` critério B6) ----------------
+  /**
+   * O que está no `dataTransfer`. Só os DOIS MIME internos contam: um `drop` de arquivo do sistema
+   * operacional chega com `Files` e devolve `null` aqui, então a cena o ignora por completo.
+   */
+  function lerArrasto(dt: DataTransfer | null): { idea?: string; photo?: PhotoDrag } | null {
+    if (!dt) return null;
+    const tipos = [...(dt.types || [])];
+    if (tipos.length && !tipos.includes(DND_IDEA) && !tipos.includes(DND_PHOTO)) return null;
+    const idea = dt.getData(DND_IDEA);
+    if (idea) return { idea };
+    const bruto = dt.getData(DND_PHOTO);
+    if (!bruto) return null;
+    try {
+      const p = JSON.parse(bruto) as PhotoDrag;
+      return p && typeof p.img === "string" ? { photo: { sid: String(p.sid || ""), img: p.img } } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const limparArrasto = () => {
+    setDragging(null);
+    setDragOverScene(null);
+    setDragOverKey(null);
+  };
+
+  /** `dragover` sobre uma cena: só aceita (e pinta `.dragover`) o que a cena sabe receber. */
+  const onSceneDragOver = (i: number) => (e: DragEvent) => {
+    if (!lerArrasto(e.dataTransfer)) return;
+    e.preventDefault();
+    setDragOverScene(i);
+  };
+
+  /** `drop` na cena: ideia vira anexo; foto de OUTRA cena se move para cá. Tudo persiste. */
+  const onSceneDrop = (i: number) => (e: DragEvent) => {
+    const carga = lerArrasto(e.dataTransfer);
+    limparArrasto();
+    if (!carga) return;
+    e.preventDefault();
+    if (carga.idea) {
+      void attachImages(i, [carga.idea], "add");
+      return;
+    }
+    const origem = dragging?.fromIdx;
+    if (carga.photo) movePhotoToScene(carga.photo, i, origem);
+  };
+
   // ---------------- render ----------------
   const total = scenes.length;
+  const ideiasVisiveis = filtrarIdeias(ideas, ideaFilter);
+  /** Origens presentes na galeria, na ordem em que aparecem — as opções do `#sbIdeasFilter`. */
+  const origensDisponiveis = dedup(ideas.map(ideaSourceKey).filter(Boolean)).map((key) => ({
+    key,
+    label: ideaSourceLabel(ideas.find((c) => ideaSourceKey(c) === key) as Idea),
+  }));
   const kindTitle = meta.kinds.find((k) => k.kind === kind)?.ui_hint || "";
   const scriptUsadas = Math.min(scriptSelectedIdeas, SCRIPT_IDEA_IMAGES);
 
@@ -1006,6 +1272,61 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
               </p>
             </div>
           </div>
+        </div>
+
+        {/* `[extensão]` Galeria de ideias na TELA (card #97, critério B1). Antes ela só existia
+            dentro do `PickerModal`: quem abria a etapa não via o que já tinha. Cada card é
+            arrastável para uma cena do painel 03. */}
+        <div className="row wrap sb-ideas-head">
+          <span className="eyebrow">Galeria de ideias</span>
+          <label className="inline">
+            origem
+            <select
+              id="sbIdeasFilter"
+              aria-label="Filtrar ideias por origem"
+              value={ideaFilter}
+              onChange={(e) => setIdeaFilter(e.target.value)}
+            >
+              <option value="">todas as origens</option>
+              {origensDisponiveis.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="fine">arraste um card para uma cena do painel 03</span>
+        </div>
+        <div id="sbIdeasGallery" className="gallery sm">
+          {ideiasVisiveis.length ? (
+            ideiasVisiveis.map((c) => (
+              <div
+                key={c.id}
+                className={`card sb-idea${c.selected ? " sel" : ""}${dragging?.idea === c.id ? " dragging" : ""}`}
+                data-id={c.id}
+                data-file={c.file}
+                data-source={ideaSourceKey(c)}
+                tabIndex={0}
+                draggable
+                title={c.prompt || ""}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(DND_IDEA, c.id);
+                  e.dataTransfer.effectAllowed = "copy";
+                  setDragging({ idea: c.id });
+                }}
+                onDragEnd={limparArrasto}
+                onDoubleClick={() => window.open(ctx.files(c.file), "_blank")}
+              >
+                <img loading="lazy" src={ctx.files(c.thumb || c.file)} alt="" />
+                <span className="term">
+                  {ideaSourceLabel(c)}
+                  {c.selected ? " · escolhida" : ""}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="empty">{ideas.length ? PICKER_EMPTY_FILTRO : PICKER_EMPTY}</div>
+          )}
         </div>
       </section>
 
@@ -1370,10 +1691,10 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                   </div>
                 </div>
                 <div
-                  className="sb-phototable"
-                  onDragOver={(e) => {
-                    if ((e.target as HTMLElement).closest(".sb-photorow")) e.preventDefault();
-                  }}
+                  className={`sb-phototable${dragOverScene === i ? " dragover" : ""}`}
+                  onDragOver={onSceneDragOver(i)}
+                  onDragLeave={() => setDragOverScene((cur) => (cur === i ? null : cur))}
+                  onDrop={onSceneDrop(i)}
                 >
                   {s.images.map((img, piIdx) => (
                     <PhotoRow
@@ -1388,6 +1709,11 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                       filesUrl={(rel) => ctx.files(rel)}
                       realismPresets={realismPresets}
                       inheritedPreset={inheritedPreset(MOTION_ACTION)}
+                      isDragging={dragging?.photo?.sid === sid && dragging?.photo?.img === img}
+                      isDragOver={dragOverKey === pkey(sid, img)}
+                      moveTargets={scenes
+                        .map((_, k) => ({ i: k, label: `cena ${k + 1}` }))
+                        .filter((t) => t.i !== i)}
                       onDesc={(v) => updatePhoto(sid, img, { desc: v })}
                       onPreset={(v) => updatePhoto(sid, img, { preset: v })}
                       onStar={() => setPrimary(i, img)}
@@ -1398,22 +1724,42 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                       onAnnotate={() => annotatePhoto(img)}
                       onUp={() => reorderPhoto(i, img, -1)}
                       onDown={() => reorderPhoto(i, img, 1)}
+                      onMove={(to) => movePhotoToScene({ sid, img }, to, i)}
+                      onDragStartPhoto={(e) => {
+                        e.dataTransfer.setData(DND_PHOTO, JSON.stringify({ sid, img }));
+                        e.dataTransfer.effectAllowed = "move";
+                        setDragging({ photo: { sid, img }, fromIdx: i });
+                      }}
+                      onDragEndPhoto={limparArrasto}
+                      onDragOverPhoto={(e) => {
+                        if (!lerArrasto(e.dataTransfer)) return;
+                        e.preventDefault();
+                        setDragOverKey(pkey(sid, img));
+                      }}
+                      onDragLeavePhoto={() => setDragOverKey((cur) => (cur === pkey(sid, img) ? null : cur))}
+                      onDropPhoto={(e) => {
+                        const carga = lerArrasto(e.dataTransfer);
+                        // Só a reordenação DENTRO da cena para aqui; ideia e foto de outra cena
+                        // seguem borbulhando para o `.sb-phototable`, que sabe anexar e mover.
+                        if (!carga?.photo || carga.photo.sid !== sid) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const de = carga.photo;
+                        limparArrasto();
+                        dropPhotoOnPhoto(de, i, img);
+                      }}
                       onVideoOpen={(rel) => window.open(ctx.files(rel), "_blank")}
                     />
                   ))}
-                  <div
-                    className="thumb pick sb-pick"
-                    tabIndex={0}
-                    role="button"
+                  <button
+                    type="button"
+                    className="thumb pick sb-pick sbAddPhoto"
+                    aria-label={`Adicionar foto à cena ${i + 1}`}
                     title="adicionar imagem à cena"
                     onClick={() => setModal({ kind: "picker", i })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setModal({ kind: "picker", i });
-                      }
-                    }}
-                  />
+                  >
+                    + Adicionar foto à cena
+                  </button>
                 </div>
               </div>
             );
@@ -1486,17 +1832,35 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           i={modal.i}
           ideas={ideas}
           selected={scenes[modal.i]?.images || []}
+          filtro={ideaFilter}
+          origens={origensDisponiveis}
+          onFiltro={setIdeaFilter}
           filesUrl={(rel) => ctx.files(rel)}
           onClose={() => setModal(null)}
           onApply={(ids) => {
             const i = modal.i;
             setModal(null);
-            void attachImages(i, ids);
+            void attachImages(i, ids, "add");
+          }}
+          onReplace={(ids) => {
+            const i = modal.i;
+            const atual = (scenes[i]?.images || []).length;
+            // Trocar a galeria inteira é destrutivo e agora é ação SEPARADA da de adicionar
+            // (critério B5): sem confirmação, nada muda.
+            if (
+              atual &&
+              !window.confirm(
+                `Substituir tudo descarta as ${atual} foto(s) já anexadas à cena ${i + 1}. Continuar?`,
+              )
+            )
+              return;
+            setModal(null);
+            void attachImages(i, ids, "replace");
           }}
           onNoImage={() => {
             const i = modal.i;
             setModal(null);
-            void attachImages(i, []);
+            void attachImages(i, [], "replace");
           }}
           onImportar={() => {
             setModal(null);
@@ -1698,6 +2062,12 @@ interface PhotoRowProps {
   realismPresets: RealismPreset[];
   /** Preset que a campanha resolve para a ação `motion` — o "X" de "(padrão da campanha: X)". */
   inheritedPreset: string | null;
+  /** Esta foto está sendo arrastada agora (`.dragging`). */
+  isDragging: boolean;
+  /** Há um arrasto pairando sobre esta `.sb-key` (`.dragover`). */
+  isDragOver: boolean;
+  /** As DEMAIS cenas, para o "Mover para…" (alternativa por teclado ao arrasto, critério B7). */
+  moveTargets: { i: number; label: string }[];
   onDesc: (v: string) => void;
   onPreset: (v: string) => void;
   onStar: () => void;
@@ -1708,6 +2078,12 @@ interface PhotoRowProps {
   onAnnotate: () => void;
   onUp: () => void;
   onDown: () => void;
+  onMove: (to: number) => void;
+  onDragStartPhoto: (e: DragEvent) => void;
+  onDragEndPhoto: () => void;
+  onDragOverPhoto: (e: DragEvent) => void;
+  onDragLeavePhoto: () => void;
+  onDropPhoto: (e: DragEvent) => void;
   onVideoOpen: (rel: string) => void;
 }
 function PhotoRow(p: PhotoRowProps) {
@@ -1716,12 +2092,17 @@ function PhotoRow(p: PhotoRowProps) {
   const last = videos.length ? videos[videos.length - 1] : null;
   const [copied, setCopied] = useState<string>("");
   return (
-    <div className="sb-photorow" data-img={p.img} data-pi={p.pi}>
+    <div className={`sb-photorow${p.isDragging ? " dragging" : ""}`} data-img={p.img} data-pi={p.pi}>
       <div
-        className={`sb-key${p.isPrimary ? " primary" : ""}`}
+        className={`sb-key${p.isPrimary ? " primary" : ""}${p.isDragOver ? " dragover" : ""}`}
         data-img={p.img}
         draggable
-        title="clique para ver em tamanho real · arraste para reordenar"
+        title="clique para ver em tamanho real · arraste para reordenar ou para outra cena"
+        onDragStart={p.onDragStartPhoto}
+        onDragEnd={p.onDragEndPhoto}
+        onDragOver={p.onDragOverPhoto}
+        onDragLeave={p.onDragLeavePhoto}
+        onDrop={p.onDropPhoto}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           p.onLightbox();
@@ -1801,6 +2182,25 @@ function PhotoRow(p: PhotoRowProps) {
             ↓
           </button>
         </div>
+        {/* Alternativa por TECLADO ao arrasto entre cenas (critério B7): mesmo efeito, sem mouse. */}
+        <select
+          className="sbPhotoMove"
+          aria-label={`Mover esta foto para outra cena (${p.img.split("/").pop() || ""})`}
+          title="mover esta foto para outra cena"
+          disabled={!p.moveTargets.length}
+          value=""
+          onChange={(e) => {
+            const to = e.target.value;
+            if (to !== "") p.onMove(+to);
+          }}
+        >
+          <option value="">Mover para…</option>
+          {p.moveTargets.map((t) => (
+            <option key={t.i} value={t.i}>
+              {t.label}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );
@@ -1902,13 +2302,23 @@ function HistoryModal({
   );
 }
 
+/**
+ * Escolha das fotos de uma cena. A ação PRIMÁRIA é a de adicionar — contrato de DOM congelado com
+ * `scripts/qa/cenarios/storyboard.py` (C-STORYBOARD-22 clica `.modal-actions button.primary`), e o
+ * botão "Sem imagem" continua existindo com esse texto exato (C-STORYBOARD-23). "Substituir tudo"
+ * é fantasma e passa por `window.confirm` no pai (critério B5).
+ */
 function PickerModal({
   i,
   ideas,
   selected,
+  filtro,
+  origens,
+  onFiltro,
   filesUrl,
   onClose,
   onApply,
+  onReplace,
   onNoImage,
   onImportar,
   onOpenFile,
@@ -1916,9 +2326,13 @@ function PickerModal({
   i: number;
   ideas: Idea[];
   selected: string[];
+  filtro: string;
+  origens: { key: string; label: string }[];
+  onFiltro: (v: string) => void;
   filesUrl: (rel: string) => string;
   onClose: () => void;
   onApply: (ids: string[]) => void;
+  onReplace: (ids: string[]) => void;
   onNoImage: () => void;
   onImportar: () => void;
   onOpenFile: (rel: string) => void;
@@ -1932,35 +2346,58 @@ function PickerModal({
       else next.add(id);
       return next;
     });
+  // O MESMO filtro do painel 01 (critério B1): o estado mora no pai, a grade só o aplica.
+  const visiveis = filtrarIdeias(ideas, filtro);
   return (
     <Modal
       title={`Cena ${i + 1} — escolher as imagens`}
-      subtitle="Clique para marcar/desmarcar várias ideias; ao aplicar, a 1ª vira a principal (você troca depois)."
+      subtitle="Clique para marcar/desmarcar várias ideias; adicionar SOMA à galeria da cena, e a 1ª vira a principal quando ainda não há uma."
       onClose={onClose}
       actions={[
         { label: "Importar ideias…", kind: "ghost", close: false, onClick: onImportar },
-        { label: "Aplicar", kind: "primary", close: false, onClick: () => onApply([...sel]) },
+        { label: "Adicionar à cena", kind: "primary", close: false, onClick: () => onApply([...sel]) },
+        { label: "Substituir tudo", kind: "ghost", close: false, onClick: () => onReplace([...sel]) },
         { label: "Sem imagem", kind: "ghost", close: false, onClick: onNoImage },
       ]}
     >
+      <div className="row wrap">
+        <label className="inline">
+          origem
+          <select
+            className="sbPickerFilter"
+            aria-label="Filtrar ideias por origem"
+            value={filtro}
+            onChange={(e) => onFiltro(e.target.value)}
+          >
+            <option value="">todas as origens</option>
+            {origens.map((o) => (
+              <option key={o.key} value={o.key}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div id="sbGallery" className="gallery sm">
-        {ideas.length ? (
-          ideas.map((c) => (
+        {visiveis.length ? (
+          visiveis.map((c) => (
             <div
               key={c.id}
               className={`card ${sel.has(c.id) ? "sel" : ""}`}
               data-id={c.id}
               data-file={c.file}
+              data-source={ideaSourceKey(c)}
               tabIndex={0}
               title={c.prompt || ""}
               onClick={() => toggle(c.id)}
               onDoubleClick={() => onOpenFile(c.file)}
             >
               <img loading="lazy" src={filesUrl(c.thumb || c.file)} alt="" />
+              <span className="term">{ideaSourceLabel(c)}</span>
             </div>
           ))
         ) : (
-          <div className="empty">Nenhuma ideia ainda — gere na Higgsfield com a instrução do painel 01 e importe.</div>
+          <div className="empty">{ideas.length ? PICKER_EMPTY_FILTRO : PICKER_EMPTY}</div>
         )}
       </div>
     </Modal>
@@ -2222,10 +2659,19 @@ const STYLE = `
   .sb-key.primary .sb-star{color:#FFD54A}
   .sb-key .sb-rm{right:2px;color:#F2A5A5}
   .sb-key .sb-star:hover,.sb-key .sb-rm:hover{background:rgba(0,0,0,.82);color:#D7F4F9}
+  /* O rótulo vem do DOM (critério B2): era um ::after de 9px, invisível a leitor de tela e ao
+     dump de textContent, no único ponto de entrada de foto na cena. */
   .sb-pick{width:96px;height:128px;position:relative;cursor:pointer;display:grid;place-items:center;
-    border:1px dashed var(--line-2);border-radius:8px}
-  .sb-pick::after{content:"+ foto";font-family:"IBM Plex Mono",monospace;font-size:9px;color:#9FE3EE;text-align:center;line-height:1.2}
+    border:1px dashed var(--line-2);border-radius:8px;background:transparent;padding:6px;
+    font-family:"IBM Plex Mono",monospace;font-size:10px;line-height:1.3;color:#9FE3EE;text-align:center}
   .sb-pick:hover,.sb-pick:focus-visible{outline:1px dashed rgba(79,200,217,.5)}
+  .sb-ideas-head{margin-top:14px;align-items:center}
+  #sbIdeasGallery{margin-top:8px}
+  #sbIdeasGallery .card{cursor:grab}
+  #sbIdeasGallery .card.sel{border-color:#4FC8D9;box-shadow:0 0 0 2px rgba(79,200,217,.45)}
+  #sbIdeasGallery .card.dragging{opacity:.5}
+  .sb-phototable.dragover{outline:1px dashed rgba(79,200,217,.6);outline-offset:4px;border-radius:8px}
+  .sbPhotoMove{width:100%;font-size:var(--fs-sm)}
   .sh-scene-id{font-size:11px;color:var(--ink-row);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sh-builder{margin-bottom:14px}
   #sceneList .rowcard{position:relative}

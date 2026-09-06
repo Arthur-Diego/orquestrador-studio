@@ -43,6 +43,14 @@ export interface Idea {
   thumb?: string;
   prompt?: string;
   selected?: boolean;
+  /** Origem do candidato (`_idea_row`): `cli`, `local`, `upload`, `downloads`, `higgsfield`. */
+  source?: string;
+  /**
+   * `[extensão]` Wave 11 · F06: só o motor local preenche. Os valores REAIS que `local.py` grava
+   * são `"keyframe_local"` e `"inpaint_local"` (`null` para todo o resto) — o FDD §4 os
+   * parafraseia como `"inpaint"`, mas o badge tem de casar com o que vem do servidor.
+   */
+  local_kind?: string | null;
 }
 
 /**

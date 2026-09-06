@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Frontend — galeria de ideias, botão real, persistência imediata e drag-and-drop
 type: frontend
 complexity: critical
@@ -76,21 +76,21 @@ persiste todo gesto na hora e implementa arrastar-e-soltar com alternativa por t
 
 ## Subtasks
 
-- [ ] 5.1 Renderizar `#sbIdeasGallery` no painel 01 com badge de origem e os `data-*`.
-- [ ] 5.2 Implementar `#sbIdeasFilter` compartilhado entre a galeria e o `PickerModal`.
-- [ ] 5.3 Trocar o tile mudo por `button.thumb.pick.sb-pick.sbAddPhoto` com texto no DOM e
+- [x] 5.1 Renderizar `#sbIdeasGallery` no painel 01 com badge de origem e os `data-*`.
+- [x] 5.2 Implementar `#sbIdeasFilter` compartilhado entre a galeria e o `PickerModal`.
+- [x] 5.3 Trocar o tile mudo por `button.thumb.pick.sb-pick.sbAddPhoto` com texto no DOM e
       `aria-label="Adicionar foto à cena N"`.
-- [ ] 5.4 Reescrever `attachImages` para somar (dedup, ordem preservada) e acrescentar
+- [x] 5.4 Reescrever `attachImages` para somar (dedup, ordem preservada) e acrescentar
       "Substituir tudo" confirmado.
-- [ ] 5.5 Centralizar a persistência numa função que recebe o estado novo, com `ref` do último
+- [x] 5.5 Centralizar a persistência numa função que recebe o estado novo, com `ref` do último
       payload e fila de um `PUT`.
-- [ ] 5.6 Ligar `persist` a anexo, remoção, ★ e reordenação.
-- [ ] 5.7 Implementar `dragstart`/`dragover`/`drop` na galeria, no `.sb-phototable` e no `.sb-key`,
+- [x] 5.6 Ligar `persist` a anexo, remoção, ★ e reordenação.
+- [x] 5.7 Implementar `dragstart`/`dragover`/`drop` na galeria, no `.sb-phototable` e no `.sb-key`,
       com os dois MIME internos e as classes `.dragging`/`.dragover`.
-- [ ] 5.8 Implementar `select.sbPhotoMove` como alternativa por teclado.
-- [ ] 5.9 Atualizar a mensagem de vazio do picker citando o motor local.
-- [ ] 5.10 Refrescar a galeria no `done` dos jobs da própria tela.
-- [ ] 5.11 Escrever `studio/etapas/storyboard/ui/ideation-fotos.test.tsx` com os casos abaixo.
+- [x] 5.8 Implementar `select.sbPhotoMove` como alternativa por teclado.
+- [x] 5.9 Atualizar a mensagem de vazio do picker citando o motor local.
+- [x] 5.10 Refrescar a galeria no `done` dos jobs da própria tela.
+- [x] 5.11 Escrever `studio/etapas/storyboard/ui/ideation-fotos.test.tsx` com os casos abaixo.
 
 ## Implementation Details
 
@@ -175,41 +175,41 @@ Pontos exatos do código (levantados nesta worktree):
 
 Não há `_tests.md` — casos completos abaixo. Vitest com jsdom, sem rede.
 
-- [ ] O painel 01 mostra `#sbIdeasGallery` com um card por ideia, cada um com badge de origem
+- [x] O painel 01 mostra `#sbIdeasGallery` com um card por ideia, cada um com badge de origem
       legível; uma ideia `local` com `local_kind: "inpaint"` mostra "Inpaint local" (critério B1).
-- [ ] O filtro por origem reduz a grade do painel 01 **e** a do `PickerModal` (critério B1).
-- [ ] Existe um `button` com o texto "Adicionar foto à cena" **no DOM** (não só em CSS), com
+- [x] O filtro por origem reduz a grade do painel 01 **e** a do `PickerModal` (critério B1).
+- [x] Existe um `button` com o texto "Adicionar foto à cena" **no DOM** (não só em CSS), com
       `aria-label`, e ele mantém a classe `sb-pick` (critério B2, C-STORYBOARD-22).
-- [ ] O `PickerModal` continua tendo `.modal-actions button.primary` como ação de aplicar e um
+- [x] O `PickerModal` continua tendo `.modal-actions button.primary` como ação de aplicar e um
       botão com o texto "Sem imagem" (C-STORYBOARD-23/24).
-- [ ] Anexar duas fotos a uma cena que já tem uma resulta em **três** imagens, na ordem, sem
+- [x] Anexar duas fotos a uma cena que já tem uma resulta em **três** imagens, na ordem, sem
       duplicar, e dispara `PUT /scenes` **sem** clicar em "Salvar cenas" (critério B3).
-- [ ] Anexar uma foto que já está na cena **não** duplica.
-- [ ] "Substituir tudo" pede `window.confirm`; recusar mantém a galeria da cena, aceitar troca
+- [x] Anexar uma foto que já está na cena **não** duplica.
+- [x] "Substituir tudo" pede `window.confirm`; recusar mantém a galeria da cena, aceitar troca
       (critério B5).
-- [ ] Remover uma foto dispara `PUT /scenes` na mesma interação, e o corpo já reflete a remoção
+- [x] Remover uma foto dispara `PUT /scenes` na mesma interação, e o corpo já reflete a remoção
       (critério B4).
-- [ ] Trocar a ★ dispara `PUT /scenes` e o corpo traz a `primary` nova (critério B4).
-- [ ] Reordenar por `↑`/`↓` dispara `PUT /scenes` com a ordem nova.
-- [ ] **Sequência anexar → remover → estrelar em rajada**: o corpo do **último** `PUT` reflete os
+- [x] Trocar a ★ dispara `PUT /scenes` e o corpo traz a `primary` nova (critério B4).
+- [x] Reordenar por `↑`/`↓` dispara `PUT /scenes` com a ordem nova.
+- [x] **Sequência anexar → remover → estrelar em rajada**: o corpo do **último** `PUT` reflete os
       três gestos; nenhum é perdido por payload obsoleto (Risco 3).
-- [ ] `dragstart` no card da galeria grava `application/x-studio-idea`; soltar em uma cena anexa e
+- [x] `dragstart` no card da galeria grava `application/x-studio-idea`; soltar em uma cena anexa e
       persiste (critério B6).
-- [ ] `dragstart` num `.sb-key` grava `application/x-studio-photo`; soltar em **outra** cena remove
+- [x] `dragstart` num `.sb-key` grava `application/x-studio-photo`; soltar em **outra** cena remove
       da origem e acrescenta no destino, com um único `PUT` consistente (critério B6).
-- [ ] Soltar um `.sb-key` sobre outro `.sb-key` da mesma cena reordena.
-- [ ] As classes `.dragging` e `.dragover` são aplicadas durante o gesto e removidas no fim
+- [x] Soltar um `.sb-key` sobre outro `.sb-key` da mesma cena reordena.
+- [x] As classes `.dragging` e `.dragover` são aplicadas durante o gesto e removidas no fim
       (critério B6).
-- [ ] Um `drop` com `dataTransfer` de arquivo do sistema operacional (nenhum dos dois MIME
+- [x] Um `drop` com `dataTransfer` de arquivo do sistema operacional (nenhum dos dois MIME
       internos) é **ignorado**: nenhum `PUT` é disparado.
-- [ ] `select.sbPhotoMove` move a foto entre cenas apenas com teclado, com o mesmo efeito do
+- [x] `select.sbPhotoMove` move a foto entre cenas apenas com teclado, com o mesmo efeito do
       arrasto (critério B7).
-- [ ] A mensagem de vazio do picker cita o motor local do painel 01b (critério B8).
-- [ ] Soltar uma ideia ainda não `selected` chama `POST /candidates/select` **antes** do
+- [x] A mensagem de vazio do picker cita o motor local do painel 01b (critério B8).
+- [x] Soltar uma ideia ainda não `selected` chama `POST /candidates/select` **antes** do
       `PUT /scenes`; com o `select` falhando, **nenhum** `PUT /scenes` acontece e o erro aparece.
-- [ ] Remover uma foto de todas as cenas **não** dispara `POST /candidates/select` nem nenhuma
+- [x] Remover uma foto de todas as cenas **não** dispara `POST /candidates/select` nem nenhuma
       chamada de desmarcação (critério B9 no cliente).
-- [ ] O `done` de um job da própria tela dispara o refetch de `GET .../storyboard/candidates`.
+- [x] O `done` de um job da própria tela dispara o refetch de `GET .../storyboard/candidates`.
 
 ## Success Criteria
 
