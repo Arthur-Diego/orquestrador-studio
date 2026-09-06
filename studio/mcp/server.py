@@ -206,6 +206,19 @@ def build_server(client: StudioClient | None = None):
     def mood_run_wait(mbid: str, timeout: int = 1800) -> str:
         return actions.mood_run_wait(cli, mbid, timeout=timeout)
 
+    @t(name="moodboard_multishot", description="Gera ângulos novos de uma candidata do board (PAGA — Higgsfield, ADR-017). Estima e confirma o custo com o usuário antes; no terminal exige confirm=true. Depois use `moodboard_multishot_wait`.")
+    def moodboard_multishot(mbid: str, source_id: str, count: int = 4, model: str = "",
+                            confirm: bool = False) -> str:
+        return actions.moodboard_multishot(cli, mbid, source_id, count, model, confirm=confirm)
+
+    @t(name="moodboard_multishot_wait", description="Espera o multishot do board terminar e relata quantas candidatas novas entraram. USE ESTA, não `job_wait` — a URL do job do multishot é própria.")
+    def moodboard_multishot_wait(mbid: str, timeout: int = 600) -> str:
+        return actions.moodboard_multishot_wait(cli, mbid, timeout=timeout)
+
+    @t(name="mood_pull", description="Puxa um mood board da biblioteca para a etapa 2 de uma campanha (grátis): copia as imagens curadas, a paleta e a vibe. A cópia é independente do board; confira a prontidão com `guide_step`.")
+    def mood_pull(pid: str, mbid: str) -> str:
+        return actions.mood_pull(cli, pid, mbid)
+
     # ---------- ui.* (humano-no-laço, ADR-038) ----------
     @t(name="ui_choose_one", description="Pede ao usuário que escolha UMA opção. options: [{label,value}].")
     def ui_choose_one(title: str, options: list[dict]) -> dict:

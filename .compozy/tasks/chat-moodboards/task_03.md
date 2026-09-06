@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Grupo D e E: multishot pago e a ponte mood_pull"
 type: backend
 complexity: medium
@@ -48,13 +48,13 @@ waiter certo em vez de `job_wait`.
 11. Nenhum arquivo de núcleo (ADR-010) e nada em `frontend/` MUST ser alterado.
 
 ## Subtasks
-- [ ] 3.1 Ler `_prd.md`, `_techspec.md` (fluxo C da seção 4, contratos 13 a 15 e 17, matriz de erros) e o código listado em Relevant Files.
-- [ ] 3.2 Implementar `moodboard_multishot` (contrato 13) via `_paid(..., follow="moodboard_multishot_wait")`.
-- [ ] 3.3 Implementar `moodboard_multishot_wait` (contrato 14) sobre `_wait_job`.
-- [ ] 3.4 Implementar `mood_pull` (contrato 15).
-- [ ] 3.5 Registrar as 3 tools em `studio/mcp/server.py`, no bloco da biblioteca.
-- [ ] 3.6 Acrescentar os casos da seção `## Tests` a `tests/test_mcp_moodboards.py`.
-- [ ] 3.7 Rodar `make verify` e conferir que só as duas falhas pré-existentes permanecem.
+- [x] 3.1 Ler `_prd.md`, `_techspec.md` (fluxo C da seção 4, contratos 13 a 15 e 17, matriz de erros) e o código listado em Relevant Files.
+- [x] 3.2 Implementar `moodboard_multishot` (contrato 13) via `_paid(..., follow="moodboard_multishot_wait")`.
+- [x] 3.3 Implementar `moodboard_multishot_wait` (contrato 14) sobre `_wait_job`.
+- [x] 3.4 Implementar `mood_pull` (contrato 15).
+- [x] 3.5 Registrar as 3 tools em `studio/mcp/server.py`, no bloco da biblioteca.
+- [x] 3.6 Acrescentar os casos da seção `## Tests` a `tests/test_mcp_moodboards.py`.
+- [x] 3.7 Rodar `make verify` e conferir que só as duas falhas pré-existentes permanecem.
 
 ## Implementation Details
 
@@ -111,42 +111,42 @@ O gasto é registrado pelo backend em `STATE_DIR/spend-ledger.jsonl` com `action
 
 Sem `_tests.md`: os casos abaixo são a definição normativa desta task.
 
-- [ ] `moodboard_multishot` no terminal (`ui.chat_id() is None`) **sem** `confirm` chama
+- [x] `moodboard_multishot` no terminal (`ui.chat_id() is None`) **sem** `confirm` chama
       `POST .../multishot/cost`, mostra o custo estimado e o modelo, e NÃO chama
       `POST .../multishot/generate`.
-- [ ] `moodboard_multishot(..., confirm=True)` no terminal chama `cost` e depois `generate`.
-- [ ] `moodboard_multishot` com chat e `ui.confirm_cost` recusado NÃO chama `generate` e devolve
+- [x] `moodboard_multishot(..., confirm=True)` no terminal chama `cost` e depois `generate`.
+- [x] `moodboard_multishot` com chat e `ui.confirm_cost` recusado NÃO chama `generate` e devolve
       texto de cancelamento.
-- [ ] `moodboard_multishot` com chat e `ui.confirm_cost` confirmado chama `generate`.
-- [ ] O texto de sucesso de `moodboard_multishot` contém ``"`moodboard_multishot_wait`"`` e **não**
+- [x] `moodboard_multishot` com chat e `ui.confirm_cost` confirmado chama `generate`.
+- [x] O texto de sucesso de `moodboard_multishot` contém ``"`moodboard_multishot_wait`"`` e **não**
       contém a substring `job_wait` — asserção literal.
-- [ ] **Regressão**: `mood_generate` (terminal, `confirm=True`) continua devolvendo um texto que
+- [x] **Regressão**: `mood_generate` (terminal, `confirm=True`) continua devolvendo um texto que
       contém ``"Acompanhe com `job_wait` (etapa mood)"`` — a extensão `follow` não mudou nenhum
       chamador existente.
-- [ ] Os bodies enviados a `cost` e a `generate` são iguais e contêm `source_id`, `count` e `model`
+- [x] Os bodies enviados a `cost` e a `generate` são iguais e contêm `source_id`, `count` e `model`
       (com `model=None` quando o argumento vier vazio).
-- [ ] `moodboard_multishot` com 409 no `cost` (Higgsfield CLI ausente) devolve o texto do 409 e NÃO
+- [x] `moodboard_multishot` com 409 no `cost` (Higgsfield CLI ausente) devolve o texto do 409 e NÃO
       chama `generate`.
-- [ ] `moodboard_multishot` com 409 no `generate` (sem login) devolve o texto do 409 sem levantar.
-- [ ] `moodboard_multishot` com 404 (board inexistente) devolve o texto do 404.
-- [ ] `moodboard_multishot_wait` faz GET em `/api/moodboards/<mbid>/multishot/job` e NUNCA em uma URL
+- [x] `moodboard_multishot` com 409 no `generate` (sem login) devolve o texto do 409 sem levantar.
+- [x] `moodboard_multishot` com 404 (board inexistente) devolve o texto do 404.
+- [x] `moodboard_multishot_wait` faz GET em `/api/moodboards/<mbid>/multishot/job` e NUNCA em uma URL
       que contenha `/api/projects/`.
-- [ ] `moodboard_multishot_wait` com job `{"state": "done", "done": 4, "total": 4, "added": 4}` relata
+- [x] `moodboard_multishot_wait` com job `{"state": "done", "done": 4, "total": 4, "added": 4}` relata
       "4/4" e "4 candidata(s) nova(s)" e sugere `moodboard_pick`.
-- [ ] `moodboard_multishot_wait` com `error` no job devolve o erro.
-- [ ] `moodboard_multishot_wait` em `running` até o timeout devolve "ainda ... após Ns" (com `_sleep`
+- [x] `moodboard_multishot_wait` com `error` no job devolve o erro.
+- [x] `moodboard_multishot_wait` em `running` até o timeout devolve "ainda ... após Ns" (com `_sleep`
       fake e `timeout` curto).
-- [ ] `mood_pull("verao-2026", "praia-dourada")` chama
+- [x] `mood_pull("verao-2026", "praia-dourada")` chama
       `POST /api/projects/verao-2026/mood/pull/praia-dourada` e o texto cita a contagem, a vibe, a
       paleta, a independência da cópia e `guide_step`.
-- [ ] `mood_pull` com 422 (board sem imagens curadas) devolve o texto do 422 e sugere `moodboard_pick`.
-- [ ] `mood_pull` com 404 devolve o texto do 404.
-- [ ] As 3 tools devolvem `str` quando o cliente levanta `StudioApiError` em qualquer chamada
+- [x] `mood_pull` com 422 (board sem imagens curadas) devolve o texto do 422 e sugere `moodboard_pick`.
+- [x] `mood_pull` com 404 devolve o texto do 404.
+- [x] As 3 tools devolvem `str` quando o cliente levanta `StudioApiError` em qualquer chamada
       (teste parametrizado).
-- [ ] `grep` no fonte: `"multishot/generate"` aparece em `studio/mcp/actions.py` apenas como
+- [x] `grep` no fonte: `"multishot/generate"` aparece em `studio/mcp/actions.py` apenas como
       argumento `gen_path` de uma chamada a `_paid` — teste que lê o arquivo e verifica que a
       ocorrência não está numa linha `client.post(`.
-- [ ] `build_server` registra os 3 nomes novos, totalizando as **15** tools da frente.
+- [x] `build_server` registra os 3 nomes novos, totalizando as **15** tools da frente.
 
 ## Success Criteria
 - Every assigned test case implemented and passing

@@ -899,6 +899,99 @@ def mood_run_wait(client: StudioClient, mbid: str, timeout: int = 1800,
     return "\n".join([cabeca, *linhas, rodape])
 
 
+def _erro_do_multishot(saida: str) -> str:
+    """Acrescenta o próximo passo ao 409 de "já em andamento" que o `_paid` devolveu como texto.
+
+    A discriminação é pela mensagem canônica do servidor (mesmo motivo de `_erro_do_mood_run`): os
+    dois 409 do multishot — Higgsfield sem CLI/login e job em andamento — compartilham o status, e
+    sugerir o waiter no caso do login mandaria o agente esperar um job que nunca começou.
+    """
+    if "em andamento" in saida:
+        return f"{saida}\nNão dispare de novo: espere o que está rodando com `moodboard_multishot_wait`."
+    return saida
+
+
+def moodboard_multishot(client: StudioClient, mbid: str, source_id: str, count: int = 4,
+                        model: str = "", confirm: bool = False) -> str:
+    """Gera ângulos novos de UMA candidata do board — o ÚNICO caminho pago desta frente (ADR-017).
+
+    Passa obrigatoriamente pelo `_paid`: `POST multishot/cost` estima, `ui.confirm_cost` confirma
+    com o usuário (ou `confirm=true` no terminal) e só então a rota de geração. Não existe nenhum
+    `client.post` solto para essa rota neste módulo: ela só aparece como `gen_path` do `_paid`, e
+    é o invariante de gasto da frente (§2 do FDD).
+
+    `follow` faz o texto final apontar `moodboard_multishot_wait`: o job do multishot tem URL
+    própria, e `job_wait` só entende `/api/projects/{pid}/{step}/job`.
+
+    O gasto é registrado pelo backend (`action="mood.multishot"`, `spend_pid=None`,
+    `spend_step="moodboard"`, ADR-016); esta tool não escreve no ledger.
+    """
+    corpo = {"source_id": source_id, "count": count, "model": model.strip() or None}
+    # O rótulo do modelo é decidido aqui porque o `_paid` recebe `model` ANTES de ver a resposta do
+    # cost: quando o usuário não pede um modelo, quem escolhe é o servidor.
+    rotulo = model.strip() or "modelo padrão"
+    saida = _paid(client, step="moodboard",
+                  cost_path=f"/api/moodboards/{mbid}/multishot/cost", cost_body=corpo,
+                  gen_path=f"/api/moodboards/{mbid}/multishot/generate", gen_body=corpo,
+                  action="Multishot da imagem de vibe do board", model=rotulo, confirm=confirm,
+                  follow="moodboard_multishot_wait")
+    return _erro_do_multishot(saida)
+
+
+def moodboard_multishot_wait(client: StudioClient, mbid: str, timeout: int = 600,
+                             _sleep: Callable[[float], None] = time.sleep) -> str:
+    """Espera o multishot do board e relata quantas candidatas novas entraram.
+
+    Mesma disciplina de `mood_run_wait`: o job tem URL PRÓPRIA
+    (`/api/moodboards/{mbid}/multishot/job`), então NÃO se usa `job_wait` aqui.
+    """
+    estado, job = _wait_job(client, f"/api/moodboards/{mbid}/multishot/job",
+                            timeout=timeout, _sleep=_sleep)
+    if estado == "http":
+        return job.get("error", "")
+    if estado == "idle":
+        return (f"Board `{mbid}`: nenhum multishot ainda. Dispare um com `moodboard_multishot` "
+                "(é pago).")
+    if estado == "timeout":
+        return (f"Board `{mbid}`: o multishot ainda está rodando após {timeout}s "
+                "(chame `moodboard_multishot_wait` de novo).")
+    if estado == "error":
+        cauda = [str(linha) for linha in (job.get("log") or [])][-3:]
+        return (f"Board `{mbid}`: o multishot falhou — {job.get('error')}"
+                + ("\n" + "\n".join(cauda) if cauda else ""))
+    novas = job.get("added", 0)
+    return (f"Multishot do board `{mbid}`: concluído ({job.get('done', 0)}/{job.get('total', 0)}, "
+            f"{novas} candidata(s) nova(s)).\n"
+            + ("Cure os ângulos novos com `moodboard_pick`." if novas else
+               "Nenhuma candidata nova entrou no board."))
+
+
+def mood_pull(client: StudioClient, pid: str, mbid: str) -> str:
+    """Ponte da biblioteca global para a etapa 2 de uma campanha (ADR-013/014).
+
+    Copia as imagens curadas do board para `mood/selected/` da campanha e grava mood.md, paleta e
+    vibe. A cópia é INDEPENDENTE do board (apagar o board depois não afeta a campanha) e a operação
+    é idempotente. A prontidão da etapa continua vindo do guia do backend (ADR-010), nunca daqui.
+    """
+    try:
+        resp = client.post(f"/api/projects/{pid}/mood/pull/{mbid}") or {}
+    except StudioApiError as e:
+        texto = str(e)
+        if e.status == 422 and "curadas" in texto:
+            return f"{texto}\nCure as candidatas do board antes com `moodboard_pick`."
+        return texto
+    paleta = [c for c in (resp.get("palette") or []) if isinstance(c, str)]
+    vibe = (resp.get("vibe") or "").strip()
+    partes = [f"Board `{mbid}` puxado para a campanha `{pid}`: "
+              f"{resp.get('selected', 0)} imagem(ns) no mood da etapa 2"]
+    if vibe:
+        partes.append(f', vibe "{vibe}"')
+    if paleta:
+        partes.append(", paleta " + ", ".join(paleta))
+    return ("".join(partes) + ". A cópia é independente do board (apagá-lo depois não afeta a "
+            "campanha).\nConfira a prontidão da etapa com `guide_step`.")
+
+
 # ---------- Personagem e identidade (ADR-039) ----------
 def _char_images(cid: str, step: str, cands: Any) -> list[dict]:
     """Mesmo helper de URL das etapas, com base `/cfiles/{cid}` (mount da biblioteca, ADR-039).

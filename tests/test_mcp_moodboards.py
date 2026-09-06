@@ -22,10 +22,19 @@ GRUPO_A = ("moodboard_list", "moodboard_get", "moodboard_create", "moodboard_imp
 #: Grupos B e C (fluxo principal B: catálogo de vibes, peneira e a corrida `mood-run`).
 GRUPO_BC = ("vibes_list", "vibes_pick", "escolhidas_list", "mood_run", "mood_run_wait")
 
+#: Grupos D e E (fluxo principal C: o multishot PAGO e a ponte da biblioteca com a etapa 2).
+GRUPO_DE = ("moodboard_multishot", "moodboard_multishot_wait", "mood_pull")
+
 JOB_PATH = f"/api/moodboards/{MBID}/mood-run/job"
 RESULT_PATH = f"/api/moodboards/{MBID}/mood-run/result"
 ESTIMATE_PATH = f"/api/moodboards/{MBID}/mood-run/estimate"
 RUN_PATH = f"/api/moodboards/{MBID}/mood-run"
+
+PID = "verao-2026"
+MS_COST = f"/api/moodboards/{MBID}/multishot/cost"
+MS_GEN = f"/api/moodboards/{MBID}/multishot/generate"
+MS_JOB = f"/api/moodboards/{MBID}/multishot/job"
+PULL_PATH = f"/api/projects/{PID}/mood/pull/{MBID}"
 
 
 class Fake:
@@ -690,6 +699,200 @@ def test_bloco_da_biblioteca_nao_chama_os_helpers_de_url_das_etapas():
     assert "_images_for(" not in bloco and "_media_url(" not in bloco
 
 
+
+# ---------- grupo D: multishot da imagem de vibe (PAGO) ----------
+COST = {"model": "nano_banana_2", "credits": 24, "count": 4, "source": "measured"}
+
+
+@pytest.fixture()
+def com_chat(monkeypatch):
+    """Uso pelo chat: `chat_id` presente, então o gate de custo é o sheet da ADR-038."""
+    monkeypatch.setattr(ui, "chat_id", lambda: "c1")
+
+
+def test_multishot_no_terminal_sem_confirm_estima_e_nao_gera(terminal):
+    cli = Fake({MS_COST: COST})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", model="nano_banana_2")
+    assert [p for p, _ in cli.posts] == [MS_COST]
+    assert "24" in out and "nano_banana_2" in out and "confirm=true" in out
+
+
+def test_multishot_no_terminal_com_confirm_estima_antes_e_gera_depois(terminal):
+    cli = Fake({MS_COST: COST})
+    actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", confirm=True)
+    assert [p for p, _ in cli.posts] == [MS_COST, MS_GEN]
+
+
+def test_multishot_com_chat_recusado_nao_gera(com_chat, monkeypatch):
+    monkeypatch.setattr(ui, "confirm_cost", lambda *a, **k: {"answered": True, "confirmed": False})
+    cli = Fake({MS_COST: COST})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6")
+    assert [p for p, _ in cli.posts] == [MS_COST]
+    assert "cancelada" in out
+
+
+def test_multishot_com_chat_confirmado_gera(com_chat, monkeypatch):
+    monkeypatch.setattr(ui, "confirm_cost", lambda *a, **k: {"answered": True, "confirmed": True})
+    cli = Fake({MS_COST: COST})
+    actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6")
+    assert [p for p, _ in cli.posts] == [MS_COST, MS_GEN]
+
+
+def test_multishot_aponta_o_waiter_proprio_e_nunca_job_wait(terminal):
+    """Critério 6 da seção 9: o job do multishot não é de etapa, `job_wait` não serve."""
+    cli = Fake({MS_COST: COST})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", model="nano_banana_2",
+                                      confirm=True)
+    assert "`moodboard_multishot_wait`" in out
+    assert "job_wait" not in out
+
+
+def test_mood_generate_mantem_o_texto_de_job_wait(terminal):
+    """Regressão: a extensão `follow` não mudou nenhum chamador existente de `_paid`."""
+    cli = Fake({"/api/projects/p/mood/cost": {"total": 12}})
+    out = actions.mood_generate(cli, "p", ["um prompt"], confirm=True)
+    assert "Acompanhe com `job_wait` (etapa mood)" in out
+
+
+def test_multishot_manda_o_mesmo_corpo_no_cost_e_no_generate(terminal):
+    cli = Fake({MS_COST: COST})
+    actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", count=6, model="nano_banana_2",
+                                confirm=True)
+    corpos = [c for _, c in cli.posts]
+    assert corpos[0] == corpos[1] == {"source_id": "a1b2c3d4e5f6", "count": 6,
+                                      "model": "nano_banana_2"}
+
+
+def test_multishot_com_modelo_vazio_manda_none_e_deixa_o_servidor_escolher(terminal):
+    cli = Fake({MS_COST: COST})
+    actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", confirm=True)
+    assert [c for _, c in cli.posts][0] == {"source_id": "a1b2c3d4e5f6", "count": 4, "model": None}
+
+
+def test_multishot_sem_cli_da_higgsfield_no_cost_nao_gera(terminal):
+    cli = Fake({MS_COST: StudioApiError("Higgsfield CLI não encontrado no PATH.", status=409)})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", confirm=True)
+    assert [p for p, _ in cli.posts] == [MS_COST]
+    assert "Higgsfield CLI não encontrado" in out
+
+
+def test_multishot_sem_login_no_generate_devolve_o_409_sem_levantar(terminal):
+    cli = Fake({MS_COST: COST,
+                MS_GEN: StudioApiError("Faça login na Higgsfield antes de gerar.", status=409)})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", confirm=True)
+    assert isinstance(out, str) and "login" in out
+    assert "moodboard_multishot_wait" not in out     # nada a esperar: o job nunca começou
+
+
+def test_multishot_em_andamento_sugere_o_waiter_em_vez_de_repetir(terminal):
+    cli = Fake({MS_COST: COST,
+                MS_GEN: StudioApiError("Já existe um multishot em andamento para este board.",
+                                       status=409)})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", confirm=True)
+    assert "em andamento" in out and "`moodboard_multishot_wait`" in out
+
+
+def test_multishot_com_board_inexistente_devolve_o_404(terminal):
+    cli = Fake({"/api/moodboards/nope/multishot/cost":
+                StudioApiError("Não encontrado: mood board `nope`", status=404)})
+    out = actions.moodboard_multishot(cli, "nope", "a1b2c3d4e5f6", confirm=True)
+    assert "Não encontrado" in out
+    assert [p for p, _ in cli.posts] == ["/api/moodboards/nope/multishot/cost"]
+
+
+def test_multishot_generate_so_existe_como_gen_path_do_paid():
+    """Invariante de gasto (§2 do FDD): nenhum `client.post` solto para o `multishot/generate`."""
+    with open(actions.__file__, encoding="utf-8") as f:
+        linhas = f.read().splitlines()
+    ocorrencias = [ln for ln in linhas if "multishot/generate" in ln]
+    assert ocorrencias, "a rota de geração sumiu do módulo"
+    assert all("client.post(" not in ln for ln in ocorrencias)
+    assert all("gen_path=" in ln for ln in ocorrencias)
+
+
+# ---------- grupo D: espera do multishot ----------
+def test_multishot_wait_espera_na_url_do_board_e_nunca_na_de_projeto():
+    cli = Fake({MS_JOB: {"state": "done", "done": 4, "total": 4, "added": 4}})
+    actions.moodboard_multishot_wait(cli, MBID, timeout=5)
+    assert [p for p, _ in cli.gets] == [MS_JOB]
+    assert all("/api/projects/" not in p for p, _ in cli.gets)
+
+
+def test_multishot_wait_concluido_relata_o_progresso_e_as_candidatas_novas():
+    cli = Fake({MS_JOB: {"state": "done", "done": 4, "total": 4, "added": 4}})
+    out = actions.moodboard_multishot_wait(cli, MBID, timeout=5)
+    assert "4/4" in out and "4 candidata(s) nova(s)" in out and "`moodboard_pick`" in out
+    assert "job_wait" not in out
+
+
+def test_multishot_wait_com_erro_no_job_devolve_o_erro():
+    cli = Fake({MS_JOB: {"state": "error", "error": "a Higgsfield recusou o job",
+                         "log": ["chamando o CLI"]}})
+    out = actions.moodboard_multishot_wait(cli, MBID, timeout=5)
+    assert "a Higgsfield recusou o job" in out and "moodboard_pick" not in out
+
+
+def test_multishot_wait_em_andamento_ate_o_timeout_manda_chamar_de_novo():
+    cli = Fake({MS_JOB: {"state": "running", "done": 0, "total": 4}})
+    out = actions.moodboard_multishot_wait(cli, MBID, timeout=1, _sleep=lambda s: None)
+    assert "ainda está rodando após 1s" in out and "`moodboard_multishot_wait`" in out
+
+
+def test_multishot_wait_sem_job_nenhum_manda_disparar_antes():
+    cli = Fake({MS_JOB: {"state": "idle"}})
+    out = actions.moodboard_multishot_wait(cli, MBID, timeout=5)
+    assert "nenhum multishot ainda" in out and "`moodboard_multishot`" in out
+
+
+# ---------- grupo E: a ponte com a etapa 2 ----------
+PULL = {"selected": 6, "palette": ["#e8b06a", "#2f2417"], "vibe": "golden hour", "board": MBID}
+
+
+def test_mood_pull_semeia_a_etapa_2_e_explica_a_independencia_da_copia():
+    cli = Fake({PULL_PATH: PULL})
+    out = actions.mood_pull(cli, PID, MBID)
+    assert [p for p, _ in cli.posts] == [PULL_PATH]
+    assert "6 imagem(ns)" in out and "golden hour" in out
+    assert "#e8b06a" in out and "#2f2417" in out
+    assert "independente do board" in out and "`guide_step`" in out
+
+
+def test_mood_pull_com_board_sem_curadas_repassa_o_422_e_sugere_moodboard_pick():
+    cli = Fake({PULL_PATH: StudioApiError("Este mood board ainda não tem imagens curadas para "
+                                          "puxar.", status=422)})
+    out = actions.mood_pull(cli, PID, MBID)
+    assert "imagens curadas" in out and "`moodboard_pick`" in out
+
+
+def test_mood_pull_com_404_devolve_o_texto_do_servidor():
+    caminho = f"/api/projects/nope/mood/pull/{MBID}"
+    cli = Fake({caminho: StudioApiError("Não encontrado: projeto `nope`", status=404)})
+    out = actions.mood_pull(cli, "nope", MBID)
+    assert "Não encontrado" in out and "moodboard_pick" not in out
+
+
+# ---------- invariantes dos grupos D e E ----------
+def _chamar_de(nome, cli):
+    argumentos = {"moodboard_multishot": (MBID, "a1b2c3d4e5f6"),
+                  "moodboard_multishot_wait": (MBID,), "mood_pull": (PID, MBID)}
+    extras = {"moodboard_multishot": {"confirm": True}}
+    return getattr(actions, nome)(cli, *argumentos[nome], **extras.get(nome, {}))
+
+
+@pytest.mark.parametrize("nome", GRUPO_DE)
+def test_toda_tool_dos_grupos_d_e_e_devolve_texto_quando_a_api_falha(monkeypatch, nome):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    out = _chamar_de(nome, Explode())
+    assert isinstance(out, str) and out
+
+
+@pytest.mark.parametrize("nome", GRUPO_DE)
+def test_nenhum_texto_dos_grupos_d_e_e_cita_job_wait(monkeypatch, nome):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = Fake({MS_COST: COST, MS_JOB: {"state": "done", "done": 4, "total": 4, "added": 4},
+                PULL_PATH: PULL})
+    assert "job_wait" not in _chamar_de(nome, cli)
+
 # ---------- registro no servidor MCP ----------
 class _FakeFastMCP:
     """Imita o FastMCP o bastante para exercitar `build_server` sem o pacote `mcp` instalado."""
@@ -735,6 +938,22 @@ def test_build_server_registra_as_cinco_tools_dos_grupos_b_e_c(monkeypatch):
     assert set(GRUPO_BC) <= set(srv.tools)
     # o waiter da corrida precisa desviar o agente do `job_wait` já na descrição do catálogo
     assert "USE ESTA, não `job_wait`" in _descricao_registrada("mood_run_wait")
+
+
+def test_build_server_registra_as_tres_tools_dos_grupos_d_e_e(monkeypatch):
+    srv = _servidor_fake(monkeypatch)
+    assert set(GRUPO_DE) <= set(srv.tools)
+    # a tool paga precisa se anunciar como paga já no catálogo (ADR-016/038)
+    assert "PAGA" in _descricao_registrada("moodboard_multishot")
+    # e o waiter precisa desviar o agente do `job_wait` na própria descrição
+    assert "USE ESTA, não `job_wait`" in _descricao_registrada("moodboard_multishot_wait")
+
+
+def test_build_server_registra_as_quinze_tools_da_frente(monkeypatch):
+    """Critério 1 da seção 9: o catálogo do agente alcança a biblioteca inteira."""
+    da_frente = GRUPO_A + GRUPO_BC + GRUPO_DE
+    assert len(set(da_frente)) == 15
+    assert set(da_frente) <= set(_servidor_fake(monkeypatch).tools)
 
 
 def _descricao_registrada(nome: str) -> str:
