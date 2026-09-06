@@ -51,8 +51,13 @@ export type {
   Job,
 } from "./ProgressModal";
 
-export { CostSheet, useCostConfirm } from "./CostSheet";
+export { CostSheet, useCostConfirm, avisoCli } from "./CostSheet";
 export type { CostRow, CostSheetProps, RichCostOpts, SimpleCostOpts } from "./CostSheet";
+
+// Fonte única das linhas do gate de custo (wave 11 · F10): o `CostSheet` das telas e o widget
+// `confirm_cost` do dock renderizam o MESMO array. Só ganha exports; nada foi removido.
+export { costRows, costWarn, saldoInsuficiente, NOTA_PADRAO } from "./costRows";
+export type { CostInfoLike, CostWarn } from "./costRows";
 
 export { useAutosize } from "./useAutosize";
 export { usePoll, poll } from "./usePoll";

@@ -13,16 +13,13 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../api";
+import { costRows, costWarn, NOTA_PADRAO } from "./costRows";
+import type { CostInfoLike, CostRow } from "./costRows";
 import { Modal } from "./Modal";
 
-const NOTA_PADRAO = "Isso gasta créditos — o ilimitado do plano vale só na UI da Higgsfield.";
-
-export interface CostRow {
-  label: string;
-  value: ReactNode;
-  /** Linha do total (`.cost-row.total`). */
-  total?: boolean;
-}
+// `CostRow` continua saindo daqui para nenhum import existente quebrar; a definição mudou de casa
+// para `costRows.ts` (wave 11 · F10), que é agora a fonte única das linhas de custo.
+export type { CostRow };
 
 export interface CostSheetProps {
   /** Linhas da planilha (modo rico). */
@@ -56,15 +53,10 @@ export function CostSheet({ rows, line, warn, note = NOTA_PADRAO }: CostSheetPro
   );
 }
 
-/** Info de custo que o backend devolve em `/api/.../creditos/cost` (só o que o modal lê). */
-interface CostInfo {
-  credits?: number | null;
-  model?: string;
-  label?: string;
-  variant?: string;
-  source?: string;
-  balance?: { installed?: boolean; logged_in?: boolean; credits?: number | null } | null;
-}
+/** Info de custo que o backend devolve em `/api/.../creditos/cost` (só o que o modal lê).
+ *  Desde a wave 11 é o `CostInfoLike` de `costRows.ts`, superconjunto que também aceita o
+ *  `CostPreview` que as rotas `cost` das etapas passaram a devolver. */
+type CostInfo = CostInfoLike;
 
 /** Opções do modo rico (ADR-016). */
 export interface RichCostOpts {
@@ -90,53 +82,33 @@ type ConfirmState = {
 
 const NUM = (x: unknown): number | null => (x == null ? null : Number(x));
 
-/** Constrói as linhas + aviso do modo rico a partir da info de custo (porte do `_confirmGeneration`). */
-function corpoRico(info: CostInfo | null, count: number): { rows: CostRow[]; warn: ReactNode } {
-  const n = Math.max(1, Number(count) || 1);
-  const unit = info && info.credits != null ? Number(info.credits) : null;
-  const total = unit != null ? Math.round(unit * n * 100) / 100 : null;
-  const bal = info?.balance;
-  const loggedOut = !!bal && !!bal.installed && !bal.logged_in;
-  const notInstalled = !!bal && !bal.installed;
-  const saldo = bal && bal.credits != null ? Number(bal.credits) : null;
-
-  const rows: CostRow[] = [];
-  if (info?.model) {
-    rows.push({
-      label: "Modelo",
-      value: `${info.label || info.model}${info.variant ? ` · ${info.variant}` : ""}`,
-    });
-  }
-  if (unit != null) {
-    const suf = info?.source === "cli" ? " (CLI)" : info?.source === "measured" ? " (medido)" : "";
-    rows.push({ label: "Custo por geração", value: `${unit} créditos${suf}` });
-  }
-  if (n > 1) rows.push({ label: "Quantidade", value: `${n}×` });
-  rows.push({ label: "Total estimado", value: total != null ? `${total} créditos` : "indisponível", total: true });
-  if (saldo != null) {
-    rows.push({ label: "Saldo atual", value: `${saldo} créditos` });
-    if (total != null) {
-      rows.push({ label: "Saldo depois", value: `${Math.round((saldo - total) * 100) / 100} créditos` });
-    }
-  }
-
-  let warn: ReactNode = null;
-  if (notInstalled) {
-    warn = (
+/** O JSX de cada aviso de CLI. A DECISÃO de qual mostrar é de `costWarn` (fonte única); só a
+ *  marcação mora aqui, porque `costRows.ts` é `.ts` puro. O widget do chat renderiza o mesmo
+ *  texto a partir da mesma decisão. */
+export function avisoCli(qual: ReturnType<typeof costWarn>): ReactNode {
+  if (qual === "not_installed") {
+    return (
       <>
         ⚠ CLI da Higgsfield não instalado. Gere pela <b>UI da Higgsfield</b> (ilimitado no plano) e
         importe o resultado.
       </>
     );
-  } else if (loggedOut) {
-    warn = (
+  }
+  if (qual === "logged_out") {
+    return (
       <>
         ⚠ CLI sem login (<code>higgsfield auth login</code>). Sem login, use a <b>UI da Higgsfield</b>{" "}
         (ilimitado) e importe — o CLI cobra créditos.
       </>
     );
   }
-  return { rows, warn };
+  return null;
+}
+
+/** Constrói as linhas + aviso do modo rico a partir da info de custo (porte do `_confirmGeneration`).
+ *  As regras das linhas vivem em `costRows.ts` desde a wave 11 — aqui só se casa com o JSX. */
+function corpoRico(info: CostInfo | null, count: number): { rows: CostRow[]; warn: ReactNode } {
+  return { rows: costRows(info, count), warn: avisoCli(costWarn(info)) };
 }
 
 const FECHADO: ConfirmState = { open: false, title: "", primaryLabel: "Gerar", body: null, resolve: null };

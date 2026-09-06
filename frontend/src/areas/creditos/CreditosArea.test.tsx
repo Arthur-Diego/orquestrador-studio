@@ -172,3 +172,90 @@ describe("CreditosArea · histórico da biblioteca e custo não medido", () => {
     expect(document.body.textContent).not.toContain("null cr");
   });
 });
+
+// ---------- gasto registrado e reconciliação `[extensão]` (wave 11 · F10, card #91) ----------
+const GASTO = {
+  ...DASH,
+  summary: { ...DASH.summary, today_credits: 18, today_count: 4, total_credits: 46, count: 12 },
+  summary_global: { total_credits: 312, count: 74, by_step: [], by_project: [] },
+};
+
+const numeros = () =>
+  [...document.querySelectorAll(".cr-gasto-item")].map((el) => [
+    el.querySelector("span")?.textContent,
+    el.querySelector("b")?.textContent,
+  ]);
+
+describe("BalanceCard · gasto registrado e a reconciliação explicada (critério 19)", () => {
+  it("com campanha, mostra hoje, nesta campanha e total", async () => {
+    stubFetch(GASTO);
+    renderArea("cheio");
+    await waitFor(() => expect(document.querySelector(".cr-gasto")).toBeInTheDocument());
+
+    expect(document.querySelector(".cr-saldo b")?.textContent).toBe("120");
+    expect(numeros()).toEqual([
+      ["Hoje", "18"],
+      ["Nesta campanha", "46"],
+      ["Total", "312"],
+    ]);
+  });
+
+  it("sem campanha, a linha da campanha não aparece e o total sai do escopo global", async () => {
+    stubFetch({ ...GASTO, summary_global: undefined });
+    renderArea(null);
+    await waitFor(() => expect(document.querySelector(".cr-gasto")).toBeInTheDocument());
+    expect(numeros()).toEqual([["Hoje", "18"], ["Total", "46"]]);
+  });
+
+  it("CLI sem login: o saldo some, mas os números do livro-caixa ficam", async () => {
+    stubFetch({ ...GASTO, balance: { installed: true, logged_in: false } });
+    renderArea("cheio");
+    await waitFor(() => expect(document.querySelector(".cr-gasto")).toBeInTheDocument());
+
+    expect(document.querySelector(".cr-saldo b")?.textContent).toBe("—");
+    expect(document.querySelector(".cr-balance .chip")?.textContent).toBe("sem login");
+    expect(numeros()).toEqual([["Hoje", "18"], ["Nesta campanha", "46"], ["Total", "312"]]);
+  });
+
+  it("CLI não instalado: idem, a mensagem de sempre continua", async () => {
+    stubFetch({ ...GASTO, balance: { installed: false } });
+    renderArea("cheio");
+    await waitFor(() => expect(document.querySelector(".cr-gasto")).toBeInTheDocument());
+    expect(document.querySelector(".cr-balance .chip")?.textContent).toBe("CLI não instalado");
+    expect(numeros()).toEqual([["Hoje", "18"], ["Nesta campanha", "46"], ["Total", "312"]]);
+  });
+
+  it("livro-caixa vazio mostra zero, nunca traço nem vazio", async () => {
+    stubFetch({
+      ...DASH,
+      summary: { total_credits: 0, count: 0, today_credits: 0, today_count: 0, by_step: [], by_project: [] },
+      summary_global: { total_credits: 0, count: 0, by_step: [], by_project: [] },
+    });
+    renderArea("cheio");
+    await waitFor(() => expect(document.querySelector(".cr-gasto")).toBeInTheDocument());
+    expect(numeros()).toEqual([["Hoje", "0"], ["Nesta campanha", "0"], ["Total", "0"]]);
+  });
+
+  it("sem os agregados no payload (backend antigo), degrada para zero sem quebrar", async () => {
+    stubFetch(DASH);
+    renderArea("cheio");
+    await waitFor(() => expect(document.querySelector(".cr-gasto")).toBeInTheDocument());
+    expect(numeros()).toEqual([["Hoje", "0"], ["Nesta campanha", "14"], ["Total", "14"]]);
+  });
+
+  it("explica por que saldo e histórico não batem (P6: reconciliar é impossível)", async () => {
+    stubFetch(GASTO);
+    renderArea("cheio");
+    await waitFor(() => expect(document.querySelector(".cr-gasto-msg")).toBeInTheDocument());
+    const txt = document.querySelector(".cr-gasto-msg")?.textContent ?? "";
+    expect(txt).toContain("CLI da Higgsfield");
+    expect(txt).toContain("livro-caixa local");
+    expect(txt).toContain("não aparece aqui");
+  });
+
+  it("não regrediu: o botão Atualizar saldo continua lá", async () => {
+    stubFetch(GASTO);
+    renderArea("cheio");
+    await waitFor(() => expect(document.querySelector("#crRefresh")).toBeInTheDocument());
+  });
+});

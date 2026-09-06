@@ -1,0 +1,39 @@
+/* Área Créditos — estilos NOVOS da wave 11 · F10 (card #91) `[extensão]`.
+ *
+ * Folha própria da área, no mesmo padrão do `areas/chat/chat.css`. As classes `cr-*` de sempre
+ * moram em `src/styles/ui.css`, que é cópia BYTE A BYTE do vanilla e contrato dos cenários de QA
+ * — por isso nada é acrescentado lá. Só o bloco de gasto registrado nasce aqui. */
+
+.cr-balance .cr-gasto {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.cr-balance .cr-gasto-linhas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 6px;
+}
+
+.cr-balance .cr-gasto-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.cr-balance .cr-gasto-item b {
+  font-size: 20px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.cr-balance .cr-gasto-msg {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
