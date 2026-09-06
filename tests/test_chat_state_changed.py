@@ -19,6 +19,26 @@ def _drena(ws, n):
     return [ws.receive_json() for _ in range(n)]
 
 
+def _drena_turno(ws):
+    """Todos os eventos do turno, até o `turn_ended` que o fecha (Wave 11 · F02).
+
+    Ler até o fim do turno em vez de contar eventos: o protocolo do WS é ADITIVO (ADR-041), e um
+    número fixo aqui volta a reprovar a cada frente que acrescente um kind — sem acusar nada de
+    errado. O que estes testes afirmam é sobre `state_changed`, não sobre o tamanho do stream.
+    """
+    eventos = []
+    while True:
+        ev = ws.receive_json()
+        eventos.append(ev)
+        if ev.get("kind") == "turn_ended":
+            return eventos
+
+
+def _sem_ciclo_de_vida(eventos):
+    """Os kinds do turno sem o par `turn_started`/`turn_ended` da F02 (feedback ao vivo)."""
+    return [e["kind"] for e in eventos if e["kind"] not in ("turn_started", "turn_ended")]
+
+
 # ---------- IT-01: persistido com seq e empurrado pelo WSManager ----------
 def test_it01_state_changed_persiste_com_seq_e_e_empurrado(client, monkeypatch):
     from studio.chat import runtime
@@ -31,21 +51,25 @@ def test_it01_state_changed_persiste_com_seq_e_e_empurrado(client, monkeypatch):
 
     with client.websocket_connect(f"/ws/chat/{cid}") as ws:
         ws.send_json({"type": "user", "text": "pesquise referências de café"})
-        empurrados = _drena(ws, 5)  # user, tool_call, tool_result, state_changed, result
+        empurrados = _drena_turno(ws)
 
-    kinds = [e["kind"] for e in empurrados]
+    kinds = _sem_ciclo_de_vida(empurrados)
     assert kinds == ["user", "tool_call", "tool_result", "state_changed", "result"]
 
     # o evento empurrado carrega o `seq` e o payload congelado no Contrato 1
-    mudanca = empurrados[3]
-    assert mudanca == {"seq": mudanca["seq"], "kind": "state_changed", "pid": "p1",
-                       "step": "refs", "scope": "job", "tool": "refs_search"}
-    assert mudanca["seq"] == empurrados[2]["seq"] + 1  # logo depois do tool_result que o originou
+    mudanca = next(e for e in empurrados if e["kind"] == "state_changed")
+    tool_result = next(e for e in empurrados if e["kind"] == "tool_result")
+    # `ts` acompanha o `seq` desde a Wave 11 · F02: o evento empurrado pelo WS é agora IDÊNTICO à
+    # linha do transcript (antes o `ts` só existia no disco, e o chip de tool não conseguia mostrar
+    # a duração durante o turno vivo). O resto do payload é o do Contrato 1, congelado.
+    assert mudanca == {"seq": mudanca["seq"], "ts": mudanca["ts"], "kind": "state_changed",
+                       "pid": "p1", "step": "refs", "scope": "job", "tool": "refs_search"}
+    assert mudanca["seq"] == tool_result["seq"] + 1  # logo depois do tool_result que o originou
 
     # e ficou no transcript, na mesma ordem, com o mesmo seq
     persistidos = client.get(f"/api/chats/{cid}/events").json()["events"]
-    assert [e["kind"] for e in persistidos] == kinds
-    gravado = persistidos[3]
+    assert _sem_ciclo_de_vida(persistidos) == kinds
+    gravado = next(e for e in persistidos if e["kind"] == "state_changed")
     assert gravado["seq"] == mudanca["seq"]
     assert (gravado["pid"], gravado["step"], gravado["scope"], gravado["tool"]) == \
         ("p1", "refs", "job", "refs_search")
@@ -65,11 +89,12 @@ def test_it02_cadeia_de_leitura_nao_produz_state_changed(client, monkeypatch):
 
     with client.websocket_connect(f"/ws/chat/{cid}") as ws:
         ws.send_json({"type": "user", "text": "o que falta?"})
-        kinds = [e["kind"] for e in _drena(ws, 6)]
+        kinds = _sem_ciclo_de_vida(_drena_turno(ws))
 
     esperado = ["user", "tool_call", "tool_result", "tool_call", "tool_result", "result"]
-    assert kinds == esperado  # os kinds de hoje, nada a mais
-    assert [e["kind"] for e in client.get(f"/api/chats/{cid}/events").json()["events"]] == esperado
+    assert kinds == esperado  # nenhum `state_changed` de tool de leitura
+    persistidos = client.get(f"/api/chats/{cid}/events").json()["events"]
+    assert _sem_ciclo_de_vida(persistidos) == esperado
 
 
 # ---------- IT-03: falha de append_event não prende a aba em running ----------
@@ -93,9 +118,9 @@ def test_it03_falha_ao_persistir_a_mudanca_nao_prende_a_aba(client, monkeypatch)
 
     with client.websocket_connect(f"/ws/chat/{cid}") as ws:
         ws.send_json({"type": "user", "text": "gera a base"})
-        kinds = [e["kind"] for e in _drena(ws, 4)]  # user, tool_call, tool_result, result(erro)
+        kinds = _sem_ciclo_de_vida(_drena_turno(ws))
 
-    assert kinds == ["user", "tool_call", "tool_result", "result"]
+    assert kinds == ["user", "tool_call", "tool_result", "result"]  # result de erro, sem mudança
     for _ in range(40):  # o `_run_turn` termina logo depois do push do erro
         status = client.get(f"/api/chats/{cid}").json()["status"]
         if status != "running":
