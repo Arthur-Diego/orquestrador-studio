@@ -70,6 +70,12 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "fix/adh-os-20260905-09-schema-drift-trace": (
+        "Hotfix: regenera `frontend/src/api/schema.ts` para a rota `GET /api/chats/{id}/trace` "
+        "adicionada na Onda E (o schema não foi regenerado, quebrando a guarda de drift do CI em "
+        "develop). Só o arquivo GERADO muda. ADR-031/032.",
+        ("frontend/",),
+    ),
     "feature/adh-os-20260905-08-chat-onda-e": (
         "`[extensão]` Onda E — conhecimento, MCP no terminal, observabilidade e docs, card "
         "ADH-OS-20260905-08: `.mcp.json` (raiz), resources e trace em `studio/mcp`/`studio/chat` "

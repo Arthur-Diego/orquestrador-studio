@@ -821,6 +821,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats/{chat_id}/trace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chat Trace
+         * @description Observabilidade (Onda E): o que o assistente fez nesta aba — tools chamadas, custo, turnos.
+         *
+         *     Derivado do transcript (`events.jsonl`), sem estado novo. Alimenta o painel "o que o assistente
+         *     fez" por campanha e a contagem de uso por aba.
+         */
+        get: operations["chat_trace_api_chats__chat_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chats/{chat_id}/stop": {
         parameters: {
             query?: never;
@@ -7434,6 +7457,37 @@ export interface operations {
             query?: {
                 after?: number;
             };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_trace_api_chats__chat_id__trace_get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 chat_id: string;
