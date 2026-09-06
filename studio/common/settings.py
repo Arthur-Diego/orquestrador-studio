@@ -17,11 +17,14 @@ números; este módulo conhece as escolhas e o histórico.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import STATE_DIR
 from . import atomic, pricing, prompter
+
+log = logging.getLogger("studio.creditos.ledger")
 
 CONFIG_PATH = STATE_DIR / "config.json"
 LEDGER_PATH = STATE_DIR / "spend-ledger.jsonl"
@@ -56,10 +59,21 @@ ACTIONS: list[dict] = [
      "label": "Gerar o vídeo da cena (image-to-video) [extensão]"},
     {"key": "storyboard.video.transition", "screen": "Etapa 4 — Storyboard", "kind": "video",
      "label": "Gerar a transição start/end (image-to-video) [extensão]"},
+    # `[extensão]` wave 11 (card #92): os ângulos por cena já gravavam no livro-caixa com estas duas
+    # chaves (`storyboard/angles.py`), mas elas nunca estiveram no catálogo — logo não apareciam no
+    # painel, e `POST /api/creditos/spend` as reprovava com 422.
+    {"key": "storyboard.angles", "screen": "Etapa 4 — Storyboard", "kind": "image",
+     "label": "Gerar os ângulos da cena (CLI) [extensão]"},
+    {"key": "storyboard.upscale", "screen": "Etapa 4 — Storyboard", "kind": "upscale",
+     "label": "Upscale 2x do frame escolhido [extensão]"},
     {"key": "animate.video", "screen": "Etapa 5 — Animação", "kind": "video",
      "label": "Animar (image-to-video)"},
     {"key": "music.track", "screen": "Etapa 6 — Trilha", "kind": "audio",
      "label": "Gerar a trilha"},
+    # `[extensão]` wave 11 (card #92): alternativa paga ao crop central da etapa 8 (ADR-028, o
+    # reframe do CLI barra sem login). Mesma correção das duas acima: quem grava já usava a chave.
+    {"key": "export.reframe", "screen": "Etapa 8 — Export e QA", "kind": "reframe",
+     "label": "Reenquadrar o master pelo CLI [extensão]"},
 ]
 ACTION_KEYS = {a["key"] for a in ACTIONS}
 
@@ -83,6 +97,13 @@ DEFAULTS: dict[str, dict] = {
     "storyboard.video.transition": {"model": "kling3_0", "variant": "5s"},
     "animate.video": {"model": "kling2_6", "variant": "5s"},
     "music.track": {"model": "sonilo_music", "variant": None},
+    # `[extensão]` wave 11 (card #92): o default de código é EXATAMENTE o que o serviço já usa hoje
+    # (`angles.DEFAULT_MODEL`, `angles.UPSCALE_MODEL`, `export.REFRAME_MODEL`) — catalogar não muda
+    # comportamento nenhum. Ligar a resolução por `default_for` nesses serviços fica para F07/card
+    # de follow-up (FDD §12 P3): por ora as três linhas são configuráveis mas ainda não efetivas.
+    "storyboard.angles": {"model": "nano_banana_2", "variant": "2k"},
+    "storyboard.upscale": {"model": "bytedance_image_upscale", "variant": None},
+    "export.reframe": {"model": "reframe", "variant": None},
 }
 
 #: Os três papéis do prompter (`prompter.ROLES`), usados pelos routers de etapa. NÃO é o universo
@@ -333,6 +354,11 @@ def record_spend(*, action: str, model: str, credits, pid: str | None = None,
 
     Nunca levanta: registrar o gasto não pode derrubar a geração que já aconteceu.
     """
+    # `[extensão]` wave 11 (card #92): contraparte em tempo de execução do teste estático de
+    # cobertura do catálogo. Só AVISA — a linha é gravada assim mesmo, porque a geração já
+    # aconteceu e o registro nunca pode derrubá-la (ADR-016 §Consequências).
+    if action not in ACTION_KEYS:
+        log.warning("gasto fora do catálogo action=%s model=%s", action, model)
     entry = {"at": _now_iso(), "pid": pid, "project_name": project_name,
              "step": step, "action": action, "model": model, "variant": variant,
              "credits": credits, "job_id": job_id}
