@@ -45,3 +45,8 @@ def register_resources(server, client: StudioClient) -> None:
     @server.resource("studio://project/{pid}/guide")
     def project_guide(pid: str) -> str:
         return tools.guide_overview(client, pid)
+
+    @server.resource("studio://credits")
+    def creditos() -> str:
+        """`[extensão]` wave 11: saldo e gasto no escopo global, com o porquê de não baterem."""
+        return tools.credits_status(client)
