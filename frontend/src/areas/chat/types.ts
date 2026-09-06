@@ -80,6 +80,14 @@ export interface ChatEvent {
   pct?: number | null;
   /** `tool_progress`: o `state` do job lido pelo servidor. */
   state?: ChatJobState;
+  /**
+   * `[extensão]` wave 11 · F09 (chat-audio, ADR-041 §5 C2): procedência da mensagem do usuário.
+   * Enum de UM valor — ausente significa "digitada", que é o comportamento de sempre, byte a byte.
+   * O servidor repassa `"voice"` e descarta qualquer outro valor; é rótulo de UI (o indicador 🎤)
+   * e de trace, e NÃO muda o texto que o agente recebe (ADR-040). A interface já tem index
+   * signature, então isto é precisão de tipo, não campo novo no wire.
+   */
+  via?: "voice";
   /** `[extensão]` wave 11 (ADR-016): o `CostPreview` inteiro no `ask` de `confirm_cost`, para o
    *  dock renderizar as mesmas linhas do `CostSheet`. Ausente = cartão legado de duas linhas. */
   breakdown?: unknown;

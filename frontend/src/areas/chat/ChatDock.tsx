@@ -20,6 +20,7 @@ import { MessageMarkdown } from "./MessageMarkdown";
 import { decidirNavegacao } from "./navigate";
 import { DEBOUNCE_SALDO_MS, isToolPaga } from "./toolCredits";
 import { useChatSocket } from "./useChatSocket";
+import { MSG as VOZ_MSG, useRecorder } from "./useRecorder";
 import { toolLabel } from "./toolLabels";
 import type { ChatEvent, ChatSession, ChatToolProgress } from "./types";
 import "./chat.css";
@@ -98,6 +99,24 @@ async function emitirRecusa(chatId: string, texto: string): Promise<void> {
     method: "POST",
     body: JSON.stringify({ event: { kind: "notify", level: "warn", text: texto } }),
   }).catch(() => undefined);
+}
+
+// --- entrada por voz (Wave 11 · F09, FDD chat-audio) `[extensão]` ---------------------------
+//
+// Tudo o que esta frente acrescenta ao dock está em dois lugares: estas constantes + o bloco
+// contíguo dentro de `.chat-composer` na `Conversation`, e uma linha no `Message` do `user`. O
+// recorte é de propósito — `ChatDock.tsx` é disputado por três frentes da wave (§10, Risco 1).
+
+/** Preferência opt-in "enviar direto", default DESLIGADA (§12 decisão 7). Chave exata do FDD. */
+const VOZ_AUTO_KEY = "studio.chat.voiceAutoSend";
+/** O provedor não ouviu nada: nunca envia, mesmo com "enviar direto" ligada (§6). */
+const VOZ_SEM_TEXTO = "não entendi nada, tente de novo";
+/** "Enviar direto" ligada com turno em andamento: o texto fica no draft e espera (§4). */
+const VOZ_ESPERE_TURNO = "termine o turno atual para enviar";
+
+/** `mm:ss` do contador da gravação. */
+function mmss(s: number): string {
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** Enum fechado do campo `scope` do evento `state_changed` (Contrato 1 da Wave 11 · F03). */
@@ -637,15 +656,143 @@ function Conversation({
     if (el) el.scrollTop = el.scrollHeight;
   }, [events, turn.text, digitando]);
 
+  // `[extensão]` F09: procedência do que está no draft. Ref e não estado — não há nada a
+  // renderizar, e um `useState` aqui re-renderizaria o dock a cada tecla (§10, Risco 1).
+  const viaVozRef = useRef(false);
+
   const enviar = useCallback(
     (texto: string) => {
       const t = texto.trim();
       if (!t || busy || !connected) return;
-      send(t, { pid, view });
+      // `via` só quando o texto veio do microfone; digitado manda o payload de sempre (§5 C2).
+      send(t, { pid, view }, viaVozRef.current ? "voice" : undefined);
+      viaVozRef.current = false;
       setDraft("");
     },
     [busy, connected, send, pid, view],
   );
+
+  // --- entrada por voz (Wave 11 · F09, FDD chat-audio) `[extensão]` ---------------------------
+  //
+  // Bloco contíguo: é o único acréscimo desta frente ao corpo da `Conversation`. A invariante 1 da
+  // §2 mora aqui — `send()` NUNCA é chamado pelo caminho de voz enquanto `studio.chat.voiceAutoSend`
+  // estiver desligada; o texto cai no `<textarea>` e quem aperta Enviar é o usuário (ADR-038).
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [vozAuto, setVozAuto] = useState(() => localStorage.getItem(VOZ_AUTO_KEY) === "1");
+  const [vozAviso, setVozAviso] = useState("");
+  /** 409 "sem provedor real": o microfone morre até a próxima montagem do dock (§4, UT-24). */
+  const [vozTravada, setVozTravada] = useState(false);
+
+  /**
+   * O estado vivo do composer lido TARDE, por ref. Dois motivos: `onText` é recriado a cada tecla
+   * (ele lê o `draft`) e o atalho de teclado não pode reinstalar o listener a cada render; e o
+   * `useRecorder` precisa do `onText` ANTES de `voz` existir, o que faria um ciclo se o callback
+   * capturasse `voz` diretamente. Preenchida por efeito sem array de dependências, que é o mesmo
+   * padrão do `onEventRef` do `useChatSocket` — escrever ref durante o render é efeito colateral.
+   */
+  const vozCtxRef = useRef<{
+    draft: string;
+    vozAuto: boolean;
+    busy: boolean;
+    enviar: (texto: string) => void;
+    micOff: boolean;
+    gravando: boolean;
+    start: () => void;
+    stop: () => void;
+  }>({
+    draft: "",
+    vozAuto: false,
+    busy: false,
+    enviar: () => undefined,
+    micOff: true,
+    gravando: false,
+    start: () => undefined,
+    stop: () => undefined,
+  });
+
+  /** Passo 9 do fluxo principal: concatena, foca e NÃO envia. */
+  const aoTranscrever = useCallback((texto: string) => {
+    const { draft: atual, vozAuto: auto, busy: ocupado, enviar: mandar } = vozCtxRef.current;
+    const t = texto.trim();
+    if (!t) {
+      // Draft intacto e nenhum envio, mesmo com "enviar direto" ligada (§6).
+      setVozAviso(VOZ_SEM_TEXTO);
+      return;
+    }
+    // Decisão 11: concatena com um espaço, nunca substitui o que o usuário já tinha escrito.
+    const combinado = atual.trim() ? `${atual} ${t}` : t;
+    viaVozRef.current = true;
+    setDraft(combinado);
+    if (auto && ocupado) {
+      // Turno em andamento: o texto espera no draft (o `via` sobrevive para o Enviar manual).
+      setVozAviso(VOZ_ESPERE_TURNO);
+      textareaRef.current?.focus();
+      return;
+    }
+    setVozAviso("");
+    if (auto) {
+      mandar(combinado);
+      return;
+    }
+    textareaRef.current?.focus();
+  }, []);
+
+  const voz = useRecorder(chatId, aoTranscrever);
+
+  // O erro do gravador (permissão, teto de 2 min, 409/413/422/502 da rota) vira o aviso do
+  // composer. Só o 409 é terminal: sem provedor real não adianta tentar de novo nesta montagem.
+  useEffect(() => {
+    if (!voz.error) return;
+    setVozAviso(voz.error);
+    if (voz.errorStatus === 409) setVozTravada(true);
+  }, [voz.error, voz.errorStatus]);
+
+  const vozIndisponivel = !voz.supported ? VOZ_MSG.semSuporte : !voz.secure ? VOZ_MSG.inseguro : "";
+  const micOff = vozIndisponivel !== "" || vozTravada;
+  const gravando = voz.state === "recording";
+
+  useEffect(() => {
+    vozCtxRef.current = { draft, vozAuto, busy, enviar, micOff, gravando, start: voz.start, stop: voz.stop };
+  });
+
+  /** Toggle por clique (§12 decisão 5): o mesmo botão começa e encerra a gravação. */
+  const alternarGravacao = useCallback(() => {
+    const ctx = vozCtxRef.current;
+    if (ctx.micOff) return;
+    if (ctx.gravando) {
+      ctx.stop();
+      return;
+    }
+    setVozAviso("");
+    ctx.start();
+  }, []);
+
+  // Atalho `Ctrl+Shift+M` (`⌘+Shift+M` no macOS), §12 decisão 6: escopo no dock. O shell não tem
+  // infraestrutura de atalho global; o listener nasce com a conversa montada e morre com ela, de
+  // modo que a tecla fora do dock não faz absolutamente nada.
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      if (e.key !== "M" && e.key !== "m") return;
+      // O dock fica MONTADO com o painel fechado (só sai de vista por `transform`), então "dentro
+      // do dock" não é a mesma coisa que "montado": com o painel fechado a tecla é fora dele.
+      // Abrir o microfone aí acenderia o indicador do navegador sem nenhuma UI visível para
+      // pará-lo. `ABERTO_KEY` é a mesma fonte que o efeito do dock escreve a cada mudança.
+      if (localStorage.getItem(ABERTO_KEY) !== "1") return;
+      e.preventDefault();
+      alternarGravacao();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [alternarGravacao]);
+
+  const trocarVozAuto = useCallback((ligada: boolean) => {
+    setVozAuto(ligada);
+    localStorage.setItem(VOZ_AUTO_KEY, ligada ? "1" : "0");
+  }, []);
+
+  // --- fim do bloco da entrada por voz --------------------------------------------------------
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -718,13 +865,57 @@ function Conversation({
 
       <div className="chat-composer">
         <textarea
+          ref={textareaRef}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            // Esvaziar o campo à mão apaga a procedência: o que for digitado a partir daqui é
+            // mensagem digitada, e o `via` do §4 passo 10 vale para o texto que veio da voz.
+            if (!e.target.value) viaVozRef.current = false;
+            setDraft(e.target.value);
+          }}
           onKeyDown={onKey}
           placeholder={busy ? "Respondendo…" : connected ? "Escreva para o assistente…" : "Conectando…"}
           rows={1}
           aria-label="Mensagem para o assistente"
         />
+        {/* Bloco da entrada por voz (Wave 11 · F09) `[extensão]`. Fica DENTRO do composer, num
+            wrapper próprio: `.chat-composer` é um flex de uma linha só e alterar a regra dele
+            quebraria o contrato de classes da ADR-032. O aviso NÃO é `role="status"` — a linha
+            `aria-live` do turno (F02) é única e não pode ser substituída (critério 17). */}
+        <div className="chat-voice">
+          {vozAviso ? (
+            <p className="chat-voice-note" role="alert">
+              {vozAviso}
+            </p>
+          ) : null}
+          <button
+            className="chat-mic"
+            type="button"
+            data-state={voz.state}
+            disabled={micOff}
+            title={vozIndisponivel || (gravando ? "Parar e transcrever" : "Falar com o assistente (Ctrl+Shift+M)")}
+            aria-label={gravando ? "Parar a gravação e transcrever" : "Gravar mensagem falada"}
+            aria-pressed={gravando}
+            onClick={alternarGravacao}
+          >
+            <span aria-hidden="true">{gravando ? mmss(voz.seconds) : voz.state === "transcribing" ? "…" : "🎤"}</span>
+            <span className="chat-mic-level" style={{ width: `${Math.round(voz.level * 100)}%` }} aria-hidden="true" />
+          </button>
+          {gravando ? (
+            <button type="button" onClick={voz.cancel} title="Descartar a gravação">
+              Cancelar
+            </button>
+          ) : null}
+          <label title="Enviar a mensagem falada sem revisar">
+            <input
+              type="checkbox"
+              checked={vozAuto}
+              onChange={(e) => trocarVozAuto(e.target.checked)}
+              aria-label="Enviar direto a mensagem falada"
+            />
+            direto
+          </label>
+        </div>
         <button className="chat-send" type="button" onClick={() => enviar(draft)} disabled={busy || !connected || !draft.trim()}>
           Enviar
         </button>
@@ -778,7 +969,13 @@ export function Message({
     case "user":
       return (
         <div className="chat-msg user">
-          <div className="chat-bubble">{ev.text}</div>
+          {/* Wave 11 · F09: o indicador de procedência é IRMÃO do texto dentro da bolha, nunca pai
+              dele (critério 18). Sem `via` o JSX rende `null`, e `null` não vira nó: a bolha do
+              usuário continua exatamente a de hoje — texto puro, sem passar pelo markdown. */}
+          <div className="chat-bubble">
+            {ev.via === "voice" ? <span className="via-voice" title="mensagem falada">🎤</span> : null}
+            {ev.text}
+          </div>
         </div>
       );
     case "assistant_text":

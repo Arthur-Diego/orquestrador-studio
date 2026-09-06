@@ -238,8 +238,15 @@ export function useChatSocket(
     };
   }, [chatId, aplicarEfemero, aplicarPersistido, limparFlush]);
 
-  const send = useCallback((text: string, context?: unknown) => {
-    wsRef.current?.send(JSON.stringify({ type: "user", text, context }));
+  /**
+   * @param via (Wave 11 · F09, ADR-041 §5 C2) procedência da mensagem. Terceiro parâmetro
+   *   OPCIONAL e enum de um valor: a chave só entra no JSON quando vale `"voice"`, então quem
+   *   chama com dois argumentos manda exatamente o payload de hoje. Servidor antigo com cliente
+   *   novo também segue funcionando — ele lê a mensagem por `msg.get` e ignora o campo extra.
+   */
+  const send = useCallback((text: string, context?: unknown, via?: "voice") => {
+    const msg = via === "voice" ? { type: "user", text, context, via } : { type: "user", text, context };
+    wsRef.current?.send(JSON.stringify(msg));
   }, []);
   const answer = useCallback((askId: string, value: unknown) => {
     wsRef.current?.send(JSON.stringify({ type: "answer", ask_id: askId, answer: value }));

@@ -333,3 +333,41 @@
    recusada) é um convite, não um relato — daí o sinal ser `data-navegou`, e não o toggle. */
 .chat-nav[data-navegou="0"] .chat-nav-text { font-style: normal; color: var(--ink-2); }
 .chat-nav-go { padding: 4px 10px; font-size: 12px; }
+
+/* ================================================================================================
+   Entrada por voz no composer (chat-audio, ADR-024/040/043) — BLOCO NOVO, no fim do arquivo.
+   `[extensão]` Wave 11 · F09. Só ACRÉSCIMOS: nenhuma regra acima é tocada e nenhuma classe, id ou
+   `aria-label` existente muda de nome (contrato de QA, ADR-032; FDD §10, Risco 1).
+
+   `.chat-voice` é o único wrapper: `.chat-composer` é `display:flex` de UMA linha e o aviso, o
+   botão Cancelar e o toggle "direto" não cabem nela sem redefinir a regra existente — o que o
+   contrato proíbe. Ele é a caixa de posicionamento do aviso, que flutua ACIMA do composer para
+   não empurrar o layout nem competir com a linha `aria-live` do turno (F02, critério 17).
+   ================================================================================================ */
+
+.chat-voice { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; flex: 0 0 auto; max-width: 104px; }
+.chat-voice label { flex: 1 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 3px; font-size: 11px; line-height: 1; color: var(--ink-4); cursor: pointer; }
+.chat-voice label input { margin: 0; cursor: pointer; }
+.chat-voice > button:not(.chat-mic) { border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-3); border-radius: 999px; padding: 3px 9px; font: inherit; font-size: 11px; cursor: pointer; }
+.chat-voice > button:not(.chat-mic):hover { border-color: var(--fail); color: var(--fail); }
+
+/* Botão do microfone: `data-state` espelha o `state` do `useRecorder` e é o que os cenários leem. */
+.chat-mic { position: relative; overflow: hidden; flex: 0 0 auto; width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--ctl); border-radius: 10px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 15px; line-height: 1; cursor: pointer; }
+.chat-mic:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.chat-mic:disabled { opacity: 0.5; cursor: default; }
+.chat-mic[data-state="requesting"] { border-color: var(--accent-line); color: var(--accent); }
+.chat-mic[data-state="recording"] { border-color: var(--fail); color: var(--fail); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chat-mic[data-state="transcribing"] { border-color: var(--accent-line); color: var(--ink-4); }
+.chat-mic[data-state="error"] { border-color: var(--fail); }
+
+/* Nível de entrada: barra no pé do botão, largura vinda do `AnalyserNode` (0 quando não há, e 0
+   fora de `recording` — o hook zera o `level` ao parar). A largura é inline, e por isso a barra
+   encolhe até sumir sozinha; esconder por propriedade seria proibido, porque o fim deste arquivo
+   está sob a guarda de movimento reduzido do bloco da F02 (tests/test_chat_css_feedback.py). */
+.chat-mic-level { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--fail); pointer-events: none; }
+
+/* Aviso de voz: nó PRÓPRIO do composer, `role="alert"`. Nunca substitui `.chat-status` (F02). */
+.chat-voice-note { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 1; margin: 0; width: 264px; max-width: 74vw; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; line-height: 1.5; box-shadow: 0 6px 18px rgba(16, 23, 32, 0.12); }
+
+/* Procedência da mensagem: irmão do texto DENTRO da bolha, nunca pai dele (critério 18). */
+.chat-bubble .via-voice { margin-right: 5px; font-size: 11px; opacity: 0.85; }

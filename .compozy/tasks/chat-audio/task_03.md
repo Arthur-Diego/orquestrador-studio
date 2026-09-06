@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Microfone no composer, indicador na bolha e preferência"
 type: frontend
 complexity: high
@@ -65,20 +65,20 @@ localizada: um bloco contíguo dentro de `.chat-composer` e uma linha no `Messag
 
 ## Subtasks
 
-- [ ] Declarar `via?: "voice"` em `ChatEvent` (`types.ts`).
-- [ ] Ligar `useRecorder` no `Conversation`, com `onText` concatenando no draft e focando o textarea.
-- [ ] Acrescentar o bloco do microfone (botão + contador + nível + Cancelar + aviso) dentro de
+- [x] Declarar `via?: "voice"` em `ChatEvent` (`types.ts`).
+- [x] Ligar `useRecorder` no `Conversation`, com `onText` concatenando no draft e focando o textarea.
+- [x] Acrescentar o bloco do microfone (botão + contador + nível + Cancelar + aviso) dentro de
       `.chat-composer`, com `data-state` e rótulos acessíveis.
-- [ ] Implementar a preferência `studio.chat.voiceAutoSend` (leitura, escrita e o caminho de envio
+- [x] Implementar a preferência `studio.chat.voiceAutoSend` (leitura, escrita e o caminho de envio
       direto com `via:"voice"`), incluindo os casos de texto vazio e de `busy`.
-- [ ] Propagar `via` no `send()` do `useChatSocket` sem quebrar chamadores antigos (parâmetro
+- [x] Propagar `via` no `send()` do `useChatSocket` sem quebrar chamadores antigos (parâmetro
       opcional, retorno só cresce).
-- [ ] Acrescentar o indicador 🎤 na bolha do usuário, como irmão do texto.
-- [ ] Registrar o atalho `Ctrl/⌘+Shift+M` com escopo no dock e cleanup.
-- [ ] Acrescentar as classes novas em `chat.css` (só acréscimos).
-- [ ] Escrever `frontend/src/areas/chat/ChatDock.voz.test.tsx` cobrindo UT-18…UT-26 e
+- [x] Acrescentar o indicador 🎤 na bolha do usuário, como irmão do texto.
+- [x] Registrar o atalho `Ctrl/⌘+Shift+M` com escopo no dock e cleanup.
+- [x] Acrescentar as classes novas em `chat.css` (só acréscimos).
+- [x] Escrever `frontend/src/areas/chat/ChatDock.voz.test.tsx` cobrindo UT-18…UT-26 e
       `tests/test_chat_css_voz.py` para IT-10.
-- [ ] Rodar `make frontend-verify` inteiro (as suítes existentes `ChatDock.test.tsx`,
+- [x] Rodar `make frontend-verify` inteiro (as suítes existentes `ChatDock.test.tsx`,
       `ChatDock.feedback.test.tsx`, `ChatDock.custo.test.tsx` e `MessageMarkdown.test.tsx` MUST
       continuar verdes) e `pytest -x -q tests/test_chat_css_voz.py`.
 
@@ -150,3 +150,28 @@ Definições completas em `_tests.md`.
 - Nenhuma classe, id ou `aria-label` existente renomeado.
 - `send` nunca é chamado pelo caminho de voz com a preferência desligada.
 - O diff em `ChatDock.tsx` é um bloco contíguo no composer mais uma linha no `Message` do `user`.
+
+## Notas de execução
+
+1. **`useRecorder.ts` foi criado nesta task.** A task_02 foi *parked* pelo runner (`job.stalled`
+   por 3 min sem saída + `job.parked` "clean worktree reset is not possible: workspace is shared")
+   e não deixou o arquivo no disco. Como a task_03 não existe sem o hook, ele foi implementado aqui
+   conforme o contrato C3 da §5. **`useRecorder.test.ts` (UT-10…UT-17) continua sendo da task_02**,
+   que segue `pending`.
+2. **`RecorderApi` ganhou o membro aditivo `errorStatus: number`.** O C3 expõe só `error: string`, e
+   a UT-24 exige separar o `409` "sem provedor real" — único erro terminal — dos transitórios. A
+   alternativa seria casar o texto do `detail` por prefixo, acoplando a UI a uma string do servidor.
+   Nenhum membro do C3 mudou de nome ou de tipo.
+3. **`chat.css` ganhou um 5º seletor além dos 4 enumerados no PRD: `.chat-voice`**, wrapper do
+   bloco de voz. `.chat-composer` é `display:flex` de uma linha só e sem `flex-wrap`; acomodar o
+   aviso, o botão Cancelar e o toggle exigiria REDEFINIR essa regra, o que o contrato de classes
+   proíbe. O desvio está justificado no comentário do bloco e é guardado por
+   `tests/test_chat_css_voz.py::test_it10_o_wrapper_do_bloco_esta_declarado_e_justificado`.
+4. O aviso de voz é `role="alert"`, nunca `role="status"`: a `montar()` da
+   `ChatDock.feedback.test.tsx` usa `screen.getByRole("status")`, que estoura com dois live
+   regions — a linha `aria-live` da F02 continua única (critério 17).
+
+**Verificação:** `make frontend-verify` verde (58 arquivos / 519 testes, incluindo
+`ChatDock.test.tsx`, `ChatDock.feedback.test.tsx`, `ChatDock.custo.test.tsx` e
+`MessageMarkdown.test.tsx`); `pytest tests/test_chat_css_voz.py tests/test_chat_css_feedback.py
+tests/test_adr010_fronteira_nucleo.py` verde.
