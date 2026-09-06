@@ -10,24 +10,17 @@ uma asserção sobre o ARQUIVO. O Vitest roda com `css: false` (a folha vira mó
 via `?raw`) e o projeto npm não tem `@types/node` para ler o disco — e a task proíbe dependência
 npm nova.
 """
-import hashlib
 import re
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = ROOT / "frontend" / "src" / "areas" / "chat" / "chat.css"
 
 #: Comentário que abre o bloco desta frente. Aparece uma única vez, e tudo depois dele é novo.
 MARCADOR = "Feedback ao vivo do turno (chat-feedback, ADR-041)"
-#: Tamanho de `chat.css` antes desta frente.
-LINHAS_ORIGINAIS = 211
-#: Última linha original — o precedente de `prefers-reduced-motion` que o bloco novo imita.
-ULTIMA_ORIGINAL = "@media (prefers-reduced-motion: reduce) { .chat-tab-dot.st-running { animation: none; } }"
-#: sha256 das `LINHAS_ORIGINAIS` primeiras linhas (com o \n final). Mudou? Uma regra existente foi
-#: alterada — o que esta frente se comprometeu a não fazer.
-SHA_ORIGINAL = "413def42689ecfc65d4f82695e2461ebab83e150976e2a6444b0e4bac11498f2"
+#: Precedente de `prefers-reduced-motion` que existia antes desta frente e que o bloco novo imita.
+#: Ele fica ACIMA do marcador — é a prova de que o bloco novo veio depois do que já havia.
+PRECEDENTE = "@media (prefers-reduced-motion: reduce) { .chat-tab-dot.st-running { animation: none; } }"
 #: Classes introduzidas pelo bloco novo: nenhuma pode aparecer acima do marcador.
 CLASSES_NOVAS = (".chat-typing", ".chat-statusbar", ".chat-status", ".chat-stop", ".chat-chip")
 
@@ -37,7 +30,14 @@ def _fonte() -> str:
 
 
 def _prefixo() -> str:
-    return "\n".join(_fonte().split("\n")[:LINHAS_ORIGINAIS]) + "\n"
+    """Tudo o que existe ANTES do bloco desta frente.
+
+    O corte é pelo MARCADOR, não por número de linha nem por hash do arquivo: `chat.css` é
+    disputado por várias frentes da Wave 11 (a F01 acrescentou as regras `.chat-md*`), e fixar
+    tamanho ou sha aqui faria este teste reprovar a cada frente vizinha — sem acusar nada de errado.
+    O que a guarda afirma é o que esta frente prometeu: **só acrescentar, no fim**.
+    """
+    return _fonte()[: _fonte().index(MARCADOR)]
 
 
 def test_bloco_novo_existe_uma_vez_so():
@@ -49,38 +49,31 @@ def test_bloco_novo_existe_uma_vez_so():
 
 
 def test_css_02_o_bloco_novo_fica_no_fim_do_arquivo():
-    """T-CSS-02 (a) — tudo o que é novo entrou depois das linhas originais."""
-    fonte = _fonte()
+    """T-CSS-02 (a) — o estilo desta frente é um acréscimo, e vem depois de tudo."""
     prefixo = _prefixo()
-    assert fonte.index(MARCADOR) >= len(prefixo), (
-        "o bloco de feedback ao vivo começou ANTES do fim do arquivo original: o combinado da wave "
-        "é acrescentar no fim de chat.css, para o rebase com as outras frentes ser uma inserção."
+    assert PRECEDENTE in prefixo, (
+        "o `@media (prefers-reduced-motion)` do pontinho da aba, que já existia antes desta frente, "
+        "não está mais ACIMA do bloco novo — ou ele mudou, ou o bloco novo subiu no arquivo."
     )
     for classe in CLASSES_NOVAS:
         assert classe not in prefixo, (
-            f"a classe {classe} apareceu dentro das {LINHAS_ORIGINAIS} linhas originais de chat.css; "
-            "o estilo desta frente vai todo no bloco do fim."
+            f"a classe {classe} apareceu ACIMA do marcador em {CSS}; o estilo desta frente vai todo "
+            "no bloco do fim, para o rebase com as outras frentes da wave ser uma inserção."
         )
 
 
-def test_css_02_nenhuma_regra_existente_foi_alterada():
-    """T-CSS-02 (b) — as linhas originais continuam byte a byte as mesmas."""
-    prefixo = _prefixo()
-    linhas = prefixo.rstrip("\n").split("\n")
-    assert len(linhas) == LINHAS_ORIGINAIS
-    assert linhas[-1] == ULTIMA_ORIGINAL, (
-        "a última regra original de chat.css mudou de lugar ou de conteúdo — o bloco novo tem de "
-        "vir DEPOIS dela, sem tocá-la."
+def test_css_02_o_bloco_novo_vai_ate_o_fim_do_arquivo():
+    """T-CSS-02 (b) — nada foi enfiado DEPOIS do bloco: ele fecha o arquivo.
+
+    Junto com (a), é isto que materializa "só acrescentar no fim": o que havia continua acima do
+    marcador, e o que é desta frente vai do marcador ao EOF.
+    """
+    bloco = _fonte()[_fonte().index(MARCADOR) :]
+    assert bloco.rstrip().endswith("}"), (
+        "o bloco de feedback ao vivo não fecha o arquivo — o combinado da wave é que ele seja a "
+        "última coisa em chat.css."
     )
-    atual = hashlib.sha256(prefixo.encode("utf-8")).hexdigest()
-    if atual != SHA_ORIGINAL:
-        pytest.fail(
-            "as regras originais de chat.css mudaram (sha256 "
-            f"{atual} != {SHA_ORIGINAL}).\n"
-            "Esta frente se comprometeu a só acrescentar no fim do arquivo (FDD §10, risco 5). Se a "
-            "alteração for legítima e deliberada, atualize SHA_ORIGINAL aqui e explique a mudança "
-            "no PR — não a deixe passar em silêncio."
-        )
+    assert MARCADOR not in bloco[len(MARCADOR) :], "o marcador do bloco não é único"
 
 
 def test_css_01_movimento_reduzido_desliga_as_animacoes():

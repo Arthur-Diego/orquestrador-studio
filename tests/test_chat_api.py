@@ -351,9 +351,15 @@ def test_t_api_11_tool_call_observado_abre_a_task_e_o_tool_result_a_cancela(clie
 
     assert espiao.abertas == [(cid, "toolu_01A9", "/api/projects/p1/refs/job")]
     assert espiao.canceladas == ["toolu_01A9"]  # o `tool_result` encerrou a espera
-    # progresso é efêmero: nada dele entra no transcript
-    assert _kinds_no_disco(client, cid) == ["user", "turn_started", "tool_call", "tool_result",
-                                            "result", "turn_ended"]
+    # progresso é efêmero: nada dele entra no transcript. A asserção é sobre o que NÃO está no
+    # disco — o protocolo é aditivo (ADR-041) e `job_wait` também emite o `state_changed` da F03,
+    # então travar a lista inteira aqui reprovaria a cada frente vizinha, sem acusar nada de errado.
+    kinds = _kinds_no_disco(client, cid)
+    assert "tool_progress" not in kinds
+    assert "assistant_delta" not in kinds
+    assert [k for k in kinds if k in ("user", "turn_started", "tool_call", "tool_result",
+                                      "result", "turn_ended")] == \
+        ["user", "turn_started", "tool_call", "tool_result", "result", "turn_ended"]
 
 
 def test_t_api_12_fim_do_turno_cancela_toda_task_de_progresso_orfa(client, monkeypatch):

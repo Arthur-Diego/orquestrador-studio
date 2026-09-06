@@ -27,6 +27,10 @@ export const TOOL_LABELS: Record<string, string> = {
   storyboard_local_generate: "Gerando keyframes no motor local",
   storyboard_pick: "Aguardando você escolher os keyframes",
   storyboard_scenes: "Lendo as cenas do storyboard",
+  // Wave 11 · F09 (geração por cena): rótulos acrescentados no rebase, cobrados pela guarda
+  // `tests/test_chat_tool_labels.py`.
+  storyboard_scene_generate: "Gerando os ângulos da cena",
+  storyboard_scene_pick: "Aguardando você escolher e ordenar os frames da cena",
   animate_shots: "Listando os shots para animar",
   animate_generate: "Animando o take",
   music_generate: "Gerando a trilha",

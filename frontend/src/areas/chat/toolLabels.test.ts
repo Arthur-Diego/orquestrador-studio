@@ -72,9 +72,17 @@ describe("toolLabel", () => {
   });
 
   // T-TL-04
-  it("tem as 42 entradas do contrato, com os textos exatos", () => {
-    expect(TOOL_LABELS).toEqual(ESPERADO);
-    expect(Object.keys(TOOL_LABELS)).toHaveLength(42);
+  //
+  // O mapa CONTÉM as 42 entradas do contrato 7 do FDD, com os textos exatos — e pode ter mais.
+  // A igualdade estrita seria uma guarda errada: toda frente que registra tool nova em
+  // `studio/mcp/server.py` acrescenta um rótulo aqui (é o combinado da Wave 11), e o que prova a
+  // cobertura NOS DOIS SENTIDOS é `tests/test_chat_tool_labels.py`, que lê o `server.py` real.
+  // Fixar o número aqui só faria este teste reprovar a cada tool nova, sem acusar nada de errado.
+  it("contém as 42 entradas do contrato, com os textos exatos", () => {
+    for (const [nome, rotulo] of Object.entries(ESPERADO)) {
+      expect(TOOL_LABELS[nome], nome).toBe(rotulo);
+    }
+    expect(Object.keys(TOOL_LABELS).length).toBeGreaterThanOrEqual(42);
   });
 
   it("nenhum rótulo tem reticências (quem acrescenta é a linha de status)", () => {

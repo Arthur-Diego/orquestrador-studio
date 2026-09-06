@@ -252,7 +252,7 @@ describe("useChatSocket — turno vivo", () => {
       { seq: 0, kind: "user", text: "oi" },
       { seq: 1, kind: "turn_started", turn_id: "morto" },
     ]);
-    const { result } = renderHook(() => useChatSocket("c1", "idle"));
+    const { result } = renderHook(() => useChatSocket("c1", undefined, "idle"));
     await waitFor(() => expect(result.current.events.length).toBe(2));
 
     expect(result.current.turn.id).toBeNull();
@@ -273,7 +273,7 @@ describe("useChatSocket — turno vivo", () => {
       { seq: 0, kind: "user", text: "oi" },
       { seq: 1, kind: "turn_started", turn_id: "vivo" },
     ]);
-    const { result } = renderHook(() => useChatSocket("c1", "running"));
+    const { result } = renderHook(() => useChatSocket("c1", undefined, "running"));
     await waitFor(() => expect(result.current.events.length).toBe(2));
     expect(result.current.turn.id).toBe("vivo");
     expect(result.current.busy).toBe(true);

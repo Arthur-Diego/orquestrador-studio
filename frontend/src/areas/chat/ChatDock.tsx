@@ -459,7 +459,8 @@ interface MessageProps {
   onOpen: (target: string) => void;
   done: boolean;
   /** chat-feedback: preenchido só para `tool_call`; correlação por `id` feita na `Conversation`. */
-  chip: ChipInfo | undefined;
+  /** Só `tool_call` tem chip; opcional para que quem renderiza um evento sem chip não o declare. */
+  chip?: ChipInfo | undefined;
 }
 
 /**

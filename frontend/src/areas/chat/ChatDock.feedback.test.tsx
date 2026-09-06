@@ -8,7 +8,9 @@ import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../../api";
+import { QueryClientProvider } from "@tanstack/react-query";
+
+import { api, criarQueryClient } from "../../api";
 import { renderNoShell } from "../../shell/test-utils";
 import { ChatDock } from "./ChatDock";
 import type { ChatSession } from "./types";
@@ -83,9 +85,16 @@ afterEach(() => {
   expect(vazamento).toEqual([]);
 });
 
-/** Monta o dock aberto, com a aba `c1` ativa e o socket conectado. */
+/**
+ * Monta o dock aberto, com a aba `c1` ativa e o socket conectado.
+ *
+ * Precisa dos DOIS providers: `ShellProvider` (pid/view/navigate) e `QueryClientProvider` — desde a
+ * Wave 11 · F03 a `Conversation` usa `useQueryClient` para invalidar o guia ao receber
+ * `state_changed`, e sem o provider o componente lança em vez de renderizar.
+ */
 async function montar() {
-  const r = renderNoShell(<ChatDock />);
+  const qc = criarQueryClient();
+  const r = renderNoShell(<QueryClientProvider client={qc}><ChatDock /></QueryClientProvider>);
   await waitFor(() => expect(FakeWS.last).not.toBeNull());
   await act(async () => {
     FakeWS.last!.onopen?.();
