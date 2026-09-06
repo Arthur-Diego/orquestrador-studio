@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Mapa de rótulos humanos das tools e guarda de cobertura
 type: frontend
 complexity: low
@@ -45,15 +45,15 @@ humano em português para cada uma das 42 tools de `studio/mcp/server.py`, e a g
 
 ## Subtasks
 
-- [ ] 3.1 Criar `frontend/src/areas/chat/toolLabels.ts` com `TOOL_LABELS` (42 entradas, textos
+- [x] 3.1 Criar `frontend/src/areas/chat/toolLabels.ts` com `TOOL_LABELS` (42 entradas, textos
       exatos da tabela do contrato 7) e `toolLabel` com normalização do prefixo e fallback.
-- [ ] 3.2 Criar `frontend/src/areas/chat/toolLabels.test.ts` (vitest) cobrindo nome cru × curto,
+- [x] 3.2 Criar `frontend/src/areas/chat/toolLabels.test.ts` (vitest) cobrindo nome cru × curto,
       fallback, `undefined` e a contagem/conteúdo das 42 entradas.
-- [ ] 3.3 Criar `tests/test_chat_tool_labels.py`: extrai os nomes de tool de `studio/mcp/server.py`,
+- [x] 3.3 Criar `tests/test_chat_tool_labels.py`: extrai os nomes de tool de `studio/mcp/server.py`,
       extrai as chaves de `TOOL_LABELS` de `toolLabels.ts`, e compara nos dois sentidos.
-- [ ] 3.4 Escrever a mensagem de falha do teste em pt-BR, nomeando a tool faltante e o caminho do
+- [x] 3.4 Escrever a mensagem de falha do teste em pt-BR, nomeando a tool faltante e o caminho do
       arquivo a editar.
-- [ ] 3.5 Rodar `pytest tests/test_chat_tool_labels.py -x -q` e
+- [x] 3.5 Rodar `pytest tests/test_chat_tool_labels.py -x -q` e
       `npx vitest run src/areas/chat/toolLabels.test.ts`.
 
 ## Implementation Details
@@ -106,9 +106,9 @@ Consultar `_techspec.md`: §5 contrato 7 (a tabela das 42 tools é normativa), �
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] T-TL-01, T-TL-02, T-TL-03, T-TL-04 — `toolLabel` com nome cru e curto, fallback de tool
+- [x] T-TL-01, T-TL-02, T-TL-03, T-TL-04 — `toolLabel` com nome cru e curto, fallback de tool
       desconhecida, `undefined`, e a integridade das 42 entradas.
-- [ ] T-LB-01, T-LB-02 — a guarda Python: tool sem rótulo **falha** com mensagem acionável; rótulo
+- [x] T-LB-01, T-LB-02 — a guarda Python: tool sem rótulo **falha** com mensagem acionável; rótulo
       órfão também é acusado.
 
 ## Success Criteria
