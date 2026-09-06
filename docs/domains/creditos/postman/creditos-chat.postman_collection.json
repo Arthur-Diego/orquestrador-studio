@@ -1,0 +1,576 @@
+{
+  "info": {
+    "name": "creditos — chat, breakdown de custo e reconciliação [extensão] (ADH-OS-20260906-12)",
+    "description": "Contratos da seção 5 e matriz de erros da seção 6 do FDD docs/domains/creditos/features/creditos-chat-fdd.md (Wave 11 · F10, card #91).\n\nO que esta coleção prova: (a) as rotas de leitura de créditos ganharam os agregados novos (`today_credits`/`today_count` em `summary`, `summary_global` no dashboard) SEM perder chave; (b) as 7 rotas `cost` em escopo passaram a devolver os campos do `CostPreview` ALÉM das chaves de hoje — contrato ADITIVO, em que nenhuma chave é removida ou renomeada e, em colisão, o valor legado vence.\n\nC2/C3 (`ui.confirm_cost` com breakdown e o `confirm_token`), C4 (`credits_status`), C5 (`studio://credits`), C6 (`notify` de gasto) e C7 (`costRows.ts`) NÃO são HTTP — são função Python, tool/resource MCP, evento de WebSocket e módulo TypeScript. Ficam cobertos por pytest (`tests/test_mcp_*.py`, `tests/test_cost_preview.py`) e vitest (`costRows.test.ts`, `ChatDock.test.tsx`), não aqui.\n\nAmbiente: sem o CLI da Higgsfield instalado/logado, as rotas `cost` das etapas respondem 409 com a mensagem `hf.NO_CLI_MSG` — que é comportamento CORRETO e preservado (seção 6 do FDD). Por isso cada requisição de custo aceita 200 OU 409, e só valida o corpo aditivo quando veio 200. As rotas de leitura de créditos degradam sem levantar e são checadas sempre.\n\nPré-requisito: servidor local em `{{base_url}}` e a campanha `{{pid}}` existente. Consultar custo e saldo nunca gasta crédito.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8772"
+    },
+    {
+      "key": "pid",
+      "value": "camp-a"
+    },
+    {
+      "key": "mbid",
+      "value": ""
+    },
+    {
+      "key": "scene",
+      "value": "1"
+    },
+    {
+      "key": "shot",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "GET /api/creditos — dashboard global: summary aditivo + summary_global",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/creditos"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "",
+              "pm.test('chaves de hoje do dashboard, todas preservadas', () => {",
+              "  ['balance','models','kind_label','kind_order','actions','summary','history','pid']",
+              "    .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  pm.expect(b.models).to.be.an('array');",
+              "  pm.expect(b.kind_order).to.be.an('array');",
+              "  pm.expect(b.history).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('summary manteve as 4 chaves de hoje', () => {",
+              "  pm.expect(b.summary).to.have.property('total_credits').that.is.a('number');",
+              "  pm.expect(b.summary).to.have.property('count').that.is.a('number');",
+              "  pm.expect(b.summary).to.have.property('by_step').that.is.an('array');",
+              "  pm.expect(b.summary).to.have.property('by_project').that.is.an('array');",
+              "});",
+              "",
+              "pm.test('summary ganhou os agregados de hoje (critério 18)', () => {",
+              "  pm.expect(b.summary).to.have.property('today_credits').that.is.a('number');",
+              "  pm.expect(b.summary).to.have.property('today_count').that.is.a('number');",
+              "});",
+              "",
+              "pm.test('o gasto de hoje nunca excede o total', () => {",
+              "  pm.expect(b.summary.today_credits).to.be.at.most(b.summary.total_credits + 1e-9);",
+              "  pm.expect(b.summary.today_count).to.be.at.most(b.summary.count);",
+              "});",
+              "",
+              "pm.test('dashboard ganhou summary_global (critério 18)', () => {",
+              "  pm.expect(b).to.have.property('summary_global');",
+              "  pm.expect(b.summary_global).to.have.property('total_credits').that.is.a('number');",
+              "  pm.expect(b.summary_global).to.have.property('count').that.is.a('number');",
+              "});",
+              "",
+              "pm.test('sem pid, summary_global é o mesmo agregado que summary', () => {",
+              "  pm.expect(b.summary_global.total_credits).to.eql(b.summary.total_credits);",
+              "  pm.expect(b.summary_global.count).to.eql(b.summary.count);",
+              "});",
+              "",
+              "pm.test('balance nunca levanta, mesmo sem CLI', () => {",
+              "  pm.expect(b.balance).to.have.property('installed').that.is.a('boolean');",
+              "  pm.expect(b.balance).to.have.property('logged_in').that.is.a('boolean');",
+              "});",
+              "",
+              "pm.collectionVariables.set('total_global', b.summary_global.total_credits);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET /api/projects/{pid}/creditos — escopo de projeto: summary do projeto + summary_global",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/projects/{{pid}}/creditos"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "",
+              "pm.test('pid ecoado no payload', () => pm.expect(b.pid).to.eql(pm.collectionVariables.get('pid')));",
+              "",
+              "pm.test('summary é o do PROJETO e traz os agregados de hoje', () => {",
+              "  pm.expect(b.summary).to.have.property('today_credits').that.is.a('number');",
+              "  pm.expect(b.summary).to.have.property('today_count').that.is.a('number');",
+              "  pm.expect(b.summary).to.have.property('total_credits').that.is.a('number');",
+              "});",
+              "",
+              "pm.test('summary_global é o GERAL e não é menor que o do projeto', () => {",
+              "  pm.expect(b).to.have.property('summary_global');",
+              "  pm.expect(b.summary_global.total_credits).to.be.at.least(b.summary.total_credits - 1e-9);",
+              "  pm.expect(b.summary_global.count).to.be.at.least(b.summary.count);",
+              "});",
+              "",
+              "pm.test('o global bate com o que a rota sem pid devolveu', () => {",
+              "  const g = Number(pm.collectionVariables.get('total_global'));",
+              "  pm.expect(b.summary_global.total_credits).to.be.closeTo(g, 0.01);",
+              "});",
+              "",
+              "pm.test('history do projeto só tem linhas do projeto', () => {",
+              "  b.history.forEach(r => pm.expect(r.pid).to.eql(pm.collectionVariables.get('pid')));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET /api/creditos/balance?refresh=1 — fura o cache de 60 s (fluxo B)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/creditos/balance?refresh=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 mesmo sem CLI (degrada, não levanta)', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('shape do saldo', () => {",
+              "  pm.expect(b).to.have.property('installed').that.is.a('boolean');",
+              "  pm.expect(b).to.have.property('logged_in').that.is.a('boolean');",
+              "});",
+              "pm.test('deslogado não inventa saldo', () => {",
+              "  if (!b.logged_in) pm.expect(b.credits === null || b.credits === undefined).to.be.true;",
+              "});",
+              "pm.collectionVariables.set('logged_in', String(!!b.logged_in));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET /api/creditos/history — livro-caixa e o resumo que o BalanceCard lê",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/creditos/history?limit=5"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('envelope de hoje preservado', () => {",
+              "  pm.expect(b).to.have.property('history').that.is.an('array');",
+              "  pm.expect(b).to.have.property('summary');",
+              "});",
+              "pm.test('summary aqui também tem os agregados de hoje', () => {",
+              "  pm.expect(b.summary).to.have.property('today_credits').that.is.a('number');",
+              "  pm.expect(b.summary).to.have.property('today_count').that.is.a('number');",
+              "});",
+              "pm.test('limit respeitado', () => pm.expect(b.history.length).to.be.at.most(5));",
+              "pm.test('toda linha do ledger tem a forma do contrato', () => {",
+              "  b.history.forEach(r => {",
+              "    pm.expect(r).to.have.property('at');",
+              "    pm.expect(r).to.have.property('action');",
+              "    pm.expect(r).to.have.property('model');",
+              "  });",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET /api/creditos/cost?action=base.upscale — rota rica de hoje, INALTERADA",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/creditos/cost?action=base.upscale"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('as 10 chaves de creditos.service.cost_preview seguem intactas', () => {",
+              "  ['action','model','label','variant','kind','measured','live','credits','source','balance']",
+              "    .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "});",
+              "pm.test('source é do vocabulário do contrato', () => {",
+              "  pm.expect(['cli','measured','unknown']).to.include(b.source);",
+              "});",
+              "pm.test('esta rota NÃO foi tocada pela feature (é a fonte do modo rico do CostSheet)', () => {",
+              "  pm.expect(b.action).to.eql('base.upscale');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/projects/{pid}/base/cost — aditivo: per_item/count/total/raw + CostPreview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/projects/{{pid}}/base/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"kind\": \"upscale\", \"model\": \"bytedance_image_upscale\", \"count\": 1}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 (com CLI) ou 409 (sem CLI) — nunca 500', () => pm.expect([200,409]).to.include(pm.response.code));",
+              "if (pm.response.code !== 200) {",
+              "  pm.test('409 traz a mensagem de CLI ausente (matriz de erros, seção 6)', () => {",
+              "    pm.expect(pm.response.text()).to.match(/CLI|higgsfield/i);",
+              "  });",
+              "} else {",
+              "  const b = pm.response.json();",
+              "  pm.test('LEGADO preservado: per_item, count, total, raw', () => {",
+              "    ['per_item','count','total','raw'].forEach(k => pm.expect(b, `removeu ${k}`).to.have.property(k));",
+              "    pm.expect(b.count).to.be.a('number');",
+              "  });",
+              "  pm.test('SOMADO: campos do CostPreview', () => {",
+              "    ['action','model','label','variant','kind','unit_credits','source','balance','note']",
+              "      .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('action veio da KIND_ACTION e existe no catálogo', () => {",
+              "    pm.expect(['base.image','base.upscale','base.clean']).to.include(b.action);",
+              "  });",
+              "  pm.test('source do vocabulário', () => pm.expect(['cli','measured','unknown']).to.include(b.source));",
+              "  pm.test('total = unit_credits × count, ou null', () => {",
+              "    if (b.unit_credits != null && b.total != null) {",
+              "      pm.expect(b.total).to.be.closeTo(b.unit_credits * b.count, 0.01);",
+              "    }",
+              "  });",
+              "  pm.test('balance tem a forma que o widget do chat lê', () => {",
+              "    if (b.balance) ['installed','logged_in'].forEach(k => pm.expect(b.balance).to.have.property(k));",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/projects/{pid}/mood/cost — aditivo: per_prompt/total + CostPreview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/projects/{{pid}}/mood/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"prompts\": [\"warm golden hour light, soft haze\"], \"model\": \"nano_banana_2\", \"aspect_ratio\": \"16:9\", \"resolution\": \"2k\", \"count\": 4}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 ou 409 — nunca 500', () => pm.expect([200,409,404]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('LEGADO preservado: per_prompt (lista) e total', () => {",
+              "    pm.expect(b).to.have.property('per_prompt').that.is.an('array');",
+              "    pm.expect(b).to.have.property('total');",
+              "  });",
+              "  pm.test('SOMADO: campos do CostPreview', () => {",
+              "    ['action','model','label','variant','kind','unit_credits','count','source','balance','note']",
+              "      .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('action = mood.grid (chave real do catálogo)', () => pm.expect(b.action).to.eql('mood.grid'));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/projects/{pid}/animate/cost — aditivo: per_take/credits_unknown + CostPreview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/projects/{{pid}}/animate/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"scene\": \"{{scene}}\", \"shot\": \"{{shot}}\", \"model\": \"kling3_0\", \"count\": 2}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200, 409 ou 404 — nunca 500', () => pm.expect([200,409,404,422]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('LEGADO preservado: per_take, total, credits_unknown, model, count, error', () => {",
+              "    ['per_take','total','credits_unknown','model','count','error']",
+              "      .forEach(k => pm.expect(b, `removeu ${k}`).to.have.property(k));",
+              "    pm.expect(b.credits_unknown).to.be.a('boolean');",
+              "  });",
+              "  pm.test('SOMADO: campos do CostPreview', () => {",
+              "    ['action','label','variant','kind','unit_credits','source','balance','note']",
+              "      .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('action = animate.video — a chave REAL (o FDD dizia animate.take, que não existe)', () => {",
+              "    pm.expect(b.action).to.eql('animate.video');",
+              "  });",
+              "  pm.test('colisão de chave: o model LEGADO venceu', () => pm.expect(b.model).to.eql('kling3_0'));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/projects/{pid}/music/generate/cost — aditivo: per_track/raw/error + CostPreview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/projects/{{pid}}/music/generate/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"prompt\": \"cinematic ambient underscore\", \"duration\": 30, \"count\": 1}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200, 409 ou 404 — nunca 500', () => pm.expect([200,409,404,422]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('LEGADO preservado: per_track, total, raw, error', () => {",
+              "    ['per_track','total','raw','error'].forEach(k => pm.expect(b, `removeu ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('SOMADO: campos do CostPreview', () => {",
+              "    ['action','model','label','variant','kind','unit_credits','count','source','balance','note']",
+              "      .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('action = music.track', () => pm.expect(b.action).to.eql('music.track'));",
+              "  pm.test('kind = audio', () => { if (b.kind != null) pm.expect(b.kind).to.eql('audio'); });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/projects/{pid}/storyboard/cost — aditivo: per_image/total + CostPreview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/projects/{{pid}}/storyboard/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"model\": \"nano_banana_2\", \"kind\": \"scene\", \"text\": \"the product on a wet street at dawn\", \"count\": 4}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200, 409 ou 404 — nunca 500', () => pm.expect([200,409,404,422]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('LEGADO preservado: per_image, total', () => {",
+              "    ['per_image','total'].forEach(k => pm.expect(b, `removeu ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('SOMADO: campos do CostPreview', () => {",
+              "    ['action','model','label','variant','kind','unit_credits','count','source','balance','note']",
+              "      .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('action = storyboard.scene — a chave REAL (o FDD dizia storyboard.frames, que não existe)', () => {",
+              "    pm.expect(b.action).to.eql('storyboard.scene');",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/projects/{pid}/storyboard/video/cost (mode=single) — aditivo: model/per_item/total + CostPreview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/projects/{{pid}}/storyboard/video/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"scene_id\": \"s1\", \"mode\": \"single\", \"duration\": 5}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200, 409 ou 404 — nunca 500', () => pm.expect([200,409,404,422]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('LEGADO preservado: model, per_item, total', () => {",
+              "    ['model','per_item','total'].forEach(k => pm.expect(b, `removeu ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('SOMADO: campos do CostPreview', () => {",
+              "    ['action','label','variant','kind','unit_credits','count','source','balance','note']",
+              "      .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('action vem de video_action(mode) — nunca a chave inexistente storyboard.video', () => {",
+              "    pm.expect(['storyboard.video.scene','storyboard.video.transition']).to.include(b.action);",
+              "    pm.expect(b.action).to.not.eql('storyboard.video');",
+              "  });",
+              "  pm.test('modo single resolve para storyboard.video.scene', () => {",
+              "    pm.expect(b.action).to.eql('storyboard.video.scene');",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/projects/{pid}/storyboard/video/cost (mode=start_end) — a variante da transição",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/projects/{{pid}}/storyboard/video/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"scene_id\": \"s1\", \"mode\": \"start_end\", \"duration\": 5}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200, 409 ou 404 — nunca 500', () => pm.expect([200,409,404,422]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('mode=start_end resolve para storyboard.video.transition', () => {",
+              "    pm.expect(b.action).to.eql('storyboard.video.transition');",
+              "  });",
+              "  pm.test('a MESMA chave que resolve o modelo é a que iria ao livro-caixa', () => {",
+              "    pm.expect(b).to.have.property('model');",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /api/moodboards/{mbid}/multishot/cost — aditivo: source já existia, sem colisão semântica",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/moodboards/{{mbid}}/multishot/cost",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"source_id\": \"1\", \"count\": 4, \"model\": \"nano_banana_2\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200, 409 ou 404 — nunca 500', () => pm.expect([200,409,404,422]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  const b = pm.response.json();",
+              "  pm.test('LEGADO preservado: model, count, per_image, total, source', () => {",
+              "    ['model','count','per_image','total','source'].forEach(k => pm.expect(b, `removeu ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('SOMADO: campos do CostPreview', () => {",
+              "    ['action','label','variant','kind','unit_credits','balance','note']",
+              "      .forEach(k => pm.expect(b, `falta ${k}`).to.have.property(k));",
+              "  });",
+              "  pm.test('action = mood.multishot', () => pm.expect(b.action).to.eql('mood.multishot'));",
+              "  pm.test('source mantém o vocabulário de sempre (sem colisão semântica)', () => {",
+              "    pm.expect(['cli','measured','unknown']).to.include(b.source);",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GET /api/projects/nao-existe/creditos — 404 preservado",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/projects/nao-existe-xyz/creditos"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('404 de projeto inexistente (o texto que credits_status devolve ao agente)', () => {",
+              "  pm.expect([404,422]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

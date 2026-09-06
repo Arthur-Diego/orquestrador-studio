@@ -39,6 +39,10 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     "job": None,
     "api_get": None,
     "portfolio": None,
+    # Saldo e livro-caixa (frente F10 da wave 11, card #91): consultar crédito NUNCA gasta nada e
+    # não escreve artefato de tela. Quem atualiza o chip do dock é o `tool_result` das tools PAGAS
+    # (`frontend/src/areas/chat/toolCredits.ts`), não esta.
+    "credits_status": None,
     # devolvem texto ao agente, não persistem artefato de tela
     "refs_suggest_terms": None,
     "mood_prompt": None,

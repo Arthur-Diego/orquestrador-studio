@@ -90,6 +90,72 @@ def test_project_dashboard_404_for_unknown(client, stub_hf):
     assert client.get("/api/projects/naoexiste/creditos").status_code == 404
 
 
+# ---------- agregados de hoje no livro-caixa `[extensão]` (wave 11 · F10, critério 18) ----------
+
+def _semeia_ledger(rows: list[dict]) -> None:
+    """Escreve o livro-caixa direto (o `STATE_DIR` é isolado pelo `studio_env`)."""
+    import json
+
+    from studio.common import settings
+    settings.LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    settings.LEDGER_PATH.write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+
+
+def _linhas_de_hoje_e_de_ontem(project: str) -> list[dict]:
+    from datetime import datetime, timedelta, timezone
+
+    from studio.common import settings
+    agora = datetime.now(timezone.utc)
+    ontem = (agora - timedelta(days=1)).isoformat(timespec="seconds")
+    return [
+        {"at": settings._now_iso(), "pid": project, "project_name": "Gelo Zero", "step": "base",
+         "action": "base.image", "model": "nano_banana_2", "variant": "2k", "credits": 2,
+         "job_id": None},
+        {"at": settings._now_iso(), "pid": None, "project_name": None, "step": "moodboard",
+         "action": "mood.multishot", "model": "nano_banana_2", "variant": "2k", "credits": 1.5,
+         "job_id": None},
+        {"at": ontem, "pid": project, "project_name": "Gelo Zero", "step": "animate",
+         "action": "animate.video", "model": "kling2_6", "variant": "5s", "credits": 10,
+         "job_id": None},
+    ]
+
+
+def test_summary_soma_hoje_sem_mexer_no_que_ja_existia(client, stub_hf, project):
+    """Aditivo: `today_*` conta só as linhas de HOJE (UTC); o resto do resumo fica igual."""
+    from studio.common import settings
+    _semeia_ledger(_linhas_de_hoje_e_de_ontem(project))
+    s = settings.summary()
+    assert s["total_credits"] == 13.5 and s["count"] == 3, "o agregado antigo não mudou"
+    assert s["today_credits"] == 3.5 and s["today_count"] == 2, "a linha de ontem fica de fora"
+    assert {linha["step"] for linha in s["by_step"]} == {"base", "moodboard", "animate"}
+    assert {linha["pid"] for linha in s["by_project"]} == {project, None}
+    # com recorte de projeto, "hoje" também se restringe ao projeto
+    do_projeto = settings.summary(project)
+    assert do_projeto["total_credits"] == 12 and do_projeto["today_credits"] == 2
+    assert do_projeto["today_count"] == 1
+
+
+def test_summary_sem_livro_caixa_zera_hoje_sem_levantar(client, stub_hf):
+    from studio.common import settings
+    assert not settings.LEDGER_PATH.exists()
+    s = settings.summary()
+    assert s["today_credits"] == 0 and s["today_count"] == 0
+    assert s["total_credits"] == 0 and s["count"] == 0 and s["by_step"] == []
+
+
+def test_dashboard_ganha_summary_global_sem_mexer_no_summary(client, stub_hf, project):
+    """O cartão de saldo lê "neste projeto" (`summary`) e "total" (`summary_global`) de uma vez."""
+    _semeia_ledger(_linhas_de_hoje_e_de_ontem(project))
+    d = client.get(f"/api/projects/{project}/creditos").json()
+    assert d["summary"]["total_credits"] == 12, "`summary` continua sendo o recorte do projeto"
+    assert d["summary"]["today_credits"] == 2
+    assert d["summary_global"]["total_credits"] == 13.5 and d["summary_global"]["today_credits"] == 3.5
+    # sem pid, os dois são o mesmo agregado global
+    g = client.get("/api/creditos").json()
+    assert g["summary_global"] == g["summary"] == d["summary_global"]
+
+
 # ---------- catálogo íntegro: "quem grava usa a chave que configura" (wave 11, card #92) ----------
 #
 # O defeito corrigido: quatro gerações reais escreviam no livro-caixa com chaves que não estavam em
@@ -224,7 +290,9 @@ INDIRECOES_DECLARADAS = {
 #: Ações catalogadas que NENHUM código referencia hoje. Ficam no catálogo de propósito (removê-las
 #: apagaria overrides já gravados no `config.json` dos usuários), mas o conjunto é fixo: uma órfã
 #: NOVA reprova o CI, e é o sinal de que alguém catalogou uma ação sem ligar o serviço nela.
-ORFAS_CONHECIDAS = {"storyboard.scene", "storyboard.multishot"}
+#: `storyboard.scene` saiu daqui na wave 11 · F10: a rota `storyboard/cost` passou a NOMEÁ-LA no
+#: `CostPreview` (antes a ideação da etapa 4 estimava custo sem dizer de que ação ele era).
+ORFAS_CONHECIDAS = {"storyboard.multishot"}
 
 
 def _acoes_passadas_a_settings() -> list[tuple[str, int, str, bool]]:

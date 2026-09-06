@@ -7,10 +7,15 @@ este mesmo módulo.
 """
 from __future__ import annotations
 
+import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
-from .client import StudioClient
+from . import ui
+from .client import StudioApiError, StudioClient
+
+log = logging.getLogger(__name__)
 
 # ---------- helpers de formatação (saída compacta para o agente) ----------
 _STATUS_PT = {
@@ -137,6 +142,113 @@ def job_status(client: StudioClient, pid: str, step: str) -> str:
     return msg
 
 
+# ---------- créditos `[extensão]` (wave 11 · F10, ADR-016/037) ----------
+#: Explica por que o saldo e o histórico NUNCA batem. Não é um defeito a corrigir: é uma
+#: impossibilidade de construção (P6 do FDD). Inferir o gasto pela variação do saldo seria
+#: invenção de método e violaria a ADR-004.
+RECONCILIACAO = (
+    "O saldo vem do CLI da Higgsfield; o gasto vem do livro-caixa local, que só registra o que o "
+    "Studio gerou pelo CLI. Geração feita na UI da Higgsfield consome plano e não aparece aqui."
+)
+
+SEM_LOGIN = ("Saldo indisponível: CLI da Higgsfield sem login (`higgsfield auth login`). "
+             "O ilimitado do plano vale só na UI da Higgsfield.")
+
+
+def _agora_iso() -> str:
+    """Instante corrente em UTC, no mesmo formato do `at` que o livro-caixa grava."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _num(x) -> float:
+    return float(x) if isinstance(x, (int, float)) else 0.0
+
+
+def _rotulo_modelo(linha: dict, modelos: list) -> str:
+    """Rótulo humano do modelo + variante, buscado no catálogo que a própria API já devolveu."""
+    mid = linha.get("model")
+    nome = mid
+    for m in modelos or []:
+        if isinstance(m, dict) and m.get("model") == mid and m.get("label"):
+            nome = m["label"]
+            break
+    return f"{nome} · {linha['variant']}" if linha.get("variant") else str(nome or "modelo")
+
+
+def _frase_gasto(novas: list, saldo, modelos: list) -> str:
+    """Uma linha com o que foi gasto. Agrega quando há mais de uma geração."""
+    creditos = round(sum(_num(r.get("credits")) for r in novas), 2)
+    creditos = int(creditos) if creditos == int(creditos) else creditos
+    if len(novas) == 1:
+        alvo = _rotulo_modelo(novas[0], modelos)
+    else:
+        alvo = f"{len(novas)} gerações"
+    sufixo = f" · saldo {saldo} créditos" if isinstance(saldo, (int, float)) else ""
+    return f"Gastou {creditos} créditos ({alvo}){sufixo}."
+
+
+def _anuncia_gasto(client: StudioClient, pid: str, step: str, t0: str) -> str:
+    """Lê o livro-caixa, e havendo linha posterior a `t0` emite o `notify` e devolve a frase.
+
+    Best effort de ponta a ponta: qualquer falha de leitura devolve `""` e o `job_wait` responde
+    o texto do job sem a linha de gasto. Nunca derruba a espera (matriz de erros, seção 6).
+    """
+    try:
+        d = client.get(f"/api/projects/{pid}/creditos") or {}
+        novas = [r for r in (d.get("history") or []) if str(r.get("at") or "") >= t0]
+        if not novas:
+            return ""
+        frase = _frase_gasto(novas, (d.get("balance") or {}).get("credits"), d.get("models") or [])
+    except Exception:  # noqa: BLE001 — anunciar gasto nunca pode quebrar o job_wait
+        return ""
+    log.info("mcp: gasto anunciado pid=%s step=%s creditos=%s linhas=%d",
+             pid, step, frase, len(novas))
+    ui.notify(client, frase, level="info")
+    return frase
+
+
+def credits_status(client: StudioClient, pid: str = "") -> str:
+    """Saldo Higgsfield, plano e gasto registrado (hoje, campanha, total) + últimos gastos.
+
+    Somente leitura e sempre por HTTP na própria API (ADR-037) — nunca importa
+    `studio.creditos.service`. Consultar saldo e custo não gasta crédito.
+    """
+    rota = f"/api/projects/{pid}/creditos" if pid else "/api/creditos"
+    try:
+        d = client.get(rota) or {}
+    except StudioApiError as e:
+        return str(e)
+    bal = d.get("balance") or {}
+    resumo = d.get("summary") or {}
+    geral = d.get("summary_global") or resumo
+
+    if bal.get("logged_in"):
+        plano = bal.get("plan") or "logado"
+        linhas = [f"Saldo Higgsfield: **{bal.get('credits', '?')}** créditos "
+                  f"(plano `{plano}`, CLI logado)."]
+    else:
+        linhas = [SEM_LOGIN]
+
+    gasto = [f"hoje **{resumo.get('today_credits', 0)}**"]
+    if pid:
+        gasto.append(f"campanha `{pid}` **{resumo.get('total_credits', 0)}** "
+                     f"({resumo.get('count', 0)} gerações)")
+    gasto.append(f"total **{geral.get('total_credits', 0)}** ({geral.get('count', 0)} gerações)")
+    linhas.append("Gasto registrado no livro-caixa local: " + " · ".join(gasto) + ".")
+
+    hist = (d.get("history") or [])[:5]
+    if hist:
+        linhas.append("Últimos gastos:")
+        modelos = d.get("models") or []
+        for r in hist:
+            onde = r.get("project_name") or r.get("pid") or "Biblioteca"
+            linhas.append(f"- {r.get('at', '—')} · {r.get('action', '—')} · "
+                          f"{_rotulo_modelo(r, modelos)} · {r.get('credits', '—')} créditos · {onde}")
+    linhas.append("")
+    linhas.append(RECONCILIACAO)
+    return "\n".join(linhas)
+
+
 def job_wait(client: StudioClient, pid: str, step: str, timeout: int = 600, poll: float = 2.0,
              _sleep=time.sleep) -> str:
     """Espera o job de uma etapa terminar (running → done/error) e devolve o resumo.
@@ -144,6 +256,7 @@ def job_wait(client: StudioClient, pid: str, step: str, timeout: int = 600, poll
     Evita que o agente fique consultando `job` num laço (gasta turnos). Se não há job em
     andamento, devolve o estado atual. `_sleep` é injetável para teste (sem espera real).
     """
+    t0 = _agora_iso()
     deadline = time.monotonic() + max(1, timeout)
     viu_running = False
     while time.monotonic() < deadline:
@@ -158,7 +271,11 @@ def job_wait(client: StudioClient, pid: str, step: str, timeout: int = 600, poll
         added, total = g.get("added", 0), g.get("total", 0)
         if g.get("error"):
             return f"Etapa {step}: job falhou — {g['error']}"
-        return f"Etapa {step}: concluído ({added}/{total} adicionados)."
+        # `[extensão]` wave 11 (ADR-016): anuncia o gasto que o livro-caixa REGISTROU nesta espera.
+        # Só no caminho feliz — gasto parcial de job com erro segue visível na tela Créditos e no
+        # `credits_status`, mas não vira cartão junto de uma mensagem de falha.
+        gasto = _anuncia_gasto(client, pid, step, t0)
+        return f"Etapa {step}: concluído ({added}/{total} adicionados)." + (f" {gasto}" if gasto else "")
     return f"Etapa {step}: ainda em andamento após {timeout}s (siga com `job` para checar)."
 
 

@@ -738,8 +738,24 @@ def test_multishot_com_chat_recusado_nao_gera(com_chat, monkeypatch):
     assert "cancelada" in out
 
 
+def _aprova_com_token(monkeypatch, registro=None):
+    """Stub de `confirm_cost` que aprova E emite um `_confirm_token` REAL (ADR-038 §3, F10).
+
+    Aprovar deixou de bastar: desde `creditos-chat`, `_paid` só gera depois de consumir um token
+    emitido pelo próprio `confirm_cost`. O stub precisa aceitar `breakdown` (kwarg-only) pela
+    mesma razão — é o detalhamento que o dock renderiza.
+    """
+    def _confirm(client, action, credits, model, detail="", *, breakdown=None):
+        if registro is not None:
+            registro.update(action=action, credits=credits, model=model, breakdown=breakdown)
+        return {"answered": True, "confirmed": True,
+                "_confirm_token": ui.issue_confirm_token(action, model)}
+
+    monkeypatch.setattr(ui, "confirm_cost", _confirm)
+
+
 def test_multishot_com_chat_confirmado_gera(com_chat, monkeypatch):
-    monkeypatch.setattr(ui, "confirm_cost", lambda *a, **k: {"answered": True, "confirmed": True})
+    _aprova_com_token(monkeypatch)
     cli = Fake({MS_COST: COST})
     actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6")
     assert [p for p, _ in cli.posts] == [MS_COST, MS_GEN]
@@ -1046,13 +1062,8 @@ def test_mood_run_wait_sem_corrida_nenhuma_continua_dizendo_para_disparar():
 def test_multishot_nomeia_o_modelo_que_o_servidor_escolheu(monkeypatch):
     """Achado 4: sem `model`, quem escolhe é o servidor — e o gate de gasto tem de dizer qual."""
     confirmados = {}
-
-    def _confirm_cost(cli, action, credits, model, detail=""):
-        confirmados.update(action=action, credits=credits, model=model)
-        return {"answered": True, "confirmed": True}
-
     monkeypatch.setattr(ui, "chat_id", lambda: "cid")
-    monkeypatch.setattr(ui, "confirm_cost", _confirm_cost)
+    _aprova_com_token(monkeypatch, confirmados)
     cli = Fake({f"/api/moodboards/{MBID}/multishot/cost": {"model": "nano_banana_2", "credits": 24}})
     out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6")
     assert confirmados["model"] == "nano_banana_2"      # e não "modelo padrão"

@@ -10,12 +10,15 @@ Dois padrões estruturantes:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
 
 from . import ui
 from .client import StudioApiError, StudioClient
+
+log = logging.getLogger(__name__)
 
 #: Chaves de lista aceitas quando a rota de candidatas devolve um **dict** em vez de uma lista.
 #: Os shapes são diferentes por domínio, por design (base publica `{candidates, final}`, storyboard
@@ -115,6 +118,59 @@ def _credits(cost: dict) -> Any:
     return None
 
 
+#: Campos do `CostPreview` (`studio/common/pricing.py`) que o dock precisa para montar as linhas.
+_CAMPOS_BREAKDOWN = ("action", "model", "label", "variant", "kind", "unit_credits", "count",
+                     "total", "source", "balance", "note")
+
+
+def _breakdown(cost: dict, *, model: str, credits: Any) -> dict:
+    """Extrai do retorno da rota `cost` o detalhamento que o widget do chat renderiza.
+
+    Pura. `[extensão]` wave 11 (ADR-016): antes o gate do chat recebia só um escalar, e o cartão
+    degradava para duas linhas enquanto as telas mostravam a planilha inteira. Aqui o
+    `CostPreview` atravessa inteiro.
+
+    `credits` continua no dict de fora como o escalar de sempre; `balance_after` é derivado só
+    quando saldo e total existem — sem os dois, o dock omite a linha, como o `CostSheet` faz.
+    """
+    b = {k: cost[k] for k in _CAMPOS_BREAKDOWN if k in cost}
+    b.setdefault("model", model)
+    if b.get("unit_credits") is None and isinstance(credits, (int, float)):
+        b["unit_credits"] = credits
+    if b.get("total") is None and isinstance(credits, (int, float)):
+        b["total"] = credits
+    saldo = (b.get("balance") or {}).get("credits")
+    total = b.get("total")
+    if isinstance(saldo, (int, float)) and isinstance(total, (int, float)):
+        b["balance_after"] = round(saldo - total, 2)
+    return b
+
+
+def _linhas_markdown(b: dict, credits: Any) -> str:
+    """O mesmo detalhamento em texto, para o caminho TERMINAL — onde o único canal é texto."""
+    linhas = []
+    if b.get("model"):
+        rotulo = b.get("label") or b["model"]
+        linhas.append(f"- Modelo: {rotulo}" + (f" · {b['variant']}" if b.get("variant") else ""))
+    unit = b.get("unit_credits")
+    if isinstance(unit, (int, float)):
+        fonte = {"cli": " (CLI)", "measured": " (medido)"}.get(b.get("source") or "", "")
+        linhas.append(f"- Custo por geração: {unit} créditos{fonte}")
+    n = b.get("count") or 1
+    if isinstance(n, int) and n > 1:
+        linhas.append(f"- Quantidade: {n}×")
+    linhas.append(f"- Total estimado: {credits} créditos" if credits is not None
+                  else "- Total estimado: indisponível")
+    saldo = (b.get("balance") or {}).get("credits")
+    if isinstance(saldo, (int, float)):
+        linhas.append(f"- Saldo atual: {saldo} créditos")
+        if "balance_after" in b:
+            linhas.append(f"- Saldo depois: {b['balance_after']} créditos")
+        if isinstance(b.get("total"), (int, float)) and saldo < b["total"]:
+            linhas.append("- ⚠ Saldo menor que o total estimado.")
+    return "\n".join(linhas)
+
+
 def _paid(client: StudioClient, *, step: str, cost_path: str, cost_body: dict, gen_path: str,
           gen_body: dict, action: str, model: str, confirm: bool, follow: str | None = None,
           model_from_cost: bool = False) -> str:
@@ -139,20 +195,38 @@ def _paid(client: StudioClient, *, step: str, cost_path: str, cost_body: dict, g
             model = real.strip()
     credits = _credits(cost)
     cred_txt = credits if credits is not None else "não estimável"
-    if ui.chat_id():
-        ans = ui.confirm_cost(client, action, cred_txt, model)
+    b = _breakdown(cost, model=model, credits=credits)
+    cid = ui.chat_id()
+    log.info("mcp: gate de custo action=%s model=%s total=%s source=%s chat=%s",
+             action, model, b.get("total"), b.get("source"), cid)
+    if cid:
+        ans = ui.confirm_cost(client, action, cred_txt, model, breakdown=b)
         if not ans.get("answered") or not ans.get("confirmed"):
+            log.info("mcp: gate de custo resultado=%s action=%s", "cancelado", action)
             return f"Geração cancelada pelo usuário (custo estimado: {cred_txt} créditos)."
+        # ADR-038 §3: nenhuma tool paga executa sem um `confirm_token` emitido por `confirm_cost`.
+        if ui.CONFIRM_TOKEN_REQUIRED and not ui.consume_confirm_token(
+                ans.get("_confirm_token"), action=action, model=model):
+            log.info("mcp: gate de custo resultado=%s action=%s", "sem_token", action)
+            return ("Confirmação de gasto inválida ou expirada. Peça a confirmação de novo "
+                    "chamando esta tool outra vez.")
+        log.info("mcp: gate de custo resultado=%s action=%s", "confirmado", action)
     elif not confirm:
-        return (f"Custo estimado: {cred_txt} créditos ({model}). "
+        log.info("mcp: gate de custo resultado=%s action=%s", "terminal", action)
+        detalhe = _linhas_markdown(b, credits)
+        return (f"Custo estimado: {cred_txt} créditos ({model}).\n{detalhe}\n"
                 "Para gerar, chame esta tool de novo com confirm=true.")
     try:
         client.post(gen_path, gen_body)
     except StudioApiError as e:
         return str(e)
+    # Duas intenções no mesmo retorno: o waiter certo (F12 — jobs de URL própria não são de etapa)
+    # e o eco do que foi aprovado (F10 — o usuário fecha o turno vendo o que autorizou gastar).
+    aprovado = f" Custo aprovado: {cred_txt} créditos."
     if follow:
-        return f"Geração iniciada ({model}). Acompanhe com `{follow}`."
-    return f"Geração iniciada ({model}). Acompanhe com `job_wait` (etapa {step})."
+        return f"Geração iniciada ({model}). Acompanhe com `{follow}`.{aprovado}"
+    return (f"Geração iniciada ({model}). Acompanhe com `job_wait` (etapa {step})."
+            f"{aprovado}")
 
 
 def _pick(client: StudioClient, *, pid: str, step: str, cands_path: str, select_path: str,

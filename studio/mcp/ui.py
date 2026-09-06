@@ -7,14 +7,72 @@ no_ui:True}` e o chamador degrada para "pergunte/confirme em texto".
 """
 from __future__ import annotations
 
+import logging
 import os
+import secrets
+import time
 from typing import Any
 
 from .client import StudioClient
 
+log = logging.getLogger(__name__)
+
 
 def chat_id() -> str | None:
     return os.environ.get("STUDIO_CHAT_ID") or None
+
+
+# ---------- token de confirmação de gasto `[extensão]` (ADR-038 §3, wave 11 · F10) ----------
+#: Validade de um token de confirmação, em segundos. Folgado de propósito: entre aprovar o custo
+#: e o POST de geração há só uma chamada, mas o usuário pode demorar a clicar.
+CONFIRM_TTL = 900.0
+
+#: Escape hatch do risco 2 do FDD: com `False`, `_paid` volta ao gate de hoje (só `confirmed`).
+#: Existe para desligar a exigência sem reverter commit se o token travar geração legítima.
+CONFIRM_TOKEN_REQUIRED = True
+
+#: Tokens vivos: token -> {"action", "model", "chat_id", "exp"}. Estado EFÊMERO de processo, como
+#: o registro de jobs em memória do ADR-006 — nunca vai a disco (ADR-003 não se aplica), nunca ao
+#: WebSocket e nunca ao modelo.
+_CONFIRM_TOKENS: dict[str, dict] = {}
+
+
+def _purge_expired(agora: float) -> None:
+    for tok in [t for t, d in _CONFIRM_TOKENS.items() if d["exp"] <= agora]:
+        _CONFIRM_TOKENS.pop(tok, None)
+
+
+def issue_confirm_token(action: str, model: str) -> str:
+    """Emite um token opaco escopado na ação/modelo aprovados e no `chat_id` corrente.
+
+    Chamado só por `confirm_cost`, e só quando o usuário aprova — logo é impossível haver
+    aprovação sem token. Uma emissão nova para o mesmo par `(action, model)` na mesma aba
+    substitui a anterior (no máximo um token vivo por par).
+    """
+    agora = time.monotonic()
+    _purge_expired(agora)
+    cid = chat_id()
+    for tok in [t for t, d in _CONFIRM_TOKENS.items()
+                if (d["action"], d["model"], d["chat_id"]) == (action, model, cid)]:
+        _CONFIRM_TOKENS.pop(tok, None)
+    token = secrets.token_urlsafe(16)
+    _CONFIRM_TOKENS[token] = {"action": action, "model": model, "chat_id": cid,
+                              "exp": agora + CONFIRM_TTL}
+    return token
+
+
+def consume_confirm_token(token: str | None, *, action: str, model: str) -> bool:
+    """Consome o token UMA vez. `False` quando ausente, expirado, já usado, de outra ação, de
+    outro modelo ou de outra aba. Nunca levanta. Limpa os expirados a cada chamada.
+    """
+    agora = time.monotonic()
+    _purge_expired(agora)
+    if not token:
+        return False
+    dados = _CONFIRM_TOKENS.pop(token, None)
+    if dados is None:
+        return False
+    return (dados["action"], dados["model"], dados["chat_id"]) == (action, model, chat_id())
 
 
 def _ask(client: StudioClient, payload: dict, timeout: float = 1800.0) -> dict:
@@ -59,10 +117,28 @@ def confirm(client: StudioClient, title: str, detail: str = "") -> dict:
     return _ask(client, {"widget": "confirm", "title": title, "detail": detail})
 
 
-def confirm_cost(client: StudioClient, action: str, credits: Any, model: str, detail: str = "") -> dict:
-    """Sheet de custo (ADR-016/038). Retorna {answered, confirmed}."""
-    return _ask(client, {"widget": "confirm_cost", "title": "Confirmar geração paga",
-                         "action": action, "credits": credits, "model": model, "detail": detail})
+def confirm_cost(client: StudioClient, action: str, credits: Any, model: str, detail: str = "",
+                 *, breakdown: dict | None = None) -> dict:
+    """Sheet de custo (ADR-016/038). Retorna {answered, confirmed, _confirm_token?}.
+
+    `breakdown` `[extensão]` (wave 11) é o `CostPreview` inteiro; com ele o dock renderiza as
+    MESMAS linhas do `CostSheet` das telas, em vez das duas linhas de antes. Compatível para
+    trás nos dois sentidos: sem `breakdown` o widget cai no par credits+model de hoje, e os
+    campos `action`/`credits`/`model`/`detail` seguem no payload, então um dock antigo continua
+    funcionando.
+
+    `_confirm_token` só existe quando `confirmed` é True (ADR-038 §3). Ele NÃO vai no payload do
+    `ask` — nunca trafega no WebSocket nem chega ao modelo; volta apenas neste dict, para o
+    chamador Python consumir antes de gerar.
+    """
+    payload = {"widget": "confirm_cost", "title": "Confirmar geração paga",
+               "action": action, "credits": credits, "model": model, "detail": detail}
+    if breakdown:
+        payload["breakdown"] = breakdown
+    ans = _ask(client, payload)
+    if ans.get("answered") and ans.get("confirmed"):
+        return {**ans, "_confirm_token": issue_confirm_token(action, model)}
+    return ans
 
 
 def open_screen(client: StudioClient, target: str, title: str = "", detail: str = "",

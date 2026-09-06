@@ -70,6 +70,36 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-14-chat-moodboards": (
+        "`[extensão]` Biblioteca de Mood boards no chat, card #90 / ADH-OS-20260906-14 (wave 11 · "
+        "F12): 16 tools MCP, resource e HLD do domínio. O trabalho é todo FORA do núcleo "
+        "(`studio/mcp/**`, `studio/chat/{prompts,mudancas.py}`, `tests/`, `docs/`). O único "
+        "toque em `frontend/` é UMA linha em `src/areas/chat/toolCredits.ts`: `moodboard_multishot` "
+        "passa por `actions._paid`, e o próprio módulo da F10 manda espelhar ali toda tool paga "
+        "nova, senão o dock não recarrega o saldo depois do gasto. Em `studio/web/` muda APENAS o "
+        "bundle GERADO `studio/web/dist/` (`make frontend-build`, guarda de drift do CI). "
+        "Nenhum componente, estilo ou rota do shell é alterado por esta frente — os demais "
+        "arquivos de `frontend/` que aparecem no diff vêm do MERGE de `develop` (F10 creditos-chat, "
+        "já revisada e mergeada), não de edição daqui. ADR-016/037/038, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
+    "feature/adh-os-20260906-12-creditos-chat": (
+        "`[extensão]` Créditos no chat, card #91 / ADH-OS-20260906-12 (wave 11 · F10): o gate de "
+        "custo do dock mostrava duas linhas enquanto as telas mostravam a planilha inteira "
+        "(ADR-016), e a ADR-038 §3 exigia um `confirm_token` que não existia no código. O grosso "
+        "do trabalho é FORA do núcleo (`studio/common/pricing.py`, `studio/common/settings.py`, "
+        "`studio/creditos/service.py`, `studio/mcp/**`, `studio/chat/prompts/`, os `router.py` das "
+        "etapas e `studio/moodboards/router.py`). Em `frontend/` o recorte é "
+        "`src/ui/{costRows.ts,CostSheet.tsx,index.ts}` (extração da fonte única das linhas de "
+        "custo, DOM do `CostSheet` inalterado), `src/areas/chat/*` (widget rico, `CreditsChip` no "
+        "cabeçalho, `toolCredits.ts`) e `src/areas/creditos/{CreditosArea.tsx,creditos.css}` "
+        "(gasto hoje/campanha/total e a reconciliação explicada), mais os GERADOS "
+        "`src/api/schema.ts` e `frontend/openapi.json`. Em `studio/web/` muda APENAS o bundle "
+        "GERADO `studio/web/dist/` (`make frontend-build`, guarda de drift do CI). "
+        "`src/styles/` (cópia byte-a-byte do vanilla) e `scripts/qa/cenarios/` NÃO são tocados. "
+        "ADR-004/016/037/038, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-05-chat-sync": (
         "`[extensão]` Wave 11 · frente F03 — sincronização chat → telas, card #87 "
         "(ADH-OS-20260906-05): o evento `state_changed` nasce em `studio/chat/` e o mapa de tools "

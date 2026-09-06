@@ -1,4 +1,7 @@
 """Tools ui.* do MCP (ADR-038): ponte com o browser via HTTP, com/sem chat_id."""
+import json as jsonlib
+
+import pytest
 
 from studio.mcp import ui
 
@@ -25,7 +28,10 @@ def test_com_chat_id_posta_no_ask(monkeypatch):
     monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
     cli = Fake({"answered": True, "confirmed": True})
     ans = ui.confirm_cost(cli, "Gerar", 10, "nano_banana_2")
-    assert ans == {"answered": True, "confirmed": True}
+    # `[extensão]` wave 11 (ADR-038 §3): a aprovação passou a emitir um `_confirm_token`. O resto
+    # do contrato é o de sempre — por isso a asserção vira subconjunto, não igualdade.
+    assert ans["answered"] is True and ans["confirmed"] is True
+    assert ans["_confirm_token"]
     path, body = cli.posts[0]
     assert path == "/api/chats/cid/ask"
     assert body["payload"]["widget"] == "confirm_cost" and body["payload"]["credits"] == 10
@@ -53,3 +59,102 @@ def test_emit_sem_chat_id_nao_posta(monkeypatch):
     cli = Fake()
     ui.show(cli, [{"url": "/files/x.png"}])
     assert cli.posts == []
+
+
+# ---------- token de confirmação de gasto `[extensão]` (ADR-038 §3, wave 11 · F10) ----------
+@pytest.fixture(autouse=True)
+def _limpa_tokens():
+    """Cada teste começa sem token vivo: o registro é estado de processo, não de chamada."""
+    ui._CONFIRM_TOKENS.clear()
+    yield
+    ui._CONFIRM_TOKENS.clear()
+
+
+def test_confirm_cost_com_breakdown_leva_o_costpreview_inteiro(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "confirmed": True})
+    b = {"model": "nano_banana_2", "unit_credits": 4, "count": 3, "total": 12,
+         "source": "cli", "balance": {"installed": True, "logged_in": True, "credits": 118}}
+    ui.confirm_cost(cli, "Gerar imagem base", 12, "nano_banana_2", breakdown=b)
+    _, body = cli.posts[0]
+    assert body["payload"]["breakdown"] == b
+    # compatibilidade para trás: os campos de hoje seguem no payload, para um dock antigo funcionar
+    for k in ("action", "credits", "model", "detail"):
+        assert k in body["payload"]
+
+
+def test_sem_breakdown_o_payload_fica_como_antes(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "confirmed": True})
+    ui.confirm_cost(cli, "Gerar", 10, "nano_banana_2")
+    _, body = cli.posts[0]
+    assert "breakdown" not in body["payload"]
+
+
+def test_token_nunca_vai_no_payload_do_ask(monkeypatch):
+    """O token é do processo: nunca trafega no WebSocket nem chega ao modelo."""
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "confirmed": True})
+    ans = ui.confirm_cost(cli, "Gerar", 10, "nano_banana_2")
+    _, body = cli.posts[0]
+    assert ans["_confirm_token"] not in jsonlib.dumps(body)
+
+
+def test_recusa_nao_emite_token(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    ans = ui.confirm_cost(Fake({"answered": True, "confirmed": False}), "Gerar", 10, "m")
+    assert "_confirm_token" not in ans and ui._CONFIRM_TOKENS == {}
+
+
+def test_timeout_do_ask_nao_emite_token(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    ans = ui.confirm_cost(Fake({"answered": False}), "Gerar", 10, "m")
+    assert "_confirm_token" not in ans and ui._CONFIRM_TOKENS == {}
+
+
+def test_token_e_de_uso_unico(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    tok = ui.issue_confirm_token("Gerar", "m")
+    assert ui.consume_confirm_token(tok, action="Gerar", model="m") is True
+    assert ui.consume_confirm_token(tok, action="Gerar", model="m") is False
+
+
+def test_token_ausente_ou_desconhecido(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    assert ui.consume_confirm_token(None, action="Gerar", model="m") is False
+    assert ui.consume_confirm_token("", action="Gerar", model="m") is False
+    assert ui.consume_confirm_token("inventado", action="Gerar", model="m") is False
+
+
+def test_token_de_outra_acao_ou_de_outro_modelo(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    tok = ui.issue_confirm_token("Gerar A", "m")
+    assert ui.consume_confirm_token(tok, action="Gerar B", model="m") is False
+    tok2 = ui.issue_confirm_token("Gerar A", "m1")
+    assert ui.consume_confirm_token(tok2, action="Gerar A", model="m2") is False
+
+
+def test_token_expirado(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    tok = ui.issue_confirm_token("Gerar", "m")
+    relogio = [ui.time.monotonic() + ui.CONFIRM_TTL + 1]
+    monkeypatch.setattr(ui.time, "monotonic", lambda: relogio[0])
+    assert ui.consume_confirm_token(tok, action="Gerar", model="m") is False
+    assert ui._CONFIRM_TOKENS == {}  # a limpeza dos expirados roda a cada consumo
+
+
+def test_token_de_outra_aba(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "aba-a")
+    tok = ui.issue_confirm_token("Gerar", "m")
+    monkeypatch.setenv("STUDIO_CHAT_ID", "aba-b")
+    assert ui.consume_confirm_token(tok, action="Gerar", model="m") is False
+
+
+def test_emissao_nova_substitui_a_anterior(monkeypatch):
+    """No máximo um token vivo por (action, model) por aba."""
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    velho = ui.issue_confirm_token("Gerar", "m")
+    novo = ui.issue_confirm_token("Gerar", "m")
+    assert velho != novo
+    assert ui.consume_confirm_token(velho, action="Gerar", model="m") is False
+    assert ui.consume_confirm_token(novo, action="Gerar", model="m") is True

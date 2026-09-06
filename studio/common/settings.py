@@ -347,6 +347,11 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _today_iso() -> str:
+    """Data de "hoje" em UTC — o mesmo fuso do `at` que `_now_iso` grava em cada linha."""
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 def record_spend(*, action: str, model: str, credits, pid: str | None = None,
                  step: str | None = None, variant: str | None = None,
                  job_id: str | None = None, project_name: str | None = None) -> dict:
@@ -420,18 +425,28 @@ def _num(x) -> float:
 def summary(pid: str | None = None) -> dict:
     """Agrega o gasto do livro-caixa: total e quebras por etapa e por projeto.
 
-    `{total_credits, count, by_step: [{step, credits, count}], by_project: [{pid, name, credits, count}]}`.
+    `{total_credits, count, today_credits, today_count, by_step: [{step, credits, count}],
+    by_project: [{pid, name, credits, count}]}`.
     Com `pid`, restringe ao projeto (e `by_project` fica com uma linha só).
+
+    `today_credits`/`today_count` `[extensão]` (wave 11, ADR-016): o gasto de HOJE, para o cartão
+    de saldo e o `credits_status` do chat mostrarem "hoje" sem uma segunda rota. "Hoje" é UTC,
+    coerente com o `at` que `_now_iso` grava. Aditivo: as outras chaves não mudam.
     """
     rows = _read_ledger()
     if pid is not None:
         rows = [r for r in rows if r.get("pid") == pid]
+    hoje = _today_iso()
     by_step: dict[str, dict] = {}
     by_proj: dict[str, dict] = {}
     total = 0.0
+    today_credits, today_count = 0.0, 0
     for r in rows:
         c = _num(r.get("credits"))
         total += c
+        if str(r.get("at") or "")[:10] == hoje:
+            today_credits += c
+            today_count += 1
         s = r.get("step") or r.get("action") or "—"
         st = by_step.setdefault(s, {"step": s, "credits": 0.0, "count": 0})
         st["credits"] += c
@@ -447,6 +462,8 @@ def summary(pid: str | None = None) -> dict:
     return {
         "total_credits": rnd(total),
         "count": len(rows),
+        "today_credits": rnd(today_credits),
+        "today_count": today_count,
         "by_step": sorted(({**v, "credits": rnd(v["credits"])} for v in by_step.values()),
                           key=lambda x: x["credits"], reverse=True),
         "by_project": sorted(({**v, "credits": rnd(v["credits"])} for v in by_proj.values()),

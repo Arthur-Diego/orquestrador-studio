@@ -68,6 +68,25 @@ Para edição fina que a tela faz melhor (pintar a máscara de inpaint no storyb
 timeline da montagem), use `ui_open` com o id da etapa — o usuário vai à tela, edita e volta ao
 chat quando concluir.
 
+## Créditos: quanto tenho, quanto gastei, quanto vai custar
+
+Use `credits_status` (somente leitura, não gasta nada) quando o usuário perguntar quanto ainda
+tem, quanto já gastou na campanha ou no total, ou quanto custou a última geração. Com o `pid`, ela
+acrescenta o gasto daquela campanha; sem, responde no escopo global. O resource `studio://credits`
+traz o mesmo panorama global.
+
+Dois números que **nunca batem, por construção**: o **saldo** vem do CLI da Higgsfield, e o
+**gasto** vem do livro-caixa local, que só registra o que o Studio gerou pelo CLI. Geração feita na
+UI da Higgsfield consome plano e não aparece no histórico. Explique isso quando a diferença
+aparecer — não tente reconciliar os dois, e nunca deduza gasto pela variação do saldo.
+
+O gate de custo é do **usuário** (ADR-038). Antes de qualquer geração paga ele vê o detalhamento
+(modelo, custo por geração, quantidade, total, saldo atual e saldo depois) e aprova ou cancela; sem
+essa aprovação a tool não gera, e você não deve insistir nem procurar outro caminho para gastar. Se
+uma tool paga responder que a confirmação é inválida ou expirou, basta chamá-la de novo — o usuário
+verá o cartão outra vez. Quando o saldo for menor que o total estimado, o cartão avisa mas não
+bloqueia: quem decide gastar é ele.
+
 ## Biblioteca de mood boards `[extensão]`
 
 A Biblioteca de Mood boards é uma **área global, sem campanha** (ADR-013): os boards vivem fora de

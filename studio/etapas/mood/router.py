@@ -5,7 +5,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, field_validator
 
 from ... import higgsfield as hf
-from ...common import prompter, settings
+from ...common import pricing, prompter, settings
+from ...creditos import service as creditos
 from ...mood import service as mood
 from ...refs import service as refs
 
@@ -187,7 +188,14 @@ def mood_cost(pid: str, req: MoodGenReq):
     per_prompt = [hf.cost(req.model, {"prompt": p, "aspect_ratio": req.aspect_ratio,
                                       "resolution": req.resolution, "count": req.count}) for p in req.prompts]
     known = [c["credits"] for c in per_prompt if isinstance(c.get("credits"), (int, float))]
-    return {"per_prompt": per_prompt, "total": sum(known) if known and len(known) == len(per_prompt) else None}
+    legado = {"per_prompt": per_prompt,
+              "total": sum(known) if known and len(known) == len(per_prompt) else None}
+    # `[extensão]` wave 11 (ADR-016): shape comum de custo, ADITIVO — as chaves de cima vencem.
+    # O unitário é o custo de UM prompt (o `count` de imagens por prompt já vai nos params do CLI).
+    completo = len(known) == len(per_prompt) and bool(known)
+    return pricing.cost_preview(action="mood.grid", model=req.model, count=len(per_prompt),
+                                unit_credits=known[0] if completo else None, source="cli",
+                                variant=req.resolution, balance=creditos.balance(), legacy=legado)
 
 
 @router.post("/api/projects/{pid}/mood/generate")

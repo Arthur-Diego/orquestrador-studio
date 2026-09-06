@@ -5,6 +5,8 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from ... import higgsfield as hf
+from ...common import pricing
+from ...creditos import service as creditos
 from ...music import service as music
 from ...refs import service as refs
 
@@ -104,7 +106,13 @@ def music_history(pid: str, req: HistoryReq | None = None):
 def music_cost(pid: str, req: GenerateReq):
     refs.project_dir(pid)   # projeto inexistente é 404 ANTES de qualquer 409 de CLI
     _require_cli()
-    return music.generate_cost(pid, req.prompt, req.duration, req.count)
+    legado = music.generate_cost(pid, req.prompt, req.duration, req.count)
+    # `[extensão]` wave 11 (ADR-016): shape comum de custo, ADITIVO — as chaves de cima vencem.
+    por_faixa = legado.get("per_track")
+    return pricing.cost_preview(action="music.track", model=music.MODEL, count=req.count,
+                                unit_credits=por_faixa,
+                                source="cli" if por_faixa is not None else "unknown",
+                                balance=creditos.balance(), legacy=legado)
 
 
 @router.post("/api/projects/{pid}/music/generate", status_code=202)
