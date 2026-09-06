@@ -667,6 +667,238 @@ def moodboard_delete(client: StudioClient, mbid: str, confirm: bool = False) -> 
             "(a cópia para a campanha é independente).")
 
 
+def _vibes_params(vibe: str, origem: str, page: int) -> dict:
+    """Query do catálogo de vibes, SEM as chaves vazias.
+
+    `origem` é validada no servidor com `if origem is not None`, e o httpx serializa `None` como
+    string vazia — mandar `origem=""` viraria 422 ("origem inválida: ''") num caminho em que o
+    usuário não filtrou nada. Por isso a chave só entra quando tem valor.
+    """
+    params: dict = {"page": page}
+    if vibe:
+        params["vibe"] = vibe
+    if origem:
+        params["origem"] = origem
+    return params
+
+
+def _filtro_txt(vibe: str, origem: str) -> str:
+    partes = [f"{k}={v}" for k, v in (("vibe", vibe), ("origem", origem)) if v]
+    return f" (filtro: {', '.join(partes)})" if partes else ""
+
+
+def vibes_list(client: StudioClient, vibe: str = "", origem: str = "", page: int = 1) -> str:
+    """Catálogo de fotos de vibe (`_vibes/`), paginado e filtrável.
+
+    `facets` só é consultada quando NENHUM filtro foi passado: com filtro, a pergunta do usuário já
+    é sobre uma vibe específica, e a segunda chamada devolveria as contagens do catálogo inteiro —
+    número que contradiz o total da página e confunde o agente.
+    """
+    try:
+        pagina = client.get("/api/vibes", _vibes_params(vibe, origem, page)) or {}
+    except StudioApiError as e:
+        return str(e)
+    total = pagina.get("total", 0)
+    if not total:
+        return (f"Nenhuma foto de vibe no catálogo{_filtro_txt(vibe, origem)} "
+                f"(pasta: {pagina.get('pasta', '?')}).\n"
+                "Colete referências com a skill `/mood_vibe_scout` no terminal.")
+    linhas = [f"Catálogo de vibes: {total} foto(s), página {pagina.get('page', page)} de "
+              f"{pagina.get('pages', 1)}{_filtro_txt(vibe, origem)}."]
+    facetas: dict | None = None
+    if not vibe and not origem:
+        try:
+            facetas = client.get("/api/vibes/facets") or {}
+        except StudioApiError:
+            facetas = None          # enriquecimento: falhar aqui não derruba a listagem
+    if facetas is not None:
+        nomes = [f"{v.get('nome') or v.get('slug')} ({v.get('total', 0)})"
+                 for v in (facetas.get("vibes") or []) if isinstance(v, dict)]
+        if nomes:
+            linhas.append("Vibes disponíveis: " + ", ".join(nomes) + ".")
+        linhas.append(f"Já na peneira: {facetas.get('escolhidas', 0)}. "
+                      "Use `vibes_pick` para você escolher as que gosta.")
+        return "\n".join(linhas)
+    linhas.append("Use `vibes_pick` para você escolher as que gosta.")
+    return "\n".join(linhas)
+
+
+def vibes_pick(client: StudioClient, vibe: str = "", origem: str = "", page: int = 1) -> str:
+    """Mostra a página do catálogo na grade e copia para a peneira SÓ o que o usuário escolheu.
+
+    A thumb já vem pronta no campo `url` do item (`/mbfiles/_vibes/<arquivo>`): montar caminho aqui
+    seria prefixar o que já está prefixado. O id do catálogo é o NOME DO ARQUIVO (`arquivo`), que é
+    o que `POST /api/vibes/select` espera.
+    """
+    try:
+        pagina = client.get("/api/vibes", _vibes_params(vibe, origem, page)) or {}
+    except StudioApiError as e:
+        return str(e)
+    imgs = []
+    for item in (pagina.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        arquivo, url = item.get("arquivo"), item.get("url")
+        if not arquivo or not isinstance(url, str) or not url:
+            continue
+        imgs.append({"id": arquivo, "thumb": url,
+                     "label": item.get("vibe_nome") or item.get("vibe") or arquivo})
+    if not imgs:
+        return (f"Nenhuma foto de vibe nesta página{_filtro_txt(vibe, origem)}. "
+                "Veja o que existe com `vibes_list`.")
+    ans = ui.choose_images(client, "Escolha as fotos de vibe que você gosta", imgs,
+                           minimum=1, maximum=None)
+    if ans.get("no_ui"):
+        return ("Sem interface para escolher aqui. Fotos de vibe desta página: "
+                + ", ".join(i["id"] for i in imgs) + ". Diga quais escolher.")
+    if not ans.get("answered"):
+        return "O usuário não escolheu (sem resposta). Você pode perguntar de novo."
+    ids = ans.get("selected") or []
+    if not ids:
+        return "O usuário não selecionou nenhuma foto de vibe."
+    try:
+        r = client.post("/api/vibes/select", {"ids": ids}) or {}
+    except StudioApiError as e:
+        return str(e)
+    copiadas = r.get("copiadas") or []
+    duplicadas = r.get("duplicadas") or []
+    ausentes = r.get("ausentes") or []
+    texto = (f"{len(copiadas)} foto(s) copiada(s) para a peneira; "
+             f"{len(duplicadas)} já estava(m) lá; {len(ausentes)} sumiu(ram) do disco")
+    if ausentes:
+        texto += " (" + ", ".join(str(a) for a in ausentes) + ")"
+    return (texto + ".\nUse `escolhidas_list` para ver o caminho da foto-semente e `mood_run` "
+            "para rodar a cadeia de mood.")
+
+
+def escolhidas_list(client: StudioClient, page: int = 1) -> str:
+    """A peneira (`_escolhidas/`). O `caminho` absoluto de cada item é o que `mood_run` consome
+    como `foto` — é caminho do servidor, não bytes, então não fere a ADR-040."""
+    try:
+        pagina = client.get("/api/escolhidas", {"page": page}) or {}
+    except StudioApiError as e:
+        return str(e)
+    itens = [i for i in (pagina.get("items") or []) if isinstance(i, dict)]
+    total = pagina.get("total", 0)
+    if not total:
+        return ("A peneira (fotos escolhidas) está vazia. Escolha fotos do catálogo com "
+                "`vibes_pick` antes de rodar `mood_run`.")
+    linhas = [f"Peneira (fotos escolhidas): {total} no total, página {pagina.get('page', page)} "
+              f"de {pagina.get('pages', 1)}."]
+    linhas += [f"- `{i.get('arquivo') or i.get('id')}` (caminho: {i.get('caminho', '?')})"
+               for i in itens]
+    linhas.append("Passe um desses caminhos em `mood_run(foto=...)`.")
+    return "\n".join(linhas)
+
+
+def _erro_do_mood_run(e: StudioApiError) -> str:
+    """Repassa o texto do servidor e acrescenta o próximo passo, sem duplicar catálogo nenhum.
+
+    A discriminação é pela mensagem canônica do servidor porque os dois 409 da corrida (Claude CLI
+    ausente e corrida em andamento) compartilham o status: sugerir o waiter no caso do CLI mandaria
+    o agente esperar um job que nunca começou.
+    """
+    texto = str(e)
+    if e.status == 409 and "em andamento" in texto:
+        return f"{texto}\nNão dispare de novo: espere a que está rodando com `mood_run_wait`."
+    if e.status == 422 and "nenhuma foto escolhida" in texto:
+        return f"{texto}\nEscolha fotos do catálogo de vibes com `vibes_pick`."
+    if e.status == 422 and "foto-semente" in texto:
+        return f"{texto}\nPegue um caminho válido com `escolhidas_list`."
+    return texto
+
+
+def mood_run(client: StudioClient, mbid: str, foto: str = "", objetivos: list[str] | None = None,
+             board: int | None = None, n: int | None = None, fundo: str = "",
+             confirm: bool = False) -> str:
+    """Dispara a cadeia de skills `mood_` sobre uma foto-semente da peneira (ADR-034).
+
+    `estimate` vem SEMPRE antes, em toda execução: a corrida é grátis em crédito, mas baixa dezenas
+    de imagens de terceiros e ocupa o Claude CLI por até 1800 s. A barreira é `ui.confirm`, NUNCA
+    `ui.confirm_cost`: o sheet de custo é do gate da ADR-016 e usá-lo aqui faria o usuário achar
+    que vai pagar.
+
+    `gate` e `saida` não vão no corpo: o primeiro é fixo em `auto` e o segundo é imposto pelo
+    servidor (ADR-034).
+    """
+    alvos = list(objetivos or [])
+    try:
+        est = client.post(f"/api/moodboards/{mbid}/mood-run/estimate",
+                          {"objetivos": alvos, "board": board, "n": n}) or {}
+    except StudioApiError as e:
+        return _erro_do_mood_run(e)
+    downloads = est.get("downloads", "?")
+    conta = (f"{est.get('objetivos', len(alvos))} objetivo(s) × "
+             f"{est.get('consultas', '?')} consulta(s) × {est.get('n', '?')}")
+    if ui.chat_id():
+        ans = ui.confirm(client, f"Rodar a cadeia de mood no board {mbid}?",
+                         f"Faria até {downloads} download(s) do Pinterest ({conta}). É grátis em "
+                         "crédito, mas roda o Claude CLI e pode levar vários minutos.")
+        if not ans.get("answered") or not ans.get("confirmed"):
+            return (f"Corrida de mood NÃO iniciada no board `{mbid}` (o usuário não confirmou "
+                    f"os {downloads} download(s)).")
+    elif not confirm:
+        return (f"A corrida faria até {downloads} download(s) do Pinterest ({conta}). É grátis em "
+                "crédito, mas demorada. Para rodar, chame esta tool de novo com confirm=true.")
+    try:
+        client.post(f"/api/moodboards/{mbid}/mood-run",
+                    {"foto": foto, "objetivos": alvos, "board": board, "n": n,
+                     "fundo": fundo or None})
+    except StudioApiError as e:
+        return _erro_do_mood_run(e)
+    return (f"Corrida de mood iniciada no board `{mbid}` ({est.get('objetivos', len(alvos))} "
+            f"objetivo(s), até {downloads} download(s), grátis).\n"
+            "Ela roda o Claude CLI e pode levar vários minutos: espere com `mood_run_wait`.")
+
+
+def mood_run_wait(client: StudioClient, mbid: str, timeout: int = 1800,
+                  _sleep: Callable[[float], None] = time.sleep) -> str:
+    """Espera a corrida de mood e mostra as pranchas no chat.
+
+    O job da corrida tem URL PRÓPRIA (`/api/moodboards/{mbid}/mood-run/job`), diferente da URL de
+    job das etapas — por isso NÃO se usa `job_wait` aqui. A corrida não publica progresso
+    intermediário (`done` só sobe no fim, mood-run-fdd §7), então o laço só distingue rodando de
+    terminado.
+    """
+    estado, job = _wait_job(client, f"/api/moodboards/{mbid}/mood-run/job",
+                            timeout=timeout, _sleep=_sleep)
+    if estado == "http":
+        return job.get("error", "")
+    if estado == "idle":
+        return f"Board `{mbid}`: nenhuma corrida de mood ainda. Dispare uma com `mood_run`."
+    if estado == "timeout":
+        return (f"Board `{mbid}`: a corrida ainda está rodando após {timeout}s "
+                "(chame `mood_run_wait` de novo).")
+    if estado == "error":
+        cauda = [str(linha) for linha in (job.get("log") or [])][-3:]
+        return (f"Board `{mbid}`: a corrida de mood falhou — {job.get('error')}"
+                + ("\n" + "\n".join(cauda) if cauda else ""))
+    try:
+        result = client.get(f"/api/moodboards/{mbid}/mood-run/result") or {}
+    except StudioApiError as e:
+        return (f"Board `{mbid}`: a corrida terminou, mas não deu para ler as pranchas — {e}"
+                if e.status != 404 else
+                f"Board `{mbid}`: sem corrida de mood para ler ({e}). Dispare uma com `mood_run`.")
+    pranchas = [b for b in (result.get("boards") or []) if isinstance(b, dict)]
+    imgs, linhas = [], []
+    for b in pranchas:
+        rotulo = b.get("objetivo") or b.get("pasta") or "prancha"
+        url = b.get("prancha_url")
+        if isinstance(url, str) and url:
+            imgs.append({"url": url, "label": rotulo, "kind": "image"})
+            linhas.append(f"- {rotulo}: prancha pronta ({b.get('imagens', 0)} imagem(ns))")
+        else:
+            linhas.append(f"- {rotulo}: prancha PENDENTE (declarada no manifesto, "
+                          "mas o arquivo não está em disco)")
+    if imgs:
+        ui.show(client, imgs, f"Pranchas da corrida de mood — board {mbid}")
+    cabeca = f"Corrida de mood concluída no board `{mbid}`: {len(pranchas)} prancha(s)."
+    rodape = ("Mostrei as pranchas no chat. As imagens baixadas entraram como candidatas: "
+              "cure com `moodboard_pick`." if imgs else
+              "Nenhuma prancha pronta em disco ainda.")
+    return "\n".join([cabeca, *linhas, rodape])
+
+
 # ---------- Personagem e identidade (ADR-039) ----------
 def _char_images(cid: str, step: str, cands: Any) -> list[dict]:
     """Mesmo helper de URL das etapas, com base `/cfiles/{cid}` (mount da biblioteca, ADR-039).

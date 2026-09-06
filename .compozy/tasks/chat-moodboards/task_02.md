@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Grupo B e C: vibes, peneira e a corrida mood-run"
 type: backend
 complexity: medium
@@ -55,15 +55,15 @@ A barreira do `estimate` antes do disparo é o risco 2 do `_techspec.md`.
 14. Nenhum arquivo de núcleo (ADR-010) e nada em `frontend/` MUST ser alterado.
 
 ## Subtasks
-- [ ] 2.1 Ler `_prd.md`, `_techspec.md` (fluxo B da seção 4, contratos 8 a 12, matriz de erros da seção 6) e o código do domínio listado em Relevant Files.
-- [ ] 2.2 Implementar `vibes_list` (contrato 8), incluindo a consulta condicional a `facets`.
-- [ ] 2.3 Implementar `vibes_pick` (contrato 9) com `ui.choose_images(min=1, max=None)` sobre o campo `url`.
-- [ ] 2.4 Implementar `escolhidas_list` (contrato 10), destacando o `caminho` absoluto de cada item.
-- [ ] 2.5 Implementar `mood_run` (contrato 11): `estimate` obrigatório, `ui.confirm`, disparo.
-- [ ] 2.6 Implementar `mood_run_wait` (contrato 12) sobre `_wait_job` + leitura do `result` + `ui.show`.
-- [ ] 2.7 Registrar as 5 tools em `studio/mcp/server.py`, dentro do bloco da biblioteca.
-- [ ] 2.8 Acrescentar os casos da seção `## Tests` a `tests/test_mcp_moodboards.py`.
-- [ ] 2.9 Rodar `make verify` e conferir que só as duas falhas pré-existentes permanecem.
+- [x] 2.1 Ler `_prd.md`, `_techspec.md` (fluxo B da seção 4, contratos 8 a 12, matriz de erros da seção 6) e o código do domínio listado em Relevant Files.
+- [x] 2.2 Implementar `vibes_list` (contrato 8), incluindo a consulta condicional a `facets`.
+- [x] 2.3 Implementar `vibes_pick` (contrato 9) com `ui.choose_images(min=1, max=None)` sobre o campo `url`.
+- [x] 2.4 Implementar `escolhidas_list` (contrato 10), destacando o `caminho` absoluto de cada item.
+- [x] 2.5 Implementar `mood_run` (contrato 11): `estimate` obrigatório, `ui.confirm`, disparo.
+- [x] 2.6 Implementar `mood_run_wait` (contrato 12) sobre `_wait_job` + leitura do `result` + `ui.show`.
+- [x] 2.7 Registrar as 5 tools em `studio/mcp/server.py`, dentro do bloco da biblioteca.
+- [x] 2.8 Acrescentar os casos da seção `## Tests` a `tests/test_mcp_moodboards.py`.
+- [x] 2.9 Rodar `make verify` e conferir que só as duas falhas pré-existentes permanecem.
 
 ## Implementation Details
 
@@ -130,45 +130,45 @@ aceitos), Claude CLI ausente (409), corrida já em andamento (409 — sugerir `m
 
 Sem `_tests.md`: os casos abaixo são a definição normativa desta task.
 
-- [ ] `vibes_list()` sem filtro consulta `GET /api/vibes` **e** `GET /api/vibes/facets`, e o texto traz
+- [x] `vibes_list()` sem filtro consulta `GET /api/vibes` **e** `GET /api/vibes/facets`, e o texto traz
       total, página, as vibes disponíveis com contagem e quantas já estão na peneira.
-- [ ] `vibes_list(vibe="golden-hour")` consulta `GET /api/vibes` com `vibe` nos params e **não**
+- [x] `vibes_list(vibe="golden-hour")` consulta `GET /api/vibes` com `vibe` nos params e **não**
       consulta `facets`.
-- [ ] `vibes_list` com 422 (paginação/origem inválida) devolve o texto do erro e não levanta.
-- [ ] `vibes_pick` passa a `ui.choose_images` itens cujo `thumb` é EXATAMENTE o campo `url` do item
+- [x] `vibes_list` com 422 (paginação/origem inválida) devolve o texto do erro e não levanta.
+- [x] `vibes_pick` passa a `ui.choose_images` itens cujo `thumb` é EXATAMENTE o campo `url` do item
       (`/mbfiles/_vibes/praia_01.jpg`) — nenhum prefixo montado.
-- [ ] `vibes_pick` com seleção envia `POST /api/vibes/select` com body `{"ids": [...]}` e o texto
+- [x] `vibes_pick` com seleção envia `POST /api/vibes/select` com body `{"ids": [...]}` e o texto
       separa copiadas, duplicadas e ausentes.
-- [ ] `vibes_pick` com `no_ui`, com `answered=false` e com `selected=[]` NÃO faz POST em
+- [x] `vibes_pick` com `no_ui`, com `answered=false` e com `selected=[]` NÃO faz POST em
       `/api/vibes/select` (três casos).
-- [ ] `vibes_pick` com catálogo vazio NÃO chama `ui.choose_images`.
-- [ ] `escolhidas_list()` cita o total, a página e o `caminho` absoluto de cada item, e instrui a
+- [x] `vibes_pick` com catálogo vazio NÃO chama `ui.choose_images`.
+- [x] `escolhidas_list()` cita o total, a página e o `caminho` absoluto de cada item, e instrui a
       passar esse caminho em `mood_run(foto=...)`.
-- [ ] `escolhidas_list` com peneira vazia sugere `vibes_pick`.
-- [ ] `mood_run` no terminal sem `confirm` chama `POST .../mood-run/estimate` e NÃO chama
+- [x] `escolhidas_list` com peneira vazia sugere `vibes_pick`.
+- [x] `mood_run` no terminal sem `confirm` chama `POST .../mood-run/estimate` e NÃO chama
       `POST .../mood-run`; o texto exibe o número de downloads e a instrução `confirm=true`.
-- [ ] `mood_run(..., confirm=True)` no terminal chama `estimate` **e depois** `mood-run`, nessa ordem
+- [x] `mood_run(..., confirm=True)` no terminal chama `estimate` **e depois** `mood-run`, nessa ordem
       (asserção sobre a ordem em `cli.posts`).
-- [ ] `mood_run` com chat e `ui.confirm` recusado chama `estimate` e NÃO chama `mood-run`.
-- [ ] `mood_run` com chat e `ui.confirm` confirmado chama os dois.
-- [ ] O body enviado a `POST .../mood-run` contém exatamente as chaves `foto`, `objetivos`, `board`,
+- [x] `mood_run` com chat e `ui.confirm` recusado chama `estimate` e NÃO chama `mood-run`.
+- [x] `mood_run` com chat e `ui.confirm` confirmado chama os dois.
+- [x] O body enviado a `POST .../mood-run` contém exatamente as chaves `foto`, `objetivos`, `board`,
       `n`, `fundo` — e NÃO contém `gate` nem `saida`.
-- [ ] `mood_run` com 422 de peneira vazia devolve o texto do 422 e sugere `vibes_pick`.
-- [ ] `mood_run` com 409 (corrida em andamento) sugere `mood_run_wait`, não repete o disparo.
-- [ ] `mood_run_wait` faz GET em `/api/moodboards/<mbid>/mood-run/job` e NUNCA em uma URL que
+- [x] `mood_run` com 422 de peneira vazia devolve o texto do 422 e sugere `vibes_pick`.
+- [x] `mood_run` com 409 (corrida em andamento) sugere `mood_run_wait`, não repete o disparo.
+- [x] `mood_run_wait` faz GET em `/api/moodboards/<mbid>/mood-run/job` e NUNCA em uma URL que
       contenha `/api/projects/` (asserção sobre os caminhos consultados).
-- [ ] `mood_run_wait` com job `done` lê `GET .../mood-run/result` e chama `ui.show` com uma entrada
+- [x] `mood_run_wait` com job `done` lê `GET .../mood-run/result` e chama `ui.show` com uma entrada
       por prancha que tem `prancha_url` (`{"url", "label", "kind": "image"}`).
-- [ ] `mood_run_wait` com um item de `boards` **sem** `prancha_url` não o inclui em `ui.show` e o cita
+- [x] `mood_run_wait` com um item de `boards` **sem** `prancha_url` não o inclui em `ui.show` e o cita
       como pendente no texto.
-- [ ] `mood_run_wait` com job em `running` até o timeout devolve "ainda ... após Ns" e sugere chamar
+- [x] `mood_run_wait` com job em `running` até o timeout devolve "ainda ... após Ns" e sugere chamar
       de novo (usar um `_sleep` fake e um `timeout` curto — o teste não pode dormir de verdade).
-- [ ] `mood_run_wait` com `error` no job devolve o erro e NÃO chama `ui.show`.
-- [ ] `mood_run_wait` com 404 no `result` relata "sem corrida" e NÃO chama `ui.show`.
-- [ ] As 5 tools devolvem `str` quando o cliente levanta `StudioApiError` em qualquer chamada
+- [x] `mood_run_wait` com `error` no job devolve o erro e NÃO chama `ui.show`.
+- [x] `mood_run_wait` com 404 no `result` relata "sem corrida" e NÃO chama `ui.show`.
+- [x] As 5 tools devolvem `str` quando o cliente levanta `StudioApiError` em qualquer chamada
       (teste parametrizado).
-- [ ] Nenhum texto de retorno das 5 tools cita `job_wait` — asserção literal.
-- [ ] `build_server` registra os 5 nomes novos.
+- [x] Nenhum texto de retorno das 5 tools cita `job_wait` — asserção literal.
+- [x] `build_server` registra os 5 nomes novos.
 
 ## Success Criteria
 - Every assigned test case implemented and passing

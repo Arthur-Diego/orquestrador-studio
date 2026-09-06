@@ -19,6 +19,14 @@ MBID = "praia-dourada"
 GRUPO_A = ("moodboard_list", "moodboard_get", "moodboard_create", "moodboard_import",
            "moodboard_pick", "moodboard_prompt", "moodboard_delete")
 
+#: Grupos B e C (fluxo principal B: catálogo de vibes, peneira e a corrida `mood-run`).
+GRUPO_BC = ("vibes_list", "vibes_pick", "escolhidas_list", "mood_run", "mood_run_wait")
+
+JOB_PATH = f"/api/moodboards/{MBID}/mood-run/job"
+RESULT_PATH = f"/api/moodboards/{MBID}/mood-run/result"
+ESTIMATE_PATH = f"/api/moodboards/{MBID}/mood-run/estimate"
+RUN_PATH = f"/api/moodboards/{MBID}/mood-run"
+
 
 class Fake:
     """Cliente fake no molde de `tests/test_mcp_actions.py`, com o verbo DELETE da biblioteca.
@@ -335,6 +343,315 @@ def test_delete_com_chat_confirmado_apaga(monkeypatch):
     assert cli.deletes == [f"/api/moodboards/{MBID}"] and "apagado" in out
 
 
+# ---------- vibes_list ----------
+def _foto_vibe(arquivo="praia_01.jpg", **extra):
+    return {"id": arquivo, "arquivo": arquivo, "url": f"/mbfiles/_vibes/{arquivo}",
+            "vibe": "golden-hour", "vibe_nome": "Golden hour", "origem": "catalogo",
+            "origem_url": None, "bytes": 1024, "escolhida": False, **extra}
+
+
+def _pagina_vibes(*fotos, **extra):
+    itens = list(fotos) or [_foto_vibe()]
+    return {"items": itens, "page": 1, "per_page": 60, "total": 214, "pages": 4,
+            "indice": {}, "pasta": "/tmp/moodboards/_vibes", **extra}
+
+
+FACETS = {"vibes": [{"slug": "golden-hour", "nome": "Golden hour", "origem": "catalogo", "total": 48},
+                    {"slug": "neon-noir", "nome": "Neon noir", "origem": "catalogo", "total": 32}],
+          "origens": [{"origem": "catalogo", "total": 80}], "total": 214, "escolhidas": 5,
+          "indice": {}, "pasta": "/tmp/moodboards/_vibes"}
+
+
+def test_vibes_list_sem_filtro_consulta_facets_e_cita_vibes_e_peneira():
+    cli = Fake({"/api/vibes": _pagina_vibes(), "/api/vibes/facets": FACETS})
+    out = actions.vibes_list(cli)
+    assert [p for p, _ in cli.gets] == ["/api/vibes", "/api/vibes/facets"]
+    assert cli.gets[0][1] == {"page": 1}          # sem `vibe`/`origem` vazios no query
+    assert "214 foto(s), página 1 de 4" in out
+    assert "Golden hour (48)" in out and "Neon noir (32)" in out
+    assert "Já na peneira: 5" in out and "vibes_pick" in out
+
+
+def test_vibes_list_com_filtro_nao_consulta_facets():
+    """Com filtro, `facets` devolveria as contagens do catálogo INTEIRO — número que contradiz o
+    total da página filtrada."""
+    cli = Fake({"/api/vibes": _pagina_vibes(total=48, pages=1)})
+    out = actions.vibes_list(cli, vibe="golden-hour")
+    assert [p for p, _ in cli.gets] == ["/api/vibes"]
+    assert cli.gets[0][1] == {"page": 1, "vibe": "golden-hour"}
+    assert "filtro: vibe=golden-hour" in out and "Já na peneira" not in out
+
+
+def test_vibes_list_com_422_de_paginacao_ou_origem_devolve_o_texto():
+    cli = Fake({"/api/vibes": StudioApiError(
+        "Entrada inválida: origem inválida: 'pinterest' (aceitas: catalogo, usuario, sugestao)",
+        status=422)})
+    out = actions.vibes_list(cli, origem="pinterest")
+    assert isinstance(out, str) and "origem inválida" in out
+    assert cli.gets[0][1] == {"page": 1, "origem": "pinterest"}
+
+
+def test_vibes_list_com_catalogo_vazio_manda_coletar_referencias():
+    cli = Fake({"/api/vibes": _pagina_vibes(total=0, pages=1, items=[])})
+    out = actions.vibes_list(cli)
+    assert "Nenhuma foto de vibe no catálogo" in out and "mood_vibe_scout" in out
+
+
+# ---------- vibes_pick ----------
+def test_vibes_pick_usa_o_campo_url_como_thumb_sem_montar_caminho(monkeypatch):
+    """A rota já devolve `/mbfiles/_vibes/<arquivo>`: prefixar aqui quebraria a grade."""
+    vistos = {}
+
+    def espia(cli, title, images, minimum=1, maximum=None):
+        vistos.update(images=images, minimum=minimum, maximum=maximum)
+        return {"answered": False}
+
+    monkeypatch.setattr(ui, "choose_images", espia)
+    actions.vibes_pick(Fake({"/api/vibes": _pagina_vibes()}))
+    assert vistos["images"] == [{"id": "praia_01.jpg", "thumb": "/mbfiles/_vibes/praia_01.jpg",
+                                 "label": "Golden hour"}]
+    assert vistos["minimum"] == 1 and vistos["maximum"] is None
+
+
+def test_vibes_pick_com_selecao_envia_ids_e_separa_copiadas_duplicadas_ausentes(monkeypatch):
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {
+        "answered": True, "selected": ["praia_01.jpg", "praia_07.jpg", "sumiu.jpg"]})
+    cli = Fake({"/api/vibes": _pagina_vibes(_foto_vibe(), _foto_vibe("praia_07.jpg")),
+                "/api/vibes/select": {"copiadas": ["praia_01.jpg"], "duplicadas": ["praia_07.jpg"],
+                                      "ausentes": ["sumiu.jpg"], "total_escolhidas": 6}})
+    out = actions.vibes_pick(cli)
+    assert cli.posts == [("/api/vibes/select",
+                          {"ids": ["praia_01.jpg", "praia_07.jpg", "sumiu.jpg"]})]
+    assert "1 foto(s) copiada(s)" in out and "1 já estava(m) lá" in out
+    assert "1 sumiu(ram) do disco" in out and "sumiu.jpg" in out
+    assert "escolhidas_list" in out and "mood_run" in out
+
+
+@pytest.mark.parametrize("resposta", [
+    {"answered": False, "no_ui": True},
+    {"answered": False},
+    {"answered": True, "selected": []},
+])
+def test_vibes_pick_nao_persiste_sem_escolha_do_usuario(monkeypatch, resposta):
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: resposta)
+    cli = Fake({"/api/vibes": _pagina_vibes()})
+    out = actions.vibes_pick(cli)
+    assert cli.posts == []
+    assert isinstance(out, str) and out
+
+
+def test_vibes_pick_com_catalogo_vazio_nao_abre_a_grade(monkeypatch):
+    def nunca(*a, **k):
+        raise AssertionError("ui.choose_images não pode ser chamada sem fotos na página")
+
+    monkeypatch.setattr(ui, "choose_images", nunca)
+    cli = Fake({"/api/vibes": _pagina_vibes(total=0, pages=1, items=[])})
+    out = actions.vibes_pick(cli)
+    assert cli.posts == [] and "vibes_list" in out
+
+
+# ---------- escolhidas_list ----------
+def test_escolhidas_list_cita_total_pagina_e_o_caminho_absoluto():
+    caminho = "/tmp/moodboards/_escolhidas/9f8e7d6c5b4a.jpg"
+    cli = Fake({"/api/escolhidas": {
+        "items": [{"id": "9f8e7d6c5b4a", "arquivo": "9f8e7d6c5b4a.jpg",
+                   "url": "/mbfiles/_escolhidas/9f8e7d6c5b4a.jpg", "caminho": caminho}],
+        "page": 1, "per_page": 60, "total": 5, "pages": 1, "pasta": "/tmp/moodboards/_escolhidas"}})
+    out = actions.escolhidas_list(cli)
+    assert cli.gets == [("/api/escolhidas", {"page": 1})]
+    assert "5 no total, página 1 de 1" in out
+    assert caminho in out and "mood_run(foto=...)" in out
+
+
+def test_escolhidas_list_com_peneira_vazia_sugere_vibes_pick():
+    cli = Fake({"/api/escolhidas": {"items": [], "page": 1, "per_page": 60, "total": 0, "pages": 1}})
+    out = actions.escolhidas_list(cli)
+    assert "vazia" in out and "vibes_pick" in out
+
+
+# ---------- mood_run ----------
+ESTIMATE = {"objetivos": 2, "consultas": 7, "n": 3, "board": 8, "downloads": 42,
+            "formula": "downloads = objetivos × (board − 1) × n"}
+FOTO = "/tmp/moodboards/_escolhidas/9f8e7d6c5b4a.jpg"
+
+
+def _run_cli(extra=None):
+    return Fake({ESTIMATE_PATH: ESTIMATE, RUN_PATH: {"state": "running", "downloads_estimados": 42},
+                 **(extra or {})})
+
+
+def test_mood_run_no_terminal_sem_confirm_estima_e_nao_dispara(terminal):
+    cli = _run_cli()
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente", "campanha"])
+    assert [p for p, _ in cli.posts] == [ESTIMATE_PATH]
+    assert "42 download(s)" in out and "2 objetivo(s) × 7 consulta(s) × 3" in out
+    assert "grátis em crédito, mas demorada" in out and "confirm=true" in out
+
+
+def test_mood_run_no_terminal_com_confirm_estima_antes_e_dispara_depois(terminal):
+    cli = _run_cli()
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente", "campanha"], confirm=True)
+    assert [p for p, _ in cli.posts] == [ESTIMATE_PATH, RUN_PATH]   # a ORDEM é o contrato
+    assert cli.posts[0][1] == {"objetivos": ["ambiente", "campanha"], "board": None, "n": None}
+    assert "iniciada" in out and "42 download(s)" in out and "mood_run_wait" in out
+
+
+def test_mood_run_com_chat_recusado_estima_e_nao_dispara(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": False})
+    cli = _run_cli()
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente"])
+    assert [p for p, _ in cli.posts] == [ESTIMATE_PATH]
+    assert "NÃO iniciada" in out
+
+
+def test_mood_run_com_chat_confirmado_estima_e_dispara(monkeypatch):
+    """`ui.confirm`, NUNCA `ui.confirm_cost`: a corrida não gasta crédito (não é o gate da ADR-016)."""
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": True})
+    monkeypatch.setattr(ui, "confirm_cost", lambda *a, **k: pytest.fail(
+        "a corrida de mood não pode passar pelo sheet de custo"))
+    cli = _run_cli()
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente"])
+    assert [p for p, _ in cli.posts] == [ESTIMATE_PATH, RUN_PATH]
+    assert "iniciada" in out
+
+
+def test_mood_run_envia_o_corpo_exato_do_contrato_sem_gate_nem_saida(terminal):
+    cli = _run_cli()
+    actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente"], board=8, n=3,
+                     fundo="branco", confirm=True)
+    corpo = dict(cli.posts[1][1])
+    assert set(corpo) == {"foto", "objetivos", "board", "n", "fundo"}
+    assert corpo == {"foto": FOTO, "objetivos": ["ambiente"], "board": 8, "n": 3, "fundo": "branco"}
+
+
+def test_mood_run_com_peneira_vazia_repassa_o_422_e_sugere_vibes_pick(terminal):
+    cli = _run_cli({RUN_PATH: StudioApiError(
+        "Entrada inválida: nenhuma foto escolhida — rode /mood_vibe_scout e escolha ao menos uma "
+        "no painel de vibes", status=422)})
+    out = actions.mood_run(cli, MBID, foto="", objetivos=["ambiente"], confirm=True)
+    assert "nenhuma foto escolhida" in out and "vibes_pick" in out
+
+
+def test_mood_run_com_corrida_em_andamento_sugere_o_waiter_e_nao_repete(terminal):
+    cli = _run_cli({RUN_PATH: StudioApiError(
+        "Já existe uma corrida de mood em andamento para este board.", status=409)})
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente"], confirm=True)
+    assert "mood_run_wait" in out and "Não dispare de novo" in out
+    assert [p for p, _ in cli.posts] == [ESTIMATE_PATH, RUN_PATH]   # uma tentativa só
+
+
+def test_mood_run_sem_claude_cli_nao_manda_esperar_um_job_que_nao_comecou(terminal):
+    """Os dois 409 da corrida compartilham o status: só o de "em andamento" aponta o waiter."""
+    cli = _run_cli({RUN_PATH: StudioApiError(
+        "Claude CLI não encontrado no PATH (instale o Claude Code)", status=409)})
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente"], confirm=True)
+    assert "Claude CLI não encontrado" in out and "mood_run_wait" not in out
+
+
+# ---------- mood_run_wait ----------
+def _result(*pranchas):
+    return {"foto": FOTO, "boards": list(pranchas)}
+
+
+def _prancha(objetivo="ambiente", com_url=True):
+    item = {"pasta": objetivo, "objetivo": objetivo, "imagens": 8,
+            "leitura_url": f"/mbfiles/{MBID}/mood_run/{objetivo}/leitura.md"}
+    if com_url:
+        item["prancha_url"] = f"/mbfiles/{MBID}/mood_run/{objetivo}/_moodboard.jpg"
+    return item
+
+
+def test_mood_run_wait_espera_na_url_do_board_e_nunca_na_de_projeto(monkeypatch):
+    monkeypatch.setattr(ui, "show", lambda *a, **k: "ok")
+    cli = Fake({JOB_PATH: {"state": "done", "done": 2, "total": 2},
+                RESULT_PATH: _result(_prancha())})
+    actions.mood_run_wait(cli, MBID, timeout=5)
+    caminhos = [p for p, _ in cli.gets]
+    assert JOB_PATH in caminhos
+    assert not any("/api/projects/" in p for p in caminhos)
+
+
+def test_mood_run_wait_concluido_mostra_uma_entrada_por_prancha_no_ui_show(monkeypatch):
+    vistos = {}
+    monkeypatch.setattr(ui, "show", lambda cli, images, title="": vistos.update(
+        images=images, title=title) or "ok")
+    cli = Fake({JOB_PATH: {"state": "done", "done": 2, "total": 2},
+                RESULT_PATH: _result(_prancha("ambiente"), _prancha("campanha"))})
+    out = actions.mood_run_wait(cli, MBID, timeout=5)
+    assert vistos["images"] == [
+        {"url": f"/mbfiles/{MBID}/mood_run/ambiente/_moodboard.jpg", "label": "ambiente",
+         "kind": "image"},
+        {"url": f"/mbfiles/{MBID}/mood_run/campanha/_moodboard.jpg", "label": "campanha",
+         "kind": "image"}]
+    assert "2 prancha(s)" in out and "moodboard_pick" in out
+
+
+def test_mood_run_wait_prancha_sem_url_nao_entra_no_show_e_e_citada_como_pendente(monkeypatch):
+    """Prancha declarada no manifesto e ausente em disco degrada o item, não derruba a resposta."""
+    vistos = {}
+    monkeypatch.setattr(ui, "show", lambda cli, images, title="": vistos.update(images=images) or "ok")
+    cli = Fake({JOB_PATH: {"state": "done"},
+                RESULT_PATH: _result(_prancha("ambiente"), _prancha("campanha", com_url=False))})
+    out = actions.mood_run_wait(cli, MBID, timeout=5)
+    assert [i["label"] for i in vistos["images"]] == ["ambiente"]
+    assert "campanha: prancha PENDENTE" in out and "ambiente: prancha pronta" in out
+
+
+def test_mood_run_wait_em_andamento_ate_o_timeout_manda_chamar_de_novo():
+    cli = Fake({JOB_PATH: {"state": "running"}})
+    out = actions.mood_run_wait(cli, MBID, timeout=1, _sleep=lambda s: None)
+    assert "ainda está rodando após 1s" in out and "mood_run_wait" in out
+    assert RESULT_PATH not in [p for p, _ in cli.gets]
+
+
+def test_mood_run_wait_com_erro_no_job_nao_mostra_prancha(monkeypatch):
+    monkeypatch.setattr(ui, "show", lambda *a, **k: pytest.fail("corrida com erro não mostra nada"))
+    cli = Fake({JOB_PATH: {"state": "error", "error": "o Claude CLI saiu com código 1",
+                           "log": ["Validando parâmetros", "Chamando claude -p", "falhou"]}})
+    out = actions.mood_run_wait(cli, MBID, timeout=5)
+    assert "o Claude CLI saiu com código 1" in out and "falhou" in out
+    assert RESULT_PATH not in [p for p, _ in cli.gets]
+
+
+def test_mood_run_wait_com_404_no_result_relata_sem_corrida(monkeypatch):
+    monkeypatch.setattr(ui, "show", lambda *a, **k: pytest.fail("sem corrida não mostra nada"))
+    cli = Fake({JOB_PATH: {"state": "done"},
+                RESULT_PATH: StudioApiError("Não encontrado: nenhuma corrida de mood neste board "
+                                            "ainda", status=404)})
+    out = actions.mood_run_wait(cli, MBID, timeout=5)
+    assert "sem corrida" in out and "mood_run" in out
+
+
+# ---------- invariantes dos grupos B e C ----------
+def _chamar_bc(nome, cli):
+    argumentos = {"vibes_list": (), "vibes_pick": (), "escolhidas_list": (),
+                  "mood_run": (MBID,), "mood_run_wait": (MBID,)}
+    return getattr(actions, nome)(cli, *argumentos[nome])
+
+
+@pytest.mark.parametrize("nome", GRUPO_BC)
+def test_toda_tool_dos_grupos_b_e_c_devolve_texto_quando_a_api_falha(monkeypatch, nome):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": False, "no_ui": True})
+    out = _chamar_bc(nome, Explode())
+    assert isinstance(out, str) and out
+
+
+@pytest.mark.parametrize("nome", GRUPO_BC)
+def test_nenhum_texto_dos_grupos_b_e_c_cita_job_wait(monkeypatch, nome):
+    """A corrida tem URL de job própria: apontar `job_wait` mandaria o agente ao lugar errado."""
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": False, "no_ui": True})
+    monkeypatch.setattr(ui, "show", lambda *a, **k: "ok")
+    cli = Fake({"/api/vibes": _pagina_vibes(), "/api/vibes/facets": FACETS,
+                "/api/escolhidas": {"items": [], "total": 0, "pages": 1, "page": 1},
+                ESTIMATE_PATH: ESTIMATE, JOB_PATH: {"state": "done"},
+                RESULT_PATH: _result(_prancha())})
+    assert "job_wait" not in _chamar_bc(nome, cli)
+
+
 # ---------- invariantes do grupo A ----------
 def _chamar(nome, cli):
     fn = getattr(actions, nome)
@@ -395,7 +712,7 @@ class _FakeFastMCP:
         return deco
 
 
-def test_build_server_registra_as_sete_tools_do_grupo_a(monkeypatch):
+def _servidor_fake(monkeypatch):
     pacote = types.ModuleType("mcp")
     sub = types.ModuleType("mcp.server")
     fast = types.ModuleType("mcp.server.fastmcp")
@@ -404,9 +721,29 @@ def test_build_server_registra_as_sete_tools_do_grupo_a(monkeypatch):
     pacote.server = sub
     for nome, mod in [("mcp", pacote), ("mcp.server", sub), ("mcp.server.fastmcp", fast)]:
         monkeypatch.setitem(sys.modules, nome, mod)
-    srv = server.build_server(Fake())
+    return server.build_server(Fake())
+
+
+def test_build_server_registra_as_sete_tools_do_grupo_a(monkeypatch):
+    srv = _servidor_fake(monkeypatch)
     assert set(GRUPO_A) <= set(srv.tools)
     assert len(srv.tools) == len(set(srv.tools))   # nenhum nome duplicado no catálogo
+
+
+def test_build_server_registra_as_cinco_tools_dos_grupos_b_e_c(monkeypatch):
+    srv = _servidor_fake(monkeypatch)
+    assert set(GRUPO_BC) <= set(srv.tools)
+    # o waiter da corrida precisa desviar o agente do `job_wait` já na descrição do catálogo
+    assert "USE ESTA, não `job_wait`" in _descricao_registrada("mood_run_wait")
+
+
+def _descricao_registrada(nome: str) -> str:
+    """Descrição da tool como ela aparece no `@t(...)` do `server.py` (o catálogo do agente)."""
+    with open(server.__file__, encoding="utf-8") as f:
+        for linha in f:
+            if f'@t(name="{nome}"' in linha:
+                return linha
+    raise AssertionError(f"tool `{nome}` não registrada em server.py")
 
 
 # ---------- conformidade de shape com a API real (risco 1) ----------

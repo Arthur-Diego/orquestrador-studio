@@ -184,6 +184,28 @@ def build_server(client: StudioClient | None = None):
     def moodboard_delete(mbid: str, confirm: bool = False) -> str:
         return actions.moodboard_delete(cli, mbid, confirm)
 
+    @t(name="vibes_list", description="Lista o catálogo de fotos de vibe (global) com as vibes disponíveis e quantas já estão na peneira. Filtros: vibe (slug), origem (catalogo|usuario|sugestao).")
+    def vibes_list(vibe: str = "", origem: str = "", page: int = 1) -> str:
+        return actions.vibes_list(cli, vibe, origem, page)
+
+    @t(name="vibes_pick", description="Mostra as fotos de vibe para o USUÁRIO escolher e copia as escolhidas para a peneira (`_escolhidas/`). Depois use `escolhidas_list`.")
+    def vibes_pick(vibe: str = "", origem: str = "", page: int = 1) -> str:
+        return actions.vibes_pick(cli, vibe, origem, page)
+
+    @t(name="escolhidas_list", description="Lista a peneira de fotos escolhidas com o caminho absoluto de cada uma — é esse caminho que vai em `mood_run(foto=...)`.")
+    def escolhidas_list(page: int = 1) -> str:
+        return actions.escolhidas_list(cli, page)
+
+    @t(name="mood_run", description="Roda a cadeia de skills mood_ sobre uma foto-semente da peneira e monta pranchas no board. GRÁTIS em crédito, mas baixa dezenas de imagens e leva vários minutos: estima e confirma antes; no terminal exige confirm=true. Depois use `mood_run_wait`.")
+    def mood_run(mbid: str, foto: str = "", objetivos: list[str] | None = None,
+                 board: int | None = None, n: int | None = None, fundo: str = "",
+                 confirm: bool = False) -> str:
+        return actions.mood_run(cli, mbid, foto, objetivos, board, n, fundo, confirm)
+
+    @t(name="mood_run_wait", description="Espera a corrida de mood do board terminar e mostra as pranchas no chat. USE ESTA, não `job_wait` — a URL do job da corrida é própria.")
+    def mood_run_wait(mbid: str, timeout: int = 1800) -> str:
+        return actions.mood_run_wait(cli, mbid, timeout=timeout)
+
     # ---------- ui.* (humano-no-laço, ADR-038) ----------
     @t(name="ui_choose_one", description="Pede ao usuário que escolha UMA opção. options: [{label,value}].")
     def ui_choose_one(title: str, options: list[dict]) -> dict:
