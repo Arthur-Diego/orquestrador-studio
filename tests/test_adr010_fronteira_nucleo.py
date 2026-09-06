@@ -79,6 +79,22 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "tocados. ADR-024/036/040/043, ADR-010/031/032.",
         ("frontend/", "studio/web/"),
     ),
+    "feature/adh-os-20260906-13-base-upscale-chat": (
+        "`[extensão]` Wave 11 · frente F11 — revisão do upscale da etapa 3 pelo chat, card #94 "
+        "(ADH-OS-20260906-13): o trabalho próprio vive fora do núcleo (`studio/base/service.py`, "
+        "`studio/etapas/base/**`, `studio/mcp/{ui,actions,server}.py`, `studio/chat/prompts/"
+        "sistema.md`). Recorte mínimo no núcleo: `frontend/` SÓ em `frontend/src/areas/chat/` "
+        "(componente novo `MediaCard.tsx` com ações e lightbox, ramo `choose_images` com `actions` "
+        "no `ChatDock.tsx`, tipos `AskAction`/`AskMediaItem` em `types.ts`, regras acrescentadas em "
+        "`chat.css`, o rótulo de `base_review` em `toolLabels.ts` — cobrado por "
+        "`tests/test_chat_tool_labels.py` — e o teste `ChatDock.test.tsx`) e `studio/web/` SÓ pelo "
+        "bundle GERADO `studio/web/dist/` (`make frontend-build`, guarda de drift do CI). "
+        "O lightbox reusa `Modal` do design system, nenhuma classe CSS é renomeada e nenhuma "
+        "dependência npm é adicionada; `frontend/src/shell/**`, `frontend/src/ui/**` e "
+        "`frontend/src/api/schema.ts` ficam intactos (a rota `GET /base/job` segue sem "
+        "`response_model`). ADR-036/037/038/040, ADR-004, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-08-storyboard-cenas": (
         "`[extensão]` Wave 11 · frente F06 storyboard-cenas, cards #95 (leitura A), #97, #98 e "
         "#99 (ADH-OS-20260906-08): a etapa 4 é plugin e todo o trabalho vive em "

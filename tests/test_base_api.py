@@ -223,7 +223,8 @@ def test_cost_requires_cli(client, pid, hf, monkeypatch):
 
 def test_generate_gates_and_job(client, pid, hf, monkeypatch):
     import threading
-    assert client.get(f"/api/projects/{pid}/base/job").json() == {"state": "idle"}
+    # `new_candidates` `[extensão]` (F11, FDD §5 contrato 1): sempre presente, `[]` sem job.
+    assert client.get(f"/api/projects/{pid}/base/job").json() == {"state": "idle", "new_candidates": []}
     monkeypatch.setattr(hf, "available", lambda: False)
     assert client.post(f"/api/projects/{pid}/base/generate", json={"kind": "situation"}).status_code == 409
     monkeypatch.setattr(hf, "available", lambda: True)
@@ -559,3 +560,127 @@ def test_clean_guide_text_mentions_the_optional_step(client, pid):
     texto = g["what"] + " " + " ".join(g["checklist"])
     assert "limpar marca" in texto or "limpei a marca" in texto.lower()
     assert "[extensão]" in texto and "inpaint" in g["what"]
+
+
+# ---------- `new_candidates` no status do job `[extensão]` (F11, FDD §5 contrato 1) ----------
+def _fake_cli_urls(hf, monkeypatch, n=1):
+    """CLI falsificado que devolve `n` URLs por chamada e baixa uma imagem DIFERENTE por URL
+    (cores distintas: sem colisão de sha12, o dedupe do `ingest` não come nada)."""
+    monkeypatch.setattr(hf, "generate",
+                        lambda model, params: {"urls": [f"https://cdn.higgsfield/x/o{i}.png" for i in range(n)],
+                                               "id": "job1", "raw": {}})
+    seq = {"i": 0}
+
+    def fake_download(url, dest):
+        seq["i"] += 1
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(image_bytes(color=(7 * seq["i"], 8 * seq["i"], 9 * seq["i"])))
+        return dest
+
+    monkeypatch.setattr(hf, "download", fake_download)
+
+
+def test_job_reports_the_upscale_it_produced(client, pid, hf, monkeypatch):
+    """FDD §9 critério 1: depois de um upscale concluído, `GET /base/job` diz O QUE produziu —
+    uma entrada por candidata ingerida, com URLs servíveis e a origem da cadeia."""
+    _seed_situation(client, pid)
+    client.post(f"/api/projects/{pid}/base/brand-image", files={"file": ("marca.png", image_bytes(), "image/png")})
+    _bridge(hf, monkeypatch)
+    _fake_cli_urls(hf, monkeypatch)
+    # a origem do upscale é o rótulo escolhido (a candidata mais avançada da cadeia)
+    assert client.post(f"/api/projects/{pid}/base/generate", json={"kind": "label"}).status_code == 200
+    assert _run_job(client, pid)["state"] == "done"
+    lab = [c for c in client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+           if c["kind"] == "label"][0]
+    client.post(f"/api/projects/{pid}/base/select", json={"id": lab["id"]})
+
+    assert client.post(f"/api/projects/{pid}/base/generate", json={"kind": "upscale"}).status_code == 200
+    job = _run_job(client, pid)
+    assert job["state"] == "done" and job["added"] == 1
+    novas = job["new_candidates"]
+    assert len(novas) == 1 == job["added"], "o invariante len(new_candidates) == added (FDD §6)"
+    nova = novas[0]
+    ids = {c["id"] for c in client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]}
+    assert nova["id"] in ids and nova["kind"] == "upscale"
+    assert nova["file_url"].startswith(f"/files/{pid}/base/candidates/")
+    assert "/base/candidates/thumbs/" in nova["thumb_url"]
+    assert nova["source_id"] == lab["id"], "a origem é o rótulo selecionado"
+    # as URLs são de fato servíveis (é o que o chat vai mostrar)
+    assert client.get(nova["file_url"]).status_code == 200
+    assert client.get(nova["thumb_url"]).status_code == 200
+
+
+def test_job_lists_every_new_candidate_in_ingestion_order(client, pid, hf, monkeypatch):
+    """FDD §9 critério 1 com N itens: um job de limpeza com 2 variações devolve 2 entradas, na
+    ordem de ingestão, e `len(new_candidates)` continua igual a `added`."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    _fake_cli_urls(hf, monkeypatch)
+    r = client.post(f"/api/projects/{pid}/base/generate", json={"kind": "clean", "count": 2, "target": "Red Bull"})
+    assert r.status_code == 200
+    job = _run_job(client, pid)
+    assert job["state"] == "done" and job["added"] == 2
+    novas = job["new_candidates"]
+    assert len(novas) == job["added"] == 2
+    assert all(c["kind"] == "clean" for c in novas)
+    ordem = [c["id"] for c in client.get(f"/api/projects/{pid}/base/candidates").json()["candidates"]
+             if c["kind"] == "clean"]
+    assert [c["id"] for c in novas] == ordem, "ordem de ingestão preservada"
+
+
+def test_job_without_job_is_idle_with_an_empty_list(client, pid):
+    """FDD §9 critério 2: sem job, a rota devolve exatamente o exemplo do contrato 1."""
+    assert client.get(f"/api/projects/{pid}/base/job").json() == {"state": "idle", "new_candidates": []}
+
+
+def test_job_keeps_every_current_key_and_the_404(client, pid, hf, monkeypatch):
+    """FDD §9 critério 2: o enriquecimento é ADITIVO — nenhuma chave atual do job desaparece,
+    e `pid` inexistente continua 404."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    _fake_cli_urls(hf, monkeypatch)
+    client.post(f"/api/projects/{pid}/base/generate", json={"kind": "clean", "target": "Red Bull"})
+    job = _run_job(client, pid)
+    for k in ("state", "done", "total", "added", "error", "log", "kind", "model"):
+        assert k in job, f"chave atual sumiu do status do job: {k}"
+    assert "new_ids" not in job, "escrituração interna não vaza para o payload"
+    assert client.get("/api/projects/naoexiste/base/job").status_code == 404
+
+
+def test_job_enrichment_does_not_mutate_the_registry(client, pid, hf, monkeypatch, studio_env):
+    """FDD §5: `JobRegistry.status` devolve a referência VIVA do job — o enriquecimento tem de
+    trabalhar numa cópia, senão `new_candidates` vazaria e cresceria a cada polling."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    _fake_cli_urls(hf, monkeypatch)
+    client.post(f"/api/projects/{pid}/base/generate", json={"kind": "clean", "count": 1, "target": "Red Bull"})
+    um = _run_job(client, pid)
+    dois = client.get(f"/api/projects/{pid}/base/job").json()
+    assert um["new_candidates"] == dois["new_candidates"] and len(dois["new_candidates"]) == 1
+    vivo = studio_env["svc"]("base")._registry.status(pid)
+    assert "new_candidates" not in vivo, "o dict interno do registry ficou intacto"
+
+
+def test_job_with_a_failed_download_reports_only_what_was_ingested(client, pid, hf, monkeypatch):
+    """FDD §6: job cuja segunda URL falha no download não levanta — `new_candidates` traz só o
+    que chegou, e o invariante com `added` continua de pé."""
+    _seed_situation(client, pid)
+    _bridge(hf, monkeypatch)
+    monkeypatch.setattr(hf, "generate",
+                        lambda model, params: {"urls": ["https://cdn.higgsfield/x/ok.png",
+                                                        "https://cdn.higgsfield/x/expirada.png"],
+                                               "id": "job1", "raw": {}})
+
+    def fake_download(url, dest):
+        if "expirada" in url:
+            raise RuntimeError("link expirado")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(image_bytes(color=(7, 8, 9)))
+        return dest
+
+    monkeypatch.setattr(hf, "download", fake_download)
+    client.post(f"/api/projects/{pid}/base/generate", json={"kind": "clean", "count": 1, "target": "Red Bull"})
+    job = _run_job(client, pid)
+    assert job["state"] == "done" and job["added"] == 1
+    assert len(job["new_candidates"]) == job["added"] == 1
+    assert any("download pulado" in linha for linha in job["log"])

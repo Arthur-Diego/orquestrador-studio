@@ -54,7 +54,7 @@ O que consta acima é a decisão. Os pontos abaixo registram onde ela vive, para
 para quem reabrir o assunto.
 
 - **FDD normativo:** [`docs/domains/chat/features/chat-audio-fdd.md`](../../../domains/chat/features/chat-audio-fdd.md)
-  (card #89, Wave 11 · F09). **HLD:** [`docs/domains/chat/hld.md`](../../../domains/chat/hld.md) v1.4.
+  (card #89, Wave 11 · F09). **HLD:** [`docs/domains/chat/hld.md`](../../../domains/chat/hld.md) v1.5.
   **Diagramas:** [`docs/domains/chat/diagrams/mermaid/chat-audio-fluxo.md`](../../../domains/chat/diagrams/mermaid/chat-audio-fluxo.md).
 - **Servidor:** `studio/chat/voice.py` (validação, transcrição, log) e a rota em
   `studio/chat/router.py::chat_transcribe`. A validação é allowlist de `content_type` **mais**

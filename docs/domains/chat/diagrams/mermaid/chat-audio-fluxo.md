@@ -1,7 +1,7 @@
 # chat — entrada por voz (fluxo da fala ao envio) `[extensão]`
 
 Task-Id: ADH-OS-20260906-11 · Card #89 https://trello.com/c/a0yHBAm5
-FDD: [chat-audio](../../features/chat-audio-fdd.md) (§4) · HLD: [chat](../../hld.md) v1.4
+FDD: [chat-audio](../../features/chat-audio-fdd.md) (§4) · HLD: [chat](../../hld.md) v1.5
 ADR: [ADR-043](../../../../adrs/generated/STUDIO/ADR-043-entrada-por-voz-no-chat.md) (entrada por
 voz) · [ADR-024](../../../../adrs/generated/STUDIO/ADR-024-transcricao-de-legendas-via-openai-whisper-1-com-fake-sem-chave.md)
 (provedor de STT) · [ADR-041](../../../../adrs/generated/STUDIO/ADR-041-protocolo-do-websocket-do-chat-v2-aditivo.md)
