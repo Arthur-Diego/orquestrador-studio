@@ -258,3 +258,43 @@
 .chat-tab-x:hover { color: var(--fail); }
 @keyframes chat-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .chat-tab-dot.st-running { animation: none; } }
+
+/* ================================================================================================
+   Feedback ao vivo do turno (chat-feedback, ADR-041) — BLOCO NOVO, sempre no fim do arquivo.
+   Nenhuma regra acima é tocada: a frente só acrescenta, para o rebase com as outras frentes da
+   wave ser uma inserção e não um conflito (FDD §10, risco 5).
+   ================================================================================================ */
+
+/* Bolha "digitando": três pontos entre o `turn_started` e o primeiro texto do assistente. */
+.chat-typing { display: inline-flex; align-items: center; gap: 4px; padding: 11px 12px; border-radius: 12px; border-bottom-left-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); align-self: flex-start; }
+.chat-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); animation: chat-typing 1.2s ease-in-out infinite; }
+.chat-typing i:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-typing { 0%, 80%, 100% { opacity: 0.3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+/* Linha de status (`role="status"`, `aria-live="polite"`) e o botão Parar do turno. */
+.chat-statusbar { display: flex; align-items: center; gap: 8px; padding: 0 14px; }
+.chat-statusbar[data-on="1"] { padding-bottom: 8px; }
+.chat-status { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-status-detail { color: var(--ink-4); }
+.chat-stop { flex: 0 0 auto; border: 1px solid var(--fail); background: var(--surface); color: var(--fail); border-radius: 999px; padding: 3px 11px; font: inherit; font-size: 12px; cursor: pointer; }
+.chat-stop:hover { background: var(--fail); color: var(--surface); }
+
+/* Chip de tool: spinner · ✓ · ✗, duração e o resultado de sucesso colapsado atrás dele. */
+.chat-chipwrap { display: flex; flex-direction: column; gap: 4px; align-self: flex-start; max-width: 100%; }
+.chat-chip { max-width: 100%; }
+.chat-chip[data-state="ok"], .chat-chip[data-state="erro"] { border-style: solid; }
+.chat-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-chip-pct, .chat-chip-dur { color: var(--ink-4); flex: 0 0 auto; }
+.chat-chip-more { border: 0; background: none; color: var(--ink-3); font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0 2px; flex: 0 0 auto; }
+.chat-chip-more:hover { color: var(--accent); }
+.chat-chip-spin { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: chat-chip-spin 0.7s linear infinite; }
+@keyframes chat-chip-spin { to { transform: rotate(360deg); } }
+.chat-chip-body { margin: 0; max-height: 180px; overflow: auto; padding: 8px 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font-family: "IBM Plex Mono", monospace; font-size: 11px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; }
+
+/* Movimento reduzido (critério 10): nada anima e tudo continua legível — mesmo precedente do
+   `.chat-tab-dot.st-running` acima, que desliga a animação sem esconder o indicador. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-typing i { animation: none; opacity: 0.7; }
+  .chat-chip-spin { animation: none; border-top-color: var(--accent); }
+}

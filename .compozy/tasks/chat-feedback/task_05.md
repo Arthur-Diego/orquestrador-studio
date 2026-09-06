@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Interface do dock — digitando, status, chips, Parar, badge e CSS
 type: frontend
 complexity: high
@@ -60,23 +60,23 @@ o botão Parar e o badge "●" no título da aba do navegador — mais o bloco d
 
 ## Subtasks
 
-- [ ] 5.1 Consumir `turn` e `busy` do `useChatSocket` em `Conversation` (o `stop` já vem do hook e
+- [x] 5.1 Consumir `turn` e `busy` do `useChatSocket` em `Conversation` (o `stop` já vem do hook e
       hoje é descartado no destructuring).
-- [ ] 5.2 Renderizar a bolha viva de delta como componente isolado, para não re-renderizar o log
+- [x] 5.2 Renderizar a bolha viva de delta como componente isolado, para não re-renderizar o log
       inteiro a cada flush.
-- [ ] 5.3 Renderizar a linha de status com `role="status"` e `aria-live="polite"`, derivando o texto
+- [x] 5.3 Renderizar a linha de status com `role="status"` e `aria-live="polite"`, derivando o texto
       do estado vivo (pensando × tool pendente × progresso com/sem percentual).
-- [ ] 5.4 Correlacionar `tool_call` ↔ `tool_result` por `id` e renderizar o chip com estado,
+- [x] 5.4 Correlacionar `tool_call` ↔ `tool_result` por `id` e renderizar o chip com estado,
       duração e rótulo humano.
-- [ ] 5.5 Colapsar o conteúdo de `tool_result` de sucesso atrás do chip (expansível); manter o de
+- [x] 5.5 Colapsar o conteúdo de `tool_result` de sucesso atrás do chip (expansível); manter o de
       erro visível.
-- [ ] 5.6 Acrescentar o botão Parar, visível apenas durante o turno.
-- [ ] 5.7 Acrescentar o badge "● " no `document.title` durante o turno, restaurando o título original
+- [x] 5.6 Acrescentar o botão Parar, visível apenas durante o turno.
+- [x] 5.7 Acrescentar o badge "● " no `document.title` durante o turno, restaurando o título original
       no fim e no unmount.
-- [ ] 5.8 Trocar `shortTool` por `toolLabel` no chip e na linha de status.
-- [ ] 5.9 Acrescentar o bloco de CSS novo **no fim** de `chat.css`, com o `@media
+- [x] 5.8 Trocar `shortTool` por `toolLabel` no chip e na linha de status.
+- [x] 5.9 Acrescentar o bloco de CSS novo **no fim** de `chat.css`, com o `@media
       (prefers-reduced-motion: reduce)` correspondente.
-- [ ] 5.10 Criar `frontend/src/areas/chat/ChatDock.test.tsx` com os casos atribuídos.
+- [x] 5.10 Criar `frontend/src/areas/chat/ChatDock.test.tsx` com os casos atribuídos.
 
 ## Implementation Details
 
@@ -133,17 +133,23 @@ Consultar `_techspec.md`: §4 fluxos A, B e C, §5 contrato 7, §6 (matriz de er
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] T-DK-01 — bolha "digitando" aparece e some na hora certa.
-- [ ] T-DK-02, T-DK-03, T-DK-04 — a linha de status em cada estado (pensando, tool pendente,
+- [x] T-DK-01 — bolha "digitando" aparece e some na hora certa.
+- [x] T-DK-02, T-DK-03, T-DK-04 — a linha de status em cada estado (pensando, tool pendente,
       progresso com e sem percentual).
-- [ ] T-DK-05 — `role="status"` e `aria-live="polite"`.
-- [ ] T-DK-06, T-DK-07 — chip com três estados e duração; sucesso colapsado, erro visível.
-- [ ] T-DK-08 — botão Parar: ausência fora do turno, presença durante, chamada de `stop`, sumiço no
+- [x] T-DK-05 — `role="status"` e `aria-live="polite"`.
+- [x] T-DK-06, T-DK-07 — chip com três estados e duração; sucesso colapsado, erro visível.
+- [x] T-DK-08 — botão Parar: ausência fora do turno, presença durante, chamada de `stop`, sumiço no
       `turn_ended`.
-- [ ] T-DK-09 — badge "● " no título do documento.
-- [ ] T-DK-10 — evento desconhecido cai no `default` sem quebrar.
-- [ ] T-CSS-01, T-CSS-02 — `prefers-reduced-motion` desliga as animações mantendo a informação; o
+- [x] T-DK-09 — badge "● " no título do documento.
+- [x] T-DK-10 — evento desconhecido cai no `default` sem quebrar.
+- [x] T-CSS-01, T-CSS-02 — `prefers-reduced-motion` desliga as animações mantendo a informação; o
       bloco novo fica no fim do arquivo, sem alterar regra existente.
+      **Implementados em `tests/test_chat_css_feedback.py` (pytest), não no `ChatDock.test.tsx`**:
+      são asserções sobre o ARQUIVO, e o Vitest não o lê — roda com `css: false` (o import da folha
+      vira módulo vazio, `?raw` inclusive) e o projeto npm não tem `@types/node`, sendo que a task
+      proíbe dependência npm nova. Mesmo precedente de `tests/test_chat_tool_labels.py` (task 3),
+      que também vigia um arquivo do frontend a partir do pytest. A guarda fixa o sha256 das 211
+      linhas originais de `chat.css`, o que prova "sem alterar nenhuma regra existente".
 
 ## Success Criteria
 

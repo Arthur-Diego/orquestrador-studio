@@ -3,7 +3,7 @@
 // Onda A: fundação (uma conversa, streaming). Onda B: cartões ricos e ações. Onda C: **abas
 // paralelas** (várias conversas ao mesmo tempo, cada uma ligada a uma campanha), status por aba
 // e o widget `open` (o agente abre uma tela e espera o usuário concluir — ADR-038).
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { api, invalidarGuia } from "../../api";
@@ -11,11 +11,14 @@ import { useShell } from "../../shell/context";
 import { emitStudioChange, type EscopoDaMudanca, type MudancaDoStudio } from "../../shell/events";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { useChatSocket } from "./useChatSocket";
-import type { ChatEvent, ChatSession } from "./types";
+import { toolLabel } from "./toolLabels";
+import type { ChatEvent, ChatSession, ChatToolProgress } from "./types";
 import "./chat.css";
 
 const ABERTO_KEY = "studio.chat.open";
 const ATIVO_KEY = "studio.chat.active";
+/** Prefixo do título da aba do navegador enquanto houver turno em andamento (critério 7). */
+const TITULO_BADGE = "● ";
 
 /** Enum fechado do campo `scope` do evento `state_changed` (Contrato 1 da Wave 11 · F03). */
 const ESCOPOS: readonly EscopoDaMudanca[] = ["job", "candidates", "selection", "library"];
@@ -51,6 +54,8 @@ export function ChatDock() {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem(ATIVO_KEY));
+  // Turno vivo da conversa ativa (o socket sabe antes do polling; `Conversation` avisa por aqui).
+  const [turnoAtivo, setTurnoAtivo] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(ABERTO_KEY, open ? "1" : "0");
@@ -128,6 +133,20 @@ export function ChatDock() {
 
   const ativa = chats.find((c) => c.id === activeId) ?? null;
 
+  // Badge "●" no título da aba do navegador enquanto QUALQUER conversa estiver em turno: a ativa
+  // (turno vivo no socket) ou uma de segundo plano (status `running` do polling de `/api/chats`).
+  // Mora aqui dentro, sem arquivo novo, para limitar a superfície de conflito de rebase
+  // (FDD §12, decisão 12).
+  const rodando = turnoAtivo || chats.some((c) => c.status === "running");
+  useEffect(() => {
+    if (!rodando) return;
+    const original = document.title;
+    document.title = original.startsWith(TITULO_BADGE) ? original : TITULO_BADGE + original;
+    return () => {
+      document.title = original;
+    };
+  }, [rodando]);
+
   return (
     <aside className="chatdock" data-open={open ? "1" : "0"} aria-label="Assistente do Studio">
       <button className="chat-fab" type="button" onClick={() => setOpen(true)} aria-label="Abrir o assistente">
@@ -155,7 +174,11 @@ export function ChatDock() {
           {chats.length > 1 ? (
             <ChatTabs chats={chats} activeId={activeId} onSelect={setActiveId} onRename={renomear} onArchive={arquivar} />
           ) : null}
-          {ativa ? <Conversation key={ativa.id} chatId={ativa.id} /> : <div className="chat-empty">Carregando…</div>}
+          {ativa ? (
+            <Conversation key={ativa.id} chatId={ativa.id} status={ativa.status} onTurn={setTurnoAtivo} />
+          ) : (
+            <div className="chat-empty">Carregando…</div>
+          )}
         </>
       )}
     </aside>
@@ -194,7 +217,16 @@ function ChatTabs({
 }
 
 /** Uma conversa: log com streaming, cartões e composer. */
-function Conversation({ chatId }: { chatId: string }) {
+function Conversation({
+  chatId,
+  status,
+  onTurn,
+}: {
+  chatId: string;
+  /** Status da aba vindo do polling de `/api/chats` — sem ele todo turno do replay vira obsoleto. */
+  status: ChatSession["status"] | null;
+  onTurn: (ativo: boolean) => void;
+}) {
   const { pid, view, navigate } = useShell();
   const qc = useQueryClient();
 
@@ -218,7 +250,13 @@ function Conversation({ chatId }: { chatId: string }) {
     [qc],
   );
 
-  const { events, connected, send, answer } = useChatSocket(chatId, aoEventoAoVivo);
+  // F03 assina os eventos ao vivo (`aoEventoAoVivo`); F02 passa o `status` da aba, que é o que
+  // distingue turno em andamento de turno obsoleto no replay. Os dois parâmetros são opcionais.
+  const { events, connected, send, answer, stop, turn, busy } = useChatSocket(
+    chatId,
+    aoEventoAoVivo,
+    status,
+  );
   const [draft, setDraft] = useState("");
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
@@ -238,20 +276,83 @@ function Conversation({ chatId }: { chatId: string }) {
     [navigate],
   );
 
-  const busy = useMemo(() => {
-    let r = -1;
-    let u = -1;
-    events.forEach((e, i) => {
-      if (e.kind === "result") r = i;
-      if (e.kind === "user") u = i;
-    });
-    return u > r;
+  // --- feedback ao vivo do turno (chat-feedback, ADR-041) -----------------------------------
+
+  // Avisa o dock que este turno está vivo: é o que acende o badge "●" no título da aba.
+  useEffect(() => {
+    onTurn(turn.id !== null);
+    return () => onTurn(false);
+  }, [turn.id, onTurn]);
+
+  /** `tool_result` indexado pelo `id` do `tool_call` que o gerou; a ausência é tolerada. */
+  const resultados = useMemo(() => {
+    const mapa = new Map<string, ChatEvent>();
+    for (const e of events) if (e.kind === "tool_result" && e.id) mapa.set(e.id, e);
+    return mapa;
   }, [events]);
+
+  /** Índice do último `turn_started`: o que veio antes dele é história, não está pendente. */
+  const inicioDoTurno = useMemo(() => {
+    let i = -1;
+    events.forEach((e, k) => {
+      if (e.kind === "turn_started") i = k;
+    });
+    return i;
+  }, [events]);
+
+  /** O assistente já falou neste turno? A bolha "digitando" some no primeiro texto (critério 1). */
+  const houveTexto = useMemo(() => {
+    let visto = false;
+    for (const e of events) {
+      if (e.kind === "turn_started") visto = false;
+      else if (e.kind === "assistant_text") visto = true;
+    }
+    return visto;
+  }, [events]);
+
+  /** Tool em aberto no turno corrente: o `tool_call` mais recente ainda sem `tool_result`. */
+  const pendente = useMemo(() => {
+    if (turn.id === null) return null;
+    for (let i = events.length - 1; i > inicioDoTurno; i--) {
+      const e = events[i]!;
+      if (e.kind === "tool_call" && (!e.id || !resultados.has(e.id))) return e;
+    }
+    return null;
+  }, [events, inicioDoTurno, resultados, turn.id]);
+
+  // Linha de status. Só muda quando o estado vivo muda, e o estado vivo mais rápido é o
+  // `tool_progress` (2 s no servidor): o leitor de tela nunca é inundado (critério 9).
+  const linhaStatus = useMemo(() => {
+    if (turn.id === null) return { texto: "", detalhe: "" };
+    if (!pendente) return { texto: turn.text ? "Escrevendo a resposta…" : "Pensando…", detalhe: "" };
+    const rotulo = toolLabel(pendente.name);
+    const prog = pendente.id ? turn.progress[pendente.id] : undefined;
+    // Sem `total` conhecido o percentual é OMITIDO (nunca 0 %) e o rótulo do servidor vira detalhe.
+    if (prog && prog.pct != null) return { texto: `${rotulo} (${prog.pct} %)…`, detalhe: "" };
+    return { texto: `${rotulo}…`, detalhe: prog?.label ?? "" };
+  }, [pendente, turn]);
+
+  const digitando = turn.id !== null && !houveTexto && turn.text === "";
+
+  const chipDe = useCallback(
+    (ev: ChatEvent, i: number): ChipInfo => {
+      const id = ev.id;
+      const resultado = id ? resultados.get(id) : undefined;
+      // Pendente só dentro do turno aberto: no replay (ou depois do `turn_ended`) um `tool_call`
+      // sem par vira "concluído", sem ✓ nem ✗ — é o progresso órfão do FDD §4.
+      return {
+        resultado,
+        pendente: !resultado && turn.id !== null && i > inicioDoTurno,
+        progresso: id ? turn.progress[id] : undefined,
+      };
+    },
+    [resultados, turn, inicioDoTurno],
+  );
 
   useEffect(() => {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [events]);
+  }, [events, turn.text, digitando]);
 
   const enviar = useCallback(
     (texto: string) => {
@@ -286,9 +387,32 @@ function Conversation({ chatId }: { chatId: string }) {
               onAnswer={respond}
               onOpen={abrirTela}
               done={e.ask_id ? answered.has(String(e.ask_id)) : false}
+              chip={e.kind === "tool_call" ? chipDe(e, i) : undefined}
             />
           ))
         )}
+        {turn.text ? <BolhaViva texto={turn.text} /> : null}
+        {digitando ? (
+          <div className="chat-msg assistant">
+            <div className="chat-typing" aria-hidden>
+              <i />
+              <i />
+              <i />
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="chat-statusbar" data-on={turn.id !== null ? "1" : "0"}>
+        <span className="chat-status" role="status" aria-live="polite">
+          {linhaStatus.texto}
+          {linhaStatus.detalhe ? <span className="chat-status-detail"> · {linhaStatus.detalhe}</span> : null}
+        </span>
+        {turn.id !== null ? (
+          <button className="chat-stop" type="button" onClick={stop} title="Parar o turno">
+            Parar
+          </button>
+        ) : null}
       </div>
 
       <div className="chat-quick">
@@ -322,11 +446,20 @@ function Conversation({ chatId }: { chatId: string }) {
   );
 }
 
+/** Estado do chip de uma tool: o par `tool_result` (quando veio), o progresso vivo e a pendência. */
+interface ChipInfo {
+  resultado: ChatEvent | undefined;
+  progresso: ChatToolProgress | undefined;
+  pendente: boolean;
+}
+
 interface MessageProps {
   ev: ChatEvent;
   onAnswer: (askId: string, value: unknown) => void;
   onOpen: (target: string) => void;
   done: boolean;
+  /** chat-feedback: preenchido só para `tool_call`; correlação por `id` feita na `Conversation`. */
+  chip: ChipInfo | undefined;
 }
 
 /**
@@ -336,7 +469,7 @@ interface MessageProps {
  * FDD afirma que a bolha do USUÁRIO não passa pelo parser, e afirmar isso pelo `ChatDock` inteiro
  * exigiria falsear WebSocket e duas rotas só para chegar no `switch`.
  */
-export function Message({ ev, onAnswer, onOpen, done }: MessageProps) {
+export function Message({ ev, onAnswer, onOpen, done, chip }: MessageProps) {
   switch (ev.kind) {
     case "user":
       return (
@@ -354,7 +487,7 @@ export function Message({ ev, onAnswer, onOpen, done }: MessageProps) {
         </div>
       );
     case "tool_call":
-      return <div className="chat-tool">🔧 {shortTool(ev.name)}</div>;
+      return <ToolChip ev={ev} chip={chip} />;
     case "tool_result":
       return ev.is_error ? (
         <div className="chat-tool" data-err="1">
@@ -579,7 +712,80 @@ function inferWidget(ev: ChatEvent): string {
   return "confirm";
 }
 
-function shortTool(name: string | undefined): string {
-  if (!name) return "ferramenta";
-  return name.replace(/^mcp__studio__/, "studio.");
+/**
+ * Bolha viva dos deltas — isolada e memoizada, para o flush de 80 ms não repintar o log inteiro.
+ *
+ * Renderiza pelo MESMO caminho da bolha definitiva (`MessageMarkdown`, Wave 11 · F01), senão o
+ * texto trocaria de aparência ao fechar o bloco: asterisco e crase apareceriam literais durante o
+ * streaming e virariam negrito/código no instante em que o `assistant_text` assumisse. Markdown
+ * parcial (fence ainda aberto) renderiza degradado e é substituído no mesmo instante.
+ */
+const BolhaViva = memo(function BolhaViva({ texto }: { texto: string }) {
+  return (
+    <div className="chat-msg assistant">
+      <div className="chat-bubble" data-md="1" data-viva="1">
+        <MessageMarkdown text={texto} />
+      </div>
+    </div>
+  );
+});
+
+/** Duração de uma tool, dos `ts` dos eventos persistidos (resolução de 1 s — FDD §12, decisão 9). */
+function duracao(inicio: string | undefined, fim: string | undefined): string {
+  if (!inicio || !fim) return "";
+  const a = Date.parse(inicio);
+  const b = Date.parse(fim);
+  if (Number.isNaN(a) || Number.isNaN(b)) return "";
+  return `${Math.max(0, Math.round((b - a) / 1000))} s`;
+}
+
+/** Conteúdo de um `tool_result` de sucesso, para o corpo colapsado atrás do chip. */
+function corpoDoResultado(ev: ChatEvent | undefined): string {
+  const c = ev?.content;
+  if (c == null || c === "") return "";
+  return typeof c === "string" ? c : JSON.stringify(c, null, 2);
+}
+
+/**
+ * Chip de uma tool: spinner enquanto pendente, ✓ quando o `tool_result` de mesmo `id` chega sem erro,
+ * ✗ quando chega com erro, e o ícone neutro quando o turno acabou sem par (progresso órfão). O
+ * resultado de sucesso fica colapsado aqui dentro; o de erro segue visível no próprio `tool_result`.
+ */
+function ToolChip({ ev, chip }: { ev: ChatEvent; chip: ChipInfo | undefined }) {
+  const [aberto, setAberto] = useState(false);
+  const resultado = chip?.resultado;
+  const pendente = chip?.pendente ?? false;
+  const erro = resultado?.is_error === true;
+  const ok = resultado !== undefined && !erro;
+  const estado = pendente ? "pendente" : erro ? "erro" : ok ? "ok" : "fim";
+  const dur = duracao(ev.ts, resultado?.ts);
+  const pct = pendente ? (chip?.progresso?.pct ?? null) : null;
+  const corpo = ok ? corpoDoResultado(resultado) : "";
+  return (
+    <div className="chat-chipwrap">
+      <div className="chat-tool chat-chip" data-state={estado} data-err={erro ? "1" : "0"}>
+        {pendente ? (
+          <span className="chat-chip-spin" aria-hidden />
+        ) : (
+          <span className="chat-chip-icon" aria-hidden>
+            {erro ? "✗" : ok ? "✓" : "🔧"}
+          </span>
+        )}
+        <span className="chat-chip-label">{toolLabel(ev.name)}</span>
+        {pct != null ? <span className="chat-chip-pct">{pct} %</span> : null}
+        {dur ? <span className="chat-chip-dur">{dur}</span> : null}
+        {corpo ? (
+          <button
+            className="chat-chip-more"
+            type="button"
+            aria-expanded={aberto}
+            onClick={() => setAberto((v) => !v)}
+          >
+            {aberto ? "ocultar" : "ver resultado"}
+          </button>
+        ) : null}
+      </div>
+      {aberto && corpo ? <pre className="chat-chip-body">{corpo}</pre> : null}
+    </div>
+  );
 }
