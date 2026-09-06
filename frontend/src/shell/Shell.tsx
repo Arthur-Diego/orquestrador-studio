@@ -28,6 +28,7 @@ import { NoProject, Overview } from "./Overview";
 import { EditModal, ResetCampaignModal, ResetStepModal, WizardModal } from "./modals";
 import { MoodboardsArea } from "../areas/moodboards/MoodboardsArea";
 import { CreditosArea } from "../areas/creditos/CreditosArea";
+import { ChatDock } from "../areas/chat/ChatDock";
 
 type ModalState =
   | { kind: "wizard" }
@@ -204,6 +205,8 @@ export function Shell() {
         </div>
       </div>
       <div id="toast" className="toast hidden" role="status" aria-live="polite" />
+      {/* Assistente de chat (ADR-036): dock lateral sempre montado, colapsável (área global). */}
+      <ChatDock />
 
       {modal?.kind === "wizard" ? (
         <WizardModal onClose={fecharModal} onCreated={(p) => navigate("overview", { pid: p })} />

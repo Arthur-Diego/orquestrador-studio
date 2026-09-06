@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import higgsfield as hf
+from .chat.router import router as chat_router
 from .common import atomic
 from .common import guide as guide_lib
 from .common import reset as reset_lib
@@ -34,6 +35,10 @@ app.include_router(moodboards_router)
 #: painel admin dos modelos default por ação. Rotas sem pid (agregados) e com pid (override por
 #: projeto), registradas fora do mecanismo de plugins porque a área é campanha-independente.
 app.include_router(creditos_router)
+#: `[extensão]` Assistente de chat (ADR-036): REST das abas, WebSocket `/ws/chat/{id}` do turno e
+#: os endpoints da ponte humano-no-laço (ADR-038). Área global campanha-independente, como as duas
+#: acima; o agente age só pelas tools do MCP (`studio/mcp/`, ADR-037), que falam com esta API.
+app.include_router(chat_router)
 
 #: Formatos aceitos em `project.aspect_ratio` `[extensão]` — a aula 007 manda escolher o
 #: formato pelo destino (vertical para Reels/TikTok, wide para YouTube). Default: 16:9.

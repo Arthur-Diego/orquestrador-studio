@@ -70,6 +70,15 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-04-chat-onda-a": (
+        "`[extensão]` Onda A do assistente de chat (ADR-036/037/040), card ADH-OS-20260905-04: "
+        "novos módulos `studio/chat/` e `studio/mcp/` (fora de NUCLEO_PREFIXOS) e a nova área "
+        "global de chat no frontend (`frontend/src/areas/chat/` + montagem do dock no shell). O "
+        "núcleo tocado é `studio/app.py` (include do router do chat + WebSocket) e `frontend/` (o "
+        "dock no `Shell.tsx`, o registro no roteamento e o bundle versionado `studio/web/dist/`). "
+        "Nenhuma etapa é tocada. ADR-036/037/040, ADR-010/031/032.",
+        ("studio/app.py", "frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260905-02-remove-combo-formulas": (
         "Remoção do combo de fórmulas da aula (`#sbPreset`) do Storyboard, ADR-035 (reconcilia o "
         "PR #103 pré-Wave-10 na versão React): a UI da etapa muda, exigindo RECONSTRUIR o bundle "
