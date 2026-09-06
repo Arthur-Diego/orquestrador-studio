@@ -491,19 +491,25 @@ def load(pid: str) -> list[dict]:
 
 
 def _finish_import(root: Path, before: set[str], kind: str, ref_id: str | None,
-                   source_id: str | None = None) -> list[str]:
+                   source_id: str | None = None) -> tuple[list[str], list[str]]:
     """`source_id` `[extensão]` (F11): no caminho pago vem pronto do item do `_plan`, que já
     resolveu a origem antes de chamar o CLI. No import pela tela chega `None` e é inferido por
     `source_candidate` sobre as candidatas que já existiam ANTES do import (`before`), para que uma
-    candidata nova jamais seja origem de si mesma."""
+    candidata nova jamais seja origem de si mesma.
+
+    Devolve `(warnings, new_ids)` `[extensão]` (F11): os ids novos, na ordem de ingestão, já eram
+    calculados aqui e eram descartados. São a FONTE ÚNICA de `new_candidates` no status do job
+    (FDD §10 risco 1) — nunca uma segunda varredura do diretório."""
     cands = ingest.load_candidates(root, STEP)
-    new_ids = {c["id"] for c in cands} - before
+    new_ids = [c["id"] for c in cands if c["id"] not in before]   # ordem do JSON = ordem de ingestão
+    novos = set(new_ids)
     if source_id is None and kind != "situation":
         src = source_candidate([c for c in cands if c["id"] in before], kind)
         source_id = src["id"] if src else None
-    cands = _normalize(cands, kind, ref_id, new_ids, source_id)
+    cands = _normalize(cands, kind, ref_id, novos, source_id)
     ingest.save_candidates(root, STEP, cands)
-    return upscale_warnings(root, cands, new_ids) if kind == "upscale" else []
+    warnings = upscale_warnings(root, cands, novos) if kind == "upscale" else []
+    return warnings, new_ids
 
 
 def _image_size(path: Path) -> tuple[int, int] | None:
@@ -577,7 +583,7 @@ def import_upload(pid: str, files: list[tuple[str, bytes]], kind: str = "situati
     root = project_dir(pid)
     before = {c["id"] for c in ingest.load_candidates(root, STEP)}
     res = ingest.import_upload(root, STEP, files, prompt)
-    return {**res, "warnings": _finish_import(root, before, kind, ref_id)}
+    return {**res, "warnings": _finish_import(root, before, kind, ref_id)[0]}
 
 
 def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 120, limit: int = 40,
@@ -586,7 +592,7 @@ def import_downloads(pid: str, folder: str | None = None, since_minutes: int = 1
     root = project_dir(pid)
     before = {c["id"] for c in ingest.load_candidates(root, STEP)}
     res = ingest.import_downloads(root, STEP, folder, since_minutes, limit, prompt=prompt)
-    return {**res, "warnings": _finish_import(root, before, kind, ref_id)}
+    return {**res, "warnings": _finish_import(root, before, kind, ref_id)[0]}
 
 
 def import_history(pid: str, kind: str = "situation", ref_id: str | None = None, size: int = 50,
@@ -595,7 +601,7 @@ def import_history(pid: str, kind: str = "situation", ref_id: str | None = None,
     root = project_dir(pid)
     before = {c["id"] for c in ingest.load_candidates(root, STEP)}
     res = ingest.import_history(root, STEP, "image", size, prompt_filter)
-    return {**res, "warnings": _finish_import(root, before, kind, ref_id)}
+    return {**res, "warnings": _finish_import(root, before, kind, ref_id)[0]}
 
 
 # ---------- seleção, base_final.png e base.md ----------
@@ -864,13 +870,20 @@ def start_generate(pid: str, kind: str, model: str | None = None, ref_ids: list[
                 job["log"].append(f"erro: {last}")
             job["done"] = i + 1
         log.info("base: job pid=%s kind=%s itens=%s added=%s falhas=%s", pid, kind, len(items), job["added"], failures)
+        # `[extensão]` (F11, FDD §7): o que o job PRODUZIU, para cruzar com `added` na observação.
+        novas = new_candidates(pid, job.get("new_ids") or [])
+        log.info("base: job pid=%s kind=%s novas=%s origens=%s", pid, kind,
+                 len(novas), sum(1 for c in novas if c["source_id"]))
         if failures and failures == len(items):
             raise RuntimeError(last)
 
     try:
-        return _registry.start(pid, len(items), run, kind=kind, model=model)
+        job = _registry.start(pid, len(items), run, kind=kind, model=model)
     except RuntimeError as e:
         raise RuntimeError("Já existe uma geração em andamento para este projeto.") from e
+    # `new_ids` é escrituração interna do job (`[extensão]` F11): a thread pode já tê-la criado
+    # quando este retorno é serializado, e o payload de `/base/generate` não muda por causa dela.
+    return {k: v for k, v in job.items() if k != "new_ids"}
 
 
 def _ingest_job(root: Path, res: dict, kind: str, item: dict, model: str, job: dict | None = None) -> int:
@@ -896,12 +909,46 @@ def _ingest_job(root: Path, res: dict, kind: str, item: dict, model: str, job: d
         if ingest.ingest_bytes(root, STEP, data, "cli", name, item["prompt"],
                                {"job_id": res.get("id"), "model": model}):
             added += 1
-    for w in _finish_import(root, before, kind, item.get("ref_id"), item.get("source_id")):
-        if job is not None:
+    warnings, new_ids = _finish_import(root, before, kind, item.get("ref_id"), item.get("source_id"))
+    if job is not None:
+        for w in warnings:
             job["log"].append(w)
+        # `[extensão]` (F11): os ids saem do MESMO lugar que conta `added` — o `_finish_import` deste
+        # item. Sem segunda varredura do diretório, o que sustenta `len(new_candidates) == added`.
+        job.setdefault("new_ids", []).extend(new_ids)
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return added
 
 
+def new_candidates(pid: str, ids: list[str]) -> list[dict]:
+    """`[extensão]` (F11) — as candidatas de `ids` no formato que o chat consegue mostrar (FDD §5
+    contrato 1): na ordem pedida, com as URLs já absolutas e servíveis por `/files` (`app.py`).
+
+    A prefixação com `/files/{pid}/` acontece SÓ aqui, na borda: `file`/`thumb` seguem relativos à
+    raiz do projeto no `candidates.json` (invariante do HLD base). Leitura defensiva: id sem
+    candidata correspondente é omitido — nunca levanta, para não derrubar a rota do job."""
+    if not ids:
+        return []
+    by_id = {c["id"]: c for c in load(pid)}     # uma leitura de candidates.json por chamada
+    out = []
+    for cid in ids:
+        c = by_id.get(cid)
+        if c is None:
+            continue
+        out.append({"id": c["id"], "kind": c.get("kind"),
+                    "thumb_url": f"/files/{pid}/{c['thumb']}" if c.get("thumb") else None,
+                    "file_url": f"/files/{pid}/{c['file']}" if c.get("file") else None,
+                    "source_id": c.get("source_id")})
+    return out
+
+
 def job_status(pid: str) -> dict:
-    return _registry.status(pid)
+    """O status do job diz TAMBÉM o que ele produziu (`new_candidates`, `[extensão]` F11, FDD §5).
+
+    A cópia é obrigatória: `JobRegistry.status` devolve a referência VIVA do job, e escrever nela
+    vazaria a chave para `job_wait`/`job_status` de outras etapas e a recalcularia a cada polling.
+    `new_ids` é escrituração interna e não entra no payload."""
+    job = dict(_registry.status(pid))
+    ids = job.pop("new_ids", None) or []
+    job["new_candidates"] = new_candidates(pid, ids)
+    return job

@@ -923,3 +923,67 @@ def test_old_candidates_load_with_null_source_id_and_stay_selectable(studio_env,
     r = svc.select(project, antigas[0]["id"])
     assert r["chain"]["situation"] == antigas[0]["id"]
     assert (root / "base" / "base_final.png").exists()
+
+
+# ---------- `new_candidates` `[extensão]` (F11, FDD §5 contrato 1) ----------
+def test_new_candidates_maps_ids_to_servable_urls_in_order(studio_env, svc, project):
+    """FDD §5: na ordem dos ids pedidos, com as URLs já absolutas (`/files/{pid}/…`) — a
+    prefixação acontece só aqui; `file`/`thumb` seguem relativos no `candidates.json`."""
+    prepare(studio_env, project)
+    a = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+    svc.select(project, a)
+    b = _up(svc, project, "upscale", (40, 200, 40))
+
+    out = svc.new_candidates(project, [b, a])
+    assert [c["id"] for c in out] == [b, a], "a ordem pedida é a ordem devolvida"
+    assert out[0]["kind"] == "upscale" and out[1]["kind"] == "situation"
+    assert out[0]["file_url"] == f"/files/{project}/base/candidates/{b}.png"
+    assert out[0]["thumb_url"] == f"/files/{project}/base/candidates/thumbs/{b}.jpg"
+    assert out[0]["source_id"] == a, "a origem do upscale é a situação escolhida"
+    assert out[1]["source_id"] is None, "situação não tem origem na cadeia (FDD §6)"
+    assert set(out[0]) == {"id", "kind", "thumb_url", "file_url", "source_id"}
+
+
+def test_new_candidates_omits_missing_ids_and_survives_a_thumbless_candidate(studio_env, svc, project):
+    """FDD §6: id sem candidata correspondente é OMITIDO (nunca levanta, para não derrubar a rota
+    do job) e candidata sem `thumb` devolve `thumb_url: null` com o `file_url` preenchido."""
+    prepare(studio_env, project)
+    a = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+
+    assert svc.new_candidates(project, []) == []
+    assert svc.new_candidates(project, ["naoexiste12"]) == []
+    assert [c["id"] for c in svc.new_candidates(project, ["naoexiste12", a])] == [a]
+
+    root = studio_env["refs"].project_dir(project)
+    cands = json.loads((root / "base" / "candidates.json").read_text())
+    for c in cands:
+        c["thumb"] = None
+    (root / "base" / "candidates.json").write_text(json.dumps(cands))
+    sem_thumb = svc.new_candidates(project, [a])[0]
+    assert sem_thumb["thumb_url"] is None and sem_thumb["file_url"].endswith(f"{a}.png")
+
+
+def test_finish_import_hands_the_new_ids_to_the_job(studio_env, svc, project, monkeypatch):
+    """FDD §10 risco 1: os ids saem do `_finish_import` (fonte única), acumulam em `job["new_ids"]`
+    e sustentam o invariante `len(new_candidates) == job["added"]`."""
+    prepare(studio_env, project)
+    s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+    svc.select(project, s)
+    _fake_cli(svc, monkeypatch, [["http://x/a.png", "http://x/b.png"]])
+    svc.start_generate(project, "clean", count=1, target="Red Bull")
+    job = _wait(svc, project)
+    assert job["state"] == "done" and job["added"] == 2
+    assert len(job["new_candidates"]) == job["added"]
+    assert all(c["source_id"] == s for c in job["new_candidates"])
+
+
+def test_job_logs_what_it_produced(studio_env, svc, project, monkeypatch, caplog):
+    """FDD §7: uma linha INFO no fim do job com a contagem de novas e quantas têm origem."""
+    prepare(studio_env, project)
+    s = _up(svc, project, "situation", (200, 40, 40), "0f8e7d6c5b4a")
+    svc.select(project, s)
+    _fake_cli(svc, monkeypatch, [["http://x/u.png"]])
+    with caplog.at_level("INFO", logger="studio.base"):
+        svc.start_generate(project, "upscale")
+        assert _wait(svc, project)["state"] == "done"
+    assert f"base: job pid={project} kind=upscale novas=1 origens=1" in caplog.text
