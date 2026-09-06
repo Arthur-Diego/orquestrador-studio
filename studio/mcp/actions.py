@@ -56,14 +56,20 @@ def _media_url(prefix: str, step: str, thumb: str) -> str:
     return f"{prefix}/{step}/candidates/{thumb}"
 
 
+def _truncar(texto: str) -> str:
+    """Corte único da legenda da grade, com reticência. Compartilhado pelas duas montagens de
+    payload (`_label`, das etapas, e `_mb_label`, da biblioteca): a constante é a mesma, o
+    comportamento tem de ser o mesmo."""
+    return texto if len(texto) <= LABEL_MAX else texto[:LABEL_MAX - 1] + "…"
+
+
 def _label(c: dict, label_key: str) -> str:
     """Legenda da grade: a chave preferida da etapa, a cadeia de fallback e, por último, o prompt.
     Truncada, porque a legenda fica sob a miniatura e o prompt de storyboard é uma frase inteira."""
     for k in (label_key, *LABEL_KEYS, "prompt"):
         v = c.get(k)
         if isinstance(v, str) and v.strip():
-            texto = v.strip()
-            return texto if len(texto) <= LABEL_MAX else texto[:LABEL_MAX - 1] + "…"
+            return _truncar(v.strip())
     return ""
 
 
@@ -110,17 +116,27 @@ def _credits(cost: dict) -> Any:
 
 
 def _paid(client: StudioClient, *, step: str, cost_path: str, cost_body: dict, gen_path: str,
-          gen_body: dict, action: str, model: str, confirm: bool, follow: str | None = None) -> str:
+          gen_body: dict, action: str, model: str, confirm: bool, follow: str | None = None,
+          model_from_cost: bool = False) -> str:
     """Gate de custo único das gerações pagas (ADR-016/038).
 
     `follow` nomeia a tool de espera quando o job NÃO é de etapa (jobs de URL própria, como os da
     biblioteca de mood boards). Sem ele, o texto continua apontando `job_wait` — o default preserva
     byte a byte o retorno de todos os chamadores existentes.
+
+    `model_from_cost` deixa a RESPOSTA do cost nomear o modelo. Serve para as rotas em que quem
+    escolhe o modelo é o servidor quando o usuário não pede um (multishot): sem isso o sheet de
+    gasto diria "modelo padrão", e num gate de custo o modelo cobrado é o dado que mais importa.
+    Também é aditivo: nenhum chamador existente liga a flag.
     """
     try:
         cost = client.post(cost_path, cost_body) or {}
     except StudioApiError as e:
         return str(e)
+    if model_from_cost:
+        real = cost.get("model")
+        if isinstance(real, str) and real.strip():
+            model = real.strip()
     credits = _credits(cost)
     cred_txt = credits if credits is not None else "não estimável"
     if ui.chat_id():
@@ -459,7 +475,7 @@ def _mb_label(c: dict) -> str:
     for k in ("source", "name", "prompt"):
         v = c.get(k)
         if isinstance(v, str) and v.strip():
-            return v.strip()[:LABEL_MAX]
+            return _truncar(v.strip())
     return ""
 
 
@@ -496,10 +512,15 @@ def _wait_job(client: StudioClient, job_path: str, *, timeout: int = 600,
     - `("done", job)` — terminou; o job final vai inteiro para o chamador formatar o texto;
     - `("timeout", {})` — estourou `timeout` sem terminar;
     - `("http", {"error": <texto>})` — a rota falhou (404, Studio fora do ar…).
+
+    A espera consome um ORÇAMENTO (`restante`), não um relógio de parede: com `_sleep` injetado
+    (os testes), o caminho de timeout fecha em `timeout/2` iterações instantâneas em vez de virar
+    busy-wait de segundos reais. Em produção, `_sleep` é `time.sleep` e o orçamento é o mesmo
+    tempo de antes.
     """
-    deadline = time.monotonic() + max(1, timeout)
+    restante = float(max(1, timeout))
     viu_running = False
-    while time.monotonic() < deadline:
+    while restante > 0:
         try:
             job = client.get(job_path) or {}
         except StudioApiError as e:
@@ -507,6 +528,7 @@ def _wait_job(client: StudioClient, job_path: str, *, timeout: int = 600,
         if job.get("state") == "running":
             viu_running = True
             _sleep(2.0)
+            restante -= 2.0
             continue
         if job.get("state") == "idle" and not viu_running:
             return "idle", {}
@@ -581,9 +603,16 @@ def moodboard_import(client: StudioClient, mbid: str, source: str = "downloads",
     (ADR-040), então o upload continua exclusivo da tela do board.
     """
     if source == "upload":
-        return ("Enviar arquivos pelo chat não é possível: eu nunca manipulo os bytes das suas "
-                "imagens (ADR-040).\nSalve as imagens na pasta Downloads e use "
-                'source="downloads", ou faça o upload pela tela do board.')
+        # A recusa passa pelo `_sugerir_tela` porque o caminho que sobra para o usuário é a TELA:
+        # é o ponto em que a costura com a F08 (chat-navigate) importa de verdade. Hoje o helper
+        # só emite o aviso e devolve o texto — `ui.notify` sem `chat_id` não chama rota nenhuma,
+        # então a recusa continua sendo "nenhuma requisição HTTP".
+        return _sugerir_tela(
+            client, f"moodboards/{mbid}",
+            "Enviar arquivos pelo chat não é possível: eu nunca manipulo os bytes das suas "
+            "imagens (ADR-040).\nSalve as imagens na pasta Downloads e use "
+            'source="downloads", ou abra Biblioteca › Mood boards na barra lateral, escolha o '
+            f"board `{mbid}` e faça o upload pela tela.")
     if source not in MB_IMPORT_SOURCES:
         return (f'Origem de importação desconhecida: "{source}". Use source="downloads" (pasta '
                 'Downloads) ou source="history" (histórico da Higgsfield).')
@@ -642,7 +671,14 @@ def moodboard_prompt(client: StudioClient, mbid: str, mode: str = "images", inst
                         {"mode": mode, "instruction": instruction, "image_ids": [],
                          "no_people": no_people}) or {}
     except StudioApiError as e:
-        if mode in ("brief", "images"):
+        # Os dois erros deste caminho pedem conselhos OPOSTOS, e discriminá-los pelo `mode` seria
+        # errado: 409 é "não há Claude CLI" (o template resolve); 422 é "não há imagem nenhuma para
+        # olhar" — e aí o template *funcionaria*, devolvendo um prompt genérico que esconde do
+        # usuário que o board está vazio. Por isso o desvio é pelo status (matriz do FDD §6).
+        if e.status == 422:
+            return (f"{e}\nImporte candidatas com `moodboard_import` e cure o board com "
+                    "`moodboard_pick` antes de gerar o prompt a partir das imagens.")
+        if e.status == 409 and mode in ("brief", "images"):
             return f'{e}\nSem o Claude CLI, tente de novo com mode="template".'
         return str(e)
     return f"Prompt de vibe do board `{mbid}` (modo {r.get('mode') or mode}):\n{r.get('prompt', '')}"
@@ -764,10 +800,14 @@ def vibes_pick(client: StudioClient, vibe: str = "", origem: str = "", page: int
     duplicadas = r.get("duplicadas") or []
     ausentes = r.get("ausentes") or []
     texto = (f"{len(copiadas)} foto(s) copiada(s) para a peneira; "
-             f"{len(duplicadas)} já estava(m) lá; {len(ausentes)} sumiu(ram) do disco")
+             f"{len(duplicadas)} já estava(m) lá")
+    # A cláusula de ausentes só aparece quando há ausentes: no caminho feliz, "0 sumiu(ram) do
+    # disco" é ruído que o contrato 9 do FDD não tem.
     if ausentes:
-        texto += " (" + ", ".join(str(a) for a in ausentes) + ")"
-    return (texto + ".\nUse `escolhidas_list` para ver o caminho da foto-semente e `mood_run` "
+        texto += (f"; {len(ausentes)} sumiu(ram) do disco ("
+                  + ", ".join(str(a) for a in ausentes) + ")")
+    texto += f". Peneira: {r.get('total_escolhidas', '?')}."
+    return (texto + "\nUse `escolhidas_list` para ver o caminho da foto-semente e `mood_run` "
             "para rodar a cadeia de mood.")
 
 
@@ -822,6 +862,12 @@ def mood_run(client: StudioClient, mbid: str, foto: str = "", objetivos: list[st
     servidor (ADR-034).
     """
     alvos = list(objetivos or [])
+    # Sem foto-semente o servidor responde 422 de qualquer jeito — mas só DEPOIS de o usuário ter
+    # confirmado dezenas de downloads. Gastar a barreira à toa a desvaloriza, então a falta do
+    # parâmetro é dita antes de qualquer chamada.
+    if not (foto or "").strip():
+        return ("Falta a foto-semente da corrida. Pegue um caminho absoluto com `escolhidas_list` "
+                "(ou escolha fotos com `vibes_pick` antes) e passe em `mood_run(foto=...)`.")
     try:
         est = client.post(f"/api/moodboards/{mbid}/mood-run/estimate",
                           {"objetivos": alvos, "board": board, "n": n}) or {}
@@ -864,11 +910,13 @@ def mood_run_wait(client: StudioClient, mbid: str, timeout: int = 1800,
                             timeout=timeout, _sleep=_sleep)
     if estado == "http":
         return job.get("error", "")
-    if estado == "idle":
-        return f"Board `{mbid}`: nenhuma corrida de mood ainda. Dispare uma com `mood_run`."
     if estado == "timeout":
         return (f"Board `{mbid}`: a corrida ainda está rodando após {timeout}s "
                 "(chame `mood_run_wait` de novo).")
+    # `idle` NÃO decide sozinho que não houve corrida: o registro de jobs vive em memória
+    # (`studio/common/jobs.py`), então reiniciar o Studio zera o estado enquanto o `_run.json`
+    # continua em disco. Quem responde "nunca rodou" é o 404 do `result` (FDD §6), abaixo — sem
+    # isso, uma corrida de até 1800 s ficaria inalcançável pelo chat depois de um `make run`.
     if estado == "error":
         cauda = [str(linha) for linha in (job.get("log") or [])][-3:]
         return (f"Board `{mbid}`: a corrida de mood falhou — {job.get('error')}"
@@ -934,7 +982,7 @@ def moodboard_multishot(client: StudioClient, mbid: str, source_id: str, count: 
                   cost_path=f"/api/moodboards/{mbid}/multishot/cost", cost_body=corpo,
                   gen_path=f"/api/moodboards/{mbid}/multishot/generate", gen_body=corpo,
                   action="Multishot da imagem de vibe do board", model=rotulo, confirm=confirm,
-                  follow="moodboard_multishot_wait")
+                  follow="moodboard_multishot_wait", model_from_cost=True)
     return _erro_do_multishot(saida)
 
 

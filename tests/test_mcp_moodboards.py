@@ -224,7 +224,7 @@ def test_import_upload_recusa_sem_chamar_rota_nenhuma():
     cli = Fake()
     out = actions.moodboard_import(cli, MBID, source="upload")
     assert cli.gets == [] and cli.posts == []
-    assert "ADR-040" in out and 'source="downloads"' in out and "tela do board" in out
+    assert "ADR-040" in out and 'source="downloads"' in out and "pela tela" in out
 
 
 def test_import_com_origem_desconhecida_recusa_sem_chamar_rota():
@@ -539,7 +539,8 @@ def test_mood_run_com_peneira_vazia_repassa_o_422_e_sugere_vibes_pick(terminal):
     cli = _run_cli({RUN_PATH: StudioApiError(
         "Entrada inválida: nenhuma foto escolhida — rode /mood_vibe_scout e escolha ao menos uma "
         "no painel de vibes", status=422)})
-    out = actions.mood_run(cli, MBID, foto="", objetivos=["ambiente"], confirm=True)
+    # com foto: o 422 tem de vir do SERVIDOR (a guarda local de foto ausente é outro teste)
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente"], confirm=True)
     assert "nenhuma foto escolhida" in out and "vibes_pick" in out
 
 
@@ -979,3 +980,150 @@ def test_thumb_montada_por_mb_images_e_servida_por_mbfiles(client):
     imgs = actions._mb_images(mbid, cands)
     assert imgs[0]["thumb"] == f"/mbfiles/{mbid}/candidates/{cands[0]['thumb']}"
     assert client.get(imgs[0]["thumb"]).status_code == 200
+
+
+# ---------- correções da rodada de review (achados 1 a 9) ----------
+def test_recusa_de_upload_passa_pelo_sugerir_tela(monkeypatch):
+    """Achado 1: `_sugerir_tela` é o único ponto de troca com a F08 e precisa ter chamador em
+    produção. A recusa de upload é o caso em que o caminho que sobra é a TELA (critério 18)."""
+    avisos = []
+    monkeypatch.setattr(ui, "notify", lambda cli, texto, level="info": avisos.append(texto) or "ok")
+    cli = Fake()
+    out = actions.moodboard_import(cli, MBID, source="upload")
+    assert cli.gets == [] and cli.posts == []          # continua sem tocar rota nenhuma (ADR-040)
+    assert avisos == [out]                             # o usuário foi avisado no chat
+    assert "Biblioteca › Mood boards" in out and MBID in out
+
+
+def test_prompt_com_422_manda_importar_e_curar_em_vez_de_template():
+    """Achado 2: com o board vazio o `mode="template"` FUNCIONA e devolve um prompt genérico —
+    sugeri-lo esconderia do usuário que não há imagem nenhuma para olhar."""
+    erro = StudioApiError("Entrada inválida: importe e escolha ao menos uma imagem antes de gerar "
+                          "o prompt", status=422)
+    cli = Fake({f"/api/moodboards/{MBID}/prompt/generate": erro})
+    out = actions.moodboard_prompt(cli, MBID, mode="images")
+    assert "moodboard_import" in out and "moodboard_pick" in out
+    assert 'mode="template"' not in out
+
+
+def test_prompt_com_409_continua_sugerindo_o_template():
+    erro = StudioApiError("Claude CLI indisponível — use o modo template", status=409)
+    cli = Fake({f"/api/moodboards/{MBID}/prompt/generate": erro})
+    assert 'mode="template"' in actions.moodboard_prompt(cli, MBID, mode="brief")
+
+
+def test_mood_run_wait_le_o_result_mesmo_com_o_job_zerado_por_restart(monkeypatch):
+    """Achado 3: o registro de jobs é em memória. Depois de um `make run`, `state` volta a `idle`
+    enquanto o `_run.json` continua em disco — as pranchas não podem ficar inalcançáveis."""
+    vistos = {}
+    monkeypatch.setattr(ui, "show", lambda cli, images, title="": vistos.setdefault("images", images) or "ok")
+    cli = Fake({JOB_PATH: {"state": "idle"}, RESULT_PATH: _result(_prancha("ambiente"))})
+    out = actions.mood_run_wait(cli, MBID, timeout=5)
+    assert [i["label"] for i in vistos["images"]] == ["ambiente"]
+    assert "ambiente: prancha pronta" in out
+
+
+def test_mood_run_wait_sem_corrida_nenhuma_continua_dizendo_para_disparar():
+    """O 'nunca rodou' passa a vir do 404 do `result`, não do estado do job (FDD §6)."""
+    cli = Fake({JOB_PATH: {"state": "idle"},
+                RESULT_PATH: StudioApiError("Não encontrado: nenhuma corrida de mood neste board "
+                                            "ainda", status=404)})
+    out = actions.mood_run_wait(cli, MBID, timeout=5)
+    assert "sem corrida de mood" in out and "mood_run" in out
+
+
+def test_multishot_nomeia_o_modelo_que_o_servidor_escolheu(monkeypatch):
+    """Achado 4: sem `model`, quem escolhe é o servidor — e o gate de gasto tem de dizer qual."""
+    confirmados = {}
+
+    def _confirm_cost(cli, action, credits, model, detail=""):
+        confirmados.update(action=action, credits=credits, model=model)
+        return {"answered": True, "confirmed": True}
+
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm_cost", _confirm_cost)
+    cli = Fake({f"/api/moodboards/{MBID}/multishot/cost": {"model": "nano_banana_2", "credits": 24}})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6")
+    assert confirmados["model"] == "nano_banana_2"      # e não "modelo padrão"
+    assert "nano_banana_2" in out and "moodboard_multishot_wait" in out
+
+
+def test_multishot_com_modelo_pedido_pelo_usuario_respeita_a_escolha(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = Fake({f"/api/moodboards/{MBID}/multishot/cost": {"model": "seedream_4", "credits": 30}})
+    out = actions.moodboard_multishot(cli, MBID, "a1b2c3d4e5f6", model="seedream_4", confirm=True)
+    assert "seedream_4" in out
+    corpo = dict(cli.posts)[f"/api/moodboards/{MBID}/multishot/generate"]
+    assert corpo["model"] == "seedream_4"
+
+
+def test_paid_sem_model_from_cost_ignora_o_modelo_da_resposta():
+    """Regressão do achado 4: a flag é aditiva — quem não a liga não muda de texto."""
+    cli = Fake({"/api/projects/p/mood/cost": {"total": 12, "model": "outro_modelo"}})
+    out = actions.mood_generate(cli, "p", ["um prompt"], model="nano_banana_2", confirm=True)
+    assert "nano_banana_2" in out and "outro_modelo" not in out
+    assert "`job_wait` (etapa mood)" in out
+
+
+def test_vibes_pick_no_caminho_feliz_nao_fala_de_ausentes(monkeypatch):
+    """Achado 6: '0 sumiu(ram) do disco' é ruído que o contrato 9 não tem."""
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "choose_images",
+                        lambda *a, **k: {"answered": True, "selected": ["praia_01.jpg"]})
+    cli = Fake({"/api/vibes": {"items": [{"id": "praia_01.jpg", "arquivo": "praia_01.jpg",
+                                          "url": "/mbfiles/_vibes/praia_01.jpg"}], "total": 1,
+                               "page": 1, "pages": 1},
+                "/api/vibes/select": {"copiadas": ["praia_01.jpg"], "duplicadas": [],
+                                      "ausentes": [], "total_escolhidas": 6}})
+    out = actions.vibes_pick(cli)
+    assert "sumiu" not in out
+    assert "Peneira: 6." in out
+
+
+def test_vibes_pick_com_ausentes_nomeia_os_arquivos(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "choose_images",
+                        lambda *a, **k: {"answered": True, "selected": ["a.jpg", "b.jpg"]})
+    cli = Fake({"/api/vibes": {"items": [{"id": "a.jpg", "arquivo": "a.jpg",
+                                          "url": "/mbfiles/_vibes/a.jpg"},
+                                         {"id": "b.jpg", "arquivo": "b.jpg",
+                                          "url": "/mbfiles/_vibes/b.jpg"}],
+                               "total": 2, "page": 1, "pages": 1},
+                "/api/vibes/select": {"copiadas": ["a.jpg"], "duplicadas": [],
+                                      "ausentes": ["b.jpg"], "total_escolhidas": 7}})
+    out = actions.vibes_pick(cli)
+    assert "1 sumiu(ram) do disco (b.jpg)" in out
+
+
+def test_mood_run_sem_foto_nao_gasta_a_barreira_de_confirmacao():
+    """Achado 9: sem foto-semente o 422 é certo — recusar antes preserva o valor do `ui.confirm`."""
+    cli = Fake()
+    out = actions.mood_run(cli, MBID, objetivos=["ambiente"])
+    assert cli.posts == [] and cli.gets == []
+    assert "escolhidas_list" in out and "foto-semente" in out
+
+
+def test_nenhuma_tool_do_mcp_importa_servico_de_dominio():
+    """Achado 7: invariante do FDD §6 ("verificável por teste de import"), que faltava como guarda.
+
+    O MCP é cliente HTTP da própria API (ADR-037). Ler o fonte por AST em vez de importar: o
+    `server.py` traria o pacote `mcp` para dentro do teste.
+    """
+    import ast as _ast
+    from pathlib import Path as _Path
+
+    proibidos = {"studio.moodboards", "studio.mood", "studio.characters", "studio.etapas"}
+    pasta = _Path(actions.__file__).parent
+    for arquivo in sorted(pasta.glob("*.py")):
+        arvore = _ast.parse(arquivo.read_text(encoding="utf-8"), filename=str(arquivo))
+        for no in _ast.walk(arvore):
+            if isinstance(no, _ast.Import):
+                nomes = {a.name for a in no.names}
+            elif isinstance(no, _ast.ImportFrom):
+                # `from ..moodboards import x` chega como level=2, module="moodboards"
+                prefixo = "studio." if no.level else ""
+                nomes = {f"{prefixo}{no.module}"} if no.module else set()
+            else:
+                continue
+            achados = {n for n in nomes if any(n.startswith(p) for p in proibidos)}
+            assert not achados, f"{arquivo.name}: import proibido de serviço de domínio {achados}"
