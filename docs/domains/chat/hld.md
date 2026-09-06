@@ -1,8 +1,9 @@
 ### HLD: chat (assistente do Studio) `[extensão]`
 
-Versão: 1.2 (Onda A + sincronização chat → telas + feedback ao vivo do turno)
+Versão: 1.3 (Onda A + sincronização chat → telas + feedback ao vivo do turno + navegação automática)
 Data: 2026-09-06
-Task-Id: ADH-OS-20260905-04 (v1.0) · ADH-OS-20260906-05 (v1.1) · ADH-OS-20260906-04 (v1.2)
+Task-Id: ADH-OS-20260905-04 (v1.0) · ADH-OS-20260906-05 (v1.1) · ADH-OS-20260906-04 (v1.2) ·
+ADH-OS-20260906-10 (v1.3)
 Responsável: Arthur Diego (modo autônomo /dd-parallel, aprovação total)
 
 > **v1.2 (Wave 11 · F02, card #86)** — o dock deixa de adivinhar se o assistente está trabalhando.
@@ -31,11 +32,15 @@ no Studio (ADR-036).
   o `JobRegistry` em memória (ADR-006), o guia (ADR-010) e o gate de custo (ADR-016) continuam com
   uma fonte única de estado. O MESMO servidor stdio serve o chat embutido e um terminal.
 - **Humano-no-laço (ADR-038).** Escolha visual e gasto são do usuário; as tools `ui.*` pausam o
-  turno e o dock resolve pelo WebSocket. (Plumbing na Onda A; widgets ricos na Onda B.)
+  turno e o dock resolve pelo WebSocket. (Plumbing na Onda A; widgets ricos na Onda B.) A Wave 11
+  acrescenta a exceção registrada no **adendo do ADR-038**: **navegar** não é escolha visual nem
+  gasto, então `ui_navigate` **não** pausa o turno — e "concluir" um `open` pode ser derivado do
+  guia, só na transição para `done` e só nas telas opt-in. Escolha visual e gasto seguem exigindo
+  gesto humano, sem exceção.
 - **Persistência em arquivo (ADR-003).** Abas e transcript em `STATE_DIR/chats/<id>/` — fora do
   git, fora de `projects/`.
 
-### Componentes (Onda A + Wave 11 · F02/F03)
+### Componentes (Onda A + Wave 11 · F02/F03/F08)
 | Componente | Papel |
 | --- | --- |
 | `studio/chat/sessions.py` | Store das abas: `meta.json` + `events.jsonl` por aba; `seq` para replay. |
@@ -45,8 +50,10 @@ no Studio (ADR-036).
 | `studio/chat/mudancas.py` | Mapa explícito tool → (etapa, escopo) e `derivar()`: traduz o par `tool_call`+`tool_result` em zero ou um `state_changed`. Puro, como `normalize_event`. Guardado por teste de drift AST sobre `studio/mcp/server.py` (ADR-041). |
 | `studio/chat/prompts/sistema.md` | Persona e regras (seguir o guia, não gerar pago sem confirmar, não escolher no lugar do usuário, fidelidade ao curso). |
 | `studio/mcp/` | Servidor MCP stdio (`python -m studio.mcp`): `client.py` (HTTP loopback), `tools.py` (funções puras), `server.py` (FastMCP). Tools de leitura na Onda A. |
-| `frontend/src/areas/chat/` | Dock lateral do shell: `ChatDock` + `useChatSocket` + `chat.css`. Montado sempre no `Shell` (área global). Traduz `state_changed` em `invalidarGuia` + publicação no barramento (Wave 11 · F03). |
-| `frontend/src/shell/events.ts` | Barramento de mudanças do shell: `emitStudioChange` + `useStudioChange(step, cb, opts?)`, filtro por step/pid e debounce de 400 ms. Sem `window`, sem rede — só transporta o AVISO (Wave 11 · F03). |
+| `frontend/src/areas/chat/` | Dock lateral do shell: `ChatDock` + `useChatSocket` + `chat.css`. Montado sempre no `Shell` (área global). Traduz `state_changed` em `invalidarGuia` + publicação no barramento (Wave 11 · F03) e o `navigate` em troca de tela ou recusa (Wave 11 · F08). |
+| `frontend/src/areas/chat/navigate.ts` | Decisão PURA "vou ou recuso, e com que texto" (Wave 11 · F08). Separa **navegável** (etapa `ready` no catálogo `/api/steps`) de **liberada** (guia da etapa não `blocked`), com textos de recusa distintos. Não deriva prontidão (ADR-010 item a). |
+| `frontend/src/shell/events.ts` | Dois barramentos, mesmo desenho de registro em memória. **Mudanças** (F03): `emitStudioChange` + `useStudioChange(step, cb, opts?)`, filtro por step/pid e debounce de 400 ms. **Intenção de abertura** (F08): `emitNavIntent` + `useNavIntent(target, cb)`, sticky de um disparo — a tela alvo ainda não existe quando a intenção é publicada. Sem `window`, sem rede. |
+| `frontend/src/shell/router.ts` | Dono do hash. Desde a Wave 11 · F08, `navigate` monta também as áreas globais `#/moodboards[/<mbid>]`, `#/characters[/<cid>]` e `#/creditos` — que o efeito de resolução já entendia. Assinatura e gramática do hash inalteradas; contrato consumido pela frente F12. |
 
 Acrescentados na **v1.2** (Wave 11 · F02):
 
@@ -84,6 +91,18 @@ Acrescentados na **v1.2** (Wave 11 · F02):
    o polling das telas continua como está (ADR-006). Tool de leitura e tool que falhou não emitem.
    Sem browser (MCP no terminal) não há evento — limitação conhecida.
    Diagrama: `docs/domains/chat/diagrams/mermaid/sincronizacao-chat-telas.md`.
+7. **Navegação automática (Wave 11 · F08, adendo do ADR-038).** Lida a `next_step` que a `*_pick`
+   devolveu, o agente chama `ui_navigate(target, reason)`. A tool posta `{kind: "navigate"}` em
+   `/api/chats/{cid}/emit` (rota existente) e **devolve na hora**: o turno não bloqueia. O dock só
+   age em evento **ao vivo** e com `seq` acima da marca d'água de replay, executando cada `seq` no
+   máximo uma vez; e só se o toggle "seguir o assistente" estiver ligado (`studio.chat.follow`,
+   ligado por padrão). A decisão é sempre **posterior** ao refresh do guia (o mesmo `invalidarGuia`
+   da F03), com teto de 1500 ms; passado o teto decide com o cache. Toda recusa vira exatamente um
+   `notify` `warn` com o motivo, e o hash não muda — é isto que elimina o redirecionamento mudo
+   para o overview no caminho do chat. Áreas globais navegam sem consultar o guia (não têm guia).
+   Um `open` pendente de `refs`/`mood`/`base` fecha sozinho com `{done: true, auto: true}` quando a
+   etapa **transita** para `done`; um `open` nascido com a etapa já `done` nunca é auto-respondido.
+   Diagrama: `docs/domains/chat/diagrams/mermaid/navegacao-automatica.md`.
 
 ### Feedback ao vivo do turno (v1.2)
 
@@ -124,7 +143,7 @@ dezenas de linhas de controle por bloco, e deixá-las virar `raw` inundaria o tr
 disco. O Vitest deste repo roda com `css: false` — a folha vira módulo vazio, `?raw` inclusive — e o
 projeto npm não tem `@types/node`, então nenhum `*.test.tsx` conseguiria fazer essa asserção.
 
-### Interfaces (Onda A + Wave 11 · F02/F03)
+### Interfaces (Onda A + Wave 11 · F02/F03/F08)
 | Rota | Tipo | Nota |
 | --- | --- | --- |
 | `GET /api/chat/status` | REST | `{available}` — o CLI `claude` está no PATH? |
@@ -136,7 +155,12 @@ projeto npm não tem `@types/node`, então nenhum `*.test.tsx` conseguiria fazer
 | `WS /ws/chat/{id}` | WebSocket | mensagens do usuário e stream do turno; na v1.2 carrega `turn_started`/`turn_ended` (persistidos) e `assistant_delta`/`tool_progress` (efêmeros) |
 | `GET /api/chats/{id}/trace` | REST | métricas derivadas do transcript; na v1.2 ganha `turnos_iniciados`, `turnos_interrompidos` e `duracao_media_s` (campos aditivos) |
 | tools MCP `mcp__studio__{projects,project,guide,guide_step,steps,doctor,job,api_get}` | MCP | leitura (Onda A) |
-| kinds do `WS /ws/chat/{id}` | WebSocket | protocolo **v2 aditivo** (ADR-041): aos kinds da Onda A soma-se `state_changed {pid, step, scope, tool}`. Cliente antigo ignora (o `switch` do dock cai em `default`). |
+| tool MCP `mcp__studio__ui_navigate(target, reason)` | MCP | **não bloqueante** (Wave 11 · F08): posta o `navigate` em `/emit` e devolve `str`. `target`: id de etapa, `overview`, `moodboards[/<mbid>]`, `creditos`, `characters`. Sem `STUDIO_CHAT_ID` degrada para texto. |
+| tools MCP `mcp__studio__{ui_choose_images,ui_form}` | MCP | helpers da Onda B finalmente **registrados** (Wave 11 · F08); antes só alcançáveis de dentro das `*_pick`. |
+| tool MCP `mcp__studio__ui_open(..., params)` | MCP | `params` passa a ser exposto no registro (Wave 11 · F08); o helper já o propagava. O dock entrega os `params` à tela pelo barramento de intenção. |
+| kinds do `WS /ws/chat/{id}` | WebSocket | protocolo **v2 aditivo** (ADR-041): aos kinds da Onda A somam-se `state_changed {pid, step, scope, tool}` (F03) e `navigate {target, reason}` (F08). Cliente antigo ignora os dois (o `switch` do dock cai em `default`). |
+| `navigate(target, opts?)` do shell | frontend | contrato de `frontend/src/shell/router.ts`, exposto em `useShell().navigate`. Assinatura inalterada; desde a F08 monta também as três áreas globais. **Consumido pela frente F12.** |
+| `emitNavIntent` / `useNavIntent` | frontend | barramento de intenção de abertura (`frontend/src/shell/events.ts`), sticky de um disparo. Publicado pela F08; consumidores são F11/F12 e as etapas. |
 
 ### Configuração (env, lidas fora de `config.py` que é núcleo)
 `STUDIO_CHAT_MODEL` (vazio = default do CLI), `STUDIO_URL`/`PORT` (base da API para o MCP),
@@ -146,9 +170,12 @@ projeto npm não tem `@types/node`, então nenhum `*.test.tsx` conseguiria fazer
 - Tools de ação e widgets `ui.*` ricos, prompt por etapa, gate de custo (Onda B).
 - Abas paralelas com fila, replay incremental robusto, `ui.open`/`ui.done` (Onda C).
 - Personagem e identidade (Onda D). Conhecimento citável, QA Playwright, observabilidade (Onda E).
-- Navegação automática para a etapa alvo a partir do `state_changed` (frente F08 da Wave 11) e
-  eventos de mudança originados fora do chat: o barramento aceitaria, mas nenhum emissor além do
+- Eventos de mudança originados fora do chat: o barramento aceitaria, mas nenhum emissor além do
   dock é registrado.
+- (A navegação automática para a etapa alvo saiu desta lista na Wave 11 · F08: está entregue. O que
+  segue fora de escopo ali é navegar para **outra campanha** e qualquer mudança na gramática do
+  hash; e nenhuma tela **consome** `params` ainda — o canal está publicado e testado, os
+  consumidores são F11/F12 e as etapas.)
 
 ### Escala (deixada pronta)
 Auth por token no WS/API e bind fora do loopback (supersede ADR-001); `sessions.py` como única
