@@ -329,5 +329,7 @@
   color: var(--ink-3);
 }
 .chat-nav-text { font-style: italic; }
-.chat-nav[data-follow="0"] .chat-nav-text { font-style: normal; color: var(--ink-2); }
+/* O itálico narra "isto aconteceu"; o cartão que NÃO trocou a tela (toggle desligado ou navegação
+   recusada) é um convite, não um relato — daí o sinal ser `data-navegou`, e não o toggle. */
+.chat-nav[data-navegou="0"] .chat-nav-text { font-style: normal; color: var(--ink-2); }
 .chat-nav-go { padding: 4px 10px; font-size: 12px; }

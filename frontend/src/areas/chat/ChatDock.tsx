@@ -367,6 +367,15 @@ function Conversation({
   const marcaRef = useRef(-1);
   const vivoRef = useRef(false);
   const executadosRef = useRef<Set<number>>(new Set());
+  /**
+   * Os `seq` de `navigate` que de fato trocaram a tela.
+   *
+   * O cartão não pode narrar pelo toggle: com "Seguir" ligado e a etapa bloqueada, o dock recusa —
+   * e um cartão dizendo "Fui para Mood board" logo acima do `notify` "Não abri a etapa Mood board:
+   * falta …" seria a ferramenta se contradizendo na cara do usuário. Só o resultado da decisão
+   * sabe o que aconteceu, então ele é registrado aqui e o `NavigateCard` lê daqui.
+   */
+  const [navegados, setNavegados] = useState<Set<number>>(new Set());
 
   /**
    * O ÚNICO caminho de decisão de navegação do dock (Wave 11 · F08).
@@ -383,7 +392,12 @@ function Conversation({
    * quando a decisão foi navegar, para não deixar intenção órfã retida depois de uma recusa.
    */
   const irPara = useCallback(
-    async (alvo: unknown, intencao?: { params: Record<string, unknown>; askId?: string }) => {
+    async (
+      alvo: unknown,
+      intencao?: { params: Record<string, unknown>; askId?: string },
+      /** `seq` do evento que originou a ida, quando houver — só para o cartão narrar o certo. */
+      seqDeOrigem?: number,
+    ) => {
       const pidAntes = ctxRef.current.pid;
       if (pidAntes) await refrescarGuia(qc, pidAntes);
 
@@ -402,6 +416,7 @@ function Conversation({
         });
       }
       navigate(decisao.target);
+      if (typeof seqDeOrigem === "number") setNavegados((prev) => new Set(prev).add(seqDeOrigem));
     },
     [qc, chatId, navigate],
   );
@@ -430,14 +445,18 @@ function Conversation({
       }
 
       if (ev.kind !== "navigate") return;
-      // I2: com o toggle desligado nenhum evento do chat toca o hash. O cartão ganha "Ir agora".
-      if (!ctxRef.current.seguir) return;
+      // A dedup vem ANTES do toggle de propósito: se ela ficasse depois, um `seq` descartado por
+      // "Seguir" desligado nunca entraria em `executados` e voltaria a ser executável caso o
+      // usuário religasse o toggle e o socket reentregasse a mesma mensagem. `seq` é a chave de
+      // idempotência do transcript (I5) — vista uma vez, vista para sempre.
       const seq = ev.seq;
       if (typeof seq === "number") {
         if (seq <= marcaRef.current || executadosRef.current.has(seq)) return;
         executadosRef.current.add(seq);
       }
-      void irPara(ev.target);
+      // I2: com o toggle desligado nenhum evento do chat toca o hash. O cartão ganha "Ir agora".
+      if (!ctxRef.current.seguir) return;
+      void irPara(ev.target, undefined, seq);
     },
     [qc, irPara],
   );
@@ -479,9 +498,9 @@ function Conversation({
   );
 
   const abrirTela = useCallback(
-    (target: string, params?: Record<string, unknown>, askId?: string) => {
+    (target: string, params?: Record<string, unknown>, askId?: string, seq?: number) => {
       if (!target) return;
-      void irPara(target, { params: params ?? {}, ...(askId ? { askId } : {}) });
+      void irPara(target, { params: params ?? {}, ...(askId ? { askId } : {}) }, seq);
     },
     [irPara],
   );
@@ -515,7 +534,15 @@ function Conversation({
       const alvo = String(ev.target ?? "");
       if (!AUTO_DONE_STEPS.includes(alvo)) continue; // E14: o resto segue manual
 
-      const agora = guideAll?.steps.find((g) => g.id === alvo)?.status ?? "unknown";
+      // O nascimento só pode ser registrado com um guia REAL na mão. Sem esta guarda, um `ask`
+      // visto enquanto o agregado ainda é `null` (query em carga ou em erro, `pid` ainda não
+      // resolvido pelo roteador) nasceria como `"unknown"` — e quando o guia chegasse dizendo
+      // `done`, o laço leria "transitou de unknown para done" e fecharia sozinho um `open` que o
+      // usuário nunca concluiu. É exatamente o caso que A10/I7 proíbem (risco R4). Adiar o
+      // registro custa um tick e elimina a transição falsa.
+      const guia = guideAll?.steps.find((g) => g.id === alvo);
+      if (!guia) continue;
+      const agora = guia.status;
       if (!nascimentoRef.current.has(askId)) {
         nascimentoRef.current.set(askId, agora);
         continue;
@@ -646,6 +673,7 @@ function Conversation({
               chip={e.kind === "tool_call" ? chipDe(e, i) : undefined}
               auto={e.ask_id ? autoConcluidos.has(String(e.ask_id)) : false}
               seguir={seguir}
+              navegou={typeof e.seq === "number" ? navegados.has(e.seq) : false}
               tituloDoAlvo={tituloDoAlvo}
             />
           ))
@@ -715,7 +743,7 @@ interface ChipInfo {
 interface MessageProps {
   ev: ChatEvent;
   onAnswer: (askId: string, value: unknown) => void;
-  onOpen: (target: string, params?: Record<string, unknown>, askId?: string) => void;
+  onOpen: (target: string, params?: Record<string, unknown>, askId?: string, seq?: number) => void;
   done: boolean;
   /** Só `tool_call` tem chip; opcional para que quem renderiza um evento sem chip não o declare. */
   chip?: ChipInfo | undefined;
@@ -723,6 +751,8 @@ interface MessageProps {
   auto?: boolean;
   /** Estado do toggle do dock. Opcional e default LIGADO, como o próprio toggle (§12, decisão 3). */
   seguir?: boolean;
+  /** Este evento `navigate` de fato trocou a tela? Só quem decidiu sabe — ver `navegados`. */
+  navegou?: boolean;
   tituloDoAlvo?: (alvo: string) => string;
 }
 
@@ -741,6 +771,7 @@ export function Message({
   chip,
   auto,
   seguir,
+  navegou,
   tituloDoAlvo,
 }: MessageProps) {
   switch (ev.kind) {
@@ -776,7 +807,15 @@ export function Message({
     case "ask":
       return <AskCard ev={ev} onAnswer={onAnswer} onOpen={onOpen} done={done} auto={auto ?? false} />;
     case "navigate":
-      return <NavigateCard ev={ev} onOpen={onOpen} seguir={seguir !== false} tituloDoAlvo={tituloDoAlvo} />;
+      return (
+        <NavigateCard
+          ev={ev}
+          onOpen={onOpen}
+          seguir={seguir !== false}
+          navegou={navegou === true}
+          tituloDoAlvo={tituloDoAlvo}
+        />
+      );
     default:
       return null;
   }
@@ -785,9 +824,12 @@ export function Message({
 /**
  * O cartão do evento `navigate`.
  *
- * Ele conta duas histórias diferentes com o mesmo evento, porque o toggle é do usuário e não do
- * transcript: ligado, o cartão narra o que já aconteceu; desligado, ele vira um convite com o botão
- * "Ir agora" — que passa pelo MESMO caminho de decisão, e portanto pode ser recusado.
+ * Ele conta duas histórias diferentes com o mesmo evento — mas quem escolhe qual é o **resultado da
+ * decisão**, nunca o toggle. Narrar pelo toggle era um bug: com "Seguir" ligado e a etapa
+ * bloqueada, o cartão dizia "Fui para Mood board" logo acima do `notify` "Não abri a etapa Mood
+ * board: falta …", e a ferramenta se contradizia na cara do usuário. Só houve troca de tela quando
+ * `navegou` é verdadeiro; em todo o resto o cartão é um convite com o botão "Ir agora", que passa
+ * pelo MESMO caminho de decisão e portanto pode ser recusado de novo (com o `notify` de sempre).
  *
  * O `reason` é o que o agente disse para justificar a troca ("referências escolhidas"). Ele é a
  * mitigação de R1 escrita na tela: navegação automática sem explicação é a tela pulando sozinha.
@@ -796,24 +838,30 @@ function NavigateCard({
   ev,
   onOpen,
   seguir,
+  navegou,
   tituloDoAlvo,
 }: {
   ev: ChatEvent;
-  onOpen: (target: string, params?: Record<string, unknown>, askId?: string) => void;
+  onOpen: (target: string, params?: Record<string, unknown>, askId?: string, seq?: number) => void;
   seguir: boolean;
+  navegou: boolean;
   tituloDoAlvo: ((alvo: string) => string) | undefined;
 }) {
   const alvo = String(ev.target ?? "");
   const titulo = tituloDoAlvo ? tituloDoAlvo(alvo) : alvo;
   const motivo = typeof ev.reason === "string" ? ev.reason.trim() : "";
   return (
-    <div className="chat-nav" data-follow={seguir ? "1" : "0"}>
+    <div className="chat-nav" data-follow={seguir ? "1" : "0"} data-navegou={navegou ? "1" : "0"}>
       <span className="chat-nav-text">
-        {seguir ? `Fui para ${titulo}.` : `O assistente sugeriu abrir ${titulo}.`}
+        {navegou ? `Fui para ${titulo}.` : `O assistente sugeriu abrir ${titulo}.`}
         {motivo ? ` ${motivo}` : ""}
       </span>
-      {seguir ? null : (
-        <button className="chat-optbtn chat-nav-go" type="button" onClick={() => onOpen(alvo)}>
+      {navegou ? null : (
+        <button
+          className="chat-optbtn chat-nav-go"
+          type="button"
+          onClick={() => onOpen(alvo, undefined, undefined, typeof ev.seq === "number" ? ev.seq : undefined)}
+        >
           Ir agora
         </button>
       )}
@@ -872,7 +920,7 @@ function AskCard({
 }: {
   ev: ChatEvent;
   onAnswer: (askId: string, value: unknown) => void;
-  onOpen: (target: string, params?: Record<string, unknown>, askId?: string) => void;
+  onOpen: (target: string, params?: Record<string, unknown>, askId?: string, seq?: number) => void;
   done: boolean;
   auto: boolean;
 }) {

@@ -357,6 +357,39 @@ describe("ChatDock — navegação automática pedida pelo assistente", () => {
     expect(notify.text).toContain("ao menos 1 referência escolhida");
   });
 
+  it("CT-04b recusa com o toggle LIGADO: o cartão não pode dizer que foi", async () => {
+    // O cartão narrava pelo toggle, e não pelo resultado: com "Seguir" ligado e a etapa bloqueada
+    // ele dizia "Fui para Mood board" logo acima do notify "Não abri a etapa Mood board: falta …".
+    // Quem sabe o que aconteceu é a decisão, não a preferência do usuário.
+    const { container } = await montarDock({
+      guideAll: guiaCom({ mood: "blocked" }, ["falta imagem base final"]),
+    });
+
+    chegaPeloSocket(NAVEGAR);
+
+    await waitFor(() => expect(emitidos).toHaveLength(1));
+    const cartao = container.querySelector(".chat-nav")!;
+    expect(cartao.getAttribute("data-navegou")).toBe("0");
+    expect(cartao.textContent).not.toContain("Fui para");
+    expect(cartao.textContent).toContain("O assistente sugeriu abrir");
+    // E o convite continua de pé: o usuário pode insistir depois de destravar a etapa.
+    expect(container.querySelector(".chat-nav-go")).not.toBeNull();
+  });
+
+  it("CT-04c navegação bem-sucedida marca o cartão como 'Fui para'", async () => {
+    const { navigate, container } = await montarDock();
+
+    chegaPeloSocket(NAVEGAR);
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("mood"));
+    await waitFor(() => {
+      const cartao = container.querySelector(".chat-nav")!;
+      expect(cartao.getAttribute("data-navegou")).toBe("1");
+      expect(cartao.textContent).toContain("Fui para");
+    });
+    expect(container.querySelector(".chat-nav-go")).toBeNull();
+  });
+
   it("CT-05 alvo `soon` ou desconhecido é recusado sem tocar no hash", async () => {
     const { navigate } = await montarDock();
     const hashAntes = location.hash;
@@ -424,7 +457,9 @@ describe("ChatDock — navegação automática pedida pelo assistente", () => {
 
     await vi.advanceTimersByTimeAsync(1400);
     expect(navigate).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(200);
+    // `act` porque navegar também marca o `seq` como navegado (o cartão passa a dizer "Fui para"),
+    // e esse `setState` cai fora do stack do teste — sem o wrapper o React avisa no console.
+    await act(() => vi.advanceTimersByTimeAsync(200));
     expect(navigate).toHaveBeenCalledWith("mood");
   });
 
@@ -476,6 +511,22 @@ describe("ChatDock — navegação automática pedida pelo assistente", () => {
 
     // Nem oscilando o guia: o status de NASCIMENTO é que manda (A10).
     act(() => atualizarShell({ guideAll: guiaCom({ refs: "todo" }) }));
+    act(() => atualizarShell({ guideAll: guiaCom({ refs: "done" }) }));
+
+    expect(respostasEnviadas()).toHaveLength(0);
+    expect(container.querySelector(".chat-ask")).not.toBeNull();
+  });
+
+  it("CT-12b open visto ANTES de o guia carregar não vira transição falsa para done", async () => {
+    // O nascimento era registrado como `"unknown"` quando o agregado ainda era `null` (query em
+    // carga ou em erro). Quando o guia chegava dizendo `done`, o laço lia "unknown → done" e
+    // fechava sozinho um `open` que o usuário nunca concluiu — o caso que A10/I7 proíbem (R4).
+    const { container, atualizarShell } = await montarDock({ guideAll: null });
+
+    chegaPeloSocket(askOpen({ target: "refs" }));
+    await waitFor(() => expect(container.querySelector(".chat-ask")).not.toBeNull());
+
+    // O primeiro guia REAL já traz a etapa concluída: é nascimento, não transição.
     act(() => atualizarShell({ guideAll: guiaCom({ refs: "done" }) }));
 
     expect(respostasEnviadas()).toHaveLength(0);

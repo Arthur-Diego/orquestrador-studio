@@ -46,6 +46,11 @@ export const TOOL_LABELS: Record<string, string> = {
   ui_notify: "Avisando você",
   ui_show: "Mostrando as imagens",
   ui_open: "Aguardando você concluir na tela",
+  // Wave 11 · F08 (card #88): as três tools que a frente da navegação acrescentou.
+  // `ui_navigate` não bloqueia — o rótulo diz o que ela PEDE, não o que ela espera.
+  ui_navigate: "Levando você para a tela",
+  ui_choose_images: "Aguardando sua escolha das imagens",
+  ui_form: "Aguardando você preencher",
   character_list: "Listando os personagens",
   character_create: "Criando o personagem",
   character_explore: "Explorando variações do personagem",
