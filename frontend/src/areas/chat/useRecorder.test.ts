@@ -252,6 +252,20 @@ describe("useRecorder", () => {
     stream.tracks.forEach((t) => expect(t.stop).toHaveBeenCalled());
   });
 
+  it("422 do próprio FastAPI (detail em lista) não vira '[object Object]' na tela", async () => {
+    // A validação de forma do multipart acontece ANTES do router, e ali o `detail` é uma lista de
+    // objetos — `apiUpload` a estringifica. Inalcançável pelo hook (o FormData é montado aqui),
+    // mas a mensagem tem de continuar legível.
+    upload.mockRejectedValueOnce(Object.assign(new Error("[object Object]"), { status: 422, body: {} }));
+    const { view } = await gravar();
+
+    act(() => view.result.current.stop());
+    await waitFor(() => expect(view.result.current.state).toBe("error"));
+
+    expect(view.result.current.error).toBe(MSG.falhou);
+    expect(view.result.current.error).not.toContain("[object Object]");
+  });
+
   it("uma gravação por vez: start() durante recording é no-op", async () => {
     const { view } = await gravar();
     getUserMedia.mockClear();

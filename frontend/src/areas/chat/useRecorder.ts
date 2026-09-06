@@ -108,6 +108,22 @@ function mensagemDaPermissao(e: unknown): string {
 }
 
 /**
+ * Mensagem exibível a partir do erro da rota.
+ *
+ * A §5 do FDD diz que `detail` é sempre string, e é — em todo erro que `studio/chat/voice.py` e o
+ * router levantam. Mas o FastAPI valida a forma do multipart ANTES de chegar lá: sem a parte `file`,
+ * ou com `duration_s` não numérico, ele responde 422 com `detail` na forma de **lista de objetos**.
+ * `apiUpload` faz `new Error(detail as string)`, então esses dois casos chegariam aqui como o
+ * literal `[object Object]` na cara do usuário. Nenhum deles é alcançável pelo `useRecorder` (o
+ * `FormData` é montado aqui), mas a mensagem tem de continuar legível se um dia for — a correção
+ * no servidor moraria em `studio/app.py`, que é núcleo de outra titularidade (ADR-010).
+ */
+function mensagemDoErro(e: unknown): string {
+  if (!(e instanceof Error) || !e.message) return MSG.falhou;
+  return e.message.includes("[object Object]") ? MSG.falhou : e.message;
+}
+
+/**
  * @param chatId aba de chat para a qual o áudio é transcrito.
  * @param onText recebe SÓ o texto transcrito (pode ser string vazia quando o provedor não ouviu
  *   nada — quem decide o que fazer com isso é o composer, §6).
@@ -180,7 +196,7 @@ export function useRecorder(chatId: string, onText: (text: string) => void): Rec
       if (!vivoRef.current) return;
       setState("error");
       setErrorStatus(isApiError(e) ? e.status : 0);
-      setError(e instanceof Error && e.message ? e.message : MSG.falhou);
+      setError(mensagemDoErro(e));
     }
   }, []);
 
