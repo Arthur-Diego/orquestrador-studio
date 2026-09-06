@@ -101,3 +101,74 @@ describe("CreditosArea", () => {
     expect(notas.toLowerCase()).toContain("abra uma campanha");
   });
 });
+
+// Wave 11 (card #92) — o histórico ficou legível para o gasto que não tem campanha e a tabela de
+// custo aguenta modelo sem custo medido.
+describe("CreditosArea · histórico da biblioteca e custo não medido", () => {
+  /** Multishot da BIBLIOTECA global (ADR-013): grava `pid: null` com o nome do board. */
+  const BIBLIOTECA = {
+    ...DASH,
+    summary: {
+      total_credits: 7,
+      count: 1,
+      by_step: [{ step: "moodboard", credits: 7, count: 1 }],
+      by_project: [{ pid: null, name: "Board X", credits: 7, count: 1 }],
+    },
+    history: [
+      { at: "2026-09-06T10:00:00Z", pid: null, project_name: "Board X", step: "moodboard", model: "nano", variant: "2k", credits: 7 },
+    ],
+  };
+
+  const textos = (sel: string) => [...document.querySelectorAll(sel)].map((e) => e.textContent);
+  /** Célula da i-ésima tabela da grade do histórico (0 = "Por etapa", 1 = "Por projeto"). */
+  const celulasDaGrade = (i: number): (string | null)[] => {
+    const bloco = [...document.querySelectorAll(".cr-hist-grid > div")][i];
+    if (!bloco) throw new Error(`a tabela ${i} do histórico não renderizou`);
+    return [...bloco.querySelectorAll("tbody tr td")].map((e) => e.textContent);
+  };
+
+  it("rotula 'Biblioteca · <board>' o gasto sem campanha nas duas tabelas e dá nome à etapa", async () => {
+    stubFetch(BIBLIOTECA);
+    renderArea(null);
+    await waitFor(() => expect(document.querySelector(".cr-hist-scroll tbody tr")).toBeInTheDocument());
+
+    // "Gerações recentes": a coluna Projeto não mostra mais só o nome do board (que parecia campanha)
+    const recente = textos(".cr-hist-scroll tbody tr td");
+    expect(recente).toContain("Biblioteca · Board X");
+    // "Por projeto" (2ª tabela da grade do histórico) diz o mesmo
+    expect(celulasDaGrade(1)).toContain("Biblioteca · Board X");
+    // "Por etapa" deixa de exibir a chave crua `moodboard`
+    expect(celulasDaGrade(0)).toContain("Biblioteca › Mood boards");
+    expect(celulasDaGrade(0)).not.toContain("moodboard");
+  });
+
+  it("sem nome de board o rótulo é só 'Biblioteca'", async () => {
+    stubFetch({
+      ...BIBLIOTECA,
+      history: [{ at: "2026-09-06T10:00:00Z", pid: null, step: "moodboard", model: "nano", credits: 7 }],
+    });
+    renderArea(null);
+    await waitFor(() => expect(document.querySelector(".cr-hist-scroll tbody tr")).toBeInTheDocument());
+    expect(textos(".cr-hist-scroll tbody tr td")).toContain("Biblioteca");
+  });
+
+  it("modelo sem custo medido (reframe) mostra '—' na tabela de custo, nunca 'null cr'", async () => {
+    stubFetch({
+      ...DASH,
+      models: [
+        ...DASH.models,
+        { id: "reframe", label: "Reframe (CLI)", kind: "reframe", rows: [{ variant: null, credits: null }], note: "custo ao vivo" },
+      ],
+      kind_order: ["image", "reframe"],
+      kind_label: { image: "Imagem", reframe: "Reenquadramento" },
+    });
+    renderArea(null);
+    await waitFor(() => expect(document.querySelector(".cr-table.admin tbody tr")).toBeInTheDocument());
+
+    const secao = [...document.querySelectorAll(".cr-kind")].find((h) => h.textContent === "Reenquadramento");
+    expect(secao).toBeInTheDocument();
+    const linha = secao?.nextElementSibling?.querySelector("tbody tr");
+    expect([...(linha?.querySelectorAll("td") ?? [])].map((t) => t.textContent)).toContain("—");
+    expect(document.body.textContent).not.toContain("null cr");
+  });
+});
