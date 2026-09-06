@@ -13,10 +13,11 @@ import os
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from . import mudancas, progress, runtime, sessions
+from ..edit.captions.transcribe import ProviderError
+from . import mudancas, progress, runtime, sessions, voice
 from .uibridge import bridge
 
 router = APIRouter()
@@ -221,6 +222,59 @@ def stop_chat(chat_id: str):
     return {"stopped": bool(task)}
 
 
+# ---------- entrada por voz [extensão] (ADR-043) ----------
+@router.post("/api/chats/{chat_id}/transcribe")
+async def chat_transcribe(chat_id: str, file: UploadFile = File(...),  # noqa: B008
+                          duration_s: float = Form(0.0)):  # noqa: B008
+    """Áudio falado no dock → texto, sem que nada disso chegue ao agente (ADR-040/043).
+
+    O produto desta rota é `{text, provider, duration_s}`: quem decide o que fazer com o texto é o
+    composer, não o servidor — nenhuma mensagem é enviada aqui e nenhum evento é gravado.
+
+    A aba é conferida ANTES de ler o arquivo: mandar 10 MB pelo fio para descobrir que a conversa
+    não existe é desperdício, e o `detail` do 404 é o mesmo das outras rotas do domínio.
+    """
+    try:
+        sessions.get(chat_id)
+    except KeyError as e:
+        raise HTTPException(404, f"conversa não encontrada: {chat_id}") from e
+    data = await file.read()
+    nome = file.filename or "fala.webm"
+    tipo = file.content_type or ""
+    inicio = time.monotonic()
+
+    def _ms() -> int:
+        return int((time.monotonic() - inicio) * 1000)
+
+    if len(data) > voice.MAX_AUDIO_BYTES:
+        teto = voice.MAX_AUDIO_BYTES // (1024 * 1024)
+        msg = f"{nome}: arquivo acima de {teto} MB"
+        voice.log_result(chat_id, result="too_large", size=len(data), content_type=tipo,
+                         duration_s=duration_s, elapsed_ms=_ms(), msg=msg)
+        raise HTTPException(413, msg)
+    try:
+        out = voice.transcribe(data, tipo, nome, duration_s)
+    except voice.VoiceError as e:
+        voice.log_result(chat_id, result="invalid", size=len(data), content_type=tipo,
+                         duration_s=duration_s, elapsed_ms=_ms(), msg=str(e))
+        raise HTTPException(422, str(e)) from e
+    except voice.NoProvider as e:
+        # 409 é a convenção do repo para capacidade não configurada (ffmpeg ausente, CLI da
+        # Higgsfield, motor local). O 502 fica reservado ao provedor REAL que falhou.
+        voice.log_result(chat_id, result="no_provider", size=len(data), content_type=tipo,
+                         duration_s=duration_s, elapsed_ms=_ms(), msg=str(e))
+        raise HTTPException(409, str(e)) from e
+    except ProviderError as e:
+        # A mensagem já vem redigida e truncada por `OpenAITranscribe._safe` (ADR-024).
+        voice.log_result(chat_id, result="provider_error", size=len(data), content_type=tipo,
+                         duration_s=duration_s, elapsed_ms=_ms(), msg=str(e))
+        raise HTTPException(502, str(e)) from e
+    voice.log_result(chat_id, result="ok", size=len(data), content_type=tipo,
+                     duration_s=duration_s, elapsed_ms=_ms(), chars=len(out["text"]),
+                     provider=out["provider"])
+    return out
+
+
 # ---------- ponte humano-no-laço (chamada pelo MCP e pelo browser) ----------
 @router.post("/api/chats/{chat_id}/ask")
 async def chat_ask(chat_id: str, req: AskBody):
@@ -303,10 +357,14 @@ async def _handle_user(chat_id: str, msg: dict) -> None:
     # O `context` (pid/view do browser) vai só para o transcript: é diagnóstico, não conteúdo de
     # bolha, e o dock não o usa. Por isso este é o único ponto que grava e empurra formas
     # diferentes — daí o `push` explícito em vez do `_persistir_e_empurrar`.
+    # Procedência (ADR-043): enum de um valor. Qualquer outra coisa é ignorada, para que o campo
+    # não vire um saco de metadados antes de existir um segundo caso de uso — e uma mensagem sem
+    # `via` continua byte a byte a de hoje, sem a chave.
+    via = {"via": "voice"} if msg.get("via") == "voice" else {}
     ts = sessions.now()
     seq = sessions.append_event(
-        chat_id, {"ts": ts, "kind": "user", "text": text, "context": msg.get("context")})
-    await manager.push(chat_id, {"seq": seq, "ts": ts, "kind": "user", "text": text})
+        chat_id, {"ts": ts, "kind": "user", "text": text, "context": msg.get("context"), **via})
+    await manager.push(chat_id, {"seq": seq, "ts": ts, "kind": "user", "text": text, **via})
     _turns[chat_id] = asyncio.create_task(_run_turn(chat_id, text))
 
 

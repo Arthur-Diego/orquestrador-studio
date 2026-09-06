@@ -285,10 +285,10 @@ dispara após a integração das provedoras.
 | F08 chat-navigate | #140 | SDD 5/5 (re-run por 429) | mergeado (3 rebases) |
 | F06 storyboard-cenas | #142 | SDD 7/7 (re-run por 429) | mergeado (ADR-042 criada) |
 | F11 base-upscale-chat | #141 | SDD 7/7 | mergeado |
-| F09 chat-audio | #143 | SDD 3/4 + direta (job 2 parked por activity timeout) | em integração (CI após merge com develop @ f739834) |
+| F09 chat-audio | #143 | SDD 3/4 + direta (job 2 parked por activity timeout) | mergeado (2 rebases; HLD chat convergido em v1.5) |
 
-Suíte no tronco ao fim (antes de F09): `make verify` 1929 passed / 2 failed pré-existentes (`tests/test_edit_captions.py`,
-métrica de fonte local, verde no CI); `make frontend-verify` 658 testes / 61 arquivos. Baseline no início da wave:
+Suíte no tronco ao fim: `make verify` 1964 passed / 2 failed pré-existentes (`tests/test_edit_captions.py`,
+métrica de fonte local, verde no CI); `make frontend-verify` 689 testes / 63 arquivos. Baseline no início da wave:
 1384 / 356.
 
 Critérios `[cross-feature]` cobrados no estado integrado por testes das próprias frentes (guardas duras `TOOL_STEPS`
