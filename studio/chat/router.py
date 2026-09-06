@@ -253,8 +253,7 @@ async def chat_emit(chat_id: str, req: EmitBody):
         sessions.get(chat_id)
     except KeyError as e:
         raise HTTPException(404, f"conversa não encontrada: {chat_id}") from e
-    seq = sessions.append_event(chat_id, req.event)
-    await manager.push(chat_id, {"seq": seq, **req.event})
+    await _persistir_e_empurrar(chat_id, req.event)
     return {"emitted": True}
 
 
@@ -301,8 +300,13 @@ async def _handle_user(chat_id: str, msg: dict) -> None:
     text = (msg.get("text") or "").strip()
     if not text:
         return
-    seq = sessions.append_event(chat_id, {"kind": "user", "text": text, "context": msg.get("context")})
-    await manager.push(chat_id, {"seq": seq, "kind": "user", "text": text})
+    # O `context` (pid/view do browser) vai só para o transcript: é diagnóstico, não conteúdo de
+    # bolha, e o dock não o usa. Por isso este é o único ponto que grava e empurra formas
+    # diferentes — daí o `push` explícito em vez do `_persistir_e_empurrar`.
+    ts = sessions.now()
+    seq = sessions.append_event(
+        chat_id, {"ts": ts, "kind": "user", "text": text, "context": msg.get("context")})
+    await manager.push(chat_id, {"seq": seq, "ts": ts, "kind": "user", "text": text})
     _turns[chat_id] = asyncio.create_task(_run_turn(chat_id, text))
 
 
@@ -356,7 +360,7 @@ async def _run_turn(chat_id: str, text: str) -> None:
         sessions.patch(chat_id, status="error")
     finally:
         await _encerrar_progresso(pollers)  # nenhuma task de progresso sobrevive ao turno
-        fim = {"kind": "turn_ended", "turn_id": turn_id, "reason": reason}
+        fim = {"ts": sessions.now(), "kind": "turn_ended", "turn_id": turn_id, "reason": reason}
         seq = sessions.append_event(chat_id, fim)  # o par no disco é o que o replay lê
         # O WS pode já ter morrido junto com o turno; o transcript acima é a garantia.
         with contextlib.suppress(Exception):
@@ -364,9 +368,16 @@ async def _run_turn(chat_id: str, text: str) -> None:
 
 
 async def _persistir_e_empurrar(chat_id: str, event: dict) -> None:
-    """Evento de transcript: grava (ganha `seq` e `ts`) e empurra pelo WS."""
-    seq = sessions.append_event(chat_id, event)
-    await manager.push(chat_id, {"seq": seq, **event})
+    """Evento de transcript: grava (ganha `seq` e `ts`) e empurra pelo WS com os MESMOS dois campos.
+
+    O `ts` é carimbado aqui, e não dentro do `append_event`, porque o browser precisa dele **ao
+    vivo**: a duração do chip de tool sai da diferença entre os `ts` do `tool_call` e do
+    `tool_result` (FDD §12, decisão 9). Sem carimbar antes, o disco teria `ts` e o push não — e a
+    duração só apareceria depois de recarregar a aba.
+    """
+    carimbado = {"ts": sessions.now(), **event}
+    seq = sessions.append_event(chat_id, carimbado)
+    await manager.push(chat_id, {"seq": seq, **carimbado})
 
 
 # ---------- progresso de job: uma task por `tool_call.id`, viva só dentro do turno ----------

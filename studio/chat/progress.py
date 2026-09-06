@@ -81,18 +81,42 @@ def job_url_for(tool_name: str, tool_input: dict) -> str | None:
     return molde.format(**valores)
 
 
-def pct_of(job: dict) -> int | None:
-    """0..100 a partir de `{done, total}`; `None` quando `total` é ausente, 0 ou negativo.
+def _numero(valor) -> float | None:
+    """O valor quando é número de verdade; `None` caso contrário (`bool` não conta como número)."""
+    return valor if isinstance(valor, (int, float)) and not isinstance(valor, bool) else None
 
-    Sem `total` não há percentual honesto — e percentual inventado é pior que percentual nenhum.
+
+def contadores(job: dict) -> tuple[float, float | None]:
+    """`(feito, teto)` do job, nas DUAS formas que a API do Studio publica hoje.
+
+    A maioria das etapas devolve o `JobRegistry` cru — `{done, total, added}` (ADR-006), com `done`
+    subindo até `total`. Mas a etapa **refs** tem registro próprio
+    (`studio/refs/service.py::job_status`) e publica `{terms, total, meta, log, last}`, onde `total`
+    é o **contador corrente** de imagens raspadas e `meta` é o teto pedido. Ler `done`/`total` nas
+    duas seria dizer `0/94` com o denominador subindo — errado exatamente na etapa que o FDD usa de
+    exemplo. Por isso a leitura é por forma, não por nome de etapa: quem tem `done` numérico usa
+    `(done, total)`; quem não tem, mas tem `meta` positivo, usa `(total, meta)`.
     """
-    total = (job or {}).get("total")
-    done = (job or {}).get("done", 0)
-    if not isinstance(total, (int, float)) or isinstance(total, bool) or total <= 0:
+    j = job or {}
+    done = _numero(j.get("done"))
+    total = _numero(j.get("total"))
+    if done is None:
+        meta = _numero(j.get("meta"))
+        if meta is not None and meta > 0:
+            return (total or 0), meta  # forma do refs: `total` é o contador, `meta` é o teto
+        return 0, total
+    return done, total
+
+
+def pct_of(job: dict) -> int | None:
+    """0..100 a partir dos contadores do job; `None` quando o teto é ausente, 0 ou negativo.
+
+    Sem teto não há percentual honesto — e percentual inventado é pior que percentual nenhum.
+    """
+    feito, teto = contadores(job)
+    if teto is None or teto <= 0:
         return None
-    if not isinstance(done, (int, float)) or isinstance(done, bool):
-        done = 0
-    return max(0, min(100, round(done * 100 / total)))
+    return max(0, min(100, round(feito * 100 / teto)))
 
 
 def label_of(tool_name: str, tool_input: dict, job: dict) -> str:
@@ -108,9 +132,9 @@ def label_of(tool_name: str, tool_input: dict, job: dict) -> str:
         base = f"Etapa {entrada.get('step', '?')}"
     else:
         base = "Trabalho"
-    total = (job or {}).get("total")
-    if isinstance(total, (int, float)) and not isinstance(total, bool) and total > 0:
-        return f"{base}: {(job or {}).get('done', 0)}/{total}"
+    feito, teto = contadores(job)
+    if teto is not None and teto > 0:
+        return f"{base}: {int(feito)}/{int(teto)}"
     return f"{base}: {_ESTADO.get(str((job or {}).get('state') or 'idle'), 'gerando')}"
 
 

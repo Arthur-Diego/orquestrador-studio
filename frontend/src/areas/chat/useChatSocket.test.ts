@@ -258,12 +258,20 @@ describe("useChatSocket — turno vivo", () => {
     expect(result.current.turn.id).toBeNull();
     expect(result.current.busy).toBe(false);
 
-    // um repique do mesmo turno continua ignorado
+    // Um evento de OUTRO turno não ressuscita o obsoleto.
+    act(() => chega({ kind: "assistant_delta", turn_id: "outro", text: "..." }));
+    expect(result.current.turn.id).toBeNull();
+
+    // Já um evento AO VIVO do próprio turno o ressuscita — de propósito (rodada de review 001,
+    // issue 004). O `status` que marcou o turno como obsoleto vem do polling de 4 s do dock e pode
+    // estar velho; o socket é a fonte mais recente que existe. A marca é provisória, não sentença.
     act(() => chega({ seq: 2, kind: "turn_started", turn_id: "morto" }));
+    expect(result.current.busy).toBe(true);
+    act(() => chega({ seq: 3, kind: "turn_ended", turn_id: "morto", reason: "done" }));
     expect(result.current.busy).toBe(false);
 
-    // mas um turno NOVO volta a ligar o busy
-    act(() => chega({ seq: 3, kind: "turn_started", turn_id: "vivo" }));
+    // e um turno NOVO liga o busy normalmente
+    act(() => chega({ seq: 4, kind: "turn_started", turn_id: "vivo" }));
     expect(result.current.busy).toBe(true);
     expect(result.current.turn.id).toBe("vivo");
   });
@@ -329,5 +337,76 @@ describe("useChatSocket — turno vivo", () => {
     expect(vi.getTimerCount()).toBe(base + 1);
     unmount();
     expect(vi.getTimerCount()).toBe(base);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Corridas entre o replay, o socket e o `status` da aba — rodada de review 001 (issues 003 e 004).
+// As duas travavam o dock em "Respondendo…" ou matavam o feedback no meio do turno, e nenhuma era
+// alcançável pelos testes de T-HK-07: elas dependem da ORDEM entre a resposta do replay e a
+// primeira linha do socket, e de o `status` estar velho (o dock o repolla a cada 4 s).
+// ---------------------------------------------------------------------------------------------
+describe("useChatSocket — corridas do replay e do status", () => {
+  /** `api` que só resolve quando o teste mandar: é o que permite o socket "chegar antes". */
+  function replaySuspenso(events: Record<string, unknown>[]) {
+    let liberar!: () => void;
+    const pronto = new Promise<void>((r) => {
+      liberar = r;
+    });
+    vi.mocked(api).mockImplementationOnce(async () => {
+      await pronto;
+      return { events, pending: [] };
+    });
+    return liberar;
+  }
+
+  it("turn_ended que chega antes do replay não é apagado nem reabre o turno", async () => {
+    const liberar = replaySuspenso([
+      { seq: 0, kind: "user", text: "vai" },
+      { seq: 1, kind: "turn_started", turn_id: "t1" },
+    ]);
+    const { result } = renderHook(() => useChatSocket("c1", undefined, "running"));
+    await waitFor(() => expect(FakeWS.last).not.toBeNull());
+
+    // o turno acabou enquanto o GET /events ainda estava no ar
+    act(() => chega({ seq: 2, kind: "turn_ended", turn_id: "t1", reason: "done" }));
+    await act(async () => {
+      liberar();
+    });
+
+    expect(result.current.events.map((e) => e.kind)).toEqual(["user", "turn_started", "turn_ended"]);
+    expect(result.current.busy).toBe(false);
+    expect(result.current.turn.id).toBeNull();
+  });
+
+  it("status velho não mata um turno que o socket prova estar vivo", async () => {
+    // aba trocada no meio do turno: o replay tem o turno aberto e o `status` do polling ainda diz
+    // "idle" (janela de 4 s). Antes da correção o turno virava obsoleto de forma irreversível.
+    replay([
+      { seq: 0, kind: "user", text: "vai" },
+      { seq: 1, kind: "turn_started", turn_id: "t9" },
+    ]);
+    const { result } = renderHook(() => useChatSocket("c1", undefined, "idle"));
+    await waitFor(() => expect(result.current.events.length).toBe(2));
+    expect(result.current.busy).toBe(false); // provisoriamente obsoleto, e é isso que se espera
+
+    act(() => chega({ kind: "assistant_delta", turn_id: "t9", text: "escrevendo" }));
+
+    expect(result.current.turn.id).toBe("t9"); // um evento ao vivo vale mais que o status velho
+    expect(result.current.busy).toBe(true);
+  });
+
+  it("turno obsoleto de verdade continua obsoleto (o repique não o ressuscita)", async () => {
+    replay([
+      { seq: 0, kind: "user", text: "vai" },
+      { seq: 1, kind: "turn_started", turn_id: "morto" },
+    ]);
+    const { result } = renderHook(() => useChatSocket("c1", undefined, "idle"));
+    await waitFor(() => expect(result.current.events.length).toBe(2));
+
+    // o `turn_ended` atrasado do turno morto fecha o assunto sem reabrir nada
+    act(() => chega({ seq: 2, kind: "turn_ended", turn_id: "morto", reason: "error" }));
+    expect(result.current.busy).toBe(false);
+    expect(result.current.turn.id).toBeNull();
   });
 });

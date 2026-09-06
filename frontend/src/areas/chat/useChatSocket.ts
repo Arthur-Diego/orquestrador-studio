@@ -81,6 +81,9 @@ export function useChatSocket(
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Turnos que o replay trouxe abertos mas que já morreram; ignorados para sempre.
   const obsoletosRef = useRef<Set<string>>(new Set());
+  /** Persistidos que chegaram pelo socket ANTES de o replay resolver — fundidos quando ele chega. */
+  const vivosRef = useRef<ChatEvent[]>([]);
+  const replayResolvidoRef = useRef(false);
   const statusRef = useRef(status);
   useEffect(() => {
     statusRef.current = status;
@@ -164,20 +167,35 @@ export function useChatSocket(
     setTurn(TURNO_VAZIO);
     bufferRef.current = "";
     obsoletosRef.current = new Set();
+    vivosRef.current = [];
+    replayResolvidoRef.current = false;
 
     void api(`/api/chats/${chatId}/events`)
       .then((r) => {
         if (cancelled) return;
         const replay = (r as EventsResponse).events ?? [];
-        setEvents(replay);
-        const aberto = turnoAbertoNoTranscript(replay);
+        // O socket abre junto com esta requisição: um evento AO VIVO pode chegar antes de a
+        // resposta do replay resolver. `setEvents(replay)` puro apagaria esse evento — e se o que
+        // se perdeu foi o `turn_ended`, o dock reabriria um turno já morto e travaria em
+        // "Respondendo…". Por isso a fusão, com o vivo mandando (ele é mais novo por construção).
+        const vistos = new Set(replay.map((e) => e.seq).filter((s) => s != null));
+        const vivos = vivosRef.current.filter((e) => e.seq == null || !vistos.has(e.seq));
+        vivosRef.current = [];
+        replayResolvidoRef.current = true;
+        const completo = [...replay, ...vivos];
+        setEvents(completo);
+        const aberto = turnoAbertoNoTranscript(completo);
         if (!aberto) return;
         if (statusRef.current === "running") {
           // Turno de verdade em andamento: o dock reabriu no meio dele.
           setTurn((t) => ({ ...t, id: aberto }));
         } else {
-          // Turno obsoleto: o par ficou aberto no disco mas a aba não está rodando.
+          // Turno aberto no disco com a aba fora de `running`. O `status` vem do polling de 4 s do
+          // dock, então ele pode estar velho: a marca é PROVISÓRIA e qualquer evento ao vivo com
+          // este `turn_id` a desfaz (ver `reviver`). Sem isso, trocar de aba no meio de um turno
+          // dentro da janela do polling mataria o feedback pelo resto do turno.
           obsoletosRef.current.add(aberto);
+          setTurn((t) => (t.id === aberto ? TURNO_VAZIO : t));
         }
       })
       .catch(() => undefined);
@@ -198,11 +216,17 @@ export function useChatSocket(
       // Só aqui: o replay acima (`GET /events`) alimenta `setEvents` e não passa por este ramo.
       // Vale para todo evento ao vivo, efêmero inclusive — quem filtra por `kind` é o assinante.
       onEventRef.current?.(ev);
+      // Um evento AO VIVO deste turno é a prova mais forte que existe de que ele não é obsoleto —
+      // mais forte que o `status`, que vem do polling de 4 s e pode estar velho. A marca cai aqui.
+      if (ev.turn_id && obsoletosRef.current.delete(ev.turn_id) && ev.kind !== "turn_ended") {
+        setTurn((t) => (t.id === ev.turn_id ? t : { id: ev.turn_id!, text: "", progress: {} }));
+      }
       if (EFEMEROS.has(ev.kind)) {
         aplicarEfemero(ev);
         return;
       }
       // Persistidos: transcript (dedup por `seq`, que o efêmero não tem) e ciclo de vida do turno.
+      if (!replayResolvidoRef.current) vivosRef.current.push(ev);
       setEvents((prev) => (ev.seq != null && prev.some((p) => p.seq === ev.seq) ? prev : [...prev, ev]));
       aplicarPersistido(ev);
     };

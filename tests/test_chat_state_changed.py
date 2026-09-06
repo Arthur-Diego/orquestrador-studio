@@ -59,8 +59,11 @@ def test_it01_state_changed_persiste_com_seq_e_e_empurrado(client, monkeypatch):
     # o evento empurrado carrega o `seq` e o payload congelado no Contrato 1
     mudanca = next(e for e in empurrados if e["kind"] == "state_changed")
     tool_result = next(e for e in empurrados if e["kind"] == "tool_result")
-    assert mudanca == {"seq": mudanca["seq"], "kind": "state_changed", "pid": "p1",
-                       "step": "refs", "scope": "job", "tool": "refs_search"}
+    # `ts` acompanha o `seq` desde a Wave 11 · F02: o evento empurrado pelo WS é agora IDÊNTICO à
+    # linha do transcript (antes o `ts` só existia no disco, e o chip de tool não conseguia mostrar
+    # a duração durante o turno vivo). O resto do payload é o do Contrato 1, congelado.
+    assert mudanca == {"seq": mudanca["seq"], "ts": mudanca["ts"], "kind": "state_changed",
+                       "pid": "p1", "step": "refs", "scope": "job", "tool": "refs_search"}
     assert mudanca["seq"] == tool_result["seq"] + 1  # logo depois do tool_result que o originou
 
     # e ficou no transcript, na mesma ordem, com o mesmo seq

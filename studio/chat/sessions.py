@@ -34,8 +34,17 @@ class Session:
         return asdict(self)
 
 
-def _now() -> str:
+def now() -> str:
+    """`ts` do transcript, em UTC. Público porque o router carimba o evento ANTES de gravar.
+
+    `append_event` faz `{"ts": now(), **event}`, então um `ts` que já venha no evento vence — é
+    assim que o mesmo instante vai para o disco e para o WebSocket, sem duas leituras do relógio.
+    """
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+#: Alias interno histórico — o módulo inteiro chamava `_now()` antes de o `ts` precisar ser público.
+_now = now
 
 
 def _dir(chat_id: str) -> Path:

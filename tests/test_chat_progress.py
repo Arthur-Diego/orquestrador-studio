@@ -84,6 +84,47 @@ def test_t_pg_09_rotulo_de_etapa_e_de_personagem():
     assert "prompt" not in progress.label_of("job_wait", {"step": "mood", "prompt": "segredo"}, {})
 
 
+# ---------- as DUAS formas de job que a API publica (rodada de review 001, issue 001) ----------
+#
+# A etapa `refs` tem registro próprio (`studio/refs/service.py::job_status`) e NÃO publica `done`:
+# ela manda `{terms, total, meta, log, last}`, com `total` sendo o contador corrente e `meta` o teto
+# pedido. Ler `done`/`total` nas duas formas dava `0 %` eterno e `Etapa refs: 0/94` com o
+# denominador subindo — justo na etapa que o FDD usa de exemplo.
+def test_forma_do_registry_padrao_le_done_sobre_total():
+    """`{done, total, added}` — o `JobRegistry` (ADR-006) que mood/base/storyboard/animate usam."""
+    job = {"state": "running", "done": 13, "total": 31, "added": 13}
+    assert progress.contadores(job) == (13, 31)
+    assert progress.pct_of(job) == 42
+    assert progress.label_of("job_wait", {"step": "mood"}, job) == "Etapa mood: 13/31"
+
+
+def test_forma_do_refs_le_total_sobre_meta():
+    """`{total, meta}` — o scraper da etapa 1: `total` é o que já veio, `meta` é o teto."""
+    job = {"state": "running", "terms": ["café"], "total": 47, "meta": 94, "log": []}
+    assert progress.contadores(job) == (47, 94)
+    assert progress.pct_of(job) == 50
+    assert progress.label_of("job_wait", {"pid": "p1", "step": "refs"}, job) == "Etapa refs: 47/94"
+
+
+def test_forma_do_refs_ociosa_nao_inventa_percentual():
+    """Sem scrape nenhum o refs devolve `{"state": "idle"}` — sem teto, sem percentual."""
+    job = {"state": "idle"}
+    assert progress.pct_of(job) is None
+    assert progress.label_of("job_wait", {"step": "refs"}, job) == "Etapa refs: aguardando"
+
+
+@pytest.mark.parametrize("meta", [0, -3, None, "muitas", True])
+def test_meta_invalida_cai_na_leitura_padrao(meta):
+    """`meta` zerada, negativa ou não numérica não vira denominador.
+
+    Sem um `meta` utilizável a forma volta a ser ambígua, e a leitura cai na do `JobRegistry`:
+    `total` é o teto e o `done` ausente vale 0 — exatamente o que T-PG-08 já fixa. É a escolha
+    conservadora: `meta` inválida nunca inverte o significado de `total`.
+    """
+    assert progress.contadores({"total": 5, "meta": meta}) == (0, 5)
+    assert progress.pct_of({"total": 5, "meta": meta}) == 0
+
+
 # ---------- should_emit (T-PG-10..13) ----------
 def test_t_pg_10_primeira_leitura_sempre_emite():
     assert progress.should_emit(None, {"pct": None, "state": "running", "ts": 0.0}, 0.0) is True

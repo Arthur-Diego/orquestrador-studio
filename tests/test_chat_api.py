@@ -225,6 +225,43 @@ def test_t_api_05_e_06_eventos_efemeros_nao_tocam_o_disco(client, monkeypatch):
         "user", "turn_started", "assistant_text", "result", "turn_ended"]
 
 
+def test_evento_persistido_chega_ao_ws_com_ts_igual_ao_do_disco(client, monkeypatch):
+    """Rodada de review 001, issue 002 — o push carrega o MESMO `ts` que a linha do transcript.
+
+    A duração do chip de tool sai da diferença entre os `ts` do `tool_call` e do `tool_result`
+    (FDD §12, decisão 9). Enquanto o `ts` só existia no disco, a duração aparecia no replay e
+    NUNCA durante o turno vivo — o critério 5 pedia o contrário. O relógio é lido uma vez só, no
+    router, e o mesmo valor vai para os dois lados.
+    """
+    from studio.chat import runtime
+    cid = client.post("/api/chats", json={"title": "carimbo"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "tool_call", "id": "toolu_7", "name": "mcp__studio__projects", "input": {}}
+        yield {"kind": "tool_result", "id": "toolu_7", "is_error": False, "content": "[]"}
+        yield {"kind": "result", "is_error": False, "text": "fim", "cost": 0.0}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "lista"})
+        empurrados = [ws.receive_json() for _ in range(6)]
+
+    persistidos = [e for e in empurrados if "seq" in e]
+    assert persistidos, "nenhum evento persistido chegou ao WS"
+    assert all(e.get("ts") for e in persistidos), \
+        f"evento persistido sem `ts` no push: {[e['kind'] for e in persistidos if not e.get('ts')]}"
+
+    # o mesmo instante nos dois lados, evento a evento, correlacionado por `seq`
+    no_disco = {e["seq"]: e for e in client.get(f"/api/chats/{cid}/events").json()["events"]}
+    for ev in persistidos:
+        assert no_disco[ev["seq"]]["ts"] == ev["ts"], f"`ts` divergente em {ev['kind']}"
+
+    # e o par tool_call/tool_result dá uma duração calculável já ao vivo
+    call = next(e for e in persistidos if e["kind"] == "tool_call")
+    result = next(e for e in persistidos if e["kind"] == "tool_result")
+    assert call["ts"] <= result["ts"]
+
+
 # ---------- saneamento de aba órfã em GET /api/chats (FDD contrato 8) ----------
 def test_t_api_07_aba_running_sem_task_viva_volta_a_idle(client):
     from studio.chat import sessions

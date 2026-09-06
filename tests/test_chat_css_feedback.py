@@ -62,6 +62,34 @@ def test_css_02_o_bloco_novo_fica_no_fim_do_arquivo():
         )
 
 
+def test_css_02_nenhuma_regra_existente_foi_alterada():
+    """T-CSS-02 (c) — o bloco novo não REDEFINE nada que já existia acima dele.
+
+    A metade "sem alterar regra existente" do critério não morre com o fim do pin de sha256: ela
+    vira uma afirmação sobre SOBRESCRITA, que é o dano real. Um seletor repetido depois do marcador
+    ganharia da regra de cima pela cascata — alterar a regra existente sem tocar na linha dela.
+    """
+    prefixo, bloco = _prefixo(), _fonte()[_fonte().index(MARCADOR) :]
+    repetidos = sorted(_seletores(prefixo) & _seletores(bloco))
+    assert not repetidos, (
+        f"o bloco de feedback ao vivo redefine seletor(es) que já existiam acima dele: "
+        f"{', '.join(repetidos)}. Pela cascata, isso ALTERA a regra de cima sem tocar na linha "
+        "dela — o oposto do que esta frente prometeu (FDD §10, risco 5)."
+    )
+
+
+def _seletores(css: str) -> set[str]:
+    """Seletores de primeiro nível do trecho, normalizados. Ignora `@media`, `@keyframes` e vars."""
+    sem_comentario = re.sub(r"/\*.*?\*/", " ", css, flags=re.S)
+    achados = set()
+    for bruto in re.findall(r"(?:^|[{}])\s*([^{}@;]+?)\s*\{", sem_comentario):
+        for parte in bruto.split(","):
+            alvo = " ".join(parte.split())
+            if alvo and not alvo.startswith(("@", "from", "to", "%")) and not alvo.endswith("%"):
+                achados.add(alvo)
+    return achados
+
+
 def test_css_02_o_bloco_novo_vai_ate_o_fim_do_arquivo():
     """T-CSS-02 (b) — nada foi enfiado DEPOIS do bloco: ele fecha o arquivo.
 
