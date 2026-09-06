@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Fechamento — cenário de QA, bundle, ADR-042, Postman e diagramas
 type: docs
 complexity: medium
@@ -62,16 +62,19 @@ com as rotas novas e desenha os dois diagramas Mermaid do FDD §4. É a task 16 
 
 ## Subtasks
 
-- [ ] 7.1 Acrescentar o cenário novo de persistência com `page.reload()` em
+- [x] 7.1 Acrescentar o cenário novo de persistência com `page.reload()` em
       `scripts/qa/cenarios/storyboard.py`, com id livre na sequência C-STORYBOARD-NN.
-- [ ] 7.2 Rodar `make frontend-schema` e commitar `schema.ts` e `openapi.json`.
-- [ ] 7.3 Rodar `make frontend-build` e commitar `studio/web/dist/`.
-- [ ] 7.4 Conferir `tests/test_adr010_fronteira_nucleo.py` contra o diff real da branch.
-- [ ] 7.5 Escrever `docs/adrs/generated/STORYBOARD/ADR-042-<slug>.md`.
-- [ ] 7.6 Acrescentar a linha da ADR-042 em `docs/adrs/mapping.md`.
-- [ ] 7.7 Estender a coleção Postman do domínio com as duas rotas novas.
-- [ ] 7.8 Desenhar os dois diagramas Mermaid.
-- [ ] 7.9 Rodar `make verify` e `make frontend-verify` e registrar o output real.
+- [x] 7.2 Rodar `make frontend-schema` e commitar `schema.ts`. `openapi.json` é gitignored
+      (`.gitignore:21`), então não entra no commit; a prova é `make frontend-schema-check` = 0
+      (o `schema.ts` já estava correto desde a task_02: regeneração não produziu diff).
+- [x] 7.3 Rodar `make frontend-build` e commitar `studio/web/dist/`.
+- [x] 7.4 Conferir `tests/test_adr010_fronteira_nucleo.py` contra o diff real da branch.
+- [x] 7.5 Escrever `docs/adrs/generated/STORYBOARD/`
+      `ADR-042-campos-abertos-de-prompt-por-foto-e-papel-keyframe-do-prompter.md`.
+- [x] 7.6 Acrescentar a linha da ADR-042 em `docs/adrs/mapping.md`.
+- [x] 7.7 Estender a coleção Postman do domínio com as duas rotas novas.
+- [x] 7.8 Desenhar os dois diagramas Mermaid.
+- [x] 7.9 Rodar `make verify` e `make frontend-verify` e registrar o output real.
 
 ## Implementation Details
 
@@ -138,18 +141,18 @@ Convenções levantadas nesta worktree:
 
 ## Tests
 
-- [ ] `git diff origin/develop...HEAD -- scripts/qa/cenarios/storyboard.py` mostra **apenas
+- [x] `git diff origin/develop...HEAD -- scripts/qa/cenarios/storyboard.py` mostra **apenas
       linhas acrescentadas** — nenhuma linha removida ou modificada (critério T3).
-- [ ] `make frontend-schema-check` termina em 0 (sem drift) — critério T1.
-- [ ] `make frontend-build` reproduz byte-a-byte o `studio/web/dist/` commitado — critério T1.
-- [ ] `tests/test_adr010_fronteira_nucleo.py` passa, e o diff da branch não toca nenhum prefixo de
+- [x] `make frontend-schema-check` termina em 0 (sem drift) — critério T1.
+- [x] `make frontend-build` reproduz byte-a-byte o `studio/web/dist/` commitado — critério T1.
+- [x] `tests/test_adr010_fronteira_nucleo.py` passa, e o diff da branch não toca nenhum prefixo de
       núcleo fora de `frontend/` e `studio/web/` — critério T4.
-- [ ] `make verify` verde, com as 2 falhas de `tests/test_edit_captions.py` inalteradas
+- [x] `make verify` verde, com as 2 falhas de `tests/test_edit_captions.py` inalteradas
       (pre-existing failure: elas já falhavam em `develop` @ `0c4e823`).
-- [ ] `make frontend-verify` verde.
-- [ ] O arquivo da ADR-042 existe, tem o cabeçalho completo e é citado em `docs/adrs/mapping.md`.
-- [ ] Os dois `.mmd` novos existem e têm sintaxe Mermaid válida.
-- [ ] `git status --porcelain` não lista `docs/domains/studio/recon-wave-11.md`,
+- [x] `make frontend-verify` verde.
+- [x] O arquivo da ADR-042 existe, tem o cabeçalho completo e é citado em `docs/adrs/mapping.md`.
+- [x] Os dois `.mmd` novos existem e têm sintaxe Mermaid válida.
+- [x] `git status --porcelain` não lista `docs/domains/studio/recon-wave-11.md`,
       `wave-11.md` nem `wave-11-dependencias.md` como **staged/commitados**.
 
 ## Success Criteria
