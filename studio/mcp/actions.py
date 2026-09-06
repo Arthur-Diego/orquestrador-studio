@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from typing import Any
 
 from . import ui
@@ -133,7 +134,7 @@ def _paid(client: StudioClient, *, step: str, cost_path: str, cost_body: dict, g
 def _pick(client: StudioClient, *, pid: str, step: str, cands_path: str, select_path: str,
           title: str, minimum: int, maximum: int | None, select_body,
           cands_params: dict | None = None, label_key: str = "batch",
-          empty_text: str | None = None, ok_text=None,
+          empty_text: str | None = None, ok_text: Callable[[list[str]], str] | None = None,
           no_ui_text: str | None = None, no_answer_text: str | None = None) -> str:
     """Fluxo único das `*_pick` de etapa: busca candidatas, mostra a grade, aplica a seleção.
 
@@ -438,7 +439,10 @@ def character_pick(client: StudioClient, cid: str) -> str:
     if not ans.get("answered") or not ans.get("selected"):
         return "O usuário não escolheu o personagem."
     escolhido = ans["selected"][0]
-    meta = client.post(f"/api/characters/{cid}/lock", {"candidate_id": escolhido, "step": "explore"}) or {}
+    try:
+        meta = client.post(f"/api/characters/{cid}/lock", {"candidate_id": escolhido, "step": "explore"}) or {}
+    except StudioApiError as e:
+        return str(e)   # mesma regra dos picks de etapa: erro vira texto acionável, sem sufixo JSON
     # `next_step` é `null`: personagem é biblioteca global (ADR-039), fora da cadeia das 10 etapas —
     # a chave fica no sufixo para o shape ser único nas 5 `*_pick`.
     return (f"Personagem fixado. Descritor de identidade:\n{meta.get('descriptor', '(gerado)')}"

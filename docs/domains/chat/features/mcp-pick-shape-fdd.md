@@ -41,9 +41,13 @@ a chave do dict é `ideas`. `mood_pick` e `character_pick` estão corretas e dev
 
 **Encaixe no HLD.** O MCP é cliente HTTP da própria API (ADR-037): a correção mora no consumidor
 (`studio/mcp/actions.py`), nunca nas rotas nem nos serviços das etapas. O HLD de base declara
-`file`/`thumb` relativos à raiz do projeto (`docs/domains/base/hld.md` §Modelo) e o HLD de refs
-declara `thumb` relativo a `refs/candidates/` (`docs/domains/refs/hld.md`): **nenhum HLD muda**, e
-`recon-wave-11.md` §0.6 confirma "nenhum doc muda" para F04.
+`file`/`thumb` relativos à raiz do projeto (`docs/domains/base/hld.md:126`, e `:147` já publica o
+shape `{candidates, final}` — o HLD **já estava certo**, o código é que estava errado). O HLD de
+refs não declara a base do `thumb`: ele só mostra o layout `refs/candidates/<sha12>.jpg +
+thumbs/<sha12>.jpg` (`docs/domains/refs/hld.md:76`) e lista o campo no `Candidate` (`:83`); quem
+fixa que o `thumb` é relativo a `refs/candidates/` é o código (`studio/refs/service.py:363`).
+O domínio `storyboard` **não tem HLD** (só `prd.md`, `diagrams/`, `postman/` e `features/`).
+Conclusão: **nenhum HLD muda**, e `recon-wave-11.md` §0.6 confirma "nenhum doc muda" para F04.
 
 **Segunda entrega: o retorno estruturado.** F08 (chat-navigate) precisa saber para onde navegar
 depois de uma escolha, e F11 (base-upscale-chat) precisa saber o que foi selecionado. Hoje os
@@ -186,23 +190,38 @@ Consumidores a jusante: **F08 chat-navigate** (`next_step` alimenta `ui_navigate
 
 **Diagrama (fluxo)**
 
-```
-agente ──> <step>_pick(pid)
-             │
-             ├─ GET candidates ──> payload (lista | {candidates,…} | {ideas:…})
-             │        │
-             │        └─ _candidate_rows ──> rows[]
-             │                                 │
-             │                                 └─ _images_for ──> [{id,thumb,label}]
-             │                                        (thumb prefixado? só /files/{pid}/)
-             │                                        (thumb relativo?  /files/{pid}/{step}/candidates/)
-             ├─ vazio ──────────────> texto de vazio (fim, sem JSON)
-             ├─ ui.choose_images ──> {answered, selected}
-             │        ├─ no_ui / sem resposta / sem seleção ──> texto (fim, sem JSON)
-             │        └─ ids
-             ├─ POST select ───────> (erro ──> mensagem do StudioApiError, fim, sem JSON)
-             ├─ GET /guide ────────> current  (falha ──> null)
-             └─ texto humano + "\n" + {"selected": [...], "next_step": ...}
+```mermaid
+flowchart TD
+    A["agente chama mcp__studio__&lt;step&gt;_pick(pid)"] --> B["GET rota de candidatas"]
+    B -->|"StudioApiError"| ERR["texto do erro<br/>(fim, SEM sufixo JSON)"]
+    B --> C["_candidate_rows(payload)"]
+
+    C -.->|"lista pura<br/>(refs, mood, personagem)"| D
+    C -.->|"dict {candidates, final}<br/>(base)"| D
+    C -.->|"dict {ideas}<br/>(storyboard)"| D
+    C -.->|"shape desconhecido, None,<br/>item não-dict"| D
+    D["rows: list[dict]"] --> E["_images_for → [{id, thumb, label}]"]
+
+    E --> F{"grade vazia?"}
+    F -->|"sim"| VAZIO["mensagem de vazio da etapa<br/>(fim, SEM sufixo JSON)"]
+    F -->|"não"| G["ui.choose_images<br/>(bloqueia no POST /api/chats/{cid}/ask)"]
+
+    G -->|"no_ui (terminal)"| SEMUI["lista os ids no texto<br/>(fim, SEM sufixo JSON)"]
+    G -->|"sem resposta<br/>ou seleção vazia"| SEMSEL["texto da etapa<br/>(fim, SEM sufixo JSON)"]
+    G -->|"ids escolhidos"| H["POST select / lock"]
+
+    H -->|"StudioApiError"| ERR2["mensagem do erro<br/>(fim, SEM sufixo JSON)"]
+    H --> I["_next_step: GET /api/projects/{pid}/guide → current"]
+    I -->|"falha, campanha concluída<br/>ou sem pid (personagem)"| J
+    I --> J["next_step (str | null)"]
+    J --> K["texto humano + \n +<br/>{&quot;selected&quot;: [...], &quot;next_step&quot;: ...}"]
+
+    subgraph URL["_media_url — o defeito 2 do card"]
+        U1["thumb já 'step/...'<br/>(base, storyboard)"] --> U2["/files/{pid}/{thumb}"]
+        U3["thumb relativo<br/>(refs, mood, personagem)"] --> U4["/files/{pid}/{step}/candidates/{thumb}"]
+        U5["thumb absoluto (/ ou http)"] --> U6["usado como está"]
+    end
+    E -.- URL
 ```
 
 ---
@@ -298,6 +317,11 @@ O usuário não selecionou nenhuma imagem.
 
 - Saída de `_images_for`: `[{"id": str, "thumb": str, "label": str}]`, exatamente o payload que
   `ui.choose_images` espera (`studio/mcp/ui.py:46-50`) e que o `AskCard` do `ChatDock` renderiza.
+  Uma linha só entra na saída se tiver `id` **e** um `thumb` que seja string não vazia — linha sem
+  `id` (que antes causava `KeyError`), sem `thumb` ou com `thumb` de outro tipo é **pulada**, nunca
+  levanta. O `label` sai da cadeia de fallback (`label_key` da etapa → `batch`, `kind`, `term`,
+  `label`, `name` → `prompt`) e é **truncado em `LABEL_MAX = 60`** com reticências — a regra vale
+  para qualquer chave, não só para o `prompt`, porque a legenda fica sob a miniatura.
 
 **Exemplo de entrada e saída (`base`)**
 
@@ -322,13 +346,20 @@ O usuário não selecionou nenhuma imagem.
 def _pick(client: StudioClient, *, pid: str, step: str, cands_path: str, select_path: str,
           title: str, minimum: int, maximum: int | None, select_body,
           cands_params: dict | None = None, label_key: str = "batch",
-          empty_text: str | None = None, ok_text=None) -> str
+          empty_text: str | None = None, ok_text: Callable[[list[str]], str] | None = None,
+          no_ui_text: str | None = None, no_answer_text: str | None = None) -> str
 ```
 
 - `empty_text`: mensagem quando não há candidata; default preserva a atual da etapa.
-- `ok_text`: `Callable[[list[str]], str]` que produz a frase humana de sucesso; default preserva
+- `ok_text`: produz a frase humana de sucesso a partir dos ids; default preserva
   "N imagem(ns) selecionada(s) e salva(s) na etapa `<step>`.". `base_pick` passa uma que devolve
   "Imagem base escolhida e salva.", preservando byte a byte o texto de hoje.
+- `no_ui_text`: mensagem do caminho sem interface, com `{ids}` interpolado pela lista de
+  candidatas; default preserva a frase compartilhada dos picks de etapa.
+- `no_answer_text`: mensagem única para "não respondeu" **e** "selecionou zero"; default preserva
+  as duas frases distintas de hoje. Existe porque `base_pick` usa **uma** frase para os dois casos
+  ("O usuário não escolheu a base.") — sem ele, reescrever `base_pick` sobre `_pick` mudaria texto
+  que o usuário vê, o que a seção 6 proíbe. Ver seção 12, "Ajustes registrados na implementação".
 - `base_pick` passa `maximum=1` e `select_body=lambda ids: {"id": ids[0], "note": note}`.
 - Nenhuma chamada de rota nova: `_pick` continua fazendo exatamente um `GET` de candidatas, um
   `POST` de select, e agora um `GET` do guia no caminho de sucesso.
@@ -362,6 +393,8 @@ não são exigidos por esta frente**.
 | `GET candidates` devolve dict sem chave conhecida | lista vazia, mensagem de vazio da etapa | nunca levanta |
 | Item da lista não é `dict` (ex.: string) | item descartado em `_images_for` | blindagem contra `AttributeError`, a classe de falha original |
 | Linha sem `thumb` | linha pulada | comportamento atual preservado |
+| Linha sem `id` | linha pulada | antes levantava `KeyError` em `c["id"]` |
+| Linha com `thumb` que não é string | linha pulada | `_media_url` só opera sobre string |
 | `thumb` já prefixado com `<step>/` | só `/files/{pid}/` é acrescentado | é o bug do card, item 2 |
 | `thumb` absoluto (`/` ou `http`) | usado como está | tolerância a evolução futura das rotas |
 | `GET candidates` responde 4xx/5xx | `StudioApiError` capturado, mensagem devolvida como texto | comportamento atual |
@@ -369,6 +402,7 @@ não são exigidos por esta frente**.
 | Sem `STUDIO_CHAT_ID` (terminal) | `ui.choose_images` devolve `no_ui`; lista os ids no texto | ADR-038, sem sufixo JSON |
 | Usuário não respondeu ou selecionou zero | texto atual, sem sufixo JSON | |
 | `POST select` responde 4xx/5xx | mensagem do `StudioApiError`, sem sufixo JSON | `base_pick` hoje **não** captura esse erro (`actions.py:174`) e deixa a exceção subir; passa a capturar ao usar `_pick` |
+| `POST lock` (personagem) responde 4xx/5xx | mensagem do `StudioApiError`, sem sufixo JSON | `character_pick` também não capturava; passa a capturar, pela mesma razão do `select` — sem isso a exceção sobe para o FastMCP (`server.py` não tem wrapper) e vira erro de tool em vez de texto acionável |
 | `GET /guide` falha ou campanha concluída | `next_step: null`, frase humana intacta | a escolha já foi gravada; o guia é enriquecimento |
 | `/guide` demora | timeout do `StudioClient` (900 s, `client.py:15`) | loopback, custo desprezível |
 
@@ -611,12 +645,30 @@ Arquivos: `studio/mcp/actions.py` (alterado), `tests/test_mcp_actions.py` (alter
    a base."), que a seção 5 não parametrizava. Os parâmetros documentados continuam com o mesmo
    nome, ordem e default; os novos são aditivos e só `base_pick` os usa. A alternativa — seguir a
    assinatura ao pé da letra — teria mudado texto que o usuário vê, violando a invariante.
+   **A seção 5 foi corrigida** para publicar a assinatura real.
 2. **A legenda da grade é truncada em `LABEL_MAX = 60` para qualquer chave**, não só para o
    `prompt`: o `prompt` do storyboard entra pela cadeia de fallback (a etapa não passa `label_key`)
-   e o corte uniforme evita uma legenda gigante sob a miniatura.
+   e o corte uniforme evita uma legenda gigante sob a miniatura. Documentado na seção 5.
+3. **`character_pick` passou a capturar `StudioApiError` do `POST /lock`.** A matriz da seção 6
+   promete "mensagem do `StudioApiError`, sem sufixo JSON" para todo `select`, e a exceção não
+   tratada subia para o FastMCP (`studio/mcp/server.py` não tem wrapper), virando erro de tool em
+   vez de texto acionável. Linha acrescentada à matriz e teste do caminho criado.
+4. **Linha de candidata sem `id` ou com `thumb` que não é string é descartada.** Antes, linha sem
+   `id` levantava `KeyError` em `c["id"]`. Duas linhas novas na matriz da seção 6 e a regra escrita
+   na semântica de `_images_for` (seção 5).
 
 **Pendências para o gate em lote**
 
-Nenhuma. Esta frente não altera contrato publicado (nenhuma rota, nenhum modelo Pydantic), não
+Nenhuma que bloqueie a frente. Uma pendência de documentação fica registrada para a **integração
+da Wave 11**, porque o critério 12 desta seção 9 fixa o diff em `studio/mcp/actions.py`, `tests/` e
+este FDD, e portanto proíbe editar HLD nesta frente:
+
+- **`docs/domains/chat/hld.md` não registra as tools `*_pick` nem `studio/mcp/actions.py`.** O
+  §Componentes (`:40`) descreve `studio/mcp/` como "`client.py`, `tools.py`, `server.py`" e o
+  §Interfaces (`:54-64`) lista só o catálogo MCP da Onda A — defasagem **pré-existente** das Ondas
+  B-E, não criada por esta frente. Nenhum HLD fica *contraditório* com o código (por isso a seção 1
+  segue correta ao dizer "nenhum HLD muda"), mas o sufixo JSON `{"selected", "next_step"}` é uma
+  interface **entre features do mesmo domínio**, consumida por F08 e F11, e merece registro no HLD
+  do chat na consolidação da wave. Esta frente não altera contrato publicado (nenhuma rota, nenhum modelo Pydantic), não
 toca núcleo, não faz merge, não remove nada e não tem trade-off de segurança. As decisões acima
 são todas cobertas pelo card, pelo recon ou pelas convenções do codebase.

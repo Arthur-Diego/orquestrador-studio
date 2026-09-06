@@ -290,6 +290,16 @@ def test_character_pick_monta_a_url_em_cfiles_e_devolve_next_step_null(monkeypat
     assert sufixo(out) == {"selected": ["cand1"], "next_step": None}
 
 
+def test_erro_no_lock_devolve_a_mensagem_e_nao_emite_sufixo(monkeypatch):
+    # mesma regra da matriz de erros dos picks de etapa: `lock` 4xx/5xx vira texto acionável, e o
+    # consumidor a jusante nunca vê `selected` de uma fixação que não foi gravada
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": True, "selected": ["c1"]})
+    cli = Fake({"/api/characters/eden/candidates": [{"id": "c1", "thumb": "thumbs/c1.jpg"}],
+                "/api/characters/eden/lock": StudioApiError("Não encontrado: candidato c1", status=404)})
+    out = actions.character_pick(cli, "eden")
+    assert out == "Não encontrado: candidato c1" and not tem_sufixo(out)
+
+
 def test_character_pick_sem_selecao_nao_emite_sufixo(monkeypatch):
     monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": True, "selected": []})
     cli = Fake({"/api/characters/eden/candidates": [{"id": "c1", "thumb": "thumbs/c1.jpg"}]})
