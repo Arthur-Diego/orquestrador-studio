@@ -173,3 +173,23 @@
 }
 .chat-quick button:hover { border-color: var(--accent-line); color: var(--accent); }
 .chat-unavailable { margin: auto; text-align: center; color: var(--ink-3); font-size: 13px; padding: 20px; }
+
+/* Cartões humano-no-laço (ADR-038) e mídia (Onda B) */
+.chat-ask { align-self: stretch; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.chat-ask-title { font-weight: 600; font-size: 14px; }
+.chat-ask-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.chat-optbtn { border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); border-radius: 9px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.chat-optbtn:hover { border-color: var(--accent-line); color: var(--accent); }
+.chat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.chat-thumb { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 8px; display: block; background: var(--bg); }
+.chat-pick { padding: 0; border: 2px solid transparent; border-radius: 10px; background: none; cursor: pointer; }
+.chat-pick.sel { border-color: var(--accent); box-shadow: var(--ring-sel); }
+.chat-cost { background: var(--gate-soft); border-color: transparent; }
+.chat-cost-body { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.chat-cost-row { display: flex; justify-content: space-between; gap: 12px; }
+.chat-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.chat-field input { border: 1px solid var(--ctl); border-radius: 8px; padding: 7px 9px; font: inherit; background: var(--surface); color: var(--ink); }
+.chat-field input:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.chat-media { max-width: 100%; }
+.chat-media-title { font-size: 12.5px; color: var(--ink-3); margin-bottom: 6px; }
+.mono { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }

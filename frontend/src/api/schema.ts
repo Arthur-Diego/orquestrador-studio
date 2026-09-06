@@ -880,6 +880,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats/{chat_id}/emit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat Emit
+         * @description Empurra um cartão ao browser SEM esperar resposta (tools `ui.notify`/`ui.show`, ADR-038).
+         *
+         *     Diferente de `/ask`, que bloqueia até o usuário responder. Persiste o evento no transcript.
+         */
+        post: operations["chat_emit_api_chats__chat_id__emit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/steps": {
         parameters: {
             query?: never;
@@ -4414,6 +4436,13 @@ export interface components {
             /** Variant */
             variant?: string | null;
         };
+        /** EmitBody */
+        EmitBody: {
+            /** Event */
+            event: {
+                [key: string]: unknown;
+            };
+        };
         /**
          * EstimateReq
          * @description A conta antes do disparo. `board`/`n` ausentes caem nos defaults do manifesto.
@@ -7234,6 +7263,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_emit_api_chats__chat_id__emit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmitBody"];
             };
         };
         responses: {

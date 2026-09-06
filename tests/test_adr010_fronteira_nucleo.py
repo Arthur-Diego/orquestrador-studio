@@ -70,6 +70,14 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-05-chat-onda-b": (
+        "`[extensão]` Onda B do assistente de chat (implementa ADR-037/038), card "
+        "ADH-OS-20260905-05: tools de ação e `ui.*` em `studio/mcp/` e o endpoint `/emit` em "
+        "`studio/chat/` (fora de NUCLEO_PREFIXOS). O núcleo tocado é só `frontend/` (cartões ricos "
+        "no ChatDock, `schema.ts` regenerado pela rota `/emit`) e o bundle `studio/web/dist/`. "
+        "Nenhuma etapa nem o shell são tocados. ADR-037/038, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260905-04-chat-onda-a": (
         "`[extensão]` Onda A do assistente de chat (ADR-036/037/040), card ADH-OS-20260905-04: "
         "novos módulos `studio/chat/` e `studio/mcp/` (fora de NUCLEO_PREFIXOS) e a nova área "

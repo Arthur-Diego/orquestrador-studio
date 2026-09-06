@@ -7,6 +7,7 @@ este mesmo módulo.
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .client import StudioClient
@@ -134,6 +135,31 @@ def job_status(client: StudioClient, pid: str, step: str) -> str:
     if g.get("error"):
         msg += f" Erro: {g['error']}"
     return msg
+
+
+def job_wait(client: StudioClient, pid: str, step: str, timeout: int = 600, poll: float = 2.0,
+             _sleep=time.sleep) -> str:
+    """Espera o job de uma etapa terminar (running → done/error) e devolve o resumo.
+
+    Evita que o agente fique consultando `job` num laço (gasta turnos). Se não há job em
+    andamento, devolve o estado atual. `_sleep` é injetável para teste (sem espera real).
+    """
+    deadline = time.monotonic() + max(1, timeout)
+    viu_running = False
+    while time.monotonic() < deadline:
+        g = client.get(f"/api/projects/{pid}/{step}/job")
+        state = g.get("state", "idle")
+        if state == "running":
+            viu_running = True
+            _sleep(poll)
+            continue
+        if state == "idle" and not viu_running:
+            return f"Etapa {step}: nenhum trabalho em andamento."
+        added, total = g.get("added", 0), g.get("total", 0)
+        if g.get("error"):
+            return f"Etapa {step}: job falhou — {g['error']}"
+        return f"Etapa {step}: concluído ({added}/{total} adicionados)."
+    return f"Etapa {step}: ainda em andamento após {timeout}s (siga com `job` para checar)."
 
 
 def api_get(client: StudioClient, path: str) -> Any:

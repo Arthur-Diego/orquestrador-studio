@@ -48,6 +48,18 @@ def test_websocket_streama_o_turno(client, monkeypatch):
     assert kinds == ["user", "assistant_text", "result"]
 
 
+def test_emit_empurra_cartao_sem_esperar(client):
+    cid = client.post("/api/chats", json={"title": "x"}).json()["id"]
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        r = client.post(f"/api/chats/{cid}/emit", json={"event": {"kind": "notify", "text": "gerando…"}})
+        assert r.json()["emitted"] is True
+        ev = ws.receive_json()
+        assert ev["kind"] == "notify" and ev["text"] == "gerando…"
+    # persistiu no transcript
+    kinds = [e["kind"] for e in client.get(f"/api/chats/{cid}/events").json()["events"]]
+    assert "notify" in kinds
+
+
 def test_websocket_recusa_aba_inexistente(client):
     import pytest
     from starlette.websockets import WebSocketDisconnect

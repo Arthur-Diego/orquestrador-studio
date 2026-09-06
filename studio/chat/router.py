@@ -38,6 +38,10 @@ class AnswerBody(BaseModel):
     answer: dict = {}
 
 
+class EmitBody(BaseModel):
+    event: dict
+
+
 # ---------- gerenciador de WebSocket (chat_id -> sockets) ----------
 class WSManager:
     def __init__(self) -> None:
@@ -134,6 +138,21 @@ async def chat_ask(chat_id: str, req: AskBody):
 def chat_answer(req: AnswerBody):
     """Resolve uma pergunta pendente com a resposta do browser (ADR-038)."""
     return {"resolved": bridge.resolve(req.ask_id, req.answer)}
+
+
+@router.post("/api/chats/{chat_id}/emit")
+async def chat_emit(chat_id: str, req: EmitBody):
+    """Empurra um cartão ao browser SEM esperar resposta (tools `ui.notify`/`ui.show`, ADR-038).
+
+    Diferente de `/ask`, que bloqueia até o usuário responder. Persiste o evento no transcript.
+    """
+    try:
+        sessions.get(chat_id)
+    except KeyError as e:
+        raise HTTPException(404, f"conversa não encontrada: {chat_id}") from e
+    seq = sessions.append_event(chat_id, req.event)
+    await manager.push(chat_id, {"seq": seq, **req.event})
+    return {"emitted": True}
 
 
 # ---------- WebSocket do turno ----------
