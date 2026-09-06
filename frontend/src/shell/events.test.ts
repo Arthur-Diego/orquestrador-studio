@@ -243,7 +243,7 @@ describe("useStudioChange — debounce por par (pid do evento, step) (UT-20)", (
   });
 });
 
-// UT-28…UT-32 do `_tests.md` (Wave 11 · F10, card #88): o barramento de INTENÇÃO DE ABERTURA.
+// UT-28…UT-32 do `_tests.md` (Wave 11 · F08, card #88): o barramento de INTENÇÃO DE ABERTURA.
 //
 // `useNavIntent` tem prefixo `use` porque é o nome publicado no Contrato 6 do FDD, mas não é um hook
 // React (nem estado, nem efeito — ver o comentário no `events.ts`). Chamá-la direto de dentro de um

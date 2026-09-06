@@ -1,4 +1,4 @@
-// Decisão de navegação do chat — UT-10…UT-20 do `_tests.md` (Wave 11 · F10, card #88).
+// Decisão de navegação do chat — UT-10…UT-20 do `_tests.md` (Wave 11 · F08, card #88).
 //
 // Função pura: nenhum `render`, nenhum jsdom, nenhum stub global (ADR-008). As fixtures são as do
 // shell (`STEPS`: refs/mood/base `ready`, prospect `soon`), para o vocabulário do teste ser o mesmo

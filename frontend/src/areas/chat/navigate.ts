@@ -1,4 +1,4 @@
-// Decisão de navegação do chat — Wave 11 · frente F10 (card #88, ADH-OS-20260906-10). `[extensão]`
+// Decisão de navegação do chat — Wave 11 · frente F08 (card #88, ADH-OS-20260906-10). `[extensão]`
 //
 // "O assistente pediu para ir para `X`: eu vou, ou recuso e digo por quê?" — essa pergunta, e só
 // ela, mora aqui. É uma função PURA: sem React, sem rede, sem `location`, sem `localStorage`. O

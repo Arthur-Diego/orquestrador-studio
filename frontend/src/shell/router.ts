@@ -48,7 +48,7 @@ const AREAS_COM_SUB: readonly string[] = [MB_ROUTE, CHAR_ROUTE];
 /**
  * Monta o hash do alvo — a única parte de `navigate` que é pura.
  *
- * Wave 11 · F10 (card #88): as áreas globais já eram RESOLVIDAS pelo efeito abaixo (`#/moodboards`,
+ * Wave 11 · F08 (card #88): as áreas globais já eram RESOLVIDAS pelo efeito abaixo (`#/moodboards`,
  * `#/creditos`, `#/characters`), mas não eram MONTÁVEIS por `navigate`, que só sabia `#/<pid>/<view>`.
  * Resultado: `navigate("moodboards")` gerava `#/<pid>/moodboards`, que caía na guarda de view não
  * `ready` e ia para o overview em silêncio. Agora as três são alvos de primeira classe.

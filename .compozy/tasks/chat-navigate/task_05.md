@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Bundle, guardas do repositório e evidência de verificação
 type: chore
 complexity: low
@@ -49,13 +49,13 @@ código correto.
 
 ## Subtasks
 
-- [ ] 5.1 Rodar `make frontend-verify` sobre o estado final e registrar o output real.
-- [ ] 5.2 Rodar `make frontend-build` e conferir `git status --porcelain -- studio/web/dist`.
-- [ ] 5.3 Conferir `git diff develop...HEAD --stat -- frontend/src/api/schema.ts frontend/openapi.json`
+- [x] 5.1 Rodar `make frontend-verify` sobre o estado final e registrar o output real.
+- [x] 5.2 Rodar `make frontend-build` e conferir `git status --porcelain -- studio/web/dist`.
+- [x] 5.3 Conferir `git diff develop...HEAD --stat -- frontend/src/api/schema.ts frontend/openapi.json`
       vazio.
-- [ ] 5.4 Rodar `pytest tests/test_adr010_fronteira_nucleo.py tests/test_chat_mudancas.py -x -q`.
-- [ ] 5.5 Rodar `make verify` inteiro e conferir que as únicas falhas são as duas pré-existentes.
-- [ ] 5.6 Commitar o bundle junto do restante da fatia, com a mensagem no padrão do repositório.
+- [x] 5.4 Rodar `pytest tests/test_adr010_fronteira_nucleo.py tests/test_chat_mudancas.py -x -q`.
+- [x] 5.5 Rodar `make verify` inteiro e conferir que as únicas falhas são as duas pré-existentes.
+- [x] 5.6 Commitar o bundle junto do restante da fatia, com a mensagem no padrão do repositório.
 
 ## Implementation Details
 
@@ -100,11 +100,11 @@ Baseline medida antes de qualquer código desta frente: Python `2 failed, 1499 p
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] GT-01 — `tests/test_adr010_fronteira_nucleo.py` verde com a branch registrada e todas as
+- [x] GT-01 — `tests/test_adr010_fronteira_nucleo.py` verde com a branch registrada e todas as
       entradas anteriores preservadas.
-- [ ] GT-03 — `schema.ts` e `openapi.json` inalterados no diff contra `develop`.
-- [ ] GT-04 — `git status --porcelain -- studio/web/dist` vazio após `make frontend-build`.
-- [ ] GT-05 — `make verify` e `make frontend-verify` com output real registrado.
+- [x] GT-03 — `schema.ts` e `openapi.json` inalterados no diff contra `develop`.
+- [x] GT-04 — `git status --porcelain -- studio/web/dist` vazio após `make frontend-build`.
+- [x] GT-05 — `make verify` e `make frontend-verify` com output real registrado.
 
 ## Success Criteria
 

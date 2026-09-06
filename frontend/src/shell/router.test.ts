@@ -77,7 +77,7 @@ describe("useHashRouter — resolução e fallbacks (C-SHELL-12/13)", () => {
   });
 });
 
-// UT-21…UT-27 do `_tests.md` (Wave 11 · F10, card #88): `navigate` passou a MONTAR as áreas globais
+// UT-21…UT-27 do `_tests.md` (Wave 11 · F08, card #88): `navigate` passou a MONTAR as áreas globais
 // que o efeito de resolução já entendia. A não-regressão dos alvos de campanha é parte do contrato.
 describe("navigate — áreas globais montáveis (UT-21…UT-27)", () => {
   beforeEach(() => {
