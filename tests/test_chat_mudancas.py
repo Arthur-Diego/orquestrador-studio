@@ -198,7 +198,10 @@ def test_ut08_a_guarda_reprova_e_NOMEIA_a_tool_que_ficou_de_fora() -> None:
 def test_ut09_escopo_e_etapa_de_toda_entrada_de_acao_sao_validos():
     from studio import steps as catalogo
 
-    etapas_validas = {s["id"] for s in catalogo.SOON} | {"characters", DO_ARGUMENTO}
+    # `characters` e `moodboards` não são etapas do curso: são as ÁREAS GLOBAIS `[extensão]` da
+    # sidebar (ADR-039 e ADR-013), sem `pid`. Cada área nova entra aqui explicitamente — a
+    # lista é fechada de propósito, para um id errado de etapa continuar reprovando.
+    etapas_validas = {s["id"] for s in catalogo.SOON} | {"characters", "moodboards", DO_ARGUMENTO}
     for tool, destino in TOOL_STEPS.items():
         if destino is None:
             continue
@@ -219,3 +222,32 @@ def test_ut09_o_mapa_e_o_modulo_permanecem_puros():
             importados.add(no.module or "")
             importados.update(a.name for a in no.names)
     assert not ({"sessions", "runtime", "mcp"} & importados), f"import proibido em mudancas.py: {importados}"
+
+
+# ---------- biblioteca de mood boards (frente F12, card ADH-OS-20260906-14) ----------
+def test_biblioteca_de_moodboards_emite_na_area_global_sem_pid():
+    """As tools da biblioteca não recebem `pid`: o evento sai com `pid=None`, como nas de personagem."""
+    pendentes: dict = {}
+    assert derivar(_call("moodboard_pick", mbid="praia-dourada"), pendentes) == []
+    assert derivar(_result(), pendentes) == [
+        {"kind": "state_changed", "pid": None, "step": "moodboards", "scope": "selection",
+         "tool": "moodboard_pick"}
+    ]
+
+
+def test_mood_pull_aponta_para_a_etapa_2_da_campanha_e_nao_para_a_biblioteca():
+    """`mood_pull` é a PONTE (ADR-013/014): escreve em `mood/selected/` de um `pid`, então quem
+    tem de recarregar é a etapa 2 daquela campanha, não a área global."""
+    pendentes: dict = {}
+    derivar(_call("mood_pull", pid="verao-2026", mbid="praia-dourada"), pendentes)
+    assert derivar(_result(), pendentes) == [
+        {"kind": "state_changed", "pid": "verao-2026", "step": "mood", "scope": "selection",
+         "tool": "mood_pull"}
+    ]
+
+
+@pytest.mark.parametrize("tool", ["moodboard_list", "moodboard_get", "vibes_list", "escolhidas_list"])
+def test_listagens_da_biblioteca_sao_leitura(tool):
+    pendentes: dict = {}
+    assert derivar(_call(tool), pendentes) == []
+    assert pendentes == {}

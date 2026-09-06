@@ -48,6 +48,11 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     "animate_shots": None,
     "character_list": None,
     "character_score": None,
+    # biblioteca de mood boards (frente F12): listagens puras, nenhuma escrita em disco
+    "moodboard_list": None,
+    "moodboard_get": None,
+    "vibes_list": None,
+    "escolhidas_list": None,
     # interação com o humano (ADR-038): não muda artefato
     "ui_choose_one": None,
     "ui_confirm": None,
@@ -82,6 +87,22 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     "character_wait": ("characters", "candidates"),
     "character_pick": ("characters", "selection"),
     "character_apply": ("characters", "selection"),
+    # ---------- ação: biblioteca de mood boards (ADR-013), área global sem pid ----------
+    # Frente F12 da wave 11 (card ADH-OS-20260906-14). Mesmo desenho da biblioteca de personagens:
+    # `pid` ausente no input vira `None`, e a tela da área global relê. A exceção é `mood_pull`, que
+    # é a PONTE para a campanha: ela escreve em `mood/selected/` de um `pid`, então o destino é a
+    # etapa 2 daquele projeto — não a área global.
+    "moodboard_create": ("moodboards", "library"),
+    "moodboard_delete": ("moodboards", "library"),
+    "moodboard_prompt": ("moodboards", "library"),
+    "moodboard_import": ("moodboards", "candidates"),
+    "moodboard_pick": ("moodboards", "selection"),
+    "vibes_pick": ("moodboards", "library"),
+    "mood_run": ("moodboards", "job"),
+    "mood_run_wait": ("moodboards", "candidates"),
+    "moodboard_multishot": ("moodboards", "job"),
+    "moodboard_multishot_wait": ("moodboards", "candidates"),
+    "mood_pull": ("mood", "selection"),
 }
 
 
