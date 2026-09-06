@@ -1,12 +1,14 @@
 ### HLD: base (etapa 3 — imagem base, aula 009)
 
-Versão: 1.2
-Data: 2026-08-30
+Versão: 1.3
+Data: 2026-09-06
 Responsável: frente `base` da Wave 1 (Task-Id OS-003); wave 2 (Task-Id OS-015); frente
-`base-clean-marca` da Wave 9 (Task-Id ADH-OS-20260830-44)
+`base-clean-marca` da Wave 9 (Task-Id ADH-OS-20260830-44); frente `base-upscale-chat` da Wave 11
+(Task-Id ADH-OS-20260906-13)
 
 Specs normativas: `docs/domains/base/features/base-fdd.md` ·
-`docs/domains/base/features/base-clean-marca-fdd.md` `[extensão]` · PRD: `docs/domains/base/prd.md`
+`docs/domains/base/features/base-clean-marca-fdd.md` `[extensão]` ·
+`docs/domains/base/features/base-upscale-chat-fdd.md` `[extensão]` · PRD: `docs/domains/base/prd.md`
 Contratos do lote: `docs/domains/studio/waves/wave-1.md` · Diagramas: `docs/domains/base/diagrams/mermaid/`
 
 ---
@@ -122,8 +124,16 @@ como tal no código, na tela e aqui até confirmação.
 
 ### Modelo de dados (alto nível)
 - `BaseCandidate` (id sha12, kind ∈ {situation, clean `[extensão]`, label, upscale}, source ∈ {upload, downloads, higgsfield, cli},
-  name, prompt, file, thumb, width, height, ref_id, selected, imported, job_id?, model?, origin_path?).
+  name, prompt, file, thumb, width, height, ref_id, selected, imported, job_id?, model?, origin_path?,
+  source_id `[extensão]`).
   `file`/`thumb` são relativos à raiz do projeto (servidos por `/files/{pid}/...`).
+- `source_id` `[extensão]` (Wave 11 · F11): de que candidata o passo partiu. `situation` grava sempre
+  `null` (a origem é a referência da etapa 1, já em `ref_id`); `clean` aponta a `situation`
+  selecionada, `label` a `clean` (ou a `situation` como fallback) e `upscale` a mais avançada da
+  cadeia. No caminho pago o valor vem do item do `_plan`, que já resolvera a origem antes de chamar
+  o CLI; no import pela tela é inferido por `source_candidate(cands, kind)` sobre as candidatas
+  anteriores ao import, e um `upscale` importado nunca aponta para outro `upscale`. Candidata
+  anterior à feature carrega com `source_id: null` por `setdefault` — não há migração de arquivo.
 - `Brand` (name, description) — `[extensão]` aprovada (decisão 10 do lote da wave 1).
 - `base/prompts.json` (wave 2): histórico de até 50 entradas
   `{ref_id, ref_file, mode, instruction, no_bias, no_people, model, aspect_ratio, prompt, negative,
@@ -149,8 +159,21 @@ como tal no código, na tela e aqui até confirmação.
 | `POST …/base/import/downloads` | API | REST/JSON | Interna | últimos N minutos, ≤ 40 arquivos; 404 se a pasta não existe |
 | `POST …/base/import/history` | API | REST/JSON | Interna | exige CLI instalado (409); 502 se o CLI falhar |
 | `POST …/base/cost` | API | REST/JSON | Interna | não gasta créditos; `total` nulo quando o CLI não informa |
-| `POST …/base/generate`, `GET …/base/job` | API | REST/JSON | Interna | gasta créditos; 409 sem login ou com job em andamento; 422 sem pré-requisito |
+| `POST …/base/generate`, `GET …/base/job` | API | REST/JSON | Interna | gasta créditos; 409 sem login ou com job em andamento; 422 sem pré-requisito. `GET …/base/job` devolve também `new_candidates` `[extensão]` (ver abaixo) |
 | `POST …/base/select` | API | REST/JSON | Interna | 404 se o id não existe |
+| `mcp__studio__base_review` `[extensão]` | Tool MCP | stdio | Interna | não gera nada (nunca passa por `_paid`); 1 `ui.show` + 1 `ui.choose_images` (`min=0`, `max=1`, timeout 1800 s) e 0 ou 1 `POST …/base/select` |
+
+`GET …/base/job` ganhou, na Wave 11 (F11), o campo aditivo `new_candidates`: uma entrada
+`{id, kind, thumb_url, file_url, source_id}` por candidata ingerida **naquele** job, na ordem de
+ingestão, com `[]` quando não há job (`state:"idle"`) ou nada foi ingerido. Os ids são os `new_ids`
+que `_finish_import` já calculava e descartava — fonte única, nunca uma segunda varredura do
+diretório —, o que sustenta o invariante `len(new_candidates) == job["added"]` nos jobs concluídos
+com sucesso. A prefixação com `/files/{pid}/` acontece **só nessa borda**: `file`/`thumb` seguem
+relativos à raiz do projeto no `candidates.json`. A rota continua **sem** `response_model`, para não
+filtrar as chaves extras que o `JobRegistry` injeta (`kind`, `model`, `log`) — por isso
+`frontend/src/api/schema.ts` não muda por causa dela. É esse campo que fecha a pendência de origem
+registrada em `docs/domains/studio/features/base-cli-generation-fdd.md` §2 e que permite ao
+assistente mostrar o par antes → depois no chat sem montar caminho nenhum.
 
 ---
 
