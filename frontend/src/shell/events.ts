@@ -42,6 +42,12 @@ export interface OpcoesDeAssinatura {
   /**
    * Campanha da tela. Eventos com `pid` diferente e não nulo são ignorados. `undefined` (default)
    * aceita qualquer pid: é o caso das áreas globais, que não têm campanha.
+   *
+   * ATENÇÃO ao deixar isto `undefined`: o debounce é por ASSINANTE (ver `Assinante`), então um
+   * assinante global recebe eventos de campanhas diferentes no mesmo timer e, dentro de uma janela,
+   * só o ÚLTIMO chega ao callback — o de `p1` é perdido, não adiado. É inofensivo para um callback
+   * que ignora o payload e recarrega tudo (`CharactersArea`), e é uma armadilha para um callback
+   * que decida algo a partir de `m.pid`. Assinante global: não dependa de `m.pid`.
    */
   pid?: string | null;
   /** Janela do debounce. Default `DEBOUNCE_GUIA_MS` (400 ms). */
@@ -52,6 +58,12 @@ export interface OpcoesDeAssinatura {
  * Uma assinatura viva. O par `(pid, step)` do debounce é o DO ASSINANTE, não o do evento: os dois
  * são fixos na assinatura (`step` é o argumento do hook, `pid` vem de `opts`), e trocar qualquer um
  * deles refaz o efeito e, com ele, o timer. Por isso um timer por assinante já é "um timer por par".
+ *
+ * A equivalência vale para assinante com `pid` DECLARADO — as sete telas de etapa. Para o assinante
+ * global (`pid === undefined`), o par é `(undefined, step)`: ele aceita qualquer campanha, então
+ * eventos de `p1` e `p2` na mesma janela compartilham o timer e só o último chega ao callback. É o
+ * comportamento desejado para quem recarrega tudo sem olhar o payload; quem precisar do `pid` no
+ * callback tem de declarar `opts.pid` (ver `OpcoesDeAssinatura.pid`).
  */
 interface Assinante {
   /** `undefined` = área global, aceita qualquer campanha. `null` = tela sem campanha aberta. */

@@ -31,7 +31,15 @@ const ESCOPOS: readonly EscopoDaMudanca[] = ["job", "candidates", "selection", "
 function mudancaDoEvento(ev: ChatEvent): MudancaDoStudio | null {
   const step = typeof ev.step === "string" ? ev.step : "";
   const scope = ESCOPOS.find((e) => e === ev.scope);
-  if (!step || !scope) return null;
+  if (!step || !scope) {
+    // O descarte é comportamento previsto (por isso `warn`, não `error`), mas silencioso ele torna
+    // um "não sincronizou" indiagnosticável do lado do cliente: o transcript e `/trace` são do
+    // SERVIDOR e vão mostrar o evento emitido certinho. Este é o único rastro do lado que o engoliu
+    // — e faz falta justamente no caso que a ADR-041 prevê, o de um `scope` novo num backend mais
+    // recente que este dock.
+    console.warn("[studio] state_changed fora do Contrato 1, ignorado", ev.step, ev.scope, ev.tool);
+    return null;
+  }
   const pid = typeof ev.pid === "string" && ev.pid ? ev.pid : null;
   // Spread condicional por causa do `exactOptionalPropertyTypes`: `tool: undefined` não vale.
   return { pid, step, scope, ...(typeof ev.tool === "string" ? { tool: ev.tool } : {}) };
