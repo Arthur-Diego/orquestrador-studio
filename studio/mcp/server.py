@@ -160,6 +160,10 @@ def build_server(client: StudioClient | None = None):
     def ui_show(images: list[dict], title: str = "") -> str:
         return ui.show(cli, images, title)
 
+    @t(name="ui_open", description="Pede ao usuário para abrir uma tela do Studio (ex.: 'storyboard') e concluir a edição fina lá (máscara, timeline). target = id da etapa.")
+    def ui_open(target: str, title: str = "", detail: str = "", label: str = "") -> dict:
+        return ui.open_screen(cli, target, title, detail, label)
+
     return server
 
 

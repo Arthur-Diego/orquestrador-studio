@@ -22,6 +22,8 @@ export interface ChatEvent {
   options?: unknown;
   images?: unknown;
   fields?: unknown;
+  target?: string;
+  label?: string;
   text?: string;
   name?: string;
   input?: Record<string, unknown>;

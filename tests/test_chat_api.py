@@ -60,6 +60,22 @@ def test_emit_empurra_cartao_sem_esperar(client):
     assert "notify" in kinds
 
 
+def test_limite_de_conversas_ativas(client, monkeypatch):
+    from studio.chat import router as chat_router
+
+    class _Dummy:
+        def done(self):
+            return False
+
+    monkeypatch.setattr(chat_router, "MAX_ACTIVE", 1)
+    monkeypatch.setitem(chat_router._turns, "outra-aba", _Dummy())  # 1 conversa "gerando"
+    cid = client.post("/api/chats", json={"title": "cheia"}).json()["id"]
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "gera aí"})
+        ev = ws.receive_json()
+        assert ev["kind"] == "notify" and "limite" in ev["text"].lower()
+
+
 def test_websocket_recusa_aba_inexistente(client):
     import pytest
     from starlette.websockets import WebSocketDisconnect
