@@ -219,8 +219,14 @@ export function useResetCampaign(): UseMutationResult<unknown, Error, { pid: str
   });
 }
 
-/** Depois de um reset o guia inteiro é suspeito: agregado, guias por etapa e o progresso do projeto. */
-function invalidarGuia(qc: QueryClient, pid: string): void {
+/**
+ * Depois de um reset o guia inteiro é suspeito: agregado, guias por etapa e o progresso do projeto.
+ *
+ * Pública desde a Wave 11 · F03 (Contrato 6) para o `ChatDock` chamá-la ao receber `state_changed`.
+ * **Só invalida**: não escreve cache, não deriva prontidão e não decide navegação — é por isso que
+ * serve ao chat sem abrir exceção ao ADR-010 item a. O corpo não mudou; só a visibilidade.
+ */
+export function invalidarGuia(qc: QueryClient, pid: string): void {
   void qc.invalidateQueries({ queryKey: chaves.guia(pid), exact: true });
   void qc.invalidateQueries({ queryKey: ["studio", "guia-etapa", pid] });
   void qc.invalidateQueries({ queryKey: chaves.projeto(pid), exact: true });

@@ -32,6 +32,7 @@ export {
 
 export {
   criarQueryClient,
+  invalidarGuia,
   useCreateProject,
   useGuideSync,
   useHiggsfieldStatus,
