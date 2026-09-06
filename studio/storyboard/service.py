@@ -955,14 +955,23 @@ def _valid_video_model(model: str) -> str:
     return model
 
 
+def video_action(mode: str) -> str:
+    """Ação de catálogo (ADR-016) do vídeo do storyboard: transição no modo start/end, senão cena.
+
+    `[extensão]` wave 11 (card #92): a MESMA chave que resolve o modelo default é a que vai para o
+    livro-caixa. Antes o `record_generation` gravava `"storyboard.video"`, uma terceira chave que
+    não existe em `ACTION_KEYS` — o painel não a mostrava e o `spend` a reprovava com 422.
+    """
+    return "storyboard.video.transition" if mode == "start_end" else "storyboard.video.scene"
+
+
 def video_model(pid: str, mode: str, override: str | None = None) -> str:
     """Modelo do vídeo. `[extensão]` ADR-022: um `override` válido do cliente vence; sem override cai
     na resolução por servidor (ADR-021 + ADR-023): start_end → transição (Kling 3.0, o modelo que
     declara `end_image` no CLI), senão cena (Kling 2.6)."""
     if override:
         return _valid_video_model(override)
-    action = "storyboard.video.transition" if mode == "start_end" else "storyboard.video.scene"
-    return settings.default_for(action, pid)["model"]
+    return settings.default_for(video_action(mode), pid)["model"]
 
 
 def _video_build_params(root: Path, prompt: str, mode: str, duration: int, frames: dict) -> dict:
@@ -1082,7 +1091,8 @@ def start_video_generate(pid: str, scene_id: str, prompt: str, mode: str, durati
                          frames: dict | None = None, photo: str | None = None,
                          model: str | None = None) -> dict:
     """Gera UM vídeo pelo CLI (gasta créditos), salva `storyboard/<cena>/video/…mp4` e registra o gasto
-    (`storyboard.video`, ADR-016). JobRegistry PRÓPRIO de vídeo. `[extensão]` ADR-022: com `photo`, a
+    (`storyboard.video.{scene,transition}`, ADR-016 — a mesma ação que resolve o modelo, wave 11
+    card #92). JobRegistry PRÓPRIO de vídeo. `[extensão]` ADR-022: com `photo`, a
     chave/arquivo/registro são por FOTO; `model` opcional do cliente vence a resolução por servidor."""
     root = project_dir(pid)
     _valid_scene_id(scene_id)
@@ -1104,8 +1114,9 @@ def start_video_generate(pid: str, scene_id: str, prompt: str, mode: str, durati
             raise RuntimeError("o CLI não devolveu URL de vídeo")
         rel = _next_video_rel(root, scene_id, owner)
         hf.download(urls[0], root / rel)
-        # `[extensão]` livro-caixa de créditos (ADR-016): custo por clipe gerado.
-        settings.record_generation(action="storyboard.video", model=model, params=params, count=1,
+        # `[extensão]` livro-caixa de créditos (ADR-016): custo por clipe gerado. A ação é a MESMA
+        # que `video_model` resolve (wave 11, card #92) — nunca a genérica `storyboard.video`.
+        settings.record_generation(action=video_action(mode), model=model, params=params, count=1,
                                    pid=pid, step="storyboard", job_id=res.get("id"))
         _append_scene_video(root, scene_id, rel, text, owner)
         # ADR-022 (R2): costura única — o vídeo por foto vira take liked na montagem (etapa edit).

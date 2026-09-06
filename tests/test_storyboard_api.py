@@ -389,6 +389,50 @@ def test_video_generate_and_job_polling(client, pid, monkeypatch):
     assert scene["videos"] == ["storyboard/cena01/video/take_1.mp4"] and scene["video_prompt"] == "slow dolly"
 
 
+def test_video_generate_grava_no_livro_caixa_a_acao_resolvida(client, pid, monkeypatch):
+    """Wave 11 (card #92): a ação do ledger é a MESMA que resolve o modelo, nunca `storyboard.video`.
+
+    A chave genérica não existe em `settings.ACTION_KEYS`: gravá-la deixava o gasto de vídeo fora do
+    painel admin e fazia `POST /api/creditos/spend` reprovar com 422 uma geração que já aconteceu.
+    """
+    import studio.higgsfield as hf
+    from studio.common import settings
+    client.post(f"/api/projects/{pid}/storyboard/import/upload",
+                files=[("files", ("a.png", image_bytes(color=(1, 2, 3)), "image/png")),
+                       ("files", ("b.png", image_bytes(color=(7, 8, 9)), "image/png"))])
+    ideas = client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"]
+    client.post(f"/api/projects/{pid}/storyboard/candidates/select", json={"ids": [i["id"] for i in ideas]})
+    start, end = [i["file"] for i in client.get(f"/api/projects/{pid}/storyboard/candidates").json()["ideas"]]
+    client.put(f"/api/projects/{pid}/storyboard/scenes",
+               json={"scenes": [{"text": "cena", "images": [start, end], "primary": start}]})
+    monkeypatch.setattr(hf, "available", lambda: True)
+    monkeypatch.setattr(hf, "status", lambda: {"installed": True, "logged_in": True})
+    monkeypatch.setattr(hf, "generate",
+                        lambda model, params, timeout_s=600: {"raw": {}, "urls": ["http://x/out.mp4"], "id": "v1"})
+    monkeypatch.setattr(hf, "download", lambda url, dest: (dest.parent.mkdir(parents=True, exist_ok=True),
+                                                           dest.write_bytes(b"mp4"), dest)[-1])
+
+    def gerar(body: dict) -> None:
+        assert client.post(f"/api/projects/{pid}/storyboard/video/generate", json=body).status_code == 200
+        for _ in range(100):
+            job = client.get(f"/api/projects/{pid}/storyboard/video/job",
+                             params={"scene_id": "cena01"}).json()
+            if job["state"] != "running":
+                break
+        assert job["state"] == "done", job
+
+    gerar({"scene_id": "cena01", "prompt": "slow dolly", "mode": "single", "duration": 5, "image": start})
+    gerar({"scene_id": "cena01", "prompt": "morph", "mode": "start_end", "duration": 5,
+           "start_image": start, "end_image": end})
+
+    acoes = [r["action"] for r in settings.history(pid)]
+    assert set(acoes) == {"storyboard.video.scene", "storyboard.video.transition"}
+    assert set(acoes) <= settings.ACTION_KEYS
+    # cada modo grava o modelo que a resolução por servidor escolheu (ADR-021/023)
+    por_acao = {r["action"]: r["model"] for r in settings.history(pid)}
+    assert por_acao == {"storyboard.video.scene": "kling2_6", "storyboard.video.transition": "kling3_0"}
+
+
 def test_video_generate_requires_cli_and_prompt(client, pid, monkeypatch):
     import studio.higgsfield as hf
     img = _select_idea(client, pid)
