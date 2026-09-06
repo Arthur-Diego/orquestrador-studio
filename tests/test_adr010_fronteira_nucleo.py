@@ -70,6 +70,18 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-09-storyboard-geracao-por-cena": (
+        "`[extensão]` Geração por cena na etapa 4 (ângulos da aula 011 + cena do produto da aula "
+        "013), card ADH-OS-20260906-09 (wave 11): liga os endpoints por cena que já existiam e "
+        "eram testados, mas não tinham chamador na tela. Todo o código próprio vive FORA do "
+        "núcleo (`studio/storyboard/{local,angles}.py`, `studio/etapas/storyboard/**`, "
+        "`studio/mcp/**`). Em `frontend/` muda APENAS o arquivo GERADO "
+        "`frontend/src/api/schema.ts` (campo `scene` no modelo `LocalGenerateReq`) e o "
+        "`frontend/openapi.json`; em `studio/web/` muda APENAS o bundle GERADO `studio/web/dist/` "
+        "(`make frontend-schema` + `make frontend-build`, guarda de drift do CI). Nenhuma fonte do "
+        "shell ou do design system é tocada. ADR-002/004/016/033/037, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "fix/adh-os-20260905-09-schema-drift-trace": (
         "Hotfix: regenera `frontend/src/api/schema.ts` para a rota `GET /api/chats/{id}/trace` "
         "adicionada na Onda E (o schema não foi regenerado, quebrando a guarda de drift do CI em "

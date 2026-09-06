@@ -19,12 +19,31 @@ from .. import localengine as le
 from ..common import ingest
 from ..common.jobs import JobRegistry
 from ..refs.service import project_dir
+from . import angles
 from .service import BASE_IMAGE, STEP, Invalid, Precondition, _candidates
 
 log = logging.getLogger("studio.storyboard.local")
 
 _local_registry = JobRegistry()
 COUNTS = (1, 4)
+
+
+def _scene_step(pid: str, scene: str) -> str:
+    """`[extensão]` geração por cena (FDD storyboard-geracao-por-cena §5, contrato 1).
+
+    Valida `cena01..cena99` (presente em `scenes.json`) ou o literal `product` pelo MESMO resolvedor
+    do caminho pago (`angles._resolve`, sem exigir base) e devolve o `step` do ingest
+    (`storyboard/cenaNN`). O vocabulário de erro é traduzido para o do serviço da etapa: regex
+    inválido → 422, cena ausente do `scenes.json` → 404 (LookupError sobe puro), `scenes.json`
+    inexistente → 409.
+    """
+    try:
+        _, step = angles._resolve(pid, scene)
+    except ValueError as e:                 # fora do regex → 422
+        raise Invalid(str(e)) from e
+    except FileNotFoundError as e:          # storyboard/scenes.json ausente → 409
+        raise Precondition(str(e)) from e
+    return step
 
 
 def status(pid: str) -> dict:
@@ -44,15 +63,24 @@ def job_status(pid: str) -> dict:
     """Estado do job local sempre no formato do contrato (idle devolve só `state`).
 
     `result`/`result_id` (inpaint) apontam o candidato gerado, para o antes/depois da UI.
+    `scene` (`[extensão]` geração por cena) é a cena de destino do job, `None` na ideação.
     """
     return {"done": 0, "total": 0, "added": 0, "error": None, "log": [], "mode": None,
-            "result": None, "result_id": None, **_local_registry.status(pid)}
+            "scene": None, "result": None, "result_id": None, **_local_registry.status(pid)}
 
 
 # ---------- geração local de keyframes ----------
 def start_generate(pid: str, prompt: str, count: int = 4, model: str = "flux-schnell",
-                   steps: int | None = None, seed: int | None = None) -> dict:
-    """Gera `count` keyframes localmente (grátis) e importa cada um como candidato `source:"local"`."""
+                   steps: int | None = None, seed: int | None = None,
+                   scene: str | None = None) -> dict:
+    """Gera `count` keyframes localmente (grátis) e importa cada um como candidato `source:"local"`.
+
+    `scene` (`[extensão]`, opt-in) desvia a ingestão para a pasta da cena
+    (`storyboard/cenaNN/candidates/` ou `storyboard/product/candidates/`), fechando a órfandade dos
+    endpoints por cena. Sem `scene`, o comportamento é o de sempre: galeria de ideação em
+    `storyboard/candidates/`. A cena é validada ANTES do gate do motor (critério 2 do FDD).
+    """
+    step = _scene_step(pid, scene) if scene else STEP
     _require_engine()
     root = project_dir(pid)
     body = (prompt or "").strip()
@@ -62,20 +90,23 @@ def start_generate(pid: str, prompt: str, count: int = 4, model: str = "flux-sch
         raise Invalid("Gere 4 (quando está incerto) ou 1 (quando é só um tweak).")
     if model not in le.GEN_MODEL_IDS:
         raise Invalid(f"modelo de geração desconhecido: {model}")
+    meta = {"local_kind": "keyframe_local", "model": model}
+    if scene:
+        meta["scene"] = scene
 
     def run(job: dict) -> None:
         for i in range(count):
             data = le.generate_image(body, model=model, steps=steps,
                                      seed=None if seed is None else seed + i)
-            if ingest.ingest_bytes(root, STEP, data, "local", f"local_{i}.png", body,
-                                   {"local_kind": "keyframe_local", "model": model}):
+            if ingest.ingest_bytes(root, step, data, "local", f"local_{i}.png", body, dict(meta)):
                 job["added"] += 1
             job["done"] = i + 1
             job["log"].append(f"{i + 1}/{count} gerado localmente, {job['added']} importadas")
-        log.info("local_job %s", {"pid": pid, "mode": "generate", "model": model, "count": count})
+        log.info("local_job %s", {"pid": pid, "mode": "generate", "model": model, "count": count,
+                                 "scene": scene})
 
     try:
-        return _local_registry.start(pid, count, run, mode="generate")
+        return _local_registry.start(pid, count, run, mode="generate", scene=scene)
     except RuntimeError as e:
         raise Precondition("Já existe um trabalho local em andamento para este projeto.") from e
 

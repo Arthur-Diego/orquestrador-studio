@@ -549,3 +549,112 @@ def test_focus_examples_come_from_the_lesson(shots, project):
     ex = " ".join(shots.build_prompts(project, "cena01")["focus_examples"])
     for termo in ("rosto", "pés", "mãos", "cenário"):
         assert termo in ex
+
+
+# ---------- `[extensão]` preset de realismo nos prompts (FDD storyboard-geracao-por-cena §5) ----------
+#: O texto de HOJE, byte a byte: o invariante do gate é que sem preset nada muda (ADR-004).
+BASELINE_ANGLE = (
+    "Bring me another point of view of this image. I want a close-up on energy drink. "
+    "Same scene, same lighting and colors. "
+    "Shot on RED Komodo 6K, 35mm, f/2.8, close shot, eye-level angle. Realistic."
+)
+RIG_RED = ("Shot on RED V-Raptor, Zeiss Supreme Prime, Large Format, 35-50mm, T4.0. "
+           "Dominant light: clean controlled key, crisp speculars. "
+           "Color grade: precise color, high micro-contrast, clean punchy look. Realistic.")
+
+
+def test_preset_action_registrada_de_forma_idempotente(shots):
+    """A chave entra por `setdefault`: se a frente irmã já a registrou, F07 NÃO sobrescreve."""
+    from studio.common import settings
+    assert shots.PRESET_ACTION == "storyboard.angles"
+    assert settings.PRESET_ACTIONS[shots.PRESET_ACTION] is None
+    settings.PRESET_ACTIONS[shots.PRESET_ACTION] = "red-commercial-precision"
+    settings.PRESET_ACTIONS.setdefault(shots.PRESET_ACTION, None)
+    assert settings.PRESET_ACTIONS[shots.PRESET_ACTION] == "red-commercial-precision"
+    settings.PRESET_ACTIONS[shots.PRESET_ACTION] = None
+
+
+def test_sem_preset_o_texto_do_angulo_e_byte_a_byte_o_de_hoje(shots, project):
+    """Critério 9: com o preset resolvido em `None` (default de código) nada muda no prompt."""
+    r = shots.build_prompts(project, "cena01")
+    assert r["prompts"][0]["text"] == BASELINE_ANGLE
+    assert r["preset"] is None and r["preset_source"] == "code"
+    assert r["camera"] == "red"
+
+
+def test_preset_explicito_substitui_o_bloco_de_camera(shots, project):
+    """Decisão P1 do gate: o rig do preset ENTRA NO LUGAR do bloco manual (não soma)."""
+    r = shots.build_prompts(project, "cena01", preset="red-commercial-precision")
+    texto = r["prompts"][0]["text"]
+    assert texto.endswith(RIG_RED)
+    assert "Shot on RED Komodo 6K, 35mm" not in texto, "o bloco manual não pode coexistir com o rig"
+    assert r["preset"] == "red-commercial-precision" and r["preset_source"] == "request"
+    assert r["camera"] is None
+
+
+def test_preset_none_na_query_desliga_o_preset(shots, project):
+    """`preset=none` é o `null` explícito da query string (auto-aceite 3 do FDD)."""
+    from studio.common import settings
+    settings.set_project_preset(project, shots.PRESET_ACTION, "sony-venice-night")
+    assert shots.build_prompts(project, "cena01")["preset"] == "sony-venice-night"
+    r = shots.build_prompts(project, "cena01", preset="none")
+    assert r["preset"] is None and r["preset_source"] == "request"
+    assert r["prompts"][0]["text"] == BASELINE_ANGLE
+
+
+def test_preset_do_projeto_e_resolvido_quando_a_query_esta_ausente(shots, project):
+    from studio.common import settings
+    settings.set_project_preset(project, shots.PRESET_ACTION, "arri-natural-narrative")
+    r = shots.build_prompts(project, "cena01")
+    assert r["preset"] == "arri-natural-narrative" and r["preset_source"] == "project"
+    assert "ARRI Alexa Mini LF" in r["prompts"][0]["text"]
+
+
+def test_preset_desconhecido_e_erro_de_pedido(shots, project):
+    with pytest.raises(ValueError):
+        shots.build_prompts(project, "cena01", preset="nao-existe")
+
+
+def test_preset_nao_entra_quando_o_realismo_esta_desligado(shots, project):
+    """`realism=False` continua significando "sem bloco de câmera nenhum"."""
+    texto = shots.build_prompts(project, "cena01", realism=False,
+                                preset="red-commercial-precision")["prompts"][0]["text"]
+    assert "Shot on" not in texto
+
+
+def test_preset_no_prompt_de_edicao(shots, project):
+    """Na edição o bloco é opt-in: sem preset e sem `camera` o texto segue o de hoje."""
+    plain = shots.build_prompts(project, "cena01", "edit", edits=["Remove the can"])
+    assert plain["prompts"][0]["text"].endswith("Keep everything else identical, realistic.")
+    com = shots.build_prompts(project, "cena01", "edit", edits=["Remove the can"],
+                              preset="red-commercial-precision")
+    assert com["prompts"][0]["text"].endswith(RIG_RED)
+
+
+def test_preset_na_cena_do_produto(shots, project):
+    """Contrato 5: o rig é ANEXADO ao final das duas instruções da aula 013, na mesma ordem."""
+    import shutil
+    root = shots.project_dir(project)
+    (root / "storyboard" / "product").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(root / "base" / "base_final.png", root / "storyboard" / "product" / "ref.png")
+    plain = shots.product_prompts(project)
+    assert plain["preset"] is None and plain["preset_source"] == "code"
+    assert plain["prompts"][0]["text"].endswith("Keep everything else identical, realistic.")
+    com = shots.product_prompts(project, preset="red-commercial-precision")
+    assert com["preset"] == "red-commercial-precision" and com["preset_source"] == "request"
+    assert len(com["prompts"]) == 2
+    assert all(p["text"].endswith(RIG_RED) for p in com["prompts"])
+    assert com["prompts"][0]["label"] == plain["prompts"][0]["label"]
+
+
+def test_image_prompt_por_cena(shots, project):
+    """Critério 10: repasse defensivo — string vazia quando `scenes.json` não tem a chave."""
+    import json
+    root = shots.project_dir(project)
+    f = root / "storyboard" / "scenes.json"
+    data = json.loads(f.read_text())
+    data["scenes"][0]["image_prompt"] = "A lone astronaut walking through a blizzard"
+    f.write_text(json.dumps(data))
+    cenas = {c["id"]: c for c in shots.list_scenes(project)["scenes"]}
+    assert cenas["cena01"]["image_prompt"] == "A lone astronaut walking through a blizzard"
+    assert cenas["cena02"]["image_prompt"] == ""

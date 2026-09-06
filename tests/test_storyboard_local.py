@@ -264,3 +264,113 @@ def test_module_shape(le):
     assert isinstance(le.GEN_MODELS, list) and isinstance(le.INPAINT_MODELS, list)
     assert callable(le.status) and callable(le.require)
     assert isinstance(le.inpaint, types.FunctionType)
+
+
+# ---------- `[extensão]` geração POR CENA (FDD storyboard-geracao-por-cena, contratos 1 e 2) ----------
+def _seed_scenes(root):
+    import json
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "scenes.json").write_text(json.dumps(
+        {"scenes": [{"id": "cena01", "n": 1, "text": "close no astronauta",
+                     "image_prompt": "A lone astronaut walking through a blizzard"},
+                    {"id": "cena02", "n": 2, "text": "a lata na neve"}]}))
+
+
+def _scene_candidates(root, scene):
+    import json
+    p = root / "storyboard" / scene / "candidates.json"
+    return json.loads(p.read_text()) if p.exists() else []
+
+
+def test_local_generate_com_scene_ingere_na_pasta_da_cena(client, pid, root, le, monkeypatch):
+    """Critério 1: com `scene`, TODO byte gerado vai para `storyboard/cenaNN/candidates/`."""
+    _ready(le, monkeypatch)
+    monkeypatch.setattr(le, "generate_image", lambda *a, **k: image_bytes(color=(7, 8, 9)))
+    _seed_scenes(root)
+    r = client.post(f"/api/projects/{pid}/storyboard/local/generate",
+                    json={"prompt": "a lone astronaut", "count": 1, "scene": "cena01"})
+    assert r.status_code == 200 and r.json()["scene"] == "cena01"
+    job = _wait(client, pid)
+    assert job["state"] == "done" and job["added"] == 1
+    # o candidato está na pasta da CENA, e não na galeria de ideação
+    da_cena = _scene_candidates(root, "cena01")
+    assert len(da_cena) == 1 and da_cena[0]["source"] == "local"
+    assert da_cena[0]["local_kind"] == "keyframe_local" and da_cena[0]["scene"] == "cena01"
+    assert _candidates(root) == []
+    assert (root / "storyboard" / "cena01" / "candidates" / da_cena[0]["file"]).exists()
+    # e aparece na galeria da cena (rota dos ângulos)
+    vistos = client.get(f"/api/projects/{pid}/storyboard/angles/scenes/cena01/candidates").json()
+    assert [c["id"] for c in vistos["candidates"]] == [da_cena[0]["id"]]
+    assert vistos["candidates"][0]["file"].startswith("storyboard/cena01/candidates/")
+
+
+def test_local_generate_sem_scene_continua_na_ideacao(client, pid, root, le, monkeypatch):
+    """Critério 1 (metade 2): sem `scene`, o destino é o de hoje (`storyboard/candidates/`)."""
+    _ready(le, monkeypatch)
+    monkeypatch.setattr(le, "generate_image", lambda *a, **k: image_bytes(color=(3, 4, 5)))
+    _seed_scenes(root)
+    client.post(f"/api/projects/{pid}/storyboard/local/generate", json={"prompt": "x", "count": 1})
+    assert _wait(client, pid)["state"] == "done"
+    assert len(_candidates(root)) == 1
+    assert _scene_candidates(root, "cena01") == []
+    # o job de ideação segue com `scene: null` (contrato 2)
+    assert client.get(f"/api/projects/{pid}/storyboard/local/job").json()["scene"] is None
+
+
+def test_local_generate_scene_product(client, pid, root, le, monkeypatch):
+    """Critério 14: a cena do produto (aula 013) também gera local, sem exigir `ref.png`."""
+    _ready(le, monkeypatch)
+    monkeypatch.setattr(le, "generate_image", lambda *a, **k: image_bytes(color=(6, 6, 6)))
+    _seed_scenes(root)
+    r = client.post(f"/api/projects/{pid}/storyboard/local/generate",
+                    json={"prompt": "the can", "count": 1, "scene": "product"})
+    assert r.status_code == 200
+    assert _wait(client, pid)["state"] == "done"
+    assert len(_scene_candidates(root, "product")) == 1
+
+
+def test_local_generate_scene_invalida_nao_toca_o_motor(client, pid, root, le, monkeypatch):
+    """Critério 2: 422 fora do regex, 404 para cena ausente do `scenes.json` — sem chamar o motor."""
+    _ready(le, monkeypatch)
+    chamou = []
+    monkeypatch.setattr(le, "generate_image", lambda *a, **k: chamou.append(1) or image_bytes())
+    _seed_scenes(root)
+    url = f"/api/projects/{pid}/storyboard/local/generate"
+    assert client.post(url, json={"prompt": "x", "scene": "../etc"}).status_code == 422
+    assert client.post(url, json={"prompt": "x", "scene": "cena9"}).status_code == 422
+    assert client.post(url, json={"prompt": "x", "scene": "cena09"}).status_code == 404
+    assert chamou == []
+
+
+def test_local_generate_scene_sem_scenes_json_e_409(client, pid, le, monkeypatch):
+    _ready(le, monkeypatch)
+    monkeypatch.setattr(le, "generate_image", lambda *a, **k: image_bytes())
+    r = client.post(f"/api/projects/{pid}/storyboard/local/generate",
+                    json={"prompt": "x", "scene": "cena01"})
+    assert r.status_code == 409 and "etapa 4" in r.json()["detail"]
+
+
+def test_local_job_expoe_a_cena_do_job(client, pid, root, le, monkeypatch):
+    """Critério 3: o job local carrega `scene` durante e depois da corrida."""
+    _ready(le, monkeypatch)
+    monkeypatch.setattr(le, "generate_image", lambda *a, **k: image_bytes(color=(2, 2, 2)))
+    _seed_scenes(root)
+    client.post(f"/api/projects/{pid}/storyboard/local/generate",
+                json={"prompt": "x", "count": 1, "scene": "cena02"})
+    assert _wait(client, pid)["scene"] == "cena02"
+
+
+def test_local_generate_por_cena_nao_cria_registro_de_job(client, pid, root, le, monkeypatch):
+    """Critério 15 / ADR-006: um job por projeto — a 2ª cena em paralelo recebe 409."""
+    import threading
+    _ready(le, monkeypatch)
+    _seed_scenes(root)
+    solta = threading.Event()
+    monkeypatch.setattr(le, "generate_image", lambda *a, **k: (solta.wait(3), image_bytes())[1])
+    url = f"/api/projects/{pid}/storyboard/local/generate"
+    assert client.post(url, json={"prompt": "x", "count": 1, "scene": "cena01"}).status_code == 200
+    try:
+        assert client.post(url, json={"prompt": "y", "count": 1, "scene": "cena02"}).status_code == 409
+    finally:
+        solta.set()
+    _wait(client, pid)

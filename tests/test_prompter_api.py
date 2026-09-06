@@ -63,8 +63,12 @@ def test_defaults_iterate_the_action_registry(client, settings_mod, monkeypatch)
     body = client.get("/api/prompter/presets").json()
     assert body["defaults"]["storyboard.script"] == {"preset": "documentary-street", "source": "code"}
     assert body["defaults"]["mood"] == {"preset": None, "source": "code"}
-    # o registro volta ao estado original quando o monkeypatch é desfeito
-    assert set(settings_mod.PRESET_ACTIONS) == {"mood", "base", "motion", "storyboard.script"}
+    # o `setitem` mexe no VALOR de uma chave existente: o conjunto de chaves não cresce.
+    # `storyboard.angles` entrou na wave 11 (`storyboard-geracao-por-cena`, ADH-OS-20260906-09),
+    # registrada por `setdefault` em `studio/storyboard/angles.py` — mesmo padrão aberto da
+    # `storyboard.script`, sem editar `studio/common/settings.py`.
+    assert set(settings_mod.PRESET_ACTIONS) == {"mood", "base", "motion", "storyboard.script",
+                                                "storyboard.angles"}
 
 
 def test_pid_query_reflects_project_override(client, project):
