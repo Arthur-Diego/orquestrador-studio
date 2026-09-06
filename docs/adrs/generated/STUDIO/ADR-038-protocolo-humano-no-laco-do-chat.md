@@ -46,3 +46,39 @@ WebSocket, sem o agente nunca decidir escolha visual nem gasto.
   turno; o timeout e o cancelamento (`/stop`) são a válvula.
 - O contrato `open → done` exige que a tela alvo aceite parâmetros de abertura e publique conclusão
   (opt-in por tela, Onda C); telas que não implementarem apenas abrem e o agente pede aviso manual.
+
+## Adendo (Wave 11 · F10) — o `confirm_token` do item 3 passou a existir
+
+Card #91 / `ADH-OS-20260906-12`. FDD: `docs/domains/creditos/features/creditos-chat-fdd.md`.
+
+O item 3 da Decisão diz que "nenhuma tool paga executa sem um `confirm_token` emitido por
+`ui.confirm_cost`". Até esta wave isso era **letra morta**: `actions._paid` chamava
+`ui.confirm_cost` e, vendo `ans["confirmed"]`, fazia direto o `POST` de geração. Não havia token
+nenhum. Agora há.
+
+- **Emissão.** `ui.issue_confirm_token(action, model)` gera um token opaco
+  (`secrets.token_urlsafe(16)`) e só é chamado por `confirm_cost`, **apenas quando o usuário
+  aprova** — logo é impossível haver aprovação sem token, e impossível haver token sem aprovação.
+- **Escopo e validade.** `(action, model, chat_id)`, TTL de 900 s, **uso único**, no máximo um vivo
+  por par por aba (uma emissão nova invalida a anterior). O escopo deliberadamente NÃO inclui
+  `count` nem `pid`, que podem variar legitimamente entre a estimativa e a geração.
+- **Consumo.** `_paid` chama `ui.consume_confirm_token(...)` antes do `POST` do `gen_path`. Token
+  ausente, expirado, já usado, de outra ação, de outro modelo ou de outra aba bloqueia a geração
+  com uma mensagem que ensina a saída (chamar a tool de novo).
+- **Sigilo.** O token é estado **efêmero de processo** (um dict de módulo, como o registro de jobs
+  em memória do ADR-006 — a ADR-003 não se aplica). Nunca vai a disco, nunca ao WebSocket, nunca ao
+  modelo. Há teste afirmando que o valor não aparece no payload do `ask` nem no texto devolvido à
+  tool, e nenhum log o registra.
+- **Caminho terminal inalterado.** Sem `STUDIO_CHAT_ID` o gate continua sendo `confirm=true`
+  explícito na chamada da tool, e nenhum token é exigido nem emitido.
+- **Escape hatch.** A flag de módulo `ui.CONFIRM_TOKEN_REQUIRED` desliga a exigência sem reverter
+  commit, caindo no comportamento anterior (só `confirmed: true`), caso o token venha a travar
+  geração legítima.
+
+O widget `confirm_cost` do item 2 também deixa de ser um cartão de duas linhas: `ui.confirm_cost`
+ganha o parâmetro keyword-only `breakdown` com o `CostPreview` inteiro, e o dock renderiza as mesmas
+linhas do `CostSheet` das telas pela mesma função pura (`frontend/src/ui/costRows.ts`). O parâmetro
+é opcional e os campos antigos seguem no payload, então um dock antigo continua funcionando.
+
+Coerente com esta ADR, o alerta de **saldo insuficiente** apenas avisa: o botão de aprovar continua
+habilitado, porque quem decide gastar é o usuário.

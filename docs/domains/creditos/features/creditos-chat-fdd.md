@@ -357,11 +357,28 @@ agente     MCP(job_wait)      API/ledger        dock
 Observação sobre `source`: só o multishot já usa a chave, com os mesmos valores
 (`cli` | `measured` | `unknown`) do `CostPreview`. Não há colisão semântica.
 
-Observação sobre `action`: `storyboard.frames`, `mood.grid`, `animate.take`, `music.track` e
-`mood.multishot` são chaves que já existem em `settings.ACTIONS`
-(`studio/common/settings.py:31-63`); a feature NÃO inventa chave de ação. `base` resolve pela
-`KIND_ACTION` existente (`studio/base/service.py:62`). A cobertura do catálogo é responsabilidade de
-F05.
+Observação sobre `action` — **CORRIGIDA NA IMPLEMENTAÇÃO (2026-09-06)**. A redação original desta
+seção citava `storyboard.frames`, `animate.take` e `storyboard.video` como chaves existentes de
+`settings.ACTIONS`. **As três NÃO existem.** O catálogo real, auditado no código com a F05 já
+integrada (`studio/common/settings.py`, 15 chaves), é: `base.image`, `base.upscale`, `base.clean`,
+`mood.grid`, `mood.multishot`, `storyboard.scene`, `storyboard.multishot`, `storyboard.inpaint`,
+`storyboard.video.scene`, `storyboard.video.transition`, `storyboard.angles`, `storyboard.upscale`,
+`animate.video`, `music.track`, `export.reframe`.
+
+Como a feature NÃO pode inventar chave de ação, o mapeamento normativo passa a ser:
+
+| Rota | `action` |
+|---|---|
+| `mood/cost` | `mood.grid` |
+| `base/cost` | `KIND_ACTION.get(kind, ACTION_DEFAULT)` (`base.upscale`/`base.clean`/`base.image`) |
+| `animate/cost` | `animate.video` (não `animate.take`) |
+| `music/generate/cost` | `music.track` |
+| `storyboard/cost` | `storyboard.scene` (não `storyboard.frames`) |
+| `storyboard/video/cost` | `sb.video_action(mode)` → `storyboard.video.transition` no modo `start_end`, senão `storyboard.video.scene` (não `storyboard.video`) |
+| `moodboards/{mbid}/multishot/cost` | `mood.multishot` |
+
+`base` resolve pela `KIND_ACTION` existente (`studio/base/service.py:62`). A cobertura do catálogo é
+responsabilidade de F05, já integrada.
 
 **Exemplo de requisição** (inalterada)
 
