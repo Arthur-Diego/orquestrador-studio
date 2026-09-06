@@ -82,8 +82,12 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
 
 
 def nome_curto(name: str | None) -> str:
-    """`mcp__studio__refs_pick` -> `refs_pick`. Nome vazio ou None -> ''."""
-    return (name or "").replace(PREFIXO, "")
+    """`mcp__studio__refs_pick` -> `refs_pick`. Nome vazio ou None -> ''.
+
+    `removeprefix` e não `replace`: o contrato fala em PREFIXO, e `replace` tiraria a substring de
+    qualquer posição do nome.
+    """
+    return (name or "").removeprefix(PREFIXO)
 
 
 def derivar(evento: dict, pendentes: dict[str, tuple[str, str, str, str | None]]) -> list[dict]:

@@ -29,7 +29,7 @@ no Studio (ADR-036).
 - **Persistência em arquivo (ADR-003).** Abas e transcript em `STATE_DIR/chats/<id>/` — fora do
   git, fora de `projects/`.
 
-### Componentes (Onda A)
+### Componentes (Onda A + Wave 11 · F03)
 | Componente | Papel |
 | --- | --- |
 | `studio/chat/sessions.py` | Store das abas: `meta.json` + `events.jsonl` por aba; `seq` para replay. |
@@ -64,7 +64,7 @@ no Studio (ADR-036).
    Sem browser (MCP no terminal) não há evento — limitação conhecida.
    Diagrama: `docs/domains/chat/diagrams/mermaid/sincronizacao-chat-telas.md`.
 
-### Interfaces (Onda A)
+### Interfaces (Onda A + Wave 11 · F03)
 | Rota | Tipo | Nota |
 | --- | --- | --- |
 | `GET /api/chat/status` | REST | `{available}` — o CLI `claude` está no PATH? |

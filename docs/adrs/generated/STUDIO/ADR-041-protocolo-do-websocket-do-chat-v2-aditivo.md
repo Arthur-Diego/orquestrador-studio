@@ -3,7 +3,7 @@
 **Status:** Aceito
 **Data:** 2026-09-06
 **Task-Id:** ADH-OS-20260906-05
-**ADRs relacionados:** [ADR-004 (fidelidade ao curso)](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006 (jobs assíncronos e polling)](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-010 (guia por leitura pura e fronteira do núcleo)](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md), [ADR-036](./ADR-036-runtime-de-chat-via-claude-cli-em-processo-terceiro-modo.md), [ADR-037](./ADR-037-servidor-mcp-do-studio-como-cliente-http-da-propria-api.md), [ADR-038](./ADR-038-protocolo-humano-no-laco-do-chat.md)
+**ADRs relacionados:** [ADR-004 (fidelidade ao curso)](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006 (jobs assíncronos e polling)](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-010 (guia por leitura pura e fronteira do núcleo)](./ADR-010-guia-por-etapa-por-leitura-pura-e-nucleo-editavel-so-pelo-preparo-shell.md), [ADR-036](./ADR-036-runtime-de-chat-via-claude-cli-em-processo-terceiro-modo.md), [ADR-037](./ADR-037-servidor-mcp-do-studio-como-cliente-http-da-propria-api.md), [ADR-038](./ADR-038-protocolo-humano-no-laco-do-chat.md), [ADR-039 (biblioteca de personagens)](./ADR-039-biblioteca-de-personagens-e-injecao-de-identidade.md)
 
 ## Contexto e Problema
 
@@ -49,6 +49,14 @@ versão 1 de um protocolo **estritamente aditivo**, com três regras:
    `default: return null` — um kind que ele não conhece é ignorado, não quebra a conversa e não vira
    bolha. O servidor persiste o evento no transcript como qualquer outro, com `seq` atribuído por
    `sessions.append_event`.
+
+   **O limite honesto dessa tolerância:** ela é boa por `kind` e ruim por **campo**. Um kind
+   desconhecido é inofensivo porque não havia nada a fazer com ele. Já um `scope` novo dentro de um
+   `state_changed` chega a um dock que valida contra um enum fechado, e o evento é **descartado
+   inteiro** — não degrada, some. Por isso o descarte deixa um `console.warn` no browser: é o único
+   rastro do lado que engoliu, já que o transcript e `/trace` são do servidor e mostrariam o evento
+   emitido corretamente. Quem acrescentar valor a um enum de CAMPO deve tratar isso como mudança que
+   exige clientes atualizados, não como crescimento gratuito.
 3. **Evento é aviso, nunca fonte de dados.** Nenhum kind novo carrega estado de domínio (listas de
    candidatas, status de etapa, prontidão). Ele diz **o que olhar de novo**; quem olha é o backend,
    pelo guia e pelas rotas da etapa (ADR-010 item a). Se o evento não chegar — dock fechado, socket
@@ -92,8 +100,8 @@ quando uma tool registrada não tem classificação declarada.
 ```
 
 - `seq` (int) — sequência do transcript, atribuída por `sessions.append_event`.
-- `pid` (string | null) — campanha afetada. `null` significa mudança **global** (a biblioteca de
-  personagens), que vale para qualquer campanha aberta.
+- `pid` (string | null) — campanha afetada. `null` significa mudança **global**: a biblioteca de
+  personagens (ADR-039), cujas tools recebem `cid` e não `pid`. Vale para qualquer campanha aberta.
 - `step` (string) — id de etapa de `studio/steps.py` (`refs`, `mood`, `base`, `storyboard`,
   `animate`, `music`, `edit`, `export`, `publish`, `prospect`) ou a área global `characters`.
 - `scope` (string) — enum fechado nesta versão: `job` (trabalho assíncrono disparado),
@@ -116,6 +124,8 @@ debounce de 400 ms e filtro por pid. O contrato do barramento é consumido pelas
 
 **Positivas**
 
+- Tudo isto é `[extensão]` (ADR-004): o assistente de chat está fora do roteiro do curso, e o
+  protocolo que ele fala cresce sem tocar o método que as etapas implementam.
 - A tela aberta ao lado do chat volta a bater com o disco sem o usuário navegar — o defeito do
   card #87 fecha pela raiz, e não por remendo em cada tela.
 - O protocolo passa a ter uma regra de evolução escrita: qualquer frente futura acrescenta kind sem

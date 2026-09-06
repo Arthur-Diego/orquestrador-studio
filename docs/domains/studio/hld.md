@@ -1,6 +1,7 @@
 ### HLD: studio (aplicação, API e frontend)
 
-Versão: 1.8 (fechamento da Wave 10 · migração integral do frontend para React: `frontend/` Vite + React + TypeScript estrito constrói o bundle versionado `studio/web/dist/`; o vanilla `studio/web/*` e a rota `/steps/<id>/view.*` foram removidos — card [REACT-11], ADR-031/ADR-032)
+Versão: 1.9 (Wave 11 · F03: barramento de mudanças do shell `frontend/src/shell/events.ts` e `invalidarGuia` público — quem invalida o quê quando a ação vem do chat, card #87 / ADH-OS-20260906-05, ADR-041)
+Versão anterior: 1.8 (fechamento da Wave 10 · migração integral do frontend para React: `frontend/` Vite + React + TypeScript estrito constrói o bundle versionado `studio/web/dist/`; o vanilla `studio/web/*` e a rota `/steps/<id>/view.*` foram removidos — card [REACT-11], ADR-031/ADR-032)
 Data: 2026-09-03
 Responsável: Arthur Diego (com pré-preenchimento pelo raio-X arquitetural, aprovado em lote no brownfield)
 
@@ -57,6 +58,7 @@ Padrões adotados
 | `common/guide.py` | Contrato do **guia por etapa**: `Guide(META)` (`.text`, `.input`, `.output`, `.check`, `.build`), helpers de leitura pura (`exists`, `read_json`, `count_files`), derivação de `status`/`progress`/`missing` e `generic_guide` (fallback `unknown`) | `refs.service.project_dir`, `steps.SOON` |
 | `higgsfield.py` | Ponte com o CLI; `status()` cacheado por 60 s (`STATUS_TTL`), `reset_status_cache()` para descartar | subprocess |
 | `web/dist/` | Bundle React **versionado** (saída de `frontend/`, `make frontend-build`): `index.html` + `assets/*` servidos em `/static/dist/`. É o único conteúdo que resta em `studio/web/` desde a E10 — o vanilla `index.html`/`app.js`/`ui.js`/`ui.css`/`style.css` foi removido | servido por `/` e `/static` |
+| `frontend/src/shell/events.ts` | **Barramento de mudanças do shell** `[extensão]` (Wave 11 · F03, ADR-041): `emitStudioChange(m)` publica e `useStudioChange(step, cb, opts?)` assina, com filtro por etapa e por campanha e debounce de 400 ms por par `(pid do evento, step)`. Existe para que uma ação feita **pelo chat** faça a tela de etapa montada recarregar sem o usuário navegar, sem exigir que as telas de estado local migrem para TanStack Query. Transporta um AVISO, nunca estado de domínio: não conhece TanStack Query, não invalida nada e não calcula prontidão (ADR-010 a). Hoje o único emissor é o `ChatDock`; os assinantes são as telas refs/base/mood/storyboard/animate e as duas telas de Personagens | `api/guide-sync` (só a constante `DEBOUNCE_GUIA_MS`), React |
 | `frontend/src/shell/` | Shell React (Wave 10 · E3): campanha atual, rail das 11 etapas **com estado real** (ADR-010 a, do guia do backend), topbar com progresso, visão geral (`#/<pid>/overview`), wizard, roteamento por hash com a mesma gramática e chaves de `localStorage`, e o **contrato de host do plugin** (`ctx`: `api`, `apiUpload`, `toast`, `pid()`, `project()`, `files()`, `guide()`, `onGuide`) que monta cada `etapas/<id>/ui/index.tsx` via `PluginHost`. Áreas globais moodboards/créditos em `frontend/src/areas/*` | API `/api/*`, `localStorage` |
 | `frontend/src/ui/` + `frontend/src/styles/` | Biblioteca de UI React (Wave 10 · E2): componentes/hooks equivalentes a 100% da superfície do antigo `Studio.ui` (28 membros — `Modal`, `ProgressModal`+`useProgress`/`progressJob`, `CostSheet`+`useCostConfirm`, `Guide`/`StepGuide`, `MoodMosaic`, `Tile`, `Pipe`, `Beats`, `HfChip`, `CreditsChip`, `Chip`, `CopyButton`, `useUpload`, `usePoll`, `useAutosize`, `esc`, `fmtPct`, `STATUS_LABEL`/`ITEM_LABEL`/`STATUS_KIND`…), com os MESMOS ids/classes/atributos ARIA. `styles/style.css` + `styles/ui.css` são cópias byte-a-byte do design system **dark-first** e mantêm o **catálogo de classes** que as telas consomem (contrato — `features/shell-redesign-fdd.md` §5) | `/api/*`, fontes do Google |
 
@@ -221,6 +223,21 @@ Fonte de verdade
 | `GET /api/higgsfield/status` | API | REST/JSON | Interna | cache de 60 s; `?refresh=1` força |
 | `/api/projects/{pid}/<etapa>/*` | API | REST/JSON, multipart (upload ≤ 25 MB; 200 MB na etapa 6) | Interna | ver HLDs dos domínios |
 | `/files/{pid}/…`, `/static/…` | Estáticos | HTTP | Interna | somente leitura (`/static/ui.js`, `/static/ui.css` = `Studio.ui`; `/static/app.js`, `/static/style.css` = shell) |
+
+| `emitStudioChange` / `useStudioChange` (`shell/events.ts`) | Módulo | chamada de função no browser | Interna ao bundle | síncrono, sem rede; `cb` no máximo uma vez por janela de 400 ms por par `(pid, step)`; assinante que lança não cala os demais |
+| `invalidarGuia(qc, pid)` (`api/queries.ts`, barril `api/index.ts`) | Módulo | chamada de função no browser | Interna ao bundle | **só invalida** `chaves.guia(pid)`, o prefixo `["studio","guia-etapa",pid]` e `chaves.projeto(pid)`; nunca escreve cache nem deriva prontidão (ADR-010 a) |
+
+**Quem invalida o quê (v1.9).** Três caminhos, um único invalidador:
+
+1. **A tela agiu** — `ctx.onGuide` → `guide-sync.ts` (update otimista + refetch do agregado em 400 ms).
+2. **Reset** — `useResetStep`/`useResetCampaign` → `invalidarGuia(qc, pid)`.
+3. **O chat agiu** (Wave 11 · F03) — o `ChatDock` recebe `state_changed` pelo WebSocket do turno e
+   faz `invalidarGuia(qc, pid)` **mais** `emitStudioChange` no barramento; a tela de etapa montada
+   assina o barramento e recarrega os próprios dados. Com `pid: null` (biblioteca de personagens)
+   não há guia a invalidar e só o barramento é acionado.
+
+Em nenhum dos três o cliente calcula prontidão de etapa: ela vem sempre do guia do backend
+(ADR-010 a). O polling das telas permanece (ADR-006) — o push é canal aditivo.
 
 **Catálogo de classes do shell (contrato visual, v1.6).** É interface pública tanto quanto as
 rotas: as telas de etapa **consomem** estes nomes e o shell pode acrescentar, nunca renomear.

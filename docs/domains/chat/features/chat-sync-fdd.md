@@ -1,10 +1,18 @@
 ### FDD: chat-sync
 
-Versão: 1.0
+Versão: 1.1
 Data: 2026-09-06
 Responsável: Arthur Diego (modo autônomo /dd-parallel, Wave 11)
 Task-Id: ADH-OS-20260906-05
 Card(s): #87 https://trello.com/c/CvcqIxB5
+
+> **1.1 (pós-implementação).** Correções de FATO apontadas pelo fiscal de fechamento de ciclo, sem
+> mudar contrato: a constante pública `PREFIXO` no Contrato 2; a linha do `load()` que falha na
+> matriz da seção 6 (a 1.0 dizia "mostra o toast que já mostra hoje", e o `load()` das telas não
+> toasta); a linha nova do descarte no CLIENTE na mesma matriz; os dois `console.*` do browser na
+> seção 7, que a 1.0 negava; e as **duas** assinaturas na área de personagens (lista e ficha) nas
+> seções 3 e 11. O contrato do debounce — "por par `(pid, step)`" — **não** foi alterado: a
+> implementação é que passou a honrá-lo (ver Contrato 4).
 
 ---
 
@@ -104,7 +112,10 @@ opcionalmente por F06 (storyboard-cenas). O JSON exato está congelado na seçã
   para traduzir `state_changed` em `invalidarGuia` mais `emitStudioChange`.
 - Exportação de `invalidarGuia` em `frontend/src/api/queries.ts` e no barril `frontend/src/api/index.ts`.
 - Assinatura do hook nas telas: refs, base, mood, storyboard (`Ideation` e `Angles`), animate e a área
-  global de personagens. Quando a tela detecta job `running` na recarga, ela entra no `startPoll` que
+  global de personagens — nela, **duas** assinaturas: a lista (`CharactersArea`) e a **ficha**
+  (`CharacterDetail`). A ficha entrou na rodada de review: o poll dela é guardado por `busy`, que só
+  liga quando a própria tela dispara o job, então sem assinatura ela repetia o defeito do card #87
+  uma tela mais fundo. Quando a tela detecta job `running` na recarga, ela entra no `startPoll` que
   já existe.
 - Kind `state_changed` acrescentado a `frontend/src/areas/chat/types.ts`.
 
@@ -284,6 +295,9 @@ tela refs -> API        : GET refs/candidates + GET refs/job -> startPoll se run
 - Assinaturas:
 
 ```python
+#: Prefixo com que as tools do MCP `studio` chegam ao agente (ADR-037).
+PREFIXO = "mcp__studio__"
+
 #: Valor especial: a etapa não é fixa, sai do argumento `step` da própria tool (`job_wait`).
 DO_ARGUMENTO = "@input"
 
@@ -397,6 +411,12 @@ export function useStudioChange(
 - Implementação: um `Map<string, Set<Assinante>>` de módulo, sem `window` e sem `CustomEvent`, para
   ficar testável em jsdom sem globais (ADR-008). `useStudioChange` guarda `cb` em `useRef` para não
   reassinar a cada render.
+- **O `pid` do par `(pid, step)` do debounce é o DO EVENTO**, não o declarado em `opts`. A distinção
+  só importa para o assinante GLOBAL (`opts.pid` ausente), que aceita qualquer campanha: com um
+  timer único por assinante, dois eventos de campanhas diferentes na mesma janela colapsariam e o
+  primeiro seria **perdido**, não adiado — o que contrariaria este contrato. Por isso cada assinante
+  mantém uma janela por `pid` de evento. Um assinante com `pid` declarado só abre uma janela na
+  prática, porque o filtro descarta o resto.
 - `[auto-aceito: o debounce reusa a CONSTANTE `DEBOUNCE_GUIA_MS` de `frontend/src/api/guide-sync.ts`,
   não a CLASSE `AgendadorDeRefresh`. A classe é reusada como está para o guia (via `invalidarGuia`),
   mas o método `agendar(qc, pid)` termina obrigatoriamente em `invalidateQueries(chaves.guia)`, e o
@@ -473,8 +493,9 @@ necessário** nesta frente. `make frontend-build` é, porque `frontend/` muda.
 | `append_event` do `state_changed` falha (disco) | a exceção sobe para o `except Exception` que já existe em `_run_turn` | a aba nunca fica presa em `running`; o comportamento atual é preservado |
 | `manager.push` falha (socket morto) | tratado pelo `WSManager.push` que já descarta o socket | comportamento existente, não alterado |
 | `emitStudioChange` com assinante que lança | o barramento captura por assinante e segue para os demais | uma tela quebrada não impede as outras de recarregar |
-| `load()` da tela falha (rede) | a tela mantém o estado anterior e mostra o toast que já mostra hoje | o refresh é informativo; falhar aqui não pode derrubar a tela |
+| `load()` da tela falha (rede) | a tela mantém o estado anterior e a falha é engolida em silêncio pelo `.catch()` do callback | o refresh é informativo; falhar aqui não pode derrubar a tela. **Correção factual:** a versão 1.0 dizia "mostra o toast que já mostra hoje", mas o `load()` das telas não toasta (em refs o toast só existe no `startPoll` e nas ações do usuário). Um aviso do chat é best-effort: toastar erro de algo que o usuário não pediu seria ruído |
 | Tela desmontada entre o evento e o fim do debounce | o cleanup do `useEffect` cancela o timer | nenhum `setState` após unmount |
+| `state_changed` sem `step`, ou com `scope` fora do enum fechado | o dock descarta o evento inteiro: nem `invalidarGuia`, nem barramento | é o caso que a ADR-041 prevê (backend mais novo contra dock antigo): a tolerância ao desconhecido vale por `kind`, mas por `scope` ela vira PERDA do evento, não degradação. Por isso o descarte deixa `console.warn` — ver seção 7 |
 
 **Estratégias de resiliência.** Timeouts: nenhum novo (o `job_wait` já tem 600 s e o `ask` 1800 s).
 Retries: nenhum, coerente com `retry: false` do QueryClient. Backoff: não se aplica. Circuit breaker:
@@ -513,8 +534,20 @@ ADR-003). O equivalente disponível é o transcript e a rota de trace:
 **Logs.** O transcript `STATE_DIR/chats/<id>/events.jsonl` é o log estruturado da feature: cada
 `state_changed` fica gravado com `seq`, `pid`, `step`, `scope` e `tool`, na ordem em que ocorreu, ao
 lado do `tool_call` e do `tool_result` que o originaram. Nenhum dado sensível entra no evento (não há
-prompt, não há caminho de arquivo, não há credencial). Nenhum `print` ou logger novo é adicionado no
-caminho quente.
+prompt, não há caminho de arquivo, não há credencial). **No backend**, nenhum `print` ou logger novo é
+adicionado no caminho quente.
+
+**No cliente há exatamente dois `console.*`, ambos deliberados**, porque o transcript e `/trace` são
+do SERVIDOR e não registram o que o browser descartou:
+
+- `console.warn` no dock quando um `state_changed` cai fora do Contrato 1 (sem `step`, ou `scope`
+  fora do enum). Sem ele o evento some sem rastro e um "não sincronizou" fica indiagnosticável do
+  lado que o engoliu.
+- `console.error` no barramento quando um assinante lança, para que a tela quebrada apareça em vez
+  de calar em silêncio (o isolamento entre assinantes continua garantido).
+
+Nenhum dos dois roda no caminho feliz: o primeiro só em evento malformado, o segundo só em exceção
+de assinante.
 
 **Tracing.** Não há tracing distribuído (processo único, ADR-001). O par
 `tool_call.id` mais `tool_result.id` já funciona como span do lado do agente, e o `state_changed`
@@ -706,7 +739,7 @@ falhar, a sincronização quebrou.
 | 3 | Emissão no turno | 2 | `studio/chat/router.py` (`_run_turn`), `tests/test_chat_api.py` ou arquivo de turno equivalente | 7 |
 | 4 | Barramento do shell | 1 | `frontend/src/shell/events.ts` (novo), `frontend/src/shell/events.test.ts` (novo) | 10, 11, 12, 13 |
 | 5 | Ponte no dock | 3, 4 | `frontend/src/areas/chat/useChatSocket.ts`, `frontend/src/areas/chat/ChatDock.tsx`, `frontend/src/areas/chat/types.ts`, `frontend/src/api/queries.ts` (exportar `invalidarGuia`), `frontend/src/api/index.ts`, `frontend/src/areas/chat/ChatDock.test.tsx` | 8, 9 |
-| 6 | Telas de etapa assinando | 4, 5 | `studio/etapas/refs/ui/index.tsx`, `studio/etapas/base/ui/index.tsx`, `studio/etapas/mood/ui/index.tsx`, `studio/etapas/storyboard/ui/Ideation.tsx`, `studio/etapas/storyboard/ui/Angles.tsx`, `studio/etapas/animate/ui/index.tsx`, `frontend/src/areas/characters/CharactersArea.tsx`, `studio/etapas/refs/ui/index.test.tsx` | 14, 20, 21, 22 |
+| 6 | Telas de etapa assinando | 4, 5 | `studio/etapas/refs/ui/index.tsx`, `studio/etapas/base/ui/index.tsx`, `studio/etapas/mood/ui/index.tsx`, `studio/etapas/storyboard/ui/Ideation.tsx`, `studio/etapas/storyboard/ui/Angles.tsx`, `studio/etapas/animate/ui/index.tsx`, `frontend/src/areas/characters/CharactersArea.tsx` (**duas** assinaturas: a lista e a ficha `CharacterDetail`), `studio/etapas/refs/ui/index.test.tsx`, `frontend/src/areas/characters/CharactersArea.test.tsx` | 14, 20, 21, 22 |
 | 7 | Bundle e verificação | 5, 6 | `studio/web/dist/` (gerado por `make frontend-build`), `make verify`, `make frontend-verify` | 15, 16, 17 |
 | 8 | QA manual e fechamento de docs | 7 | `docs/domains/chat/hld.md` (kind novo em Interfaces), nota em `docs/domains/studio/hld.md` (quem invalida o quê), ADR-041 (acréscimo de `state_changed`, ver seção 12) | 18, 23 |
 

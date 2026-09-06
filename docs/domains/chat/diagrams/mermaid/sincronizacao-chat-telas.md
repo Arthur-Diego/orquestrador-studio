@@ -36,7 +36,7 @@ sequenceDiagram
     R->>S: append_event(state_changed) → seq
     R->>D: WS state_changed
 
-    Note over D: só ws.onmessage chama onEvent;<br/>o replay de GET /events NÃO dispara
+    Note over D: só ws.onmessage chama onEvent —<br/>o replay de GET /events NÃO dispara
     D->>D: invalidarGuia(qc, "p1")
     D->>B: emitStudioChange{pid:p1, step:refs, scope:job}
     B->>T: debounce 400 ms · pid confere → recarregar()
@@ -56,7 +56,7 @@ flowchart TD
     A["evento do turno"] --> B{kind}
     B -->|tool_call| C{tem id?}
     C -->|não| X1["ignora"]
-    C -->|sim| D{TOOL_STEPS[nome]}
+    C -->|sim| D{"TOOL_STEPS[nome]"}
     D -->|None · leitura| X2["não registra pendência"]
     D -->|desconhecida| X3["não registra · sem exceção<br/>(quem reprova é o teste de drift)"]
     D -->|"(etapa, escopo)"| E["registra em pendentes"]

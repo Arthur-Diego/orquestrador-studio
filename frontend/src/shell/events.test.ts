@@ -179,3 +179,66 @@ describe("emitStudioChange — assinante que lança não cala os demais (UT-14)"
     expect(erro).toHaveBeenCalled();
   });
 });
+
+// UT-20 — o debounce é por par `(pid do evento, step)`, e não por assinante (§5 Contrato 4 e §6 do
+// FDD). Só o assinante GLOBAL distingue os dois casos, porque só ele recebe mais de uma campanha.
+// Apontado pelo fiscal de fechamento de ciclo (divergência D1) e corrigido no código, não na spec.
+describe("useStudioChange — debounce por par (pid do evento, step) (UT-20)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("assinante global recebe DUAS campanhas da mesma janela, uma chamada cada", () => {
+    const cb = vi.fn();
+    renderHook(() => useStudioChange("characters", cb));
+
+    // Duas campanhas dentro da MESMA janela de 400 ms: com um timer por assinante, o evento de p1
+    // seria perdido (não adiado) — que é exatamente a regressão que este teste tranca.
+    emitStudioChange(mudanca("p1", "characters", "character_apply"));
+    emitStudioChange(mudanca("p2", "characters", "character_apply"));
+    vi.advanceTimersByTime(DEBOUNCE_GUIA_MS);
+
+    expect(cb).toHaveBeenCalledTimes(2);
+    expect(cb.mock.calls.map((c) => (c[0] as MudancaDoStudio).pid).sort()).toEqual(["p1", "p2"]);
+  });
+
+  it("a mudança global tem janela própria e não engole a de uma campanha", () => {
+    const cb = vi.fn();
+    renderHook(() => useStudioChange("characters", cb));
+
+    emitStudioChange(mudanca("p1", "characters", "character_apply"));
+    emitStudioChange(mudanca(null, "characters", "character_wait"));
+    vi.advanceTimersByTime(DEBOUNCE_GUIA_MS);
+
+    expect(cb).toHaveBeenCalledTimes(2);
+    expect(cb.mock.calls.map((c) => (c[0] as MudancaDoStudio).tool).sort()).toEqual([
+      "character_apply",
+      "character_wait",
+    ]);
+  });
+
+  it("dentro de UMA campanha o colapso continua valendo: 3 eventos → 1 chamada", () => {
+    const cb = vi.fn();
+    renderHook(() => useStudioChange("characters", cb));
+
+    emitStudioChange(mudanca("p1", "characters", "character_create"));
+    emitStudioChange(mudanca("p1", "characters", "character_explore"));
+    emitStudioChange(mudanca("p1", "characters", "character_pick"));
+    emitStudioChange(mudanca("p2", "characters", "character_apply"));
+    vi.advanceTimersByTime(DEBOUNCE_GUIA_MS);
+
+    expect(cb).toHaveBeenCalledTimes(2); // uma por campanha, não uma por evento
+    expect(cb).toHaveBeenCalledWith(mudanca("p1", "characters", "character_pick")); // o último vence
+  });
+
+  it("unmount cancela TODAS as janelas abertas do assinante global", () => {
+    const cb = vi.fn();
+    const { unmount } = renderHook(() => useStudioChange("characters", cb));
+
+    emitStudioChange(mudanca("p1", "characters"));
+    emitStudioChange(mudanca("p2", "characters"));
+    unmount();
+    vi.advanceTimersByTime(DEBOUNCE_GUIA_MS * 3);
+
+    expect(cb).not.toHaveBeenCalled();
+  });
+});

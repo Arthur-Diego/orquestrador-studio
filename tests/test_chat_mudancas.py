@@ -144,19 +144,54 @@ def _tools_registradas_no_server() -> set[str]:
     return nomes
 
 
-def test_toda_tool_registrada_tem_etapa_declarada() -> None:
-    """UT-08 — assinatura congelada no Contrato 3 do FDD chat-sync."""
-    registradas = _tools_registradas_no_server()
-    assert registradas, f"nenhum decorador @t(name=...) encontrado em {SERVER_PY} — o parser quebrou"
-    faltantes = sorted(registradas - set(TOOL_STEPS))
-    sobrando = sorted(set(TOOL_STEPS) - registradas)
-    assert not faltantes and not sobrando, (
+def _diagnostico_do_drift(registradas: set[str], mapa: dict) -> str:
+    """Mensagem de falha da guarda, ou `''` quando o mapa e o `server.py` concordam.
+
+    Extraída da asserção para que o caminho de FALHA seja exercitável por teste: a mensagem é
+    metade do valor desta guarda — é ela que diz à frente que acrescentou a tool o que fazer.
+    """
+    faltantes = sorted(registradas - set(mapa))
+    sobrando = sorted(set(mapa) - registradas)
+    if not faltantes and not sobrando:
+        return ""
+    return (
         "o mapa `TOOL_STEPS` divergiu das tools de `studio/mcp/server.py`.\n"
         f"  faltando em TOOL_STEPS: {faltantes or 'nenhuma'}\n"
         f"  sobrando em TOOL_STEPS: {sobrando or 'nenhuma'}\n"
         "Edite `studio/chat/mudancas.py` e declare a etapa de cada tool nova "
         "(`None` quando a tool for de LEITURA)."
     )
+
+
+def test_toda_tool_registrada_tem_etapa_declarada() -> None:
+    """UT-08 — assinatura congelada no Contrato 3 do FDD chat-sync."""
+    registradas = _tools_registradas_no_server()
+    assert registradas, f"nenhum decorador @t(name=...) encontrado em {SERVER_PY} — o parser quebrou"
+    assert not (erro := _diagnostico_do_drift(registradas, TOOL_STEPS)), erro
+
+
+def test_ut08_a_guarda_reprova_e_NOMEIA_a_tool_que_ficou_de_fora() -> None:
+    """UT-08 (caminho de falha) — critério 6 da §9: "a mensagem de falha nomeia a tool".
+
+    Sem este teste a guarda só é exercitada no caminho feliz, e uma mensagem quebrada só
+    apareceria para a frente que a acionasse — no pior momento possível. Simula as duas metades do
+    drift: F06/F07/F11/F12 acrescentando tool ao `server.py` sem declarar a etapa, e uma tool
+    removida do `server.py` sem sair do mapa.
+    """
+    registradas = _tools_registradas_no_server()
+
+    # Tool nova no server.py, ausente do mapa.
+    erro = _diagnostico_do_drift(registradas | {"storyboard_cenas_llm"}, TOOL_STEPS)
+    assert "storyboard_cenas_llm" in erro, "a mensagem não nomeia a tool faltante"
+    assert "faltando em TOOL_STEPS" in erro and "studio/chat/mudancas.py" in erro
+    assert "LEITURA" in erro, "a mensagem não diz que tool de leitura recebe None"
+
+    # Tool que saiu do server.py e ficou no mapa.
+    erro = _diagnostico_do_drift(registradas - {"refs_search"}, TOOL_STEPS)
+    assert "refs_search" in erro and "sobrando em TOOL_STEPS" in erro
+
+    # E o caminho feliz continua devolvendo vazio (senão o teste acima seria vacuamente verdadeiro).
+    assert _diagnostico_do_drift(registradas, TOOL_STEPS) == ""
 
 
 # ---------- UT-09: enum de `scope` e ids de etapa ----------
