@@ -409,11 +409,18 @@ def import_annotation(pid: str, data: bytes, name: str = "annotation.png",
 # ---------- galeria e seleção ----------
 def _idea_row(c: dict) -> dict:
     """Projeção pública de um candidato. `file` aponta para ideas/ quando selecionado (decisão 7
-    do lote: ideas/ guarda só as escolhidas; o resto fica em candidates/)."""
+    do lote: ideas/ guarda só as escolhidas; o resto fica em candidates/).
+
+    `[extensão]` Wave 11 · F06 (FDD §5.6): `local_kind` é campo ADITIVO, só para o badge de origem
+    da galeria distinguir "Motor local (grátis)" de "Inpaint local" — os dois chegam com
+    `source: "local"` e o `meta` do candidato (`local.py`) é o único lugar que sabe qual é qual.
+    `null` para todo candidato que não veio do motor local. Nenhum campo existente muda.
+    """
     where = IDEAS_DIR if c.get("selected") else f"{STEP}/candidates"
     return {"id": c["id"], "file": f"{where}/{c['file']}", "thumb": f"{STEP}/candidates/{c['thumb']}" if c.get("thumb") else None,
             "prompt": c.get("prompt", ""), "selected": bool(c.get("selected")),
-            "source": c.get("source", ""), "imported": c.get("imported", "")}
+            "source": c.get("source", ""), "local_kind": c.get("local_kind") or None,
+            "imported": c.get("imported", "")}
 
 
 def list_ideas(pid: str) -> dict:
@@ -1531,3 +1538,130 @@ def script_state(pid: str) -> dict:
     if not isinstance(data, dict):
         return {"exists": False, "generated_at": None}
     return {"exists": True, "generated_at": data.get("generated_at")}
+
+
+def script_cli_diag(pid: str, refresh: bool = False) -> dict:
+    """`[extensão]` Wave 11 · F06 (FDD §5.1): diagnóstico do `claude` VISTO POR ESTE PROCESSO.
+
+    A ausência do CLI é **dado**, não erro: esta função nunca levanta `Precondition`. O único
+    status diferente de 200 é o 404 do `project_dir` — a rota vive no namespace da etapa porque o
+    roteiro é quem consome o diagnóstico (decisão auto-aceita 2 do FDD).
+
+    Com `refresh=True`, `prompter.cli_status` re-resolve o PATH e reatribui o `BIN` do processo: é
+    isso que faz o botão "Verificar de novo" valer sem reiniciar o servidor (critério A2). O log
+    fica aqui, e não no router, para sair no mesmo logger `studio.storyboard` dos outros eventos
+    da etapa (§7); `searched_path` não entra na linha porque já está no corpo da resposta.
+    """
+    project_dir(pid)
+    diag = prompter.cli_status(refresh=refresh)
+    log.info("cli_probe %s", {"name": diag["name"], "available": diag["available"],
+                              "path": diag["path"], "refresh": bool(refresh)})
+    return diag
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.4, ADR-042 proposta) — PROMPT DE IMAGEM POR FOTO.
+#
+# Gêmeo de `video_prompt`, para o outro campo da foto: o usuário descreve o que a foto precisa
+# mostrar e recebe UM briefing de diretor de fotografia (papel `keyframe` do prompter), com o rig
+# do preset de realismo resolvido para a ação `storyboard.keyframe`. Sem Claude no PATH — ou com
+# falha/timeout dele — cai no TEMPLATE determinístico e devolve `source: "template"`: aqui NÃO
+# existe 409. O 409 do ADR-025 é do ROTEIRO, que escreve arquivo; este caminho não persiste nada —
+# quem grava é o cliente, pelo `PUT .../storyboard/scenes` (mesma política do `/video-prompt`).
+# ==========================================================================================
+MAX_IMAGE_DESC = MAX_VIDEO_DESC           # mesmo teto da descrição do vídeo (FDD §6)
+
+#: Template AGNÓSTICO do prompt de imagem, na forma do `VIDEO_TEMPLATE`: serve de ESTRUTURA, sem
+#: assumir cena alguma, e segue a MESMA ordem de briefing do papel `keyframe`
+#: (`prompter.BRIEFING_ORDER`). `{action}` é instanciado pela descrição do usuário. Vai como
+#: instrução ao bot e, sem Claude, é o próprio prompt determinístico (fallback).
+IMAGE_TEMPLATE = (
+    "A photorealistic cinematic still of {action}. The subject is framed as the clear centre of "
+    "attention, in a real place with visible depth — foreground, subject and background read as "
+    "three distinct planes. Shot on professional cinema equipment: full-frame body, prime lens, "
+    "wide aperture, shallow depth of field with the subject tack-sharp. ONE dominant light source "
+    "shapes the scene, with soft fill and a subtle rim for separation; the direction of the light "
+    "is readable on every surface. Materials show real texture and real imperfections — skin "
+    "pores, fabric weave, dust, scratches, condensation, fingerprints. Colour grade is cinematic "
+    "and restrained, with natural skin tones and clean shadows. Composition is deliberate and "
+    "balanced for the campaign's aspect ratio. It must look like a photograph taken with a real "
+    "camera, not a render: physically accurate light behaviour, natural optical falloff, no "
+    "digital perfection. Avoid: {negative}."
+)
+#: Negativos do template, no formato do campo `negative` da resposta (o mesmo que o bot devolve).
+#: Ficam à parte para o fallback preencher os DOIS lugares — o texto do prompt e o campo — sem
+#: manter duas listas à mão.
+IMAGE_TEMPLATE_NEGATIVE = ("plastic skin, airbrushed look, oversaturation, HDR glow, CGI look, "
+                           "text, watermarks, extra limbs")
+_IMAGE_TEMPLATE_SUBJECT = ("the subject of this storyboard photo exactly as it appears in the "
+                           "reference frame, unchanged")
+
+
+def _image_instruction(desc: str) -> str:
+    """Template preenchido pela descrição do usuário. Descrição vazia é legítima aqui (ao contrário
+    do `/video-prompt`): a foto já existe e é ela que diz o que mostrar, então o `{action}` cai no
+    sujeito genérico e o prompt continua útil."""
+    return (IMAGE_TEMPLATE.replace("{action}", desc or _IMAGE_TEMPLATE_SUBJECT)
+            .replace("{negative}", IMAGE_TEMPLATE_NEGATIVE))
+
+
+def _image_brief(root: Path, scene_id: str, instruction: str) -> dict:
+    """Brief do prompt por foto, no mesmo formato fixo de `prompter._brief_text` (contrato da
+    task_01). `purpose` carrega a cena e a proporção da campanha — a proporção nunca vem do body."""
+    meta = _read_json(root / "project.json", {}) or {}
+    aspect = _aspect_ratio(root)
+    brief = {
+        "product": (meta.get("product") or meta.get("name") or "the product").strip(),
+        "vibe": (meta.get("vibe") or "").strip(),
+        "purpose": (f"one photo (keyframe) of scene {scene_id} of an advertising video, composed "
+                    f"for a {aspect} frame (state the {aspect} aspect ratio in the composition "
+                    f"part of the prompt)"),
+        "instruction": instruction,
+    }
+    return {k: v for k, v in brief.items() if v}
+
+
+def image_prompt(pid: str, scene_id: str, photo: str, description: str = "",
+                 preset: settings.PresetArg = settings.PRESET_UNSET) -> dict:
+    """Gera o PROMPT DE IMAGEM de UMA foto da cena (Claude via papel `keyframe` + template agnóstico).
+
+    Devolve `{prompt, negative, source, seconds, preset}` — `seconds` é quanto o CLI demorou (`0.0`
+    no template) e `preset` é o preset de realismo RESOLVIDO para esta requisição: ausente resolve
+    o default da ação `storyboard.keyframe` (`None` de fábrica), `null` desliga, id usa esse.
+
+    A ordem das guardas é a da matriz da §6 do FDD: 404 pelo `project_dir`, depois 422 de
+    `scene_id`/`description`/`photo` — todos ANTES de qualquer chamada ao CLI. Sem Claude (ou com
+    falha dele) o retorno é 200 com `source: "template"`, nunca 409: o prompt por foto não escreve
+    arquivo nenhum, então não há pré-requisito a cobrar. Nada disto toca `scenes.json`: quem grava
+    é o cliente, pelo `PUT .../storyboard/scenes` (ADR-025, invariante 1).
+    """
+    root = project_dir(pid)
+    preset, _explicit = settings.resolve_preset(KEYFRAME_ACTION, pid, preset)
+    _valid_scene_id(scene_id)
+    desc = (description or "").strip()
+    if len(desc) > MAX_IMAGE_DESC:
+        raise Invalid(f"Descrição acima de {MAX_IMAGE_DESC} caracteres.")
+    rel = _check_image(root, photo)
+    if not rel:
+        raise Invalid("Informe a foto da cena (caminho relativo em storyboard/ideas/).")
+    instruction = _image_instruction(desc)
+    # Sem preset a chamada ao prompter fica exatamente como era (invariante opt-in do gate W3).
+    kw = {"preset": preset} if preset else {}
+    if prompter.available():
+        try:
+            res = prompter.keyframe([root / rel], _image_brief(root, scene_id, instruction), **kw)
+            # Só o TAMANHO do prompt entra no log, nunca o texto (§7 do FDD).
+            log.info("image_prompt %s", {"pid": pid, "scene": scene_id, "photo": rel,
+                                         "source": "claude", "preset": preset,
+                                         "seconds": res["seconds"], "chars": len(res["prompt"])})
+            return {"prompt": res["prompt"], "negative": res["negative"], "source": "claude",
+                    "seconds": res["seconds"], "preset": preset}
+        except Exception as e:  # noqa: BLE001  — bot indisponível/erro cai no template determinístico
+            log.warning("image_prompt claude falhou, usando template: %s", e)
+    log.info("image_prompt %s", {"pid": pid, "scene": scene_id, "photo": rel,
+                                 "source": "template", "preset": preset, "seconds": 0.0,
+                                 "chars": len(instruction)})
+    # Como no `video_prompt`: o template não tem onde encaixar o rig, mas a resposta continua
+    # dizendo qual preset a requisição resolveu — a UI não fica sem saber no caminho de fallback.
+    return {"prompt": instruction, "negative": IMAGE_TEMPLATE_NEGATIVE, "source": "template",
+            "seconds": 0.0, "preset": preset}

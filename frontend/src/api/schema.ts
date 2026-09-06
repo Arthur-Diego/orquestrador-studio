@@ -2391,6 +2391,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{pid}/storyboard/script/cli": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Storyboard Script Cli */
+        get: operations["storyboard_script_cli_api_projects__pid__storyboard_script_cli_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{pid}/storyboard/video-prompt": {
         parameters: {
             query?: never;
@@ -2453,6 +2470,23 @@ export interface paths {
         get: operations["storyboard_video_job_api_projects__pid__storyboard_video_job_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{pid}/storyboard/image-prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Storyboard Image Prompt */
+        post: operations["storyboard_image_prompt_api_projects__pid__storyboard_image_prompt_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4763,6 +4797,20 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImagePromptReq */
+        ImagePromptReq: {
+            /** Scene Id */
+            scene_id: string;
+            /** Photo */
+            photo: string;
+            /**
+             * Description
+             * @default
+             */
+            description?: string;
+            /** Preset */
+            preset?: string | null;
         };
         /**
          * ImportUrlReq
@@ -10697,6 +10745,39 @@ export interface operations {
             };
         };
     };
+    storyboard_script_cli_api_projects__pid__storyboard_script_cli_get: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     storyboard_video_prompt_api_projects__pid__storyboard_video_prompt_post: {
         parameters: {
             query?: never;
@@ -10815,6 +10896,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    storyboard_image_prompt_api_projects__pid__storyboard_image_prompt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImagePromptReq"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

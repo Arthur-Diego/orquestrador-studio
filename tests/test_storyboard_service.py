@@ -1234,3 +1234,116 @@ def test_step_registers_its_preset_actions_idempotently(sb):
     # chegou primeiro (F07 registra a MESMA chave em `angles.py`).
     settings.PRESET_ACTIONS.setdefault(sb.ANGLES_ACTION, "arri-natural-narrative")
     assert settings.PRESET_ACTIONS[sb.ANGLES_ACTION] is None
+
+
+# ---------- `[extensão]` Wave 11 · F06: prompt de imagem por foto e diagnóstico do CLI (FDD §7) ----------
+def _keyframe_fake(calls, boom=None):
+    """Claude fake do papel `keyframe` — devolve o rig exigido dentro do prompt (Risco 5)."""
+    import re as _re
+    import subprocess
+
+    def run(args, capture_output=True, text=True, timeout=None, **kw):
+        calls.append(args[2])
+        if boom:
+            raise boom
+        rig = _re.search(r"MANDATORY RIG, IDENTICAL IN EVERY SCENE: (.+?) — write", args[2], _re.S)
+        body = json.dumps({"prompt": "A lone courier holds the can. Shot on "
+                                     + (rig.group(1) if rig else "no fixed rig") + ".",
+                           "negative": "plastic skin", "camera": "x", "notes_pt": "duas linhas"})
+        return subprocess.CompletedProcess(args, 0, "```json\n" + body + "\n```", "")
+
+    return run
+
+
+def test_image_prompt_sends_the_photo_and_the_campaign_brief_to_the_bot(sb, project, monkeypatch):
+    """§5.4: o bot recebe a FOTO, a descrição do usuário e o brief da campanha (produto e vibe)."""
+    a, _b = _two_ideas(sb, project)
+    calls = []
+    monkeypatch.setattr(sb.prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(sb.prompter.subprocess, "run", _keyframe_fake(calls))
+    r = sb.image_prompt(project, "cena02", a, "he steps off the curb")
+    assert r["source"] == "claude" and r["prompt"].strip() and r["preset"] is None
+    enviado = calls[0]
+    assert str(sb.project_dir(project) / a) in enviado
+    assert "he steps off the curb" in enviado and "energy drink" in enviado and "snow neon" in enviado
+    assert "cena02" in enviado and "16:9" in enviado, "a cena e a proporção da campanha vão no brief"
+    # Papel certo, sem contaminar o caminho do roteiro.
+    assert sb.prompter.ROLES["keyframe"] in enviado
+    assert sb.prompter.ROLES["script"] not in enviado
+
+
+def test_image_prompt_template_is_used_without_claude_and_never_raises(sb, project, monkeypatch):
+    """§6 + decisão auto-aceita 3: sem CLI o serviço NÃO levanta `Precondition` — cai no template."""
+    a, _b = _two_ideas(sb, project)
+    monkeypatch.setattr(sb.prompter, "BIN", None)
+    r = sb.image_prompt(project, "cena01", a, "he holds the can")
+    assert set(r) == {"prompt", "negative", "source", "seconds", "preset"}
+    assert r["source"] == "template" and r["seconds"] == 0.0
+    assert r["prompt"] == sb._image_instruction("he holds the can")
+    assert r["negative"] == sb.IMAGE_TEMPLATE_NEGATIVE
+    # O template segue a mesma ordem de briefing do papel (Risco 5), sem placeholder solto.
+    assert "{action}" not in r["prompt"] and "{negative}" not in r["prompt"]
+
+
+def test_image_prompt_validation_matches_the_error_matrix(sb, project, monkeypatch):
+    """§6: `scene_id`, `description` e `photo` inválidos são `Invalid` (422) antes de qualquer CLI."""
+    a, _b = _two_ideas(sb, project)
+    chamou = []
+    monkeypatch.setattr(sb.prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(sb.prompter.subprocess, "run", lambda *x, **k: chamou.append(1))
+    for kwargs in ({"scene_id": "lixo", "photo": a},
+                   {"scene_id": "cena01", "photo": ""},
+                   {"scene_id": "cena01", "photo": "base/base_final.png"},
+                   {"scene_id": "cena01", "photo": "storyboard/ideas/../../project.json"},
+                   {"scene_id": "cena01", "photo": a, "description": "x" * 501}):
+        with pytest.raises(sb.Invalid):
+            sb.image_prompt(project, **kwargs)
+    assert chamou == []
+    # Projeto inexistente é o `KeyError` de `project_dir` (o 404 padrão da etapa), não `Invalid`.
+    with pytest.raises(KeyError):
+        sb.image_prompt("nao-existe", "cena01", a)
+
+
+def test_image_prompt_log_reports_the_size_never_the_prompt_text(sb, project, monkeypatch, caplog):
+    """§7: `image_prompt` loga fonte, preset e TAMANHO — nunca o texto do prompt."""
+    a, _b = _two_ideas(sb, project)
+    monkeypatch.setattr(sb.prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(sb.prompter.subprocess, "run", _keyframe_fake([]))
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        r = sb.image_prompt(project, "cena03", a, "he holds the can", preset="documentary-street")
+    linha = next(m for m in caplog.messages if m.startswith("image_prompt "))
+    campos = json.loads(linha.split("image_prompt ", 1)[1].replace("'", '"').replace("None", "null"))
+    assert campos["pid"] == project and campos["scene"] == "cena03" and campos["photo"] == a
+    assert campos["source"] == "claude" and campos["preset"] == "documentary-street"
+    assert campos["chars"] == len(r["prompt"])
+    assert r["prompt"][:40] not in linha, "o texto do prompt nunca entra no log"
+
+
+def test_cli_probe_log_records_every_explicit_recheck(sb, project, monkeypatch, caplog):
+    """§7: `cli_probe` diz se a re-checagem foi explícita (`refresh`) e o que ela encontrou."""
+    monkeypatch.setattr(sb.prompter, "BIN", None)
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        ausente = sb.script_cli_diag(project)
+        monkeypatch.setattr(sb.prompter.clibin, "which", lambda name="claude": "/usr/bin/claude")
+        achado = sb.script_cli_diag(project, refresh=True)
+    assert ausente["available"] is False and achado["available"] is True
+    linhas = [m for m in caplog.messages if m.startswith("cli_probe ")]
+    campos = [json.loads(m.split("cli_probe ", 1)[1].replace("'", '"')
+                         .replace("None", "null").replace("False", "false").replace("True", "true"))
+              for m in linhas]
+    assert [c["refresh"] for c in campos] == [False, True]
+    assert [c["available"] for c in campos] == [False, True]
+    assert campos[1]["path"] == "/usr/bin/claude" and campos[0]["name"] == "claude"
+    with pytest.raises(KeyError):
+        sb.script_cli_diag("nao-existe")
+
+
+def test_idea_row_exposes_the_local_engine_kind(sb, project, root):
+    """§5.6: `local_kind` é aditivo e `null` para quem não veio do motor local."""
+    from studio.common import ingest
+    ingest.ingest_bytes(root, "storyboard", image_bytes(color=(1, 2, 3)), "local", "l.png",
+                        "a red fox", {"local_kind": "keyframe_local", "model": "flux-schnell"})
+    sb.import_upload(project, [("m.png", image_bytes(color=(9, 9, 9)))])
+    por_kind = {i["local_kind"]: i for i in sb.list_ideas(project)["ideas"]}
+    assert set(por_kind) == {"keyframe_local", None}
+    assert por_kind["keyframe_local"]["source"] == "local" and por_kind[None]["source"] == "upload"

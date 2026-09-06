@@ -479,8 +479,10 @@ def test_script_is_strictly_additive_to_the_single_prompt_path(monkeypatch, tmp_
     """T1.13: regressão de R1 — papéis e caminho do prompt único intocados pelo roteiro.
 
     `character` `[extensão]` (ADR-039) é aditivo, como `script`: não altera mood/base/motion nem o
-    caminho do prompt único; por isso entra no conjunto esperado sem tocar as demais asserções."""
-    assert set(prompter.ROLES) == {"mood", "base", "motion", "script", "character"}
+    caminho do prompt único; por isso entra no conjunto esperado sem tocar as demais asserções.
+    `keyframe` `[extensão]` (Wave 11 · F06, §5.12) entra pelo mesmo motivo: papel novo, aditivo,
+    que reusa o BRIEFING do roteiro e o `_parse` do prompt único sem alterar nenhum dos dois."""
+    assert set(prompter.ROLES) == {"mood", "base", "motion", "script", "character", "keyframe"}
     assert "one single vibe" in prompter.ROLES["mood"] and prompter.PROMPT_FORMAT in prompter.ROLES["mood"]
     assert prompter.PROMPT_FORMAT in prompter.ROLES["base"]
     assert "40–90 words" in prompter.ROLES["motion"] and "Color grading:" not in prompter.ROLES["motion"]
@@ -629,3 +631,93 @@ def test_run_sh_appends_user_bin_dirs_after_the_inherited_path():
         # Studio troca silenciosamente um `claude` que o usuário já tem.
         assert valor.startswith('"$PATH'), f"prepend proibido em run.sh: {ln}"
     assert "export PATH" in src
+
+
+# ------------------------------------------------------------------------------------------
+# `[extensão]` Wave 11 · F06 (FDD §5.12, Risco 5): papel `keyframe` — UM prompt de imagem por foto.
+# Todo teste finge o binário `claude` (`prompter.BIN` + `subprocess.run`), sem rede (ADR-008).
+# ------------------------------------------------------------------------------------------
+def _keyframe_fake(calls: list, negative="plastic skin"):
+    """Bot OBEDIENTE do papel `keyframe`: devolve, dentro do `prompt`, o rig que lhe foi exigido.
+
+    É assim que o teste mede o PROMPTER: se `script_preset_block` não entrar na montagem, não há
+    rig no prompt enviado e o rig não volta no prompt devolvido (Risco 5 do FDD)."""
+    import re as _re
+
+    def run(args, capture_output=True, text=True, timeout=None, **kw):
+        prompt = args[2]
+        calls.append({"args": args, "prompt": prompt, "timeout": timeout})
+        rig = _re.search(r"MANDATORY RIG, IDENTICAL IN EVERY SCENE: (.+?) — write", prompt, _re.S)
+        rig_text = rig.group(1) if rig else "no fixed rig"
+        body = json.dumps({"prompt": f"A lone courier holds the can at chest height. Shot on {rig_text}.",
+                           "negative": negative, "camera": "irrelevante", "notes_pt": "duas linhas"})
+        return subprocess.CompletedProcess(args, 0, "Segue.\n```json\n" + body + "\n```\n", "")
+
+    return run
+
+
+def test_keyframe_role_shares_the_briefing_order_with_the_script(monkeypatch, tmp_path):
+    """Risco 5: os dois papéis citam a MESMA ordem de briefing, vinda da constante compartilhada.
+
+    A prova de que não é texto duplicado é a constante estar literalmente dentro dos dois papéis —
+    editar `BRIEFING_ORDER` muda os dois de uma vez, que é o ponto da mitigação."""
+    assert prompter.BRIEFING_ORDER in prompter.ROLES["script"]
+    assert prompter.BRIEFING_ORDER in prompter.ROLES["keyframe"]
+    # E o hint de modelo sai do MESMO mapa do roteiro, pelo mesmo acessor.
+    assert prompter.model_hint("nano_banana_2") == prompter.SCRIPT_MODEL_HINTS["nano_banana_2"]
+    assert prompter.model_hint("modelo-que-nao-existe") == prompter._SCRIPT_MODEL_HINT_FALLBACK
+
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _keyframe_fake(calls))
+    prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+    enviado = calls[0]["prompt"]
+    assert prompter.ROLES["keyframe"] in enviado and prompter.KEYFRAME_OUTPUT_SPEC in enviado
+    assert prompter.model_hint("nano_banana_2") in enviado
+    # Caminho do prompt ÚNICO: nada do roteiro (papel, output spec, timeout de 300 s) entra aqui.
+    assert prompter.ROLES["script"] not in enviado and prompter.SCRIPT_OUTPUT_SPEC not in enviado
+    assert calls[0]["timeout"] == prompter.TIMEOUT_S
+
+
+def test_keyframe_returns_one_prompt_and_carries_the_preset_rig_literally(monkeypatch, tmp_path):
+    """§5.12 + Risco 5: contrato de retorno e rig LITERAL no prompt devolvido quando há preset."""
+    calls = []
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run", _keyframe_fake(calls))
+
+    sem = prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+    assert set(sem) == {"prompt", "negative", "source", "seconds", "preset"}
+    assert sem["source"] == "claude" and sem["preset"] is None and sem["prompt"].strip()
+    assert isinstance(sem["seconds"], float)
+    # Sem preset, nenhum bloco de rig entra no prompt enviado (invariante 7 do gate W3).
+    assert "MANDATORY RIG" not in calls[0]["prompt"]
+
+    com = prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"},
+                            preset="documentary-street")
+    rig = prompter.REALISM_PRESETS["documentary-street"]["rig"]
+    assert com["preset"] == "documentary-street"
+    for parte in (rig["camera"], rig["lens"], rig["format"]):
+        assert parte in com["prompt"], parte
+    # O bloco do rig é o MESMO do roteiro (reuso de `script_preset_block`, não uma segunda cópia).
+    assert prompter.script_preset_block("documentary-street") in calls[1]["prompt"]
+    # E os negativos do catálogo entram no campo `negative`, como em todo caminho com preset.
+    for termo in prompter.REALISM_PRESETS["documentary-street"]["negative"]:
+        assert termo in com["negative"], termo
+
+
+def test_keyframe_without_the_cli_raises_for_the_caller_to_fall_back(monkeypatch, tmp_path):
+    """§5.12: o fallback é do SERVIÇO, não do prompter — sem CLI o erro SOBE, não vira texto."""
+    monkeypatch.setattr(prompter, "BIN", None)
+    with pytest.raises(RuntimeError):
+        prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+
+    # Falha do bot (returncode ≠ 0) também sobe: o prompter nunca inventa prompt por conta própria.
+    monkeypatch.setattr(prompter, "BIN", "/usr/bin/claude")
+    monkeypatch.setattr(prompter.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "boom"))
+    with pytest.raises(RuntimeError):
+        prompter.keyframe([_img(tmp_path, "foto.png")], {"product": "energy drink"})
+
+    # Foto inexistente é erro do chamador, antes de qualquer subprocess.
+    with pytest.raises(FileNotFoundError):
+        prompter.keyframe([tmp_path / "nao-existe.png"], {})

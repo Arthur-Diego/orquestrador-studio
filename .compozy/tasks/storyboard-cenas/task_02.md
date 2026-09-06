@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Rotas novas — diagnóstico do CLI, papel `keyframe` e `POST /image-prompt`
 type: backend
 complexity: high
@@ -64,21 +64,21 @@ de imagem por foto com fallback determinístico quando o Claude CLI falta. Acres
 
 ## Subtasks
 
-- [ ] 2.1 Acrescentar a rota `GET .../storyboard/script/cli` no bloco `script` do router,
+- [x] 2.1 Acrescentar a rota `GET .../storyboard/script/cli` no bloco `script` do router,
       delegando a `prompter.cli_status`.
-- [ ] 2.2 Extrair para constantes compartilhadas a ordem de briefing e o hint de modelo hoje
+- [x] 2.2 Extrair para constantes compartilhadas a ordem de briefing e o hint de modelo hoje
       embutidos no papel `script`.
-- [ ] 2.3 Criar `ROLES["keyframe"]` e a output spec própria de UM prompt.
-- [ ] 2.4 Implementar `prompter.keyframe(...)` reusando `script_preset_block` e `_parse`.
-- [ ] 2.5 Criar `ImagePromptReq` em `router.py` com o `field_validator` de preset e o teto de
+- [x] 2.3 Criar `ROLES["keyframe"]` e a output spec própria de UM prompt.
+- [x] 2.4 Implementar `prompter.keyframe(...)` reusando `script_preset_block` e `_parse`.
+- [x] 2.5 Criar `ImagePromptReq` em `router.py` com o `field_validator` de preset e o teto de
       `description`.
-- [ ] 2.6 Implementar `service.image_prompt(...)` com validação de `scene_id`/`photo`, resolução
+- [x] 2.6 Implementar `service.image_prompt(...)` com validação de `scene_id`/`photo`, resolução
       de preset, chamada ao prompter e fallback de template determinístico.
-- [ ] 2.7 Acrescentar a rota `POST .../storyboard/image-prompt` no fim do bloco de prompt por foto.
-- [ ] 2.8 Acrescentar `local_kind` ao `_idea_row`.
-- [ ] 2.9 Acrescentar os logs estruturados `cli_probe` e `image_prompt`.
-- [ ] 2.10 Escrever os testes inline listados em `## Tests`.
-- [ ] 2.11 Rodar `make frontend-schema` (rotas e modelo Pydantic novos) e **commitar**
+- [x] 2.7 Acrescentar a rota `POST .../storyboard/image-prompt` no fim do bloco de prompt por foto.
+- [x] 2.8 Acrescentar `local_kind` ao `_idea_row`.
+- [x] 2.9 Acrescentar os logs estruturados `cli_probe` e `image_prompt`.
+- [x] 2.10 Escrever os testes inline listados em `## Tests`.
+- [x] 2.11 Rodar `make frontend-schema` (rotas e modelo Pydantic novos) e **commitar**
       `frontend/src/api/schema.ts` e `frontend/openapi.json`.
 
 ## Implementation Details
@@ -181,38 +181,38 @@ Pontos exatos do código (levantados nesta worktree):
 
 Não há `_tests.md` — os casos abaixo são as definições completas.
 
-- [ ] `GET .../storyboard/script/cli` com `prompter.BIN = None` responde 200 com
+- [x] `GET .../storyboard/script/cli` com `prompter.BIN = None` responde 200 com
       `available: false`, `path: null` e `searched_path` igual ao `PATH` do processo (critério A1).
-- [ ] `GET .../storyboard/script/cli?refresh=true`, com `clibin.which` monkeypatchado para
+- [x] `GET .../storyboard/script/cli?refresh=true`, com `clibin.which` monkeypatchado para
       encontrar o binário depois de o app subir, responde `available: true` **e** um
       `POST /script/generate` subsequente inicia o job, sem reiniciar o processo (critério A2).
-- [ ] `GET .../storyboard/script/cli` em projeto inexistente responde 404.
-- [ ] `prompter.keyframe(...)` com `_run` fingido devolve `{prompt, negative, source, seconds,
+- [x] `GET .../storyboard/script/cli` em projeto inexistente responde 404.
+- [x] `prompter.keyframe(...)` com `_run` fingido devolve `{prompt, negative, source, seconds,
       preset}`; com `preset="documentary-street"`, o rig do preset aparece **literalmente** no
       prompt (Risco 5).
-- [ ] `prompter.keyframe(...)` sem CLI (`_run` levanta `RuntimeError`) propaga o erro para quem
+- [x] `prompter.keyframe(...)` sem CLI (`_run` levanta `RuntimeError`) propaga o erro para quem
       chama — o fallback é responsabilidade do serviço, não do prompter.
-- [ ] `POST .../storyboard/image-prompt` com o `claude` fingido devolve `source: "claude"` e
+- [x] `POST .../storyboard/image-prompt` com o `claude` fingido devolve `source: "claude"` e
       prompt não vazio (critério D1).
-- [ ] `POST .../storyboard/image-prompt` **sem** CLI devolve **200** com `source: "template"` e
+- [x] `POST .../storyboard/image-prompt` **sem** CLI devolve **200** com `source: "template"` e
       prompt não vazio — nunca 409 (critério D1 e §6).
-- [ ] `POST .../storyboard/image-prompt` com Claude que estoura timeout devolve 200 com
+- [x] `POST .../storyboard/image-prompt` com Claude que estoura timeout devolve 200 com
       `source: "template"` e registra `log.warning`.
-- [ ] `POST .../storyboard/image-prompt` com `scene_id="lixo"` devolve 422.
-- [ ] `POST .../storyboard/image-prompt` com `photo` fora de `storyboard/ideas/` (inclusive
+- [x] `POST .../storyboard/image-prompt` com `scene_id="lixo"` devolve 422.
+- [x] `POST .../storyboard/image-prompt` com `photo` fora de `storyboard/ideas/` (inclusive
       tentativa de path traversal `../../etc/passwd`) devolve 422.
-- [ ] `POST .../storyboard/image-prompt` com `description` de 501 caracteres devolve 422.
-- [ ] `POST .../storyboard/image-prompt` com `preset: "nao-existe"` devolve 422 **antes** de
+- [x] `POST .../storyboard/image-prompt` com `description` de 501 caracteres devolve 422.
+- [x] `POST .../storyboard/image-prompt` com `preset: "nao-existe"` devolve 422 **antes** de
       qualquer chamada ao CLI (o fake do `_run` não é invocado).
-- [ ] `POST .../storyboard/image-prompt` **sem** a chave `preset`, com
+- [x] `POST .../storyboard/image-prompt` **sem** a chave `preset`, com
       `storyboard.keyframe` configurado no projeto, devolve na resposta o preset da campanha;
       com `preset: null` devolve `preset: null`.
-- [ ] `POST .../storyboard/image-prompt` em projeto inexistente devolve 404.
-- [ ] A rota **não** escreve em `scenes.json`: o arquivo continua idêntico depois da chamada.
-- [ ] `GET .../storyboard/candidates` devolve `local_kind` por ideia (`"keyframe_local"` para a
+- [x] `POST .../storyboard/image-prompt` em projeto inexistente devolve 404.
+- [x] A rota **não** escreve em `scenes.json`: o arquivo continua idêntico depois da chamada.
+- [x] `GET .../storyboard/candidates` devolve `local_kind` por ideia (`"keyframe_local"` para a
       gerada pelo motor local, o do inpaint para a de inpaint, `null` para as demais) e mantém
       `source`, `file`, `thumb`, `prompt`, `selected` e `imported` inalterados.
-- [ ] `POST /script/generate` sem CLI continua respondendo 409 com a mensagem atual (ADR-025,
+- [x] `POST /script/generate` sem CLI continua respondendo 409 com a mensagem atual (ADR-025,
       inalterado), e o 409 de job concorrente continua tendo precedência sobre o de CLI.
 
 ## Success Criteria
