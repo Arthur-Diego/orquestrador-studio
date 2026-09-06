@@ -71,9 +71,9 @@ versão 1 de um protocolo **estritamente aditivo**, com três regras:
 | `turn_ended` | servidor → cliente | `studio/chat/router.py::_run_turn` (`finally`) | F02 (card #86) | o turno terminou, e por quê |
 | `assistant_delta` | servidor → cliente | `studio/chat/runtime.py::normalize_event` | F02 (card #86) | pedaço incremental do texto do assistente (efêmero) |
 | `tool_progress` | servidor → cliente | `studio/chat/progress.py::watch` | F02 (card #86) | progresso do job de uma tool de espera (efêmero) |
-| `user.via` (campo do kind `user`) | servidor → cliente | *(acrescentado pela frente F09 da Wave 11)* | F09 | por onde a mensagem do usuário entrou |
+| `user.via` (campo do kind `user`) | servidor → cliente | `studio/chat/router.py::_handle_user` | F09 (card #89, ADR-043) | `"voice"` — opcional, aditivo; procedência da mensagem do usuário; não altera o texto entregue ao agente (ADR-040) |
 
-A linha de F09 segue **reservada** aqui (as de F02 já estão preenchidas) para que as frentes da mesma wave
+As linhas de F02, F03 e F09 já estão preenchidas aqui, para que as frentes da mesma wave
 completem a semântica exata dos seus eventos neste mesmo documento, em vez de abrirem ADRs
 concorrentes sobre o mesmo contrato. A frente que integrar primeiro cria o arquivo; as demais
 acrescentam a sua linha e a sua subseção.

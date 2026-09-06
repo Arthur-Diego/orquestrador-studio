@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Contrato tipado, bundle e registro de decisão"
 type: docs
 complexity: medium

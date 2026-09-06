@@ -1,10 +1,21 @@
 ### HLD: chat (assistente do Studio) `[extensão]`
 
-Versão: 1.3 (Onda A + sincronização chat → telas + feedback ao vivo do turno + navegação automática)
+Versão: 1.4 (Onda A + sincronização chat → telas + feedback ao vivo do turno + navegação automática + entrada por voz)
 Data: 2026-09-06
 Task-Id: ADH-OS-20260905-04 (v1.0) · ADH-OS-20260906-05 (v1.1) · ADH-OS-20260906-04 (v1.2) ·
-ADH-OS-20260906-10 (v1.3)
+ADH-OS-20260906-10 (v1.3) · ADH-OS-20260906-11 (v1.4)
 Responsável: Arthur Diego (modo autônomo /dd-parallel, aprovação total)
+
+> **v1.4 (Wave 11 · F09, card #89, ADR-043)** — o composer deixa de ser só um textarea: o usuário
+> pode **falar**. A decisão arquitetural é onde a fala vira texto, e a resposta é **no servidor** —
+> `POST /api/chats/{chat_id}/transcribe`, a primeira rota do domínio a receber `multipart/form-data`,
+> reusando o provedor de STT da ADR-024 (`whisper-1`) como **segundo consumidor**, sem mover o
+> módulo e sem tool MCP nova. O produto da rota é texto: ele cai no draft para o usuário revisar, e
+> o agente nunca recebe áudio (ADR-040). Sem provedor real a rota responde **409 com diagnóstico**,
+> jamais o texto do `FakeTranscribe`. Os bytes vivem só num `TemporaryDirectory` fechado no
+> `finally`; só o texto entra em `events.jsonl` (ADR-003 intacta). O evento `user` ganha o campo
+> aditivo `via:"voice"` (linha do protocolo v2 no ADR-041), usado só pela UI. Ver "Entrada por voz
+> (v1.4)" abaixo. FDD: `docs/domains/chat/features/chat-audio-fdd.md`.
 
 > **v1.2 (Wave 11 · F02, card #86)** — o dock deixa de adivinhar se o assistente está trabalhando.
 > O servidor passa a delimitar cada turno com o par `turn_started`/`turn_ended`, a transmitir o texto
@@ -61,6 +72,13 @@ Acrescentados na **v1.2** (Wave 11 · F02):
 | --- | --- |
 | `studio/chat/progress.py` | Poller dos jobs: uma task por `tool_call.id` de tool de espera, lendo `/api/projects/{pid}/{step}/job` e `/api/characters/{cid}/job` por `httpx` em loopback. Nunca importa serviço de etapa (ADR-037). Monta o `label` já em pt-BR e o `pct` (ou `null` quando o job não declara `total`). |
 | `frontend/src/areas/chat/toolLabels.ts` | Mapa `mcp__studio__*` → rótulo humano do chip e da linha de status. Cobertura garantida nos dois sentidos por `tests/test_chat_tool_labels.py`. |
+
+Acrescentados na **v1.4** (Wave 11 · F09):
+
+| Componente | Papel |
+| --- | --- |
+| `studio/chat/voice.py` | Validação (tamanho, allowlist de `content_type` **e** assinatura dos primeiros bytes, duração), transcrição pelo provedor da ADR-024 e log `logfmt` da rota de voz. Recusa o `FakeTranscribe` **antes** de chamá-lo (`NoProvider` → 409). Nenhum byte sai do `TemporaryDirectory`. |
+| `frontend/src/areas/chat/useRecorder.ts` | Máquina de estados da gravação no browser (`idle → requesting → recording → transcribing → idle\|error`), guardas de capacidade, teto de 120 s, medidor de nível e `POST` do multipart. `track.stop()` em todos os caminhos de saída. |
 
 ### Fluxo de um turno
 1. Browser (dock) manda `{type:"user", text, context:{pid,view}}` pelo WebSocket.
@@ -143,7 +161,52 @@ dezenas de linhas de controle por bloco, e deixá-las virar `raw` inundaria o tr
 disco. O Vitest deste repo roda com `css: false` — a folha vira módulo vazio, `?raw` inclusive — e o
 projeto npm não tem `@types/node`, então nenhum `*.test.tsx` conseguiria fazer essa asserção.
 
-### Interfaces (Onda A + Wave 11 · F02/F03/F08)
+### Entrada por voz (v1.4)
+
+A fala vira texto **no servidor**. `POST /api/chats/{chat_id}/transcribe` recebe o áudio gravado
+pelo `MediaRecorder` (multipart: `file` no singular, mais `duration_s`), valida, chama
+`TranscribeProvider.transcribe_text()` da ADR-024 e devolve `{text, provider, duration_s}`. Nada é
+enviado e nada é gravado por essa rota: quem decide o que fazer com o texto é o composer.
+
+**O agente nunca vê áudio** (ADR-040). A rota é uma conversa entre o browser e o servidor; o que
+entra no turno é a mesma mensagem `user` de sempre. Não há tool MCP nova — o catálogo do MCP, que é
+o limite exato do que o agente pode fazer (ADR-037), não muda.
+
+**Nenhum byte sobrevive à requisição.** O arquivo só existe dentro de um `TemporaryDirectory`
+fechado no `finally`, inclusive quando o provedor levanta — nunca sob `projects/`, `STATE_DIR` ou
+`MOODBOARDS_DIR`. Só o texto entra em `events.jsonl`, e o log carrega `chars`, jamais o texto
+transcrito (mesma regra da ADR-024).
+
+**Sem provedor real, 409 — nunca o fake.** `get_transcribe()` cai no `FakeTranscribe` quando não há
+`OPENAI_API_KEY`, e o fake devolve texto de mentira. Na etapa 7 isso é tolerável porque existe um
+roteiro nosso ao lado para comparar; aqui **o áudio é a mensagem**, e uma transcrição inventada numa
+bolha do chat é indistinguível de uma transcrição ruim de verdade. Por isso o fake é recusado antes
+de ser chamado, com `detail` que diz o que configurar. O `409` é o único erro **terminal** da rota:
+o cliente o mostra como aviso persistente e desabilita o microfone até a próxima montagem do dock.
+`413`/`422`/`502` mostram o `detail` e voltam para `idle`.
+
+**Campo `via` no protocolo do WS.** O evento `user` ganha `via: "voice"` — acréscimo **aditivo**,
+registrado como linha do protocolo v2 no **ADR-041**. É enum de um valor: o servidor só repassa
+`via == "voice"` (`router._handle_user`), qualquer outro valor é descartado, e uma mensagem sem
+`via` continua byte a byte a de hoje, sem a chave. O campo é procedência, não conteúdo: ele **não
+altera o texto entregue ao agente** (ADR-040) e serve só à UI, que desenha 🎤 na bolha. Cliente
+antigo o ignora.
+
+**Limitação: gravação exige contexto seguro.** `getUserMedia` só existe em contexto seguro, ou
+seja, HTTPS ou `localhost`/`127.0.0.1`. Como o studio é monólito local sem TLS e sem auth
+(ADR-001), **quem abre o app pelo IP da máquina na rede local não consegue gravar** — o hook
+detecta antes de pedir permissão (`isSecureContext` + hostname) e desabilita o botão com um `title`
+explicando, em vez de deixar o navegador falhar com erro críptico. Não há contorno dentro da
+ADR-001: expor o app em HTTPS local ou por túnel seria decisão de outro ADR. Ver Risco 6 do FDD.
+
+**Custo fora do livro-caixa.** A chamada ao `whisper-1` é paga e **não** passa pelo ledger da
+ADR-016 — lacuna herdada da ADR-024, que agora tem dois consumidores. Registrada no ADR-043 e
+aberta como pendência; fechá-la exige ação nova no catálogo de `studio/common/settings.py` e uma
+decisão sobre denominar em dólar um ledger que conta créditos Higgsfield.
+
+Diagramas: `docs/domains/chat/diagrams/mermaid/chat-audio-fluxo.md`.
+
+### Interfaces (Onda A + Wave 11 · F02/F03/F08/F09)
 | Rota | Tipo | Nota |
 | --- | --- | --- |
 | `GET /api/chat/status` | REST | `{available}` — o CLI `claude` está no PATH? |
@@ -152,19 +215,23 @@ projeto npm não tem `@types/node`, então nenhum `*.test.tsx` conseguiria fazer
 | `GET /api/chats/{id}/events?after=N` | REST | replay do transcript + asks pendentes |
 | `POST /api/chats/{id}/stop` | REST | cancela o turno em andamento |
 | `POST /api/chats/{id}/ask|answer` | REST | ponte humano-no-laço (ADR-038) |
+| `POST /api/chats/{id}/transcribe` | REST (**`multipart/form-data`** — a primeira do domínio) | v1.4: áudio falado → `{text, provider, duration_s}`. Campos `file` (singular) e `duration_s`; tetos de 10 MB e 120 s. `404` aba inexistente · `409` só o fake disponível · `413` grande demais · `422` formato/assinatura/duração · `502` `ProviderError`; `detail` é sempre string. Nada é enviado nem gravado aqui (ADR-043) |
 | `WS /ws/chat/{id}` | WebSocket | mensagens do usuário e stream do turno; na v1.2 carrega `turn_started`/`turn_ended` (persistidos) e `assistant_delta`/`tool_progress` (efêmeros) |
 | `GET /api/chats/{id}/trace` | REST | métricas derivadas do transcript; na v1.2 ganha `turnos_iniciados`, `turnos_interrompidos` e `duracao_media_s` (campos aditivos) |
 | tools MCP `mcp__studio__{projects,project,guide,guide_step,steps,doctor,job,api_get}` | MCP | leitura (Onda A) |
 | tool MCP `mcp__studio__ui_navigate(target, reason)` | MCP | **não bloqueante** (Wave 11 · F08): posta o `navigate` em `/emit` e devolve `str`. `target`: id de etapa, `overview`, `moodboards[/<mbid>]`, `creditos`, `characters`. Sem `STUDIO_CHAT_ID` degrada para texto. |
 | tools MCP `mcp__studio__{ui_choose_images,ui_form}` | MCP | helpers da Onda B finalmente **registrados** (Wave 11 · F08); antes só alcançáveis de dentro das `*_pick`. |
 | tool MCP `mcp__studio__ui_open(..., params)` | MCP | `params` passa a ser exposto no registro (Wave 11 · F08); o helper já o propagava. O dock entrega os `params` à tela pelo barramento de intenção. |
-| kinds do `WS /ws/chat/{id}` | WebSocket | protocolo **v2 aditivo** (ADR-041): aos kinds da Onda A somam-se `state_changed {pid, step, scope, tool}` (F03) e `navigate {target, reason}` (F08). Cliente antigo ignora os dois (o `switch` do dock cai em `default`). |
+| kinds do `WS /ws/chat/{id}` | WebSocket | protocolo **v2 aditivo** (ADR-041): aos kinds da Onda A somam-se `state_changed {pid, step, scope, tool}` (F03) e `navigate {target, reason}` (F08). Cliente antigo ignora os dois (o `switch` do dock cai em `default`). Na v1.4 o kind `user` ganha o campo opcional `via: "voice"` — procedência, não conteúdo; mensagem sem `via` é byte a byte a de hoje. |
 | `navigate(target, opts?)` do shell | frontend | contrato de `frontend/src/shell/router.ts`, exposto em `useShell().navigate`. Assinatura inalterada; desde a F08 monta também as três áreas globais. **Consumido pela frente F12.** |
 | `emitNavIntent` / `useNavIntent` | frontend | barramento de intenção de abertura (`frontend/src/shell/events.ts`), sticky de um disparo. Publicado pela F08; consumidores são F11/F12 e as etapas. |
 
 ### Configuração (env, lidas fora de `config.py` que é núcleo)
 `STUDIO_CHAT_MODEL` (vazio = default do CLI), `STUDIO_URL`/`PORT` (base da API para o MCP),
-`STUDIO_CHAT_ID` (aba que lançou o MCP, habilita `ui.*`).
+`STUDIO_CHAT_ID` (aba que lançou o MCP, habilita `ui.*`), `STUDIO_CHAT_PARTIAL` (`1|0`, escape
+hatch da sonda de `--include-partial-messages`, v1.2). A entrada por voz (v1.4) depende de
+`OPENAI_API_KEY`, lida pela ADR-024 e **não** por este domínio: sem ela `get_transcribe()` devolve
+o fake e a rota responde 409. O resto do chat continua inteiro sem a chave.
 
 ### Fora do escopo da Onda A (ondas seguintes)
 - Tools de ação e widgets `ui.*` ricos, prompt por etapa, gate de custo (Onda B).
@@ -176,6 +243,11 @@ projeto npm não tem `@types/node`, então nenhum `*.test.tsx` conseguiria fazer
   segue fora de escopo ali é navegar para **outra campanha** e qualquer mudança na gramática do
   hash; e nenhuma tela **consome** `params` ainda — o canal está publicado e testado, os
   consumidores são F11/F12 e as etapas.)
+- Da voz (v1.4): transcrição no navegador (Web Speech API — **rejeitada** na ADR-024, reabrir exige
+  ADR que a supersede), STT local (`faster-whisper`), extração de `transcribe.py` para
+  `studio/common/` (gatilho: um terceiro consumidor), contagem de mensagens por `via` no
+  `GET /api/chats/{id}/trace` e gravação fora de contexto seguro (HTTPS local ou túnel — outro ADR,
+  contraria a ADR-001). O custo do `whisper-1` no livro-caixa da ADR-016 segue aberto.
 
 ### Escala (deixada pronta)
 Auth por token no WS/API e bind fora do loopback (supersede ADR-001); `sessions.py` como única
