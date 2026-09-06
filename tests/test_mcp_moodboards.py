@@ -16,8 +16,8 @@ from tests.conftest import image_bytes
 MBID = "praia-dourada"
 
 #: As 7 tools do grupo A (fluxo principal A: criar, importar, curar, escrever a vibe, apagar).
-GRUPO_A = ("moodboard_list", "moodboard_get", "moodboard_create", "moodboard_import",
-           "moodboard_pick", "moodboard_prompt", "moodboard_delete")
+GRUPO_A = ("moodboard_list", "moodboard_get", "moodboard_create", "moodboard_patch",
+           "moodboard_import", "moodboard_pick", "moodboard_prompt", "moodboard_delete")
 
 #: Grupos B e C (fluxo principal B: catálogo de vibes, peneira e a corrida `mood-run`).
 GRUPO_BC = ("vibes_list", "vibes_pick", "escolhidas_list", "mood_run", "mood_run_wait")
@@ -41,13 +41,15 @@ class Fake:
     """Cliente fake no molde de `tests/test_mcp_actions.py`, com o verbo DELETE da biblioteca.
 
     Um valor `Exception` em `responses` é LEVANTADO no lugar de devolvido — é assim que os testes
-    simulam 404/409/422 sem subir a API. `gets`/`posts`/`deletes` guardam o que foi chamado.
+    simulam 404/409/422 sem subir a API. `gets`/`posts`/`patches`/`deletes` guardam o que foi
+    chamado.
     """
 
     def __init__(self, responses=None):
         self.responses = responses or {}
         self.gets = []
         self.posts = []
+        self.patches = []
         self.deletes = []
 
     def _resp(self, path, default):
@@ -64,6 +66,10 @@ class Fake:
         self.posts.append((path, json))
         return self._resp(path, {})
 
+    def patch(self, path, json=None):
+        self.patches.append((path, json))
+        return self._resp(path, {})
+
     def delete(self, path):
         self.deletes.append(path)
         return self._resp(path, {})
@@ -75,7 +81,7 @@ class Explode:
     def _boom(self, *a, **k):
         raise StudioApiError("Não encontrado: board inexistente", status=404)
 
-    get = post = delete = _boom
+    get = post = patch = delete = _boom
 
 
 @pytest.fixture()
@@ -928,7 +934,7 @@ def _servidor_fake(monkeypatch):
     return server.build_server(Fake())
 
 
-def test_build_server_registra_as_sete_tools_do_grupo_a(monkeypatch):
+def test_build_server_registra_as_oito_tools_do_grupo_a(monkeypatch):
     srv = _servidor_fake(monkeypatch)
     assert set(GRUPO_A) <= set(srv.tools)
     assert len(srv.tools) == len(set(srv.tools))   # nenhum nome duplicado no catálogo
@@ -950,10 +956,15 @@ def test_build_server_registra_as_tres_tools_dos_grupos_d_e_e(monkeypatch):
     assert "USE ESTA, não `job_wait`" in _descricao_registrada("moodboard_multishot_wait")
 
 
-def test_build_server_registra_as_quinze_tools_da_frente(monkeypatch):
-    """Critério 1 da seção 9: o catálogo do agente alcança a biblioteca inteira."""
+def test_build_server_registra_as_dezesseis_tools_da_frente(monkeypatch):
+    """Critério 1 da seção 9: o catálogo do agente alcança a biblioteca inteira.
+
+    Dezesseis, e não quinze: a rodada de review mostrou que sem `moodboard_patch` o chat não
+    consegue gravar a VIBE do board — o único caminho é `PATCH /api/moodboards/{mbid}`, e a
+    vibe é o que `mood_pull` leva para a campanha (contrato 15).
+    """
     da_frente = GRUPO_A + GRUPO_BC + GRUPO_DE
-    assert len(set(da_frente)) == 15
+    assert len(set(da_frente)) == 16
     assert set(da_frente) <= set(_servidor_fake(monkeypatch).tools)
 
 
@@ -1127,3 +1138,56 @@ def test_nenhuma_tool_do_mcp_importa_servico_de_dominio():
                 continue
             achados = {n for n in nomes if any(n.startswith(p) for p in proibidos)}
             assert not achados, f"{arquivo.name}: import proibido de serviço de domínio {achados}"
+
+
+# ---------- moodboard_patch: a vibe do board (achado ALTA da fiscalização de docs) ----------
+def test_patch_manda_so_os_campos_preenchidos():
+    """`None` no `BoardPatch` significa "não mexe": mandar string vazia apagaria o que já está lá."""
+    cli = Fake({f"/api/moodboards/{MBID}": {"id": MBID, "name": "Praia dourada",
+                                            "vibe": "golden hour", "note": "verão"}})
+    out = actions.moodboard_patch(cli, MBID, vibe="golden hour")
+    assert cli.patches == [(f"/api/moodboards/{MBID}", {"vibe": "golden hour"})]
+    assert "golden hour" in out and "id do board não muda" in out
+
+
+def test_patch_sem_nenhum_campo_nao_chama_rota():
+    cli = Fake()
+    out = actions.moodboard_patch(cli, MBID)
+    assert cli.patches == [] and cli.posts == [] and cli.gets == []
+    assert "name, note ou vibe" in out and "mood_pull" in out
+
+
+def test_patch_com_404_devolve_texto_sem_levantar():
+    cli = Fake({f"/api/moodboards/{MBID}": StudioApiError("Não encontrado: nao-existe", status=404)})
+    assert "Não encontrado" in actions.moodboard_patch(cli, MBID, name="Outro nome")
+
+
+# ---------- discriminação de erro por status (fiscalização de docs) ----------
+def test_import_downloads_com_pasta_inexistente_manda_salvar_as_imagens_antes():
+    erro = StudioApiError("Não encontrado: pasta não encontrada: /home/x/Downloads", status=404)
+    cli = Fake({f"/api/moodboards/{MBID}/import/downloads": erro})
+    out = actions.moodboard_import(cli, MBID, source="downloads")
+    assert "pasta não encontrada" in out and 'source="history"' in out
+
+
+def test_create_com_422_de_nome_vazio_nao_manda_listar_boards():
+    cli = Fake({"/api/moodboards": StudioApiError("Entrada inválida: Dê um nome ao mood board.",
+                                                  status=422)})
+    out = actions.moodboard_create(cli, "")
+    assert "Dê um nome" in out and "moodboard_list" not in out
+
+
+def test_create_com_409_continua_mandando_listar_boards():
+    cli = Fake({"/api/moodboards": StudioApiError("Mood board já existe: praia-dourada",
+                                                  status=409)})
+    assert "moodboard_list" in actions.moodboard_create(cli, "Praia dourada")
+
+
+def test_mood_run_com_board_abaixo_do_piso_nao_sugere_caminho_de_arquivo(terminal):
+    """O 422 do piso de `board` também fala em "foto-semente" — o discriminador tem de ser a frase
+    canônica de `_validar_foto`, senão a tool manda procurar o defeito no lugar errado."""
+    erro = StudioApiError("Entrada inválida: board precisa ser no mínimo 4 (a foto-semente já "
+                          "ocupa uma vaga)", status=422)
+    cli = _run_cli({ESTIMATE_PATH: erro})
+    out = actions.mood_run(cli, MBID, foto=FOTO, objetivos=["ambiente"], board=2, confirm=True)
+    assert "no mínimo 4" in out and "escolhidas_list" not in out

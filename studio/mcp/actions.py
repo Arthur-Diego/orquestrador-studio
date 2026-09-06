@@ -590,9 +590,37 @@ def moodboard_create(client: StudioClient, name: str, note: str = "") -> str:
     try:
         b = client.post("/api/moodboards", {"name": name, "note": note}) or {}
     except StudioApiError as e:
-        return f"{e}\nVeja os boards que já existem com `moodboard_list`."
+        # A sugestão é do 409 (o slug já existe); o 422 é nome vazio, e mandar listar boards ali
+        # seria conselho errado (FDD §6).
+        if e.status == 409:
+            return f"{e}\nVeja os boards que já existem com `moodboard_list`."
+        return str(e)
     return (f"Mood board **{b.get('name') or name}** criado (id `{b.get('id', '')}`). "
             "Importe imagens com `moodboard_import`.")
+
+
+def moodboard_patch(client: StudioClient, mbid: str, name: str = "", note: str = "",
+                    vibe: str = "") -> str:
+    """Edita os metadados do board: rótulo, nota e — o que importa — a VIBE em palavras.
+
+    Sem esta tool o chat não fecha o fluxo A: `moodboard_create` nasce com `vibe: ""` e é
+    `PATCH` quem grava a vibe, que `mood_pull` copia para a campanha (contrato 15). O `mbid` é
+    ESTÁVEL: `name` muda só o rótulo, nunca o id (ADR-019, "salvar por nome" é abrir a pasta).
+
+    Só os campos preenchidos vão no corpo: `None` no `BoardPatch` significa "não mexe", e mandar
+    string vazia apagaria o que já está lá.
+    """
+    corpo = {k: v.strip() for k, v in (("name", name), ("note", note), ("vibe", vibe)) if v.strip()}
+    if not corpo:
+        return ("Nada a editar: passe pelo menos um de name, note ou vibe. A vibe em palavras é o "
+                "que `mood_pull` leva para a campanha.")
+    try:
+        b = client.patch(f"/api/moodboards/{mbid}", corpo) or {}
+    except StudioApiError as e:
+        return str(e)
+    mudou = ", ".join(f"{k}: {b.get(k, corpo[k])!r}" for k in corpo)
+    return (f"Mood board `{b.get('id') or mbid}` atualizado ({mudou}). O id do board não muda "
+            "quando o nome muda.")
 
 
 def moodboard_import(client: StudioClient, mbid: str, source: str = "downloads",
@@ -627,6 +655,11 @@ def moodboard_import(client: StudioClient, mbid: str, source: str = "downloads",
         r = client.post(f"/api/moodboards/{mbid}/import/downloads",
                         {"folder": None, "since_minutes": since_minutes}) or {}
     except StudioApiError as e:
+        # 404 aqui é a PASTA que não existe (o `FileNotFoundError` traduzido no router), não o
+        # board: repassar o texto seco mandaria o agente procurar um board que está lá (FDD §6).
+        if e.status == 404 and "pasta" in str(e).lower():
+            return (f"{e}\nSalve as imagens na pasta Downloads (ou importe do histórico com "
+                    'source="history") e chame `moodboard_import` de novo.')
         return str(e)
     return (f"{r.get('added', 0)} imagem(ns) importada(s) da pasta Downloads "
             f"({r.get('scanned', 0)} arquivo(s) varrido(s) em {r.get('folder', '?')}).\n"
@@ -843,7 +876,11 @@ def _erro_do_mood_run(e: StudioApiError) -> str:
         return f"{texto}\nNão dispare de novo: espere a que está rodando com `mood_run_wait`."
     if e.status == 422 and "nenhuma foto escolhida" in texto:
         return f"{texto}\nEscolha fotos do catálogo de vibes com `vibes_pick`."
-    if e.status == 422 and "foto-semente" in texto:
+    # "foto-semente" sozinho seria largo demais: a mesma expressão aparece no 422 de `board` abaixo
+    # do piso ("board precisa ser no mínimo N (a foto-semente já ocupa uma vaga)"), e aí sugerir um
+    # caminho de arquivo mandaria o agente procurar o defeito no lugar errado. O casamento é com a
+    # frase canônica de `_validar_foto` (`studio/moodboards/mood_run.py`).
+    if e.status == 422 and "precisa ser uma das escolhidas" in texto:
         return f"{texto}\nPegue um caminho válido com `escolhidas_list`."
     return texto
 

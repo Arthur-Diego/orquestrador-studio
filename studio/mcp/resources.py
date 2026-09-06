@@ -31,7 +31,8 @@ HELP_AREAS: dict[str, str] = {
     "moodboards": (
         "Biblioteca de mood boards `[extensão]` (ADR-013): global, sem campanha. Um board é UMA vibe (até 8\n"
         "imagens curadas, ADR-007). Caminho: moodboard_create, moodboard_import (downloads|history),\n"
-        "moodboard_pick (o usuário escolhe), moodboard_prompt, e mood_pull para semear a etapa 2 de uma\n"
+        "moodboard_pick (o usuário escolhe), moodboard_patch (grava a VIBE em palavras),\n"
+        "moodboard_prompt, e mood_pull para semear a etapa 2 de uma\n"
         "campanha. Peneira de vibes: vibes_list, vibes_pick, escolhidas_list. Cadeia gratuita de skills:\n"
         "mood_run + mood_run_wait (demora minutos). Pago: moodboard_multishot (confirma o custo).\n"
         "Upload de arquivo é pela tela: o assistente nunca manipula bytes."

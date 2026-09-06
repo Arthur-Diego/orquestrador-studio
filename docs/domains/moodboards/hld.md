@@ -28,10 +28,14 @@ skills `mood_orquestrador` executada pelo Claude CLI, ADR-034) e o **multishot**
 | `studio/moodboards/vibes.py` | A peneira: lê `_vibes/` (só leitura, saída do `mood_vibe_scout`) e copia — nunca move — as escolhidas para `_escolhidas/`, deduplicando por hash do conteúdo. Sem teto de escolhidas: o teto de 8 é do board. |
 | `studio/moodboards/mood_run.py` | A corrida: valida o pedido contra o manifesto das skills, monta a invocação do `/mood_orquestrador`, dispara como job (`common/skill_runner.py`, ADR-034) e lê o `_run.json` que a skill gravou. `gate` é sempre `auto`; `saida` é imposta pelo servidor. |
 | `studio/moodboards/skills_params.py` | O manifesto declarado das skills `mood_` (objetivos, defaults, pisos) — fonte única de opções para `mood_run` e para o painel. |
-| `studio/moodboards/router.py` | 18 operações do board + inclusão dos três sub-routers. `KeyError`→404, nome duplicado→409, `ValueError`→422, CLI ausente→409. |
+| `studio/moodboards/router.py` | 18 operações do board + inclusão dos três sub-routers. Nome duplicado→409, `ValueError`→422, CLI ausente→409. O `KeyError` de `board_dir` sobe para o **handler global** de `studio/app.py`, que o traduz em 404 — os routers irmãos interceptam o seu porque a mensagem global fala de "projeto". |
 | `studio/moodboards/vibes_router.py` · `mood_run_router.py` · `skills_router.py` | As 5 + 5 + 1 operações restantes, em arquivos próprios para reduzir colisão de rebase entre frentes paralelas. |
 | `studio/etapas/mood/router.py` | **Fora do domínio**: a ponte de saída `POST /api/projects/{pid}/mood/pull/{mbid}` (ADR-014) — a etapa 2 escolhe e aplica um board. |
-| `studio/mcp/actions.py` + `server.py` | As 15 tools `moodboard_*`/`vibes_*`/`escolhidas_list`/`mood_run*`/`mood_pull` do assistente, clientes HTTP da própria API (ADR-037). |
+| `studio/mcp/actions.py` + `server.py` | As 16 tools `moodboard_*`/`vibes_*`/`escolhidas_list`/`mood_run*`/`mood_pull` do assistente, clientes HTTP da própria API (ADR-037). |
+| `studio/mcp/resources.py` | `HELP_AREAS`: o resource `studio://help/moodboards`, a conduta citável da biblioteca. A área global fica FORA do dicionário `HELP`, que monta a lista "Etapas:". |
+| `studio/chat/prompts/sistema.md` | A conduta do assistente sobre a biblioteca: a cadeia de tools, a regra de oferecer `mood_pull` antes de gerar mood pago e o aviso de que os jobs daqui não usam `job_wait`. |
+| `studio/chat/mudancas.py` | Mapa `TOOL_STEPS` (ADR-041): traduz cada tool da biblioteca num `state_changed` da área global `moodboards` — exceto `mood_pull`, que aponta a etapa 2 da campanha. |
+| `frontend/src/areas/multishot/Multishot.tsx` | Componente reutilizável do multishot (ADR-017), compartilhado com as etapas — o board o consome, não o duplica. |
 | `frontend/src/areas/moodboards/` | A área do shell: lista de boards, editor, painel de vibes e painel da corrida (ADR-019). |
 
 ### Fluxo
@@ -57,8 +61,9 @@ skills `mood_orquestrador` executada pelo Claude CLI, ADR-034) e o **multishot**
 8. **Puxar para a campanha** (ADR-014): `POST /api/projects/{pid}/mood/pull/{mbid}` copia as imagens
    curadas, a paleta e a vibe para `mood/selected/` da campanha. A cópia é **independente**: apagar
    o board depois não afeta a campanha. É idempotente — reexecutar sobrescreve.
-9. **Pelo chat** (ADR-036/037): as 15 tools cobrem 1–8 exceto upload de bytes, exclusão de candidata
-   avulsa, abertura de pasta do sistema e o manifesto. Escolha visual e gasto continuam do usuário
+9. **Pelo chat** (ADR-036/037): as 16 tools cobrem 1–8 exceto upload de bytes, exclusão de candidata
+   avulsa, abertura de pasta do sistema e o manifesto. `moodboard_patch` é o que grava a **vibe**
+   em palavras — sem ela o board chega ao `mood_pull` com vibe vazia. Escolha visual e gasto continuam do usuário
    (ADR-038); o assistente nunca manipula bytes (ADR-040).
 
 ```mermaid
@@ -114,7 +119,7 @@ flowchart LR
 
 | Método | Rota | Função | Nota |
 | --- | --- | --- | --- |
-| GET | `/api/moodboards` | `moodboards` | lista `{id,name,note,vibe,cover,count,created}` |
+| GET | `/api/moodboards` | `moodboards` | lista `{id,name,note,vibe,cover,count,created,thumbs}` (`thumbs`: até 4, o mosaico da lista) |
 | POST | `/api/moodboards` | `new_board` | cria `{name, note?}`; 409 se o slug já existe |
 | GET | `/api/moodboards/{mbid}` | `board_detail` | detalhe + candidatas + imagens + paleta + prompt |
 | PATCH | `/api/moodboards/{mbid}` | `board_patch` | `{name?, note?, vibe?}` |
@@ -159,12 +164,13 @@ flowchart LR
 | --- | --- | --- | --- |
 | GET | `/api/skills/mood/params` | `skills_mood_params` | manifesto declarado das skills `mood_` |
 
-**Fora do domínio** (ponte de saída, ADR-014): `POST /api/projects/{pid}/mood/pull/{mbid}` em
-`studio/etapas/mood/router.py`. **Estático**: `/mbfiles` montado em `MOODBOARDS_DIR`
+**Fora do domínio** (ponte de saída, ADR-014): `POST /api/projects/{pid}/mood/pull/{mbid}`,
+função `mood_pull_board` em `studio/etapas/mood/router.py`. **Estático**: `/mbfiles` montado em `MOODBOARDS_DIR`
 (`studio/app.py`) — é ele que serve thumbs, imagens curadas e pranchas da corrida.
 
-**MCP `[extensão]`** (ADR-036/037), 15 tools: `moodboard_list`, `moodboard_get`, `moodboard_create`,
-`moodboard_import`, `moodboard_pick`, `moodboard_prompt`, `moodboard_delete`, `vibes_list`,
+**MCP `[extensão]`** (ADR-036/037), 16 tools: `moodboard_list`, `moodboard_get`, `moodboard_create`,
+`moodboard_patch`, `moodboard_import`, `moodboard_pick`, `moodboard_prompt`, `moodboard_delete`,
+`vibes_list`,
 `vibes_pick`, `escolhidas_list`, `mood_run`, `mood_run_wait`, `moodboard_multishot`,
 `moodboard_multishot_wait`, `mood_pull`; mais o resource `studio://help/moodboards`. Contrato
 completo em `features/chat-moodboards-fdd.md`.
@@ -218,5 +224,7 @@ sem bytes) e ADR-010 (fronteira de núcleo — o domínio não edita `app.py`/`s
   e pelo escape hatch `api_get`.
 - Guarda de drift entre o catálogo de tools do MCP e o `/openapi.json` (ADR-037 §6), nunca
   construída: as tools da biblioteca aumentam a superfície sem essa rede.
-- Navegação do chat para `#/moodboards[/<mbid>]`: é da frente F08 (chat-navigate); até lá o
-  assistente só instrui a abrir a área pela barra lateral.
+- Navegação do chat para `#/moodboards[/<mbid>]`: é da frente F08 (chat-navigate). Até lá o helper
+  `_sugerir_tela` degrada para instrução textual por `ui.notify` — hoje chamado pela recusa de
+  upload de `moodboard_import`, que é o caso em que o caminho restante é a tela. Quando F08
+  integrar, só o corpo do helper muda.

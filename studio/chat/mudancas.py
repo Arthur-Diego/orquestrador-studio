@@ -93,6 +93,7 @@ TOOL_STEPS: dict[str, tuple[str, str] | None] = {
     # é a PONTE para a campanha: ela escreve em `mood/selected/` de um `pid`, então o destino é a
     # etapa 2 daquele projeto — não a área global.
     "moodboard_create": ("moodboards", "library"),
+    "moodboard_patch": ("moodboards", "library"),
     "moodboard_delete": ("moodboards", "library"),
     "moodboard_prompt": ("moodboards", "library"),
     "moodboard_import": ("moodboards", "candidates"),

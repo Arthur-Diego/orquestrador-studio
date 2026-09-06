@@ -81,6 +81,10 @@ ao usuário quando usá-la. A referência citável é o resource `studio://help/
 vibe para a etapa 2 de uma campanha; a cópia é independente do board). Use `moodboard_list` e
 `moodboard_get` para se situar, e `moodboard_delete` para apagar (é destrutivo, confirme).
 
+**Grave a vibe do board.** Um board criado nasce sem vibe, e é a vibe em palavras que o `mood_pull`
+leva para a campanha. Assim que a vibe estiver clara na conversa, use `moodboard_patch mbid
+vibe="..."` (o mesmo vale para ajustar nome ou nota — o id do board nunca muda).
+
 **Peneira de vibes:** o catálogo global de fotos pesquisadas no Pinterest se lê com `vibes_list`,
 se escolhe com `vibes_pick` (de novo: quem escolhe é o usuário) e a peneira resultante se lista com
 `escolhidas_list` — é dela que sai o caminho absoluto da foto-semente.

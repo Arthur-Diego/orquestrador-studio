@@ -120,12 +120,20 @@ nova**, **não toca o núcleo** e **não toca o frontend**; ela liga o que já e
 
 **Incluído**
 
-- 15 tools novas em `studio/mcp/actions.py`, registradas em `studio/mcp/server.py` (bloco próprio
+- 16 tools novas em `studio/mcp/actions.py`, registradas em `studio/mcp/server.py` (bloco próprio
   "Biblioteca de mood boards", acrescentado **ao final** do bloco de ações, conforme a regra de
   conflito da wave).
 - Helpers privados novos em `actions.py`: `_mb_images` (URL de thumb do domínio moodboards),
   `_wait_job` (espera genérica sobre uma URL de job arbitrária) e `_sugerir_tela` (a costura com
-  a navegação de F08, hoje mockada como texto).
+  a navegação de F08, hoje mockada como texto). Na implementação nasceram mais cinco, todos de
+  formatação ou de tradução de erro, nenhum com contrato público: `_mb_label`, `_vibes_params`,
+  `_filtro_txt`, `_erro_do_mood_run`, `_erro_do_multishot`, mais a constante `MB_IMPORT_SOURCES`
+  e o `_truncar` compartilhado com `_label`.
+- `StudioClient.delete()` em `studio/mcp/client.py` (contrato 18): o wrapper tinha
+  `get/post/post_form/patch`, e `moodboard_delete` precisa do verbo DELETE.
+- As 16 tools declaradas em `TOOL_STEPS` (`studio/chat/mudancas.py`, contrato 19): a frente F03
+  integrou em `develop` durante a implementação e trouxe a guarda de drift que exige uma entrada
+  por tool registrada.
 - Extensão aditiva de `_paid` com o parâmetro opcional `follow`, para que a frase final do retorno
   aponte o waiter certo quando o job não é de etapa.
 - Resource `studio://help/moodboards` e menção da biblioteca no `HELP_GERAL`
@@ -744,7 +752,50 @@ Upload de arquivo é pela tela: o assistente nunca manipula bytes.
   `f"Geração iniciada ({model}). Acompanhe com \`{follow}\`."`; quando é `None`, o texto atual
   ("Acompanhe com `job_wait` (etapa {step})") é preservado byte a byte. Nenhum chamador existente
   muda. Compatível com a extensão de `breakdown` prevista por F10 (creditos-chat), que mexe no
-  bloco de custo, não no de retorno.
+  bloco de custo, não no de retorno. A implementação acrescentou um segundo parâmetro opcional,
+  `model_from_cost`, pelo mesmo motivo e com a mesma disciplina (ver contrato 20).
+
+**Contrato 18 (acrescentado na implementação): `moodboard_patch`**
+- Tipo: tool MCP (escrita, grátis)
+- Assinatura: `def moodboard_patch(client: StudioClient, mbid: str, name: str = "",
+  note: str = "", vibe: str = "") -> str`
+- Rota consumida: `PATCH /api/moodboards/{mbid}`
+- Semântica: só os campos **preenchidos** vão no corpo — `None` no `BoardPatch` significa "não
+  mexe", e mandar string vazia apagaria o que já está lá. Nenhum campo preenchido: recusa em texto,
+  sem chamar rota. 404 quando o board não existe. `name` muda só o rótulo: o `mbid` é **estável**
+  (ADR-019).
+- **Por que existe:** o invariante da §2 ("toda rota da biblioteca que não seja upload de bytes,
+  exclusão de candidata avulsa, abertura de pasta do SO ou manifesto de parâmetros tem tool
+  correspondente") só fecha com ela — `PATCH` não é nenhuma das quatro exceções. E é lacuna
+  funcional, não só formal: `moodboard_create` nasce com `vibe: ""`, `PATCH` é o **único** caminho
+  que grava a vibe, e é a vibe que `mood_pull` copia para a campanha (contrato 15, que exemplifica
+  `"vibe": "golden hour"` no retorno). Sem esta tool o fluxo principal A termina com vibe vazia.
+  [auto-aceito na implementação, apontado pela fiscalização de documentação; a alternativa seria
+  declarar `PATCH` como exclusão na §3, o que contradiria o contrato 15]
+
+Texto de retorno
+
+```
+Mood board `praia-dourada` atualizado (vibe: 'golden hour'). O id do board não muda quando o nome
+muda.
+```
+
+**Contrato 19 (alteração aditiva): `StudioClient.delete`**
+- Tipo: método do cliente HTTP de `studio/mcp/client.py`
+- Assinatura: `def delete(self, path: str) -> Any`
+- Mudança: o wrapper tinha `get`, `post`, `post_form` e `patch`; `moodboard_delete` precisa do
+  verbo DELETE. Mesma tradução de status em mensagem acionável dos outros verbos. É ampliação da
+  superfície de escrita do agente e vale para todo o servidor MCP, não só para esta biblioteca.
+
+**Contrato 20 (alteração aditiva): `TOOL_STEPS` e `_paid(model_from_cost=)`**
+- `studio/chat/mudancas.py` ganha uma entrada por tool desta frente (ADR-041, guarda de drift da
+  F03): as quatro listagens como leitura (`None`), as de escrita na área global `moodboards`, e
+  `mood_pull` apontando para a etapa `mood` **da campanha** — é a ponte, escreve em
+  `mood/selected/` de um `pid`. `moodboards` entra na lista fechada de etapas válidas do teste da
+  F03, ao lado de `characters`: as duas são áreas globais da sidebar, não etapas do curso.
+- `_paid` ganha `model_from_cost: bool = False`: quando ligado, a **resposta** do `cost` nomeia o
+  modelo. Só `moodboard_multishot` liga. Sem isso o sheet de gasto diria "modelo padrão" quando o
+  usuário não pede modelo — e num gate de custo qual modelo será cobrado é o dado que mais importa.
 
 ---
 
@@ -756,7 +807,8 @@ Upload de arquivo é pela tela: o assistente nunca manipula bytes.
 |---|---|---|---|
 | `mbid` inválido ou inexistente | 404 (`KeyError` de `board_dir` no handler do núcleo) | `StudioApiError` capturado, texto devolvido ao agente | vale para todas as tools de board; nunca levanta |
 | Nome de board duplicado | 409 em `POST /api/moodboards` | texto do 409 + sugestão de `moodboard_list` | o `mbid` é o slug do nome |
-| Nome vazio | 422 | texto do 422 | validação do serviço |
+| Nome vazio | 422 | texto do 422, **sem** a sugestão de `moodboard_list` (que é do 409) | validação do serviço |
+| `PATCH` sem nenhum campo | decisão da tool | recusa em texto, sem chamar rota | `None` no `BoardPatch` é "não mexe"; string vazia apagaria |
 | Pasta de Downloads inexistente | 404 em `import/downloads` | texto + sugestão de salvar as imagens antes | `FileNotFoundError` traduzido no router |
 | Higgsfield CLI ausente | 409 em `import/history` e `multishot/cost` | texto do 409 (mensagem canônica `hf.NO_CLI_MSG`) | caminho suave: só exige o binário |
 | Higgsfield sem login | 409 em `multishot/generate` (`hf.require_cli`) | `_paid` devolve o texto do erro sem gerar | gate único de login (ADR-002/028) |
@@ -770,7 +822,9 @@ Upload de arquivo é pela tela: o assistente nunca manipula bytes.
 | Apagar sem confirmação | decisão da tool | recusa com instrução de `confirm=true` (terminal) ou `ui.confirm` (chat) | ADR-038 |
 | Peneira vazia no `mood_run` | 422 | texto do 422 + sugestão de `vibes_pick` | `_validar_foto` |
 | Foto fora de `_escolhidas/` | 422 | texto do 422 | contenção de caminho no servidor, não prefixo textual |
-| Objetivo, número ou fundo fora do manifesto | 422 | texto do 422 (o servidor lista os aceitos) | a tool não duplica o catálogo |
+| Objetivo, número ou fundo fora do manifesto | 422 | texto do 422 (o servidor lista os aceitos) | a tool não duplica o catálogo; o discriminador de foto-semente casa a frase canônica `precisa ser uma das escolhidas`, e não `foto-semente`, que o 422 do piso de `board` também usa |
+| `mood_run` sem `foto` | decisão da tool | recusa ANTES do `estimate`, sugerindo `escolhidas_list` | o 422 viria de qualquer jeito; gastar a barreira de confirmação à toa a desvaloriza |
+| Job zerado por restart do Studio | `state: idle` com `_run.json` em disco | `mood_run_wait` lê o `result` mesmo assim; "sem corrida" só no 404 | o registro de jobs é em memória |
 | Corrida ou multishot já rodando | 409 | texto + sugestão do waiter correspondente | um job por board (ADR-006) |
 | Nenhuma corrida ainda no `result` | 404 | `mood_run_wait` relata "sem corrida" sem chamar `ui.show` | |
 | `_run.json` inválido | 502 | texto do 502; nenhuma prancha mostrada | manifesto de produtor externo |
@@ -851,11 +905,12 @@ Upload de arquivo é pela tela: o assistente nunca manipula bytes.
 | Python | 3.12 | stack do repositório |
 | `mcp` (FastMCP) | a do `requirements.txt` vigente | import tardio dentro de `build_server`; as funções puras não dependem dele |
 | `httpx` | a do `requirements.txt` vigente | usado pelo `StudioClient` |
-| API do Studio em loopback | `develop` @ `0c4e823` | 24 rotas da biblioteca, nenhuma alterada por esta frente |
+| API do Studio em loopback | `develop` @ `367c7ed` | **29 operações** da biblioteca em 26 caminhos, nenhuma alterada por esta frente |
 | Claude Code CLI (`claude`) | qualquer no PATH | necessário para `mood_run` e para `moodboard_prompt` nos modos `brief`/`images`; ausência vira 409 |
 | Higgsfield CLI | logado | necessário para `import/history` (binário) e `multishot/generate` (login) |
 | F08 chat-navigate | mesma sub-wave | fornece `ui_navigate` com áreas globais; até integrar, `_sugerir_tela` devolve texto |
 | F04 mcp-pick-shape | sub-wave 1 | **não é dependência**: esta frente usa `_mb_images` próprio, não `_images_for` |
+| F03 chat-sync (ADR-041) | integrada em `develop` durante a frente | traz `TOOL_STEPS` e a guarda de drift: as 16 tools precisam estar declaradas lá |
 | F05 creditos-actions-catalog | sub-wave 1 | **não é dependência**: `mood.multishot` já está em `ACTIONS`/`DEFAULTS` |
 
 **Garantias de compatibilidade**
@@ -985,7 +1040,7 @@ Upload de arquivo é pela tela: o assistente nunca manipula bytes.
 ### Risco 5: superfície de tools grande demais para o catálogo curado (ADR-037/040)
 
 - **Probabilidade:** média
-- **Impacto:** 15 tools novas somam mais de 50% ao catálogo de ações atual; catálogo inchado piora a
+- **Impacto:** 16 tools novas somam mais de 50% ao catálogo de ações atual; catálogo inchado piora a
   escolha do modelo e o custo de cada turno.
 - **Mitigação:**
     - Deixar de fora as rotas de tela e de manifesto (upload, `open-folder`, `downloads-folder`,
@@ -1024,16 +1079,17 @@ Upload de arquivo é pela tela: o assistente nunca manipula bytes.
 | 9 | Documentação: HLD novo do domínio e correção da §2 + seção de chat no FDD da biblioteca | 2 a 7 | `docs/domains/moodboards/hld.md`, `docs/domains/moodboards/features/moodboard-library-fdd.md` | 15 |
 | 10 | Verificação e QA: `make verify`, QA manual pelo chat, evidências no PR | 1 a 9 | `docs/domains/moodboards/features/chat-moodboards-fdd.md` (evidências no corpo da PR) | 16, 17, 18 |
 
-Contratos (seção 5): 17
+Contratos (seção 5): 19
 Fluxos principais (seção 4): 3
-Arquivos previstos: 9
+Arquivos previstos: 9 (entregues: 12 — ver §3)
 
 **Decisão direta versus SDD:** a regra é direta somente se forem no máximo 3 contratos, 1 fluxo e no
-máximo 8 arquivos. Com 17 contratos, 3 fluxos e 9 arquivos, a frente vai por **SDD (Compozy)**, e a
+máximo 8 arquivos. Com 17 contratos, 3 fluxos e 9 arquivos previstos, a frente foi por **SDD (Compozy)**, e a
 decomposição em tasks segue os grupos da tabela acima (fundação, grupo A, grupo B, grupo C, grupo D,
 grupo E, conhecimento, shape, documentação, verificação).
 
-**Titularidade de núcleo:** nenhuma. A frente toca `studio/mcp/`, `studio/chat/prompts/`, `tests/` e
+**Titularidade de núcleo:** nenhuma. A frente toca `studio/mcp/`, `studio/chat/` (prompt e o mapa
+`TOOL_STEPS`), `tests/` e
 `docs/`; nenhum desses caminhos está em `TITULARES_DO_NUCLEO`
 (`tests/test_adr010_fronteira_nucleo.py:72`), e nada em `frontend/` ou `studio/web/` é alterado, logo
 não há `make frontend-schema` nem `make frontend-build` nesta frente.
@@ -1068,6 +1124,15 @@ não há `make frontend-schema` nem `make frontend-build` nesta frente.
    que se confirma é volume de downloads e tempo.
 8. **Sem tool de navegação própria nesta frente.** `ui_navigate` e `ui_open` com áreas globais são
    entregáveis de F08; F12 apenas os consome quando existirem.
+9. **`moodboard_patch` acrescentada na implementação** (contrato 18), fechando o invariante da §2 e
+   a lacuna da vibe vazia no fluxo A. Decidida na rodada de review, não no gate em lote.
+10. **`_sugerir_tela` ligado na recusa de upload de `moodboard_import`.** O helper existia sem
+    chamador em produção, e o critério 18 (verificação pré-F08 como texto) não era exercido. A
+    recusa de upload é exatamente o caso em que o caminho que sobra para o usuário é a tela.
+11. **`mood_run_wait` lê o `result` mesmo com o job `idle`.** O registro de jobs vive em memória:
+    reiniciar o Studio zerava o estado enquanto o `_run.json` continuava em disco, e uma corrida de
+    até 1800 s ficava inalcançável pelo chat. Quem responde "nunca rodou" passa a ser o 404 do
+    `result`, como a matriz da §6 já previa.
 
 **Pendências para o gate em lote**
 
@@ -1081,7 +1146,7 @@ não há `make frontend-schema` nem `make frontend-build` nesta frente.
    integração da wave (ou um card de acompanhamento), não como trabalho desta frente.
 3. **`studio://help/moodboards` versus manifesto de drift da ADR-037 §6.** A ADR promete uma guarda
    de drift entre um manifesto de tools e o `/openapi.json`, que nunca foi construída (recon §0.5).
-   As 15 tools novas aumentam a superfície sem essa guarda. Não é regressão introduzida por F12, mas
+   As 16 tools novas aumentam a superfície sem essa guarda. Não é regressão introduzida por F12, mas
    convém registrar na retro.
 4. **Fusão futura de `vibes_list` em `vibes_pick`** (risco 5, contingência), caso o catálogo de tools
    se mostre pesado na prática.

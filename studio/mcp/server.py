@@ -167,6 +167,10 @@ def build_server(client: StudioClient | None = None):
     def moodboard_create(name: str, note: str = "") -> str:
         return actions.moodboard_create(cli, name, note)
 
+    @t(name="moodboard_patch", description="Edita os metadados de um mood board: name (só o rótulo — o id não muda), note e vibe. É a única forma de gravar a VIBE em palavras, que `mood_pull` leva para a campanha.")
+    def moodboard_patch(mbid: str, name: str = "", note: str = "", vibe: str = "") -> str:
+        return actions.moodboard_patch(cli, mbid, name, note, vibe)
+
     @t(name="moodboard_import", description="Importa candidatas para o board a partir da pasta Downloads ou do histórico da Higgsfield. source: downloads|history (upload é só pela tela). Depois use `moodboard_pick`.")
     def moodboard_import(mbid: str, source: str = "downloads", since_minutes: int = 120) -> str:
         return actions.moodboard_import(cli, mbid, source, since_minutes)
