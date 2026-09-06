@@ -277,6 +277,13 @@ def test_status_counts_ideas_scenes_and_base(sb, project, root, base):
     sb.select_ideas(project, [sb.list_ideas(project)["ideas"][0]["id"]])
     sb.save_scenes(project, [{"text": "Close no astronauta"}, {"text": ""}])
     st = sb.status(project)
+    # `[extensão]` Wave 11 · F06 (FDD §5.2): o diagnóstico carrega um `checked_at` do relógio, então
+    # compará-lo com um `cli_status()` chamado DEPOIS do `status()` falharia sempre que as duas
+    # leituras caíssem em segundos diferentes (o `status()` faz I/O antes de voltar). A asserção é
+    # estrutural: as seis chaves do contrato e os dois valores que dependem do processo.
+    diag = st.pop("script_cli_diag")
+    assert set(diag) == {"name", "available", "path", "searched_path", "checked_at", "hint"}
+    assert diag["available"] is sb.prompter.available() and diag["path"] == sb.prompter.BIN
     assert st == {"base_image": "base/base_final.png", "has_base": True, "ideas": 1, "selected": 1,
                   "scenes": 2, "scenes_with_text": 1, "storyboard_md": "storyboard/storyboard.md",
                   # `[extensão]` vídeo por foto (ADR-022): seletor de modelo do modal "Gerar animação".
@@ -287,9 +294,7 @@ def test_status_counts_ideas_scenes_and_base(sb, project, root, base):
                   "script": {"exists": False, "generated_at": None},
                   "script_preset_default": "documentary-street",
                   "script_models": [dict(m) for m in sb.SCRIPT_MODELS],
-                  "script_cli": sb.prompter.available(),
-                  # `[extensão]` Wave 11 · F06 (FDD §5.2): diagnóstico do CLI ao lado do booleano.
-                  "script_cli_diag": sb.prompter.cli_status()}
+                  "script_cli": sb.prompter.available()}
 
 
 # ---------- alternativa paga pelo CLI ----------

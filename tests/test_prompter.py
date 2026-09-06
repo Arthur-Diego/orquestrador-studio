@@ -620,17 +620,56 @@ def test_available_still_reads_bin_after_cli_status(monkeypatch):
 # ------------------------------------------------------------------------------------------
 # `run.sh` (critério A4): inspeção do script, sem subir servidor e sem subprocess (ADR-008).
 # ------------------------------------------------------------------------------------------
-def test_run_sh_appends_user_bin_dirs_after_the_inherited_path():
+def _run_sh_path_block() -> str:
+    """O trecho de `run.sh` que monta o PATH, do `for` até o `export PATH` (sem subir o uvicorn)."""
     src = (Path(__file__).resolve().parents[1] / "run.sh").read_text()
-    assert '"$HOME/.local/bin"' in src, "o diretório de binário do usuário precisa ser acrescentado"
-    atribuicoes = [ln.strip() for ln in src.splitlines() if "PATH=" in ln and "$PATH" in ln]
-    assert atribuicoes, "o script precisa montar o PATH"
-    for ln in atribuicoes:
-        valor = ln.split("PATH=", 1)[1]
-        # O PATH herdado vem PRIMEIRO: nada pode ser prefixado a ele (FDD §10, Risco 6), senão o
-        # Studio troca silenciosamente um `claude` que o usuário já tem.
-        assert valor.startswith('"$PATH'), f"prepend proibido em run.sh: {ln}"
-    assert "export PATH" in src
+    ini = src.index("for _d in")
+    fim = src.index("export PATH") + len("export PATH")
+    return src[ini:fim]
+
+
+def _path_resultante(herdado: str, home: str) -> str:
+    """Roda SÓ o bloco de PATH num `sh` limpo e devolve o PATH que ele produz.
+
+    Executar em vez de inspecionar o texto: a asserção textual antiga (`valor.startswith('"$PATH')`)
+    aprovava qualquer expansão que começasse com `$PATH` e reprovava a correção do elemento vazio,
+    ou seja, media a FORMA do script em vez do que ele faz (rodada de review 001, issue_006)."""
+    import subprocess
+    script = _run_sh_path_block() + '\nprintf "%s" "$PATH"\n'
+    r = subprocess.run(["/bin/sh", "-c", script], capture_output=True, text=True,
+                       env={"PATH": herdado, "HOME": home} if herdado else {"HOME": home})
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_run_sh_appends_user_bin_dirs_after_the_inherited_path(tmp_path):
+    """Critério A4: `$HOME/.local/bin` entra, e o PATH do usuário continua NA FRENTE."""
+    home = str(tmp_path)
+    got = _path_resultante("/usr/bin:/bin", home)
+    assert got.startswith("/usr/bin:/bin"), f"prepend proibido (FDD §10, Risco 6): {got}"
+    assert f"{home}/.local/bin" in got.split(":")
+
+
+def test_run_sh_never_puts_the_current_directory_on_the_path(tmp_path):
+    """Um elemento VAZIO de PATH é o diretório atual no POSIX — e `run.sh` já fez `cd` no repo.
+
+    Regressão da rodada de review 001 (issue_006): com o PATH herdado vazio — o caso `env -i`, que
+    é justamente o cenário "fora de um shell interativo" que o bloco existe para cobrir — o
+    `PATH="$PATH:$_d"` produzia um dois-pontos INICIAL, e qualquer arquivo com nome de binário na
+    raiz do repositório virava executável por nome para o processo do servidor."""
+    home = str(tmp_path)
+    for herdado in ("", "/usr/bin:/bin"):
+        got = _path_resultante(herdado, home)
+        assert "" not in got.split(":"), f"elemento vazio (= diretório atual) no PATH: {got!r}"
+        assert not got.startswith(":") and not got.endswith(":") and "::" not in got
+
+
+def test_run_sh_does_not_duplicate_a_dir_the_user_already_has(tmp_path):
+    """Diretório já presente fica ONDE o usuário o pôs — o `case` de dedup existe para isso."""
+    home = str(tmp_path)
+    got = _path_resultante(f"{home}/.local/bin:/usr/bin", home)
+    assert got.split(":").count(f"{home}/.local/bin") == 1
+    assert got.startswith(f"{home}/.local/bin:/usr/bin")
 
 
 # ------------------------------------------------------------------------------------------

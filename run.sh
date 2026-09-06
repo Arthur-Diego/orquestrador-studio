@@ -12,7 +12,10 @@ cd "$(dirname "$0")"
 for _d in "$HOME/.local/bin" "$HOME/bin" "$HOME/.bun/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
   case ":$PATH:" in
     *":$_d:"*) ;;             # já está no PATH (na posição que o usuário escolheu): não mexe
-    *) PATH="$PATH:$_d" ;;
+    # `${PATH:+...}` evita o dois-pontos INICIAL quando o PATH herdado vem vazio (o caso do
+    # `env -i`, justamente o que este bloco existe para cobrir): elemento vazio de PATH é o
+    # DIRETÓRIO ATUAL no POSIX, e a linha 3 já fez `cd` para a raiz do repositório.
+    *) PATH="${PATH:+$PATH:}$_d" ;;
   esac
 done
 export PATH

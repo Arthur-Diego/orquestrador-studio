@@ -397,3 +397,23 @@ describe("Herança de preset por foto (critérios C2, C3 e C4)", () => {
     expect(corpoDoPutScenes(api).scenes[0]!.photos[IMG]!.origin).toEqual(origem);
   });
 });
+
+describe("Herança anunciada na foto (rodada de review 001, issue_022)", () => {
+  it("nomeia o preset só quando `motion` e `storyboard.keyframe` resolvem para o MESMO id", async () => {
+    const { realism } = await montarFoto({ defaults: [defaultsUniformes("real1")] });
+    const herda = [...realism.options].find((o) => o.value === "");
+    expect(herda?.textContent).toContain("padrão da campanha: Realista");
+  });
+
+  it("não nomeia nada quando as duas ações divergem — o rótulo mentiria (§10 Risco 4)", async () => {
+    // A foto tem UM preset só, mas ele viaja para `motion` (/video-prompt) E para
+    // `storyboard.keyframe` (/image-prompt). Nomear o de `motion` quando os dois divergem
+    // afirmaria um preset que o `/image-prompt` não vai receber.
+    const divergente = { ...defaultsUniformes("real1"), "storyboard.keyframe": { preset: "doc2", source: "project" } };
+    const { realism } = await montarFoto({ defaults: [divergente] });
+    const herda = [...realism.options].find((o) => o.value === "");
+    expect(herda?.textContent).toContain("padrão da campanha");
+    expect(herda?.textContent).not.toContain("Realista");
+    expect(herda?.textContent).not.toContain("Documental");
+  });
+});

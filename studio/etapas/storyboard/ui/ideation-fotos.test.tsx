@@ -71,6 +71,7 @@ interface Cenario {
   falhaSelect?: boolean;
   /** Segura o `PUT /scenes` até `soltarPut()` — para provar a fila de um. */
   segurarPut?: boolean;
+  falhaPut?: boolean;
 }
 
 function fakeApi(c: Cenario = {}) {
@@ -88,6 +89,7 @@ function fakeApi(c: Cenario = {}) {
     }
     if (path.endsWith("/local/status")) return { ready: false, detail: "offline", gen_models: [], inpaint_models: [] };
     if (path.endsWith("/scenes")) {
+      if (m === "PUT" && c.falhaPut) throw new Error("imagem fora de storyboard/ideas/");
       if (m === "PUT" && c.segurarPut) {
         await new Promise<void>((r) => presos.push(r));
         return { scenes: c.cenas ?? CENAS };
@@ -138,11 +140,17 @@ const linhaDaCena = (container: HTMLElement, i: number) =>
 /**
  * `DataTransfer` de mentira: o jsdom não implementa o de verdade. `types` existe porque é por ele
  * que a tela distingue arrasto interno de arquivo do sistema operacional.
+ *
+ * `protegido: true` reproduz o *protected mode* do HTML5, em que `dragenter`/`dragover` enxergam
+ * os `types` mas recebem `""` de `getData()`. É o comportamento REAL de Chrome, Firefox e Safari —
+ * e o fake antigo, que sempre devolvia o dado, deixou passar um `dragover` que decidia pelo
+ * conteúdo e por isso nunca chamava `preventDefault()` no navegador (rodada de review 001,
+ * issue_002).
  */
-function dt(dados: Record<string, string>) {
+function dt(dados: Record<string, string>, protegido = false) {
   return {
     types: Object.keys(dados),
-    getData: (t: string) => dados[t] ?? "",
+    getData: (t: string) => (protegido ? "" : (dados[t] ?? "")),
     setData: (t: string, v: string) => {
       dados[t] = v;
     },
@@ -395,6 +403,29 @@ describe("Remoção, ★ e reordenação persistem na mesma interação (critér
 });
 
 describe("Arrastar e soltar (critério B6)", () => {
+  it("dragover decide pelos TYPES, não pelo conteúdo (protected mode do HTML5)", async () => {
+    const { container } = await montar();
+    const card = container.querySelector("#sbIdeasGallery .card[data-id='i2']") as HTMLElement;
+    const dados: Record<string, string> = {};
+    fireEvent.dragStart(card, { dataTransfer: dt(dados) });
+
+    // No navegador real, `getData()` devolve "" durante `dragover`. Se a tela decidisse pelo
+    // conteúdo, `preventDefault()` nunca aconteceria, o alvo não viraria drop target e o `drop`
+    // jamais dispararia — o critério B6 inteiro (rodada de review 001, issue_002).
+    // `fireEvent` devolve `false` quando o handler chamou `preventDefault()` — é isso que
+    // transforma o alvo em drop target e faz o `drop` chegar.
+    const alvo = linhaDaCena(container, 1).querySelector(".sb-phototable") as HTMLElement;
+    expect(fireEvent.dragOver(alvo, { dataTransfer: dt(dados, true) })).toBe(false);
+    await waitFor(() => expect(alvo.className).toContain("dragover"));
+  });
+
+  it("dragover de arquivo do sistema operacional NÃO vira drop target", async () => {
+    const { container } = await montar();
+    const alvo = linhaDaCena(container, 1).querySelector(".sb-phototable") as HTMLElement;
+    expect(fireEvent.dragOver(alvo, { dataTransfer: dt({ Files: "" }, true) })).toBe(true);
+    expect(alvo.className).not.toContain("dragover");
+  });
+
   it("dragstart no card da galeria grava application/x-studio-idea e soltar na cena anexa e persiste", async () => {
     const { api, container } = await montar();
     const card = container.querySelector("#sbIdeasGallery .card[data-id='i2']") as HTMLElement;
@@ -403,7 +434,7 @@ describe("Arrastar e soltar (critério B6)", () => {
     expect(dados[DND_IDEA]).toBe("i2");
 
     const alvo = linhaDaCena(container, 1).querySelector(".sb-phototable") as HTMLElement;
-    fireEvent.dragOver(alvo, { dataTransfer: dt(dados) });
+    fireEvent.dragOver(alvo, { dataTransfer: dt(dados, true) });   // protected mode: getData() = ""
     fireEvent.drop(alvo, { dataTransfer: dt(dados) });
     await waitFor(() => expect(putsDeCenas(api).length).toBe(1));
     expect(imagensNoPut(api, 1)).toEqual([B]);
@@ -417,7 +448,7 @@ describe("Arrastar e soltar (critério B6)", () => {
     expect(JSON.parse(dados[DND_PHOTO] as string)).toEqual({ sid: "cena01", img: A });
 
     const alvo = linhaDaCena(container, 1).querySelector(".sb-phototable") as HTMLElement;
-    fireEvent.dragOver(alvo, { dataTransfer: dt(dados) });
+    fireEvent.dragOver(alvo, { dataTransfer: dt(dados, true) });   // protected mode: getData() = ""
     fireEvent.drop(alvo, { dataTransfer: dt(dados) });
     await waitFor(() => expect(putsDeCenas(api).length).toBe(1));
     // um PUT só, consistente: some da origem e aparece no destino
@@ -547,5 +578,40 @@ describe("Rede de segurança", () => {
     fireEvent.click(salvar);
     await waitFor(() => expect(putsDeCenas(api).length).toBe(1));
     expect(ultimoPut(api)?.scenes.length).toBe(2);
+  });
+});
+
+// =================================================================================================
+// Regressões da rodada de review 001 — o que os testes originais NÃO pegavam.
+describe("Persistência por gesto: regressões da rodada de review 001", () => {
+  it("avisa o usuário quando o PUT do gesto falha, em vez de engolir o erro (issue_008)", async () => {
+    const { container, toast } = await montar({ falhaPut: true });
+    fireEvent.click(linhaDaCena(container, 0).querySelector(".sb-rm") as HTMLButtonElement);
+    // sem o aviso, a tela muda, o usuário acredita que gravou e o disco continua intacto
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining("não salvo")));
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining("storyboard/ideas/"));
+  });
+
+  it("o preset escolhido na foto persiste na hora, sem depender de “Salvar cenas” (issue_009)", async () => {
+    const { api, container } = await montar();
+    const sel = linhaDaCena(container, 0).querySelector(".sbRealismPreset") as HTMLSelectElement;
+    fireEvent.change(sel, { target: { value: "off" } });
+    await waitFor(() => expect(putsDeCenas(api).length).toBe(1));
+    expect(ultimoPut(api)?.scenes[0]?.photos?.[A]?.preset).toBeNull();
+  });
+
+  it("“Salvar cenas” não corre em paralelo com um gesto e não reidrata estado velho (issue_007)", async () => {
+    const { api, container, soltarPut } = await montar({ segurarPut: true });
+    // 1) gesto: remove a foto da cena 1 → PUT enfileirado e preso no fake
+    fireEvent.click(linhaDaCena(container, 0).querySelector(".sb-rm") as HTMLButtonElement);
+    await waitFor(() => expect(putsDeCenas(api).length).toBe(1));
+    // 2) com o PUT do gesto ainda no ar, o usuário clica em “Salvar cenas”
+    fireEvent.click(container.querySelector("#sbSave") as HTMLButtonElement);
+    // o save explícito NÃO pode disparar um segundo PUT enquanto o primeiro não voltou
+    expect(putsDeCenas(api).length).toBe(1);
+    soltarPut();
+    await waitFor(() => expect(putsDeCenas(api).length).toBe(2));
+    // e o payload do save carrega a remoção, não o estado pré-gesto
+    expect(imagensNoPut(api, 0)).toEqual([]);
   });
 });

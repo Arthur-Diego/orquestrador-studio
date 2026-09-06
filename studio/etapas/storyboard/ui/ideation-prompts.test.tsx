@@ -522,7 +522,7 @@ describe("Consumidores do campo (critérios D7 e D8)", () => {
     });
     fireEvent.click(modal.querySelector(".modal-actions button.primary") as HTMLButtonElement);
     await waitFor(() => expect(chamou(api, "/video/cost")).toBe(true));
-    expect(toast).not.toHaveBeenCalledWith("Escreva ou gere o prompt de vídeo desta foto.");
+    expect(toast).not.toHaveBeenCalledWith("Escreva ou gere o prompt de vídeo primeiro.");
   });
 
   it("com o campo de vídeo VAZIO, \"Gerar animação\" avisa e não consulta custo", async () => {
@@ -534,7 +534,7 @@ describe("Consumidores do campo (critérios D7 e D8)", () => {
       return m;
     });
     fireEvent.click(modal.querySelector(".modal-actions button.primary") as HTMLButtonElement);
-    await waitFor(() => expect(toast).toHaveBeenCalledWith("Escreva ou gere o prompt de vídeo desta foto."));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Escreva ou gere o prompt de vídeo primeiro."));
     expect(chamou(api, "/video/cost")).toBe(false);
   });
 

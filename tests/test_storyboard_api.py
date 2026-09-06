@@ -1036,6 +1036,78 @@ def test_scenes_caps_photo_prompts_citing_scene_and_photo(client, pid):
     assert len(scene["photos"][img]["image_prompt"]) == sb.MAX_PHOTO_PROMPT
 
 
+def test_scenes_caps_video_desc_at_the_same_500_of_the_video_prompt_route(client, pid):
+    """FDD §5.5: `video_desc` também tem teto (500), o mesmo que `POST /video-prompt` já cobrava.
+
+    Regressão da rodada de review 001 (issue_014): só os dois prompts eram limitados, então a rota
+    recusava uma descrição de 501 caracteres enquanto o `PUT /scenes` gravava a MESMA string sem
+    limite nenhum — e é ela que a tela reenvia para `/video-prompt` depois."""
+    from studio.storyboard import service as sb
+    img = _select_idea(client, pid)
+
+    def put(desc):
+        return client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena", "images": [img], "primary": img,
+             "photos": {img: {"video_desc": desc, "videos": []}}}]})
+
+    r = put("d" * (sb.MAX_VIDEO_DESC + 1))
+    assert r.status_code == 422
+    assert "cena01" in r.json()["detail"] and img in r.json()["detail"]
+    assert "video_desc" in r.json()["detail"]
+    assert put("d" * sb.MAX_VIDEO_DESC).status_code == 200
+
+
+def test_scenes_rejects_a_non_string_photo_preset_instead_of_coercing_it(client, pid):
+    """Invariante 6: um `preset` malformado é 422, NUNCA uma coerção silenciosa para `null`.
+
+    Regressão da rodada de review 001 (issue_017): `preset if isinstance(preset, str) else None`
+    trocava em silêncio "herda o padrão da campanha" (chave ausente) por "esta foto não quer
+    preset" (`null`) — o único colapso que os três estados não podem pagar."""
+    img = _select_idea(client, pid)
+
+    def put(preset):
+        return client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena", "images": [img], "primary": img,
+             "photos": {img: {"preset": preset, "videos": []}}}]})
+
+    for ruim in (123, True, ["documentary-street"], {"id": "documentary-street"}):
+        assert put(ruim).status_code == 422, ruim
+    # os dois estados legítimos seguem passando
+    assert put(None).status_code == 200
+    assert client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]["preset"] is None
+
+
+def test_scenes_with_non_string_text_fields_is_422_not_500(client, pid):
+    """§6: entrada malformada é erro do cliente, não do servidor.
+
+    Regressão da rodada de review 001 (issue_018): `(123 or "").strip()` levantava `AttributeError`
+    dentro do `_normalize`, e o `_guard` só traduz `Invalid`/`Precondition` — o resultado era 500."""
+    img = _select_idea(client, pid)
+    for campo in ("image_prompt", "video_prompt", "video_desc"):
+        r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+            {"text": "cena", "images": [img], "primary": img, "photos": {img: {campo: 123, "videos": []}}}]})
+        assert r.status_code < 500, f"{campo} devolveu {r.status_code}"
+        assert r.status_code == 200
+        # o valor lixo é descartado, não persistido
+        got = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]
+        assert got[campo] == ""
+
+
+def test_scenes_keeps_origin_of_video_desc_written_by_the_mcp_tool(client, pid):
+    """FDD §5.18: `storyboard_keyframe_set` carimba origem nos TRÊS campos, inclusive `video_desc`.
+
+    Regressão da rodada de review 001 (issue_010): `ORIGIN_FIELDS` não incluía `video_desc`, então
+    o servidor descartava a procedência em silêncio enquanto a tool devolvia "(manual)"."""
+    img = _select_idea(client, pid)
+    origin = {"video_desc": {"source": "manual", "preset": None, "at": "2026-09-06T14:31:02"}}
+    r = client.put(f"/api/projects/{pid}/storyboard/scenes", json={"scenes": [
+        {"text": "cena", "images": [img], "primary": img,
+         "photos": {img: {"video_desc": "he steps off the curb", "origin": origin, "videos": []}}}]})
+    assert r.status_code == 200
+    got = client.get(f"/api/projects/{pid}/storyboard/scenes").json()["scenes"][0]["photos"][img]
+    assert got["origin"]["video_desc"] == {"source": "manual", "preset": None, "at": "2026-09-06T14:31:02"}
+
+
 def test_scenes_round_trip_keeps_image_prompt_and_well_formed_origin(client, pid):
     """Critério D2: o texto do usuário e a procedência sobrevivem ao PUT → GET."""
     img = _select_idea(client, pid)

@@ -47,7 +47,12 @@ const INSTRUCTIONS = {
 };
 const PRESETS = {
   presets: [{ id: "real1", name: "Realista", desc_pt: "mais real" }],
-  defaults: { motion: { preset: "real1" }, "storyboard.script": { preset: "real1" } },
+  // O bloco "Padrão visual da campanha" grava os CINCO `kind` de uma vez, então o estado normal
+  // é `motion` e `storyboard.keyframe` com o MESMO preset — é só aí que o `RealismField` da foto
+  // pode nomear a herança, porque o preset da foto viaja para as duas ações (rodada de review 001,
+  // issue_022).
+  defaults: { motion: { preset: "real1" }, "storyboard.keyframe": { preset: "real1" },
+              "storyboard.script": { preset: "real1" } },
 };
 const IDEAS = [
   { id: "i1", file: "storyboard/candidates/i1.png", prompt: "p1", selected: true },

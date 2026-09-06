@@ -526,8 +526,20 @@ def _scene_videos(s: dict) -> list[str]:
 #: `[extensão]` campos abertos de prompt por foto (FDD Wave 11 · F06 §5.5): quais campos podem ter
 #: procedência registrada e de onde um texto pode ter vindo. Enums FECHADOS — o que estiver fora
 #: deles é descartado sem derrubar o save (`origin` é metadado de UI, não contrato de geração).
-ORIGIN_FIELDS = ("image_prompt", "video_prompt")
+#: `video_desc` entra aqui porque a tool `storyboard_keyframe_set` (FDD §5.18) aceita os TRÊS
+#: campos e carimba `origin` nos três; sem ele o servidor descartava a procedência em silêncio e a
+#: tool devolvia "(manual)" para uma escrita que não acontecia.
+ORIGIN_FIELDS = ("image_prompt", "video_prompt", "video_desc")
 ORIGIN_SOURCES = ("ia", "manual", "template")
+
+
+def _texto(v: object) -> str:
+    """Texto de campo por foto, defensivo: o que não for `str` vira `""`.
+
+    `(v or "").strip()` parecia equivalente, mas `(123 or "")` é `123` e `123.strip()` levanta
+    `AttributeError` DENTRO do `_normalize` — e o `_guard` do router só traduz `Invalid`/
+    `Precondition`, então um `{"image_prompt": 123}` virava 500 em vez de um 4xx honesto."""
+    return v.strip() if isinstance(v, str) else ""
 
 
 def _photo_origin(raw: object) -> dict:
@@ -565,9 +577,9 @@ def _scene_photos(s: dict, images: list[str], primary: str | None) -> dict:
     out: dict[str, dict] = {}
     for img in images:
         entry = raw.get(img) if isinstance(raw.get(img), dict) else {}
-        vd = (entry.get("video_desc") or "").strip()
-        vp = (entry.get("video_prompt") or "").strip()
-        ip = (entry.get("image_prompt") or "").strip()
+        vd = _texto(entry.get("video_desc"))
+        vp = _texto(entry.get("video_prompt"))
+        ip = _texto(entry.get("image_prompt"))
         vids = entry.get("videos")
         vids = [v for v in vids if v] if isinstance(vids, list) else []
         if img == primary:                       # migração do par por-cena (ADR-022)
@@ -579,8 +591,11 @@ def _scene_photos(s: dict, images: list[str], primary: str | None) -> dict:
         photo = {"video_desc": vd, "video_prompt": vp, "image_prompt": ip,
                  "videos": [v for v in vids if not (v in seen or seen.add(v))]}
         if "preset" in entry:                    # chave AUSENTE ≠ `null` (invariante 6)
-            preset = entry["preset"]
-            photo["preset"] = preset if isinstance(preset, str) else None
+            # o valor cru passa adiante: quem decide é o `_check_photo_preset` do `save_scenes`.
+            # Coagir aqui um valor malformado para `None` seria trocar em silêncio "herda o padrão
+            # da campanha" por "opta por NÃO ter preset" — o único colapso que os três estados não
+            # podem pagar.
+            photo["preset"] = entry["preset"]
         origin = _photo_origin(entry.get("origin"))
         if origin:
             photo["origin"] = origin
@@ -636,22 +651,29 @@ def _check_image(root: Path, image: str | None) -> str | None:
     return f"{IDEAS_DIR}/{p.name}"
 
 
-def _check_photo_prompt(scene_id: str, img: str, field: str, text: str) -> str:
-    """`[extensão]` FDD Wave 11 · F06 (§6, critério D10): teto de um prompt por foto.
+def _check_photo_prompt(scene_id: str, img: str, field: str, text: object,
+                        limit: int = MAX_PHOTO_PROMPT) -> str:
+    """`[extensão]` FDD Wave 11 · F06 (§6, critério D10): teto de um campo de texto por foto.
 
     A mensagem cita a CENA e a FOTO de propósito — com 5 cenas e 3 fotos por cena, um 422 genérico
-    não diz ao usuário qual campo estourou."""
-    t = (text or "").strip()
-    if len(t) > MAX_PHOTO_PROMPT:
-        raise Invalid(f"{scene_id} · {img}: {field} acima de {MAX_PHOTO_PROMPT} caracteres.")
+    não diz ao usuário qual campo estourou. O `limit` é parâmetro porque a §5.5 contrata tetos
+    DIFERENTES: 4000 para os dois prompts e `MAX_VIDEO_DESC` (500) para o `video_desc`, o mesmo
+    teto que o `POST /video-prompt` já cobra na entrada."""
+    t = _texto(text)
+    if len(t) > limit:
+        raise Invalid(f"{scene_id} · {img}: {field} acima de {limit} caracteres.")
     return t
 
 
-def _check_photo_preset(scene_id: str, img: str, preset: str | None) -> str | None:
+def _check_photo_preset(scene_id: str, img: str, preset: object) -> str | None:
     """`[extensão]` FDD Wave 11 · F06 (§5.5): id de preset por foto contra o catálogo do prompter.
 
     `None` (o estado "sem preset") é sempre aceito; a chave AUSENTE nem chega aqui, porque quem
-    herda o default da ação não guarda valor nenhum."""
+    herda o default da ação não guarda valor nenhum. Um valor que não é `str` nem `None` é 422, e
+    não uma coerção silenciosa para `None`: os três estados só valem se o servidor se recusar a
+    adivinhar qual deles o cliente quis dizer."""
+    if preset is not None and not isinstance(preset, str):
+        raise Invalid(f"{scene_id} · {img}: preset tem de ser um id do catálogo ou null.")
     try:
         return prompter.valid_preset(preset)
     except ValueError as e:
@@ -701,7 +723,8 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
                     okv = None
                 if okv and okv not in pv:
                     pv.append(okv)
-            photo = {"video_desc": (pe.get("video_desc") or "").strip(),
+            photo = {"video_desc": _check_photo_prompt(s["id"], img, "video_desc",
+                                                       pe.get("video_desc"), limit=MAX_VIDEO_DESC),
                      "video_prompt": _check_photo_prompt(s["id"], img, "video_prompt", pe.get("video_prompt")),
                      "image_prompt": _check_photo_prompt(s["id"], img, "image_prompt", pe.get("image_prompt")),
                      "videos": pv}

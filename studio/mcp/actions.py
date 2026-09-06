@@ -485,7 +485,15 @@ def storyboard_scenes(client: StudioClient, pid: str) -> str:
 def _sb_scenes(client: StudioClient, pid: str) -> list[dict]:
     resp = client.get(f"/api/projects/{pid}/storyboard/scenes") or {}
     scenes = resp.get("scenes") if isinstance(resp, dict) else resp
-    return [s for s in scenes if isinstance(s, dict)] if isinstance(scenes, list) else []
+    if not isinstance(scenes, list):
+        return []
+    out = [s for s in scenes if isinstance(s, dict)]
+    # o servidor SEMPRE recalcula `id`/`n` (`_normalize`), mas as tools formatam `alvo["id"]` em
+    # texto para o agente: um corpo inesperado não pode virar `KeyError` cru (§6).
+    for i, s in enumerate(out, 1):
+        s.setdefault("id", f"cena{i:02d}")
+        s.setdefault("n", i)
+    return out
 
 
 def _sb_scene(scenes: list[dict], scene: str) -> dict | None:
@@ -519,10 +527,39 @@ def _sb_put(client: StudioClient, pid: str, scenes: list[dict]) -> None:
     client.put(f"/api/projects/{pid}/storyboard/scenes", {"scenes": scenes})
 
 
+#: O `source` que o SERVIDOR aceita em `photos[img].origin` é o enum fechado
+#: `studio.storyboard.service.ORIGIN_SOURCES` = `("ia", "manual", "template")` — qualquer outro
+#: valor é descartado em silêncio no `PUT /scenes`. As rotas de prompt, porém, devolvem o `source`
+#: do PRODUTOR (`"claude"` quando o CLI respondeu), então a tradução tem de acontecer aqui, como o
+#: `originOf()` do `Ideation.tsx` já faz do lado da tela. Sem ela, o caminho feliz gravava o texto
+#: SEM procedência nenhuma e o critério D9 não fechava.
+def _sb_source(source: str | None) -> str:
+    """`source` da resposta HTTP → o enum que `scenes.json` aceita."""
+    return "template" if source == "template" else "ia"
+
+
 def _sb_origin(photo: dict, field: str, source: str, preset: str | None) -> None:
     origin = dict(photo.get("origin") or {})
     origin[field] = {"source": source, "preset": preset}
     photo["origin"] = origin
+
+
+def _sb_origem_manual(photo: dict, field: str) -> bool:
+    """O campo carrega texto escrito à mão? (só então vale pedir confirmação antes de sobrescrever)"""
+    origin = photo.get("origin")
+    entry = origin.get(field) if isinstance(origin, dict) else None
+    return isinstance(entry, dict) and entry.get("source") == "manual" and bool(photo.get(field))
+
+
+def _sb_fotos_manuais(alvos: list[tuple[int, dict]]) -> list[str]:
+    """`cenaNN/arquivo.png` de cada foto cujo `image_prompt` o usuário escreveu à mão."""
+    out = []
+    for _i, s in alvos:
+        photos = s.get("photos") or {}
+        for img in (s.get("images") or []):
+            if _sb_origem_manual(photos.get(img) or {}, "image_prompt"):
+                out.append(f"{s.get('id', '?')}/{img.rsplit('/', 1)[-1]}")
+    return out
 
 
 def _sb_trecho(texto: str, teto: int = 160) -> str:
@@ -562,21 +599,37 @@ def _sb_script_resumo(client: StudioClient, pid: str) -> str:
 
 
 def storyboard_script_wait(client: StudioClient, pid: str, timeout: int = 600, poll: float = 2.0,
-                           _sleep=time.sleep) -> str:
-    """Espera o job do roteiro (URL própria, `…/script/job`) e resume. `_sleep` injetável no teste."""
-    deadline = time.monotonic() + max(1, timeout)
-    while time.monotonic() < deadline:
+                           _sleep=time.sleep, _now=time.monotonic) -> str:
+    """Espera o job do roteiro (URL própria, `…/script/job`) e resume.
+
+    `_sleep` e `_now` são costuras injetáveis no teste (ADR-008): dirigir o relógio por parâmetro
+    evita monkeypatchar `time.monotonic` no processo inteiro.
+
+    `viu_running` existe pelo mesmo motivo que no `tools.job_wait`: sem ele, um `state: "idle"` —
+    job que nunca rodou, servidor reiniciado, ou um `storyboard_script` que voltou 409 e o agente
+    ignorou — cairia direto no resumo e anunciaria como "pronto" o `script.json` de OUTRA sessão,
+    que o agente então aplicaria às cenas."""
+    deadline = _now() + max(1, timeout)
+    viu_running = False
+    while _now() < deadline:
         try:
             g = client.get(f"/api/projects/{pid}/storyboard/script/job") or {}
         except StudioApiError as e:
             return str(e)
-        if g.get("state") == "running":
+        if not isinstance(g, dict):              # 2xx não-JSON: nunca levantar exceção crua (§6)
+            g = {}
+        state = g.get("state")
+        if state == "running":
+            viu_running = True
             _sleep(poll)
             continue
-        if g.get("state") == "error" or g.get("error"):
+        if state == "error" or g.get("error"):
             linhas = [x for x in (g.get("log") or []) if x]
             ultima = linhas[-1] if linhas else (g.get("error") or "erro desconhecido")
             return f"O roteiro falhou: {ultima}. Nada foi gravado; peça de novo."
+        if not viu_running and state != "done":
+            return ("Nenhuma geração de roteiro em andamento. Dispare com `storyboard_script` e "
+                    "depois chame `storyboard_script_wait`.")
         return _sb_script_resumo(client, pid)
     return (f"O roteiro ainda está rodando depois de {timeout} s. "
             "Chame `storyboard_script_wait` de novo.")
@@ -599,7 +652,7 @@ def storyboard_apply_script(client: StudioClient, pid: str, mode: str = "empty",
     sugeridas = [s for s in (script.get("scenes") or []) if isinstance(s, dict)]
     if not scenes:
         return "Nenhuma cena no storyboard para preencher."
-    com_texto = [s["id"] for s in scenes if (s.get("text") or "").strip()]
+    com_texto = [s.get("id", "?") for s in scenes if (s.get("text") or "").strip()]
     alvos = [(i, s) for i, s in enumerate(scenes)
              if i < len(sugeridas) and (mode == "replace" or not (s.get("text") or "").strip())]
     if not alvos:
@@ -607,6 +660,13 @@ def storyboard_apply_script(client: StudioClient, pid: str, mode: str = "empty",
                 "estão. Use mode=replace para sobrescrever.")
     detalhe = (f"{len(alvos)} cena(s) recebem o texto do roteiro; "
                + (f"com texto hoje: {', '.join(com_texto)}." if com_texto else "nenhuma cena tem texto hoje."))
+    # O `with_prompts` sobrescreveria também o prompt de imagem que o usuário escreveu À MÃO — e
+    # uma cena pode ter `text` vazio (logo, alvo em mode=empty) e prompts manuais nas fotos. Elas
+    # são PULADAS, como o `storyboard_keyframe_prompt` já faz, e a confirmação diz quais.
+    manuais = _sb_fotos_manuais(alvos) if with_prompts else []
+    if manuais:
+        detalhe += (f" {len(manuais)} foto(s) com prompt de imagem escrito à mão são preservadas: "
+                    f"{', '.join(manuais)}.")
     if ui.chat_id():
         ans = ui.confirm(client, f"Aplicar o roteiro a {len(alvos)} cena(s)? (mode={mode})", detalhe)
         if not ans.get("answered") or not ans.get("confirmed"):
@@ -626,6 +686,8 @@ def storyboard_apply_script(client: StudioClient, pid: str, mode: str = "empty",
             if k >= len(prompts) or not (prompts[k] or "").strip():
                 continue
             entry = dict(photos.get(img) or {})
+            if _sb_origem_manual(entry, "image_prompt"):
+                continue                         # texto do usuário não é sobrescrito por lote
             entry["image_prompt"] = prompts[k].strip()
             _sb_origin(entry, "image_prompt", "ia", script.get("preset"))
             photos[img] = entry
@@ -665,8 +727,13 @@ def storyboard_scene_attach(client: StudioClient, pid: str, scene: str,
                 "ou `storyboard_local_generate` para gerar de graça no motor local.")
     imgs = [{"id": c["id"], "thumb": f"/files/{pid}/{c['thumb']}", "label": c.get("prompt") or ""}
             for c in escolhidas if c.get("thumb")]
-    if ids:
-        pegas = [c for c in escolhidas if c.get("id") in ids]
+    # O caminho `ids` é o CAMINHO DE TERMINAL (FDD §5.16). Dentro de uma sessão de chat o agente
+    # já conhece os ids (de `storyboard_pick`), então aceitá-los ali deixaria o seletor visual a um
+    # argumento de ser contornado — e este é o único `PUT /scenes` que não passaria por nenhuma das
+    # duas cláusulas da invariante 8. Com chat, a escolha é SEMPRE do usuário (ADR-038).
+    if ids and not ui.chat_id():
+        # a ordem é a que o usuário pediu, não a da listagem: a primeira escolha vira a ★
+        pegas = [c for i in ids for c in escolhidas if c.get("id") == i]
         if not pegas:
             return ("Nenhum dos ids passados está entre as ideias escolhidas. Escolhidas: "
                     + ", ".join(c["id"] for c in escolhidas) + ".")
@@ -743,7 +810,9 @@ def storyboard_keyframe_prompt(client: StudioClient, pid: str, scene: str, image
             return (f"Mantido o {field} manual de {alvo['id']}/{nome}. Nada foi escrito. "
                     f"Sugestão da IA: \"{_sb_trecho(prompt)}\".")
     photo[field] = prompt
-    _sb_origin(photo, field, source, preset)
+    # `source` da resposta é do PRODUTOR (`claude`/`template`); `scenes.json` só aceita
+    # `ia`/`manual`/`template`. Sem a tradução, o caminho feliz gravava o texto sem origem alguma.
+    _sb_origin(photo, field, _sb_source(source), preset)
     photos = dict(alvo.get("photos") or {})
     photos[img] = photo
     alvo["photos"] = photos

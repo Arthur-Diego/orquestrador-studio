@@ -47,6 +47,7 @@ const SCRIPT_TARGET = "Nano Banana Pro";
 const SCRIPT_ACTION = "storyboard.script";
 /** Ação de preset do prompt de vídeo por foto (`settings.resolve_preset("motion", …)`). */
 const MOTION_ACTION = "motion";
+const KEYFRAME_ACTION = "storyboard.keyframe";
 const SCRIPT_COUNT_DEFAULT = 5;
 const SCRIPT_COUNT_MAX = 10;
 const SCRIPT_IDEA_IMAGES = 3;
@@ -468,6 +469,20 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     [presetDefaults, realismPresets, scriptPresetDefault],
   );
 
+  /**
+   * O preset a ANUNCIAR no `RealismField` de uma foto.
+   *
+   * A foto tem UM `preset` só, mas ele viaja para duas ações diferentes: `motion` no
+   * `POST /video-prompt` e `storyboard.keyframe` no `POST /image-prompt`. Quando as duas resolvem
+   * para o MESMO id, o rótulo pode nomeá-lo; quando divergem — o "(misto)" do bloco da campanha, ou
+   * alguém gravando `preset-config` por fora — nomear só o de `motion` afirmaria um preset que o
+   * `/image-prompt` não vai receber, exatamente o Risco 4 (§10). Aí o rótulo fica sem o nome.
+   */
+  const inheritedPhotoPreset = useCallback((): string | null => {
+    const motion = inheritedPreset(MOTION_ACTION);
+    return motion && motion === inheritedPreset(KEYFRAME_ACTION) ? motion : null;
+  }, [inheritedPreset]);
+
   // Boot / troca de projeto (o `onProject` do vanilla).
   useEffect(() => {
     let vivo = true;
@@ -622,7 +637,11 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
       while (pendingPayload.current) {
         const payload = pendingPayload.current;
         pendingPayload.current = null;
-        await putScenes(payload).catch(() => {});
+        // A frente inteira move a persistência do botão para o GESTO: engolir o erro faria o
+        // usuário ver a tela mudar e acreditar que gravou, com o disco intacto.
+        await putScenes(payload).catch((err: unknown) => {
+          toast(`${(err as Error).message} — não salvo; use “Salvar cenas”.`);
+        });
       }
     } finally {
       putBusy.current = false;
@@ -655,16 +674,37 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     }, PERSIST_DEBOUNCE_MS);
   }, [persist, cancelDebounce]);
 
+  /**
+   * Save EXPLÍCITO (botão, reordenar, aplicar roteiro): grava e reidrata a tela com a resposta.
+   *
+   * Entra na MESMA fila dos gestos (`putBusy`) e cancela o debounce antes de enfileirar. Sem isso
+   * ele disparava um `PUT` paralelo: se a resposta do save antigo chegasse por último, o
+   * `putScenesState`/`seedPhotos` reidratavam a tela com o estado PRÉ-gesto e a remoção sumia do
+   * disco e da tela ao mesmo tempo (§10 Risco 3).
+   */
   const saveScenesAndReseed = useCallback(
     async (sc: Scene[], ph: PhotoState) => {
-      const r = (await putScenes(buildPayload(sc, ph))) as { scenes: Scene[] };
-      putScenesState(r.scenes);
-      putPhotosState(seedPhotos(r.scenes));
-      await loadStatus();
-      refreshGuide();
-      return r;
+      cancelDebounce();
+      while (putBusy.current) await new Promise((r) => setTimeout(r, 0));
+      putBusy.current = true;
+      try {
+        // um gesto enfileirado enquanto esperávamos entra ANTES do save explícito
+        while (pendingPayload.current) {
+          const antes = pendingPayload.current;
+          pendingPayload.current = null;
+          await putScenes(antes).catch(() => {});
+        }
+        const r = (await putScenes(buildPayload(sc, ph))) as { scenes: Scene[] };
+        putScenesState(r.scenes);
+        putPhotosState(seedPhotos(r.scenes));
+        await loadStatus();
+        refreshGuide();
+        return r;
+      } finally {
+        putBusy.current = false;
+      }
     },
-    [putScenes, putScenesState, putPhotosState, loadStatus, refreshGuide],
+    [putScenes, putScenesState, putPhotosState, loadStatus, refreshGuide, cancelDebounce],
   );
 
   // ---------------- painel 01: ideias ----------------
@@ -710,10 +750,20 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   const pm = (sid: string, img: string): PhotoMeta =>
     photos[pkey(sid, img)] || EMPTY_PHOTO_META;
 
-  const updatePhoto = (sid: string, img: string, patch: Partial<PhotoMeta>) => {
+  /**
+   * Muda um campo da foto e PERSISTE — `now` para escolha (o seletor de preset), debounce para
+   * digitação (`video_desc`). Sem isso, escolher "(sem preset)" ou digitar a descrição só vivia no
+   * DOM até algum outro gesto disparar um `PUT` por acaso: recarregar a tela perdia a escolha,
+   * contra o fluxo 3 (itens 3-5) e o critério B4.
+   */
+  const updatePhoto = (sid: string, img: string, patch: Partial<PhotoMeta>,
+                       modo: "now" | "debounce" = "now") => {
     const k = pkey(sid, img);
     const cur = photosRef.current[k] || EMPTY_PHOTO_META;
-    putPhotosState({ ...photosRef.current, [k]: { ...cur, ...patch } });
+    const next = { ...photosRef.current, [k]: { ...cur, ...patch } };
+    putPhotosState(next);
+    if (modo === "now") persist(scenesRef.current, next);
+    else persistDebounced();
   };
 
   /**
@@ -1030,7 +1080,10 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
       toast("Job concluído (sem vídeo).");
       return;
     }
-    const m = pm(sid, img);
+    // A closure deste `done` é de MINUTOS atrás (o job de vídeo é longo): ler `photos` do state
+    // aqui reverteria tudo o que o usuário digitou na foto enquanto o vídeo gerava — o antipadrão
+    // exato da §10 Risco 3. A ref é a única fonte válida.
+    const m = photosRef.current[pkey(sid, img)] || EMPTY_PHOTO_META;
     const nextPhotos: PhotoState = {
       ...photosRef.current,
       [pkey(sid, img)]: { ...m, videos: (m.videos || []).concat(j.video) },
@@ -1044,7 +1097,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
 
   async function saveScenesBtn() {
     try {
-      const r = await saveScenesAndReseed(scenes, photos);
+      const r = await saveScenesAndReseed(scenesRef.current, photosRef.current);
       toast(`${r.scenes.length} cenas salvas · storyboard.md atualizado`);
     } catch (err) {
       toast((err as Error).message);
@@ -1064,9 +1117,9 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   }
 
   async function saveReorder(orderIdx: number[]) {
-    const reordered = orderIdx.map((idx) => scenes[idx]).filter((s): s is Scene => Boolean(s));
+    const reordered = orderIdx.map((idx) => scenesRef.current[idx]).filter((s): s is Scene => Boolean(s));
     try {
-      await saveScenesAndReseed(reordered, photos);
+      await saveScenesAndReseed(reordered, photosRef.current);
       setModal(null);
       toast("Ordem salva · storyboard.md atualizado");
     } catch (err) {
@@ -1393,13 +1446,26 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
 
   // ---------------- arrastar e soltar (`[extensão]` critério B6) ----------------
   /**
-   * O que está no `dataTransfer`. Só os DOIS MIME internos contam: um `drop` de arquivo do sistema
-   * operacional chega com `Files` e devolve `null` aqui, então a cena o ignora por completo.
+   * O alvo aceita este arrasto? Decide SÓ pelos `types`, nunca pelo conteúdo.
+   *
+   * Durante `dragenter`/`dragover` o drag data store do HTML5 está em *protected mode*: `types` é
+   * legível, mas `getData()` devolve `""` em Chrome, Firefox e Safari. Se o `dragover` perguntasse
+   * pelo conteúdo, o `preventDefault()` nunca aconteceria, o alvo não viraria drop target válido e
+   * o evento `drop` **jamais dispararia** — o critério B6 inteiro só funcionaria no jsdom, onde o
+   * `DataTransfer` é um fake que sempre devolve o dado.
+   *
+   * Um `drop` de arquivo do sistema operacional chega com `Files` e é recusado aqui.
+   */
+  function aceitaArrasto(dt: DataTransfer | null): boolean {
+    const tipos = [...(dt?.types || [])];
+    return tipos.includes(DND_IDEA) || tipos.includes(DND_PHOTO);
+  }
+
+  /**
+   * O que está no `dataTransfer`. Só vale no `drop`, quando o conteúdo é legível de novo.
    */
   function lerArrasto(dt: DataTransfer | null): { idea?: string; photo?: PhotoDrag } | null {
-    if (!dt) return null;
-    const tipos = [...(dt.types || [])];
-    if (tipos.length && !tipos.includes(DND_IDEA) && !tipos.includes(DND_PHOTO)) return null;
+    if (!dt || !aceitaArrasto(dt)) return null;
     const idea = dt.getData(DND_IDEA);
     if (idea) return { idea };
     const bruto = dt.getData(DND_PHOTO);
@@ -1420,7 +1486,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
 
   /** `dragover` sobre uma cena: só aceita (e pinta `.dragover`) o que a cena sabe receber. */
   const onSceneDragOver = (i: number) => (e: DragEvent) => {
-    if (!lerArrasto(e.dataTransfer)) return;
+    if (!aceitaArrasto(e.dataTransfer)) return;   // `dragover`: só os TIPOS são legíveis
     e.preventDefault();
     setDragOverScene(i);
   };
@@ -2020,7 +2086,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                       fileUrl={ctx.files(img)}
                       filesUrl={(rel) => ctx.files(rel)}
                       realismPresets={realismPresets}
-                      inheritedPreset={inheritedPreset(MOTION_ACTION)}
+                      inheritedPreset={inheritedPhotoPreset()}
                       isDragging={dragging?.photo?.sid === sid && dragging?.photo?.img === img}
                       isDragOver={dragOverKey === pkey(sid, img)}
                       moveTargets={scenes
@@ -2030,7 +2096,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                         image_prompt: suggestions[skey(sid, img, "image_prompt")],
                         video_prompt: suggestions[skey(sid, img, "video_prompt")],
                       }}
-                      onDesc={(v) => updatePhoto(sid, img, { desc: v })}
+                      onDesc={(v) => updatePhoto(sid, img, { desc: v }, "debounce")}
                       onPreset={(v) => updatePhoto(sid, img, { preset: v })}
                       onImgPrompt={(v) => typePrompt(sid, img, "image_prompt", v)}
                       onVidPrompt={(v) => typePrompt(sid, img, "video_prompt", v)}
@@ -2053,7 +2119,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                       }}
                       onDragEndPhoto={limparArrasto}
                       onDragOverPhoto={(e) => {
-                        if (!lerArrasto(e.dataTransfer)) return;
+                        if (!aceitaArrasto(e.dataTransfer)) return;   // `dragover`: só os TIPOS
                         e.preventDefault();
                         setDragOverKey(pkey(sid, img));
                       }}
@@ -2201,10 +2267,10 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           models={models}
           modelDefaults={videoModelDefaults}
           realismPresets={realismPresets}
-          inheritedPreset={inheritedPreset(MOTION_ACTION)}
+          inheritedPreset={inheritedPhotoPreset()}
           filesUrl={(rel) => ctx.files(rel)}
           suggestion={suggestions[skey(modal.sid, modal.img, "video_prompt")]}
-          onDesc={(v) => updatePhoto(modal.sid, modal.img, { desc: v })}
+          onDesc={(v) => updatePhoto(modal.sid, modal.img, { desc: v }, "debounce")}
           onPreset={(v) => updatePhoto(modal.sid, modal.img, { preset: v })}
           onVidPrompt={(v) => typePrompt(modal.sid, modal.img, "video_prompt", v)}
           onDismissSuggestion={() => dismissSuggestion(modal.sid, modal.img, "video_prompt")}
@@ -2216,7 +2282,10 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
             // prompt escrito à mão e nunca gerado tem de animar igual. Só o campo VAZIO bloqueia.
             const m = photosRef.current[pkey(modal.sid, modal.img)] || EMPTY_PHOTO_META;
             const prompt = (m.prompt || "").trim();
-            if (!prompt) return toast("Escreva ou gere o prompt de vídeo desta foto.");
+            // A frase MANTÉM a substring "prompt de vídeo primeiro" de propósito: o caso
+            // congelado C-STORYBOARD-30 (`scripts/qa/cenarios/storyboard.py:730`) espera por ela.
+            // O "Escreva ou" é o que mudou de verdade nesta frente — o campo agora é aberto.
+            if (!prompt) return toast("Escreva ou gere o prompt de vídeo primeiro.");
             if (opts.mode === "start_end" && !opts.endImage) return toast("Escolha a 2ª imagem (end frame).");
             const sid = modal.sid;
             const img = modal.img;
