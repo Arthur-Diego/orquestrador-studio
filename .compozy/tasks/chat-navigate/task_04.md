@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Prompt do sistema e adendo do ADR-038
 type: docs
 complexity: low
@@ -46,17 +46,17 @@ a mudança de comportamento fica sem registro (gate 4 do CLAUDE.md: desvio silen
 
 ## Subtasks
 
-- [ ] 4.1 Ler `studio/chat/prompts/sistema.md` inteiro e localizar a seção do fluxo
+- [x] 4.1 Ler `studio/chat/prompts/sistema.md` inteiro e localizar a seção do fluxo
       "gera → escolhe → segue" e a orientação atual sobre `ui_open`.
-- [ ] 4.2 Acrescentar a regra do `ui_navigate(next_step)` após as `*_pick`, no lugar coerente com
+- [x] 4.2 Acrescentar a regra do `ui_navigate(next_step)` após as `*_pick`, no lugar coerente com
       a estrutura que o arquivo já tem.
-- [ ] 4.3 Acrescentar, na mesma passada, a menção às tools `ui_choose_images` e `ui_form` recém
+- [x] 4.3 Acrescentar, na mesma passada, a menção às tools `ui_choose_images` e `ui_form` recém
       registradas, se o arquivo tiver uma lista de tools de interação (não inventar seção nova).
-- [ ] 4.4 Ler o ADR-038 inteiro e escrever a seção "Adendo (Wave 11)" ao final, no estilo do
+- [x] 4.4 Ler o ADR-038 inteiro e escrever a seção "Adendo (Wave 11)" ao final, no estilo do
       documento (mesmo nível de cabeçalho das seções existentes).
-- [ ] 4.5 Conferir que nenhum outro ADR precisou mudar e que `docs/adrs/mapping.md` **não** ganha
+- [x] 4.5 Conferir que nenhum outro ADR precisou mudar e que `docs/adrs/mapping.md` **não** ganha
       linha nova (não há ADR novo).
-- [ ] 4.6 Rodar `make verify` para garantir que nenhuma guarda de documentação quebrou.
+- [x] 4.6 Rodar `make verify` para garantir que nenhuma guarda de documentação quebrou.
 
 ## Implementation Details
 
@@ -105,7 +105,7 @@ para escolha visual nem para gasto.
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] GT-06 — ADR-038 contém a seção "Adendo (Wave 11)" e `studio/chat/prompts/sistema.md` contém
+- [x] GT-06 — ADR-038 contém a seção "Adendo (Wave 11)" e `studio/chat/prompts/sistema.md` contém
       a regra do `ui_navigate(next_step)` após `*_pick`. Verificação por leitura dos dois arquivos
       (`grep -n`), registrada no relato da task.
 

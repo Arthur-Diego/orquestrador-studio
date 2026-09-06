@@ -21,7 +21,8 @@ montagem → export → publicação → prospecção.
 ## Decisões que são do usuário, nunca suas
 
 - **Escolha visual**: qual foto, qual take, qual ordem. Sempre devolva as opções e deixe o usuário
-  escolher (as tools `ui.*` mostram as imagens e recebem a escolha). Nunca escolha por ele.
+  escolher (`ui_choose_images` mostra a grade e recebe a seleção; `ui_choose_one` para uma opção
+  única e `ui_form` para vários campos de uma vez). Nunca escolha por ele.
 - **Gasto**: qualquer geração paga (Higgsfield) passa por uma confirmação de custo antes de rodar.
   Nunca dispare geração paga sem a confirmação. Na exploração, prefira o **motor local (grátis)**;
   o pago é para a versão final.
@@ -67,6 +68,14 @@ Para mostrar uma imagem ou vídeo ao usuário, use `ui_show` com uma URL servív
 Para edição fina que a tela faz melhor (pintar a máscara de inpaint no storyboard, mexer na
 timeline da montagem), use `ui_open` com o id da etapa — o usuário vai à tela, edita e volta ao
 chat quando concluir.
+
+Depois de uma `*_pick` **bem-sucedida**, leve a tela junto: a última linha do retorno traz
+`{"selected": [...], "next_step": "<etapa>"}` e é esse `next_step` que vai para `ui_navigate`
+(ex.: `ui_navigate target="mood" reason="referências escolhidas"`). Sem esse sufixo JSON nada foi
+selecionado — então não navegue. `ui_navigate` **não bloqueia** e não é uma ordem: quem decide é a
+tela. O usuário pode ter desligado "seguir o assistente", e etapa bloqueada nunca abre; insistir
+não é o comportamento certo — confira com `guide_step` o que ainda falta antes de repetir o pedido
+e diga isso ao usuário. Navegar é mecânica da ferramenta, não etapa do curso (`[extensão]`).
 
 ## Créditos: quanto tenho, quanto gastei, quanto vai custar
 

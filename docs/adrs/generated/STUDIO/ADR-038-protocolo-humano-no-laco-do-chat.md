@@ -82,3 +82,52 @@ linhas do `CostSheet` das telas pela mesma função pura (`frontend/src/ui/costR
 
 Coerente com esta ADR, o alerta de **saldo insuficiente** apenas avisa: o botão de aprovar continua
 habilitado, porque quem decide gastar é o usuário.
+
+## Adendo (Wave 11) — o agente pode mover a tela; escolher e gastar continuam sendo do usuário
+
+Card #88 · `ADH-OS-20260906-10` · FDD `docs/domains/chat/features/chat-navigate-fdd.md`.
+
+A decisão original deixou duas lacunas que a Wave 11 fecha. A primeira: sem uma tool de navegação,
+o agente terminava uma etapa e o usuário ficava com a tela parada na etapa anterior, tendo de achar
+a próxima no menu — o método do curso é uma sequência, e a ferramenta não a acompanhava. A segunda
+está registrada acima como custo: "telas que não implementarem [conclusão] apenas abrem e o agente
+pede aviso manual". Nenhuma tela publica conclusão, então todo `open` esperava um clique só para
+dizer "terminei" algo que o guia do backend já sabia.
+
+Fica registrado, **sem revogar nada da decisão acima**:
+
+1. **Navegação automática pelo chat é permitida.** A tool `ui_navigate(target, reason)` emite um
+   evento `{"kind": "navigate", "target", "reason"}` pela ponte e **não bloqueia** — não é um `ask`,
+   não cria Future, não espera resposta. O agente pede; quem decide se a tela troca é o dock. O uso
+   canônico é depois de uma `*_pick` bem-sucedida, com o `next_step` que ela devolveu no sufixo JSON.
+2. **Escolha visual e confirmação de gasto continuam exigindo gesto humano, sem exceção.** Este
+   adendo move a tela; ele não escolhe imagem, não ordena frames e não dispara geração paga. Os
+   itens 1 e 3 da decisão seguem valendo na íntegra: `choose_images`/`choose_one`/`form` continuam
+   pausando o turno, e nenhuma tool paga executa sem `confirm_token` de `ui.confirm_cost` (ADR-016).
+   Navegar não é uma decisão do usuário sendo tomada pelo agente — é a mesma decisão, mostrada na
+   tela certa.
+3. **"Concluir" um `open` pode ser derivado do guia**, em vez de exigir um `ui.done` publicado pela
+   tela, sob três limites cumulativos: só na **transição** para `done` (um `open` cuja etapa já
+   estava `done` quando o cartão nasceu nunca é auto-respondido — o agente pediu edição fina de algo
+   completo, e essa decisão continua do usuário); só nas telas **opt-in** `refs`, `mood` e `base`;
+   e sempre pelo guia do backend, nunca por prontidão calculada no cliente (ADR-010 a). A resposta
+   automática viaja marcada (`{done: true, auto: true}`) e o cartão diz que foi automática.
+4. **O usuário mantém veto.** O toggle "seguir o assistente" no dock (ligado por padrão, persistido
+   em `localStorage`) desliga a navegação automática a qualquer momento; desligado, nenhum evento do
+   chat altera a rota e o cartão vira um botão "Ir agora". Etapa bloqueada nunca abre, mesmo com o
+   toggle ligado: o dock recusa em voz alta e explica o que falta.
+
+**Pendências levadas ao gate em lote da Wave 11 (card #88) e aceitas ali** — registro para
+auditoria, conforme o gate 4 do `CLAUDE.md`:
+
+- **P1 — flexibilização deste ADR.** O `done` automático faz um `ask` ser respondido **sem gesto
+  humano**, o que contraria a leitura literal do item 2 da decisão (`open` "navega e espera
+  `ui.done`"). Aceita nos limites do ponto 3 acima. Escolha visual e gasto seguem exigindo clique,
+  sem exceção.
+- **P2 — default do toggle.** "Seguir o assistente" nasce **ligado**: a tela pode trocar sozinha na
+  primeira vez que o usuário usar o chat, antes de ele saber que o toggle existe. Aceita como está;
+  inverter o default é trocar uma constante no dock, não um novo ADR.
+
+**Fidelidade ao curso.** Navegar é mecânica da ferramenta, não etapa do método: nenhuma aula muda de
+comportamento, nenhuma etapa nova nasce daqui. Tudo neste adendo é `[extensão]` (ADR-004), e o
+prompt do sistema (`studio/chat/prompts/sistema.md`) descreve a regra nesses termos.
