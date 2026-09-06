@@ -7,6 +7,7 @@ subprocess do MCP e pelo browser. Tudo no mesmo processo (ADR-001) — sem segun
 from __future__ import annotations
 
 import asyncio
+import os
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -15,6 +16,10 @@ from . import runtime, sessions
 from .uibridge import bridge
 
 router = APIRouter()
+
+#: Teto de conversas gerando AO MESMO TEMPO (abas paralelas, Onda C). Protege GPU/assinatura/memória
+#: numa máquina local. Uma aba a mais espera o usuário liberar uma; não há fila automática.
+MAX_ACTIVE = int(os.environ.get("STUDIO_CHAT_MAX_ACTIVE", "3"))
 
 
 class NewChat(BaseModel):
@@ -188,6 +193,12 @@ async def _handle_user(chat_id: str, msg: dict) -> None:
     if running and not running.done():
         await manager.push(chat_id, {"kind": "notify", "level": "warn",
                                      "text": "Ainda estou respondendo o turno anterior desta aba."})
+        return
+    ativos = sum(1 for cid, t in _turns.items() if cid != chat_id and not t.done())
+    if ativos >= MAX_ACTIVE:
+        await manager.push(chat_id, {"kind": "notify", "level": "warn",
+                                     "text": f"Já há {ativos} conversas gerando ao mesmo tempo (limite {MAX_ACTIVE}). "
+                                             "Espere uma terminar e envie de novo."})
         return
     text = (msg.get("text") or "").strip()
     if not text:

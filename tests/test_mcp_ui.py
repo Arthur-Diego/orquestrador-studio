@@ -31,6 +31,15 @@ def test_com_chat_id_posta_no_ask(monkeypatch):
     assert body["payload"]["widget"] == "confirm_cost" and body["payload"]["credits"] == 10
 
 
+def test_open_screen_posta_widget_open(monkeypatch):
+    monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
+    cli = Fake({"answered": True, "done": True})
+    ans = ui.open_screen(cli, "storyboard", detail="pinte a máscara")
+    assert ans == {"answered": True, "done": True}
+    _, body = cli.posts[0]
+    assert body["payload"]["widget"] == "open" and body["payload"]["target"] == "storyboard"
+
+
 def test_notify_usa_emit(monkeypatch):
     monkeypatch.setenv("STUDIO_CHAT_ID", "cid")
     cli = Fake()

@@ -60,3 +60,6 @@ pagas (`*_generate`) já pedem a confirmação de custo antes de gastar — não
 Regra de ouro do custo: na exploração use o caminho **grátis** (motor local no storyboard); o
 **pago** (Higgsfield) é para a versão final, e sempre com a confirmação de custo aceita.
 Para mostrar uma imagem ou vídeo ao usuário, use `ui_show` com uma URL servível (`/files/<pid>/…`).
+Para edição fina que a tela faz melhor (pintar a máscara de inpaint no storyboard, mexer na
+timeline da montagem), use `ui_open` com o id da etapa — o usuário vai à tela, edita e volta ao
+chat quando concluir.

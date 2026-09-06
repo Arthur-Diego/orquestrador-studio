@@ -65,6 +65,18 @@ def confirm_cost(client: StudioClient, action: str, credits: Any, model: str, de
                          "action": action, "credits": credits, "model": model, "detail": detail})
 
 
+def open_screen(client: StudioClient, target: str, title: str = "", detail: str = "",
+                label: str = "", params: dict | None = None) -> dict:
+    """Pede ao usuário para abrir uma tela do Studio e concluir a edição lá (ADR-038, Onda C).
+
+    `target` é o id da etapa/rota (ex.: "storyboard"); o dock navega e mostra "Concluí"/"Pular".
+    Retorna {answered, done|skipped}.
+    """
+    return _ask(client, {"widget": "open", "title": title or f"Abrir a tela {target}",
+                         "target": target, "detail": detail, "label": label or "Abrir a tela",
+                         "params": params or {}})
+
+
 # ---------- cartões que não bloqueiam ----------
 def notify(client: StudioClient, text: str, level: str = "info") -> str:
     _emit(client, {"kind": "notify", "text": text, "level": level})
