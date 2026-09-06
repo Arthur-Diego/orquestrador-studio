@@ -82,6 +82,17 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "shell ou do design system é tocada. ADR-002/004/016/033/037, ADR-010/031/032.",
         ("frontend/", "studio/web/"),
     ),
+    "feature/adh-os-20260906-07-creditos-actions-catalog": (
+        "Correção do catálogo de ações de crédito (ADR-016), card #92 / ADH-OS-20260906-07: quatro "
+        "gerações reais gravavam no livro-caixa com chaves fora de `settings.ACTIONS`. O trabalho é "
+        "quase todo fora do núcleo (`studio/common/{settings,pricing}.py`, `studio/storyboard/"
+        "service.py`, testes). Núcleo tocado: `frontend/` SÓ no recorte `frontend/src/areas/"
+        "creditos/` (rótulo 'Biblioteca' para gasto sem campanha e guarda de custo nulo na tabela) "
+        "e o bundle `studio/web/dist/`, obrigatório pela guarda de drift. Nenhuma rota nem modelo "
+        "Pydantic muda, logo `frontend/src/api/schema.ts` fica intocado; nenhuma etapa é tocada. "
+        "ADR-016, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-03-chat-markdown": (
         "`[extensão]` Wave 11 · F01 — markdown na bolha do assistente do dock de chat, card #85 "
         "(https://trello.com/c/lqrj73sV), FDD `docs/domains/chat/features/chat-markdown-fdd.md`. "

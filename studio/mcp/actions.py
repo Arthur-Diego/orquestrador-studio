@@ -9,23 +9,96 @@ Dois padrões estruturantes:
 """
 from __future__ import annotations
 
+import json
 import time
+from collections.abc import Callable
 from typing import Any
 
 from . import ui
 from .client import StudioApiError, StudioClient
 
+#: Chaves de lista aceitas quando a rota de candidatas devolve um **dict** em vez de uma lista.
+#: Os shapes são diferentes por domínio, por design (base publica `{candidates, final}`, storyboard
+#: publica `{ideas}`, refs/mood/personagem publicam lista pura) — o consumidor é que é tolerante,
+#: as rotas não mudam (ADR-037: o MCP é cliente da API, a correção mora no cliente).
+CAND_KEYS = ("candidates", "ideas", "items")
+
+#: Cadeia de fallback do rótulo da grade, aplicada depois da chave preferida da etapa. Sem ela,
+#: base, refs e storyboard exibiriam legenda vazia (só mood tem `batch`).
+LABEL_KEYS = ("batch", "kind", "term", "label", "name")
+LABEL_MAX = 60
+
 
 # ---------- helpers ----------
-def _images_for(pid: str, step: str, cands: list[dict], label_key: str = "batch") -> list[dict]:
+def _candidate_rows(payload: Any) -> list[dict]:
+    """Normaliza o shape da resposta de candidatas para uma lista de linhas `dict`.
+
+    Lista devolve as linhas que são `dict`; dict devolve a primeira lista entre `CAND_KEYS`;
+    qualquer outra coisa devolve `[]`. NUNCA levanta: shape inesperado vira "sem candidatas",
+    que a tool traduz em texto acionável.
+    """
+    rows: Any = payload
+    if isinstance(payload, dict):
+        rows = next((v for k in CAND_KEYS if isinstance(v := payload.get(k), list)), None)
+    if not isinstance(rows, list):
+        return []
+    return [c for c in rows if isinstance(c, dict)]
+
+
+def _media_url(prefix: str, step: str, thumb: str) -> str:
+    """URL servível da thumb. `thumb` já absoluto passa direto; já prefixado com `<step>/` (base e
+    storyboard, relativos à raiz do projeto) só recebe o prefixo; relativo recebe o caminho inteiro.
+    """
+    if thumb.startswith("/") or thumb.startswith("http"):
+        return thumb
+    if thumb.startswith(f"{step}/"):
+        return f"{prefix}/{thumb}"
+    return f"{prefix}/{step}/candidates/{thumb}"
+
+
+def _label(c: dict, label_key: str) -> str:
+    """Legenda da grade: a chave preferida da etapa, a cadeia de fallback e, por último, o prompt.
+    Truncada, porque a legenda fica sob a miniatura e o prompt de storyboard é uma frase inteira."""
+    for k in (label_key, *LABEL_KEYS, "prompt"):
+        v = c.get(k)
+        if isinstance(v, str) and v.strip():
+            texto = v.strip()
+            return texto if len(texto) <= LABEL_MAX else texto[:LABEL_MAX - 1] + "…"
+    return ""
+
+
+def _images_for(pid: str, step: str, cands: Any, label_key: str = "batch") -> list[dict]:
+    """Payload de `ui.choose_images` a partir de qualquer shape publicado pelas rotas de candidatas."""
     out = []
-    for c in cands:
+    for c in _candidate_rows(cands):
         thumb = c.get("thumb")
-        if not thumb:
+        cid = c.get("id")
+        if not thumb or not isinstance(thumb, str) or not cid:
             continue
-        out.append({"id": c["id"], "thumb": f"/files/{pid}/{step}/candidates/{thumb}",
-                    "label": c.get(label_key) or c.get("name") or ""})
+        out.append({"id": cid, "thumb": _media_url(f"/files/{pid}", step, thumb),
+                    "label": _label(c, label_key)})
     return out
+
+
+def _next_step(client: StudioClient, pid: str) -> str | None:
+    """Próxima etapa **segundo o backend** (`current` do guia). Nunca calculada aqui (ADR-010 a);
+    qualquer falha de leitura degrada para `None` — o dado é enriquecimento, não fluxo."""
+    try:
+        guide = client.get(f"/api/projects/{pid}/guide")
+    except StudioApiError:
+        return None
+    current = guide.get("current") if isinstance(guide, dict) else None
+    return current if isinstance(current, str) else None
+
+
+def _result_json(selected: list[str], next_step: str | None) -> str:
+    """Sufixo maquinalmente legível do retorno das `*_pick` (contrato consumido pelo chat).
+
+    Sempre a ÚLTIMA linha, sempre começando por `{"selected":`, emitido só quando a seleção foi
+    de fato gravada — a ausência do sufixo significa "nada foi selecionado".
+    """
+    return json.dumps({"selected": list(selected), "next_step": next_step},
+                      ensure_ascii=False, separators=(", ", ": "))
 
 
 def _credits(cost: dict) -> Any:
@@ -59,28 +132,38 @@ def _paid(client: StudioClient, *, step: str, cost_path: str, cost_body: dict, g
 
 
 def _pick(client: StudioClient, *, pid: str, step: str, cands_path: str, select_path: str,
-          title: str, minimum: int, maximum: int | None, select_body) -> str:
+          title: str, minimum: int, maximum: int | None, select_body,
+          cands_params: dict | None = None, label_key: str = "batch",
+          empty_text: str | None = None, ok_text: Callable[[list[str]], str] | None = None,
+          no_ui_text: str | None = None, no_answer_text: str | None = None) -> str:
+    """Fluxo único das `*_pick` de etapa: busca candidatas, mostra a grade, aplica a seleção.
+
+    Os textos são parametrizáveis para que cada etapa preserve a frase que já usa hoje; o sufixo
+    JSON só sai no caminho em que o `select` gravou.
+    """
     try:
-        cands = client.get(cands_path) or []
+        payload = client.get(cands_path, cands_params)
     except StudioApiError as e:
         return str(e)
-    imgs = _images_for(pid, step, cands)
+    imgs = _images_for(pid, step, payload, label_key)
     if not imgs:
-        return f"Nenhuma candidata na etapa {step} ainda — gere ou importe antes de escolher."
+        return empty_text or f"Nenhuma candidata na etapa {step} ainda — gere ou importe antes de escolher."
     ans = ui.choose_images(client, title, imgs, minimum=minimum, maximum=maximum)
     if ans.get("no_ui"):
-        return ("Sem interface para escolher aqui. Candidatas disponíveis: "
-                + ", ".join(i["id"] for i in imgs) + ". Diga quais escolher.")
+        return no_ui_text.format(ids=", ".join(i["id"] for i in imgs)) if no_ui_text else (
+            "Sem interface para escolher aqui. Candidatas disponíveis: "
+            + ", ".join(i["id"] for i in imgs) + ". Diga quais escolher.")
     if not ans.get("answered"):
-        return "O usuário não escolheu (sem resposta). Você pode perguntar de novo."
+        return no_answer_text or "O usuário não escolheu (sem resposta). Você pode perguntar de novo."
     ids = ans.get("selected") or []
     if not ids:
-        return "O usuário não selecionou nenhuma imagem."
+        return no_answer_text or "O usuário não selecionou nenhuma imagem."
     try:
         client.post(select_path, select_body(ids))
     except StudioApiError as e:
         return str(e)
-    return f"{len(ids)} imagem(ns) selecionada(s) e salva(s) na etapa {step}."
+    texto = ok_text(ids) if ok_text else f"{len(ids)} imagem(ns) selecionada(s) e salva(s) na etapa {step}."
+    return f"{texto}\n{_result_json(ids, _next_step(client, pid))}"
 
 
 # ---------- 1 · Referências ----------
@@ -102,7 +185,7 @@ def refs_pick(client: StudioClient, pid: str) -> str:
     return _pick(client, pid=pid, step="refs", cands_path=f"/api/projects/{pid}/refs/candidates",
                  select_path=f"/api/projects/{pid}/refs/select",
                  title="Escolha as referências que você gosta", minimum=1, maximum=None,
-                 select_body=lambda ids: {"ids": ids, "notes": {}})
+                 select_body=lambda ids: {"ids": ids, "notes": {}}, label_key="term")
 
 
 # ---------- 2 · Mood board ----------
@@ -158,21 +241,17 @@ def base_generate(client: StudioClient, pid: str, kind: str = "situation", promp
 
 
 def base_pick(client: StudioClient, pid: str, note: str = "") -> str:
-    # a base final é UMA imagem; select da base recebe {id, note}
-    try:
-        cands = client.get(f"/api/projects/{pid}/base/candidates") or []
-    except StudioApiError as e:
-        return str(e)
-    imgs = _images_for(pid, "base", cands)
-    if not imgs:
-        return "Nenhuma candidata de base ainda — gere com `base_generate` antes."
-    ans = ui.choose_images(client, "Escolha a imagem base final", imgs, minimum=1, maximum=1)
-    if ans.get("no_ui"):
-        return "Sem interface aqui. Candidatas: " + ", ".join(i["id"] for i in imgs) + ". Diga qual escolher."
-    if not ans.get("answered") or not ans.get("selected"):
-        return "O usuário não escolheu a base."
-    client.post(f"/api/projects/{pid}/base/select", {"id": ans["selected"][0], "note": note})
-    return "Imagem base escolhida e salva."
+    # a base final é UMA imagem; select da base recebe {id, note}. `GET /base/candidates` devolve
+    # um DICT (`{candidates, final}`) e a `thumb` já vem prefixada com `base/` — os dois casos são
+    # tratados pelos helpers compartilhados, e é por isso que esta tool não tem laço próprio.
+    return _pick(client, pid=pid, step="base", cands_path=f"/api/projects/{pid}/base/candidates",
+                 select_path=f"/api/projects/{pid}/base/select",
+                 title="Escolha a imagem base final", minimum=1, maximum=1,
+                 select_body=lambda ids: {"id": ids[0], "note": note}, label_key="kind",
+                 empty_text="Nenhuma candidata de base ainda — gere com `base_generate` antes.",
+                 ok_text=lambda ids: "Imagem base escolhida e salva.",
+                 no_ui_text="Sem interface aqui. Candidatas: {ids}. Diga qual escolher.",
+                 no_answer_text="O usuário não escolheu a base.")
 
 
 # ---------- 4 · Storyboard (motor local grátis + escolha) ----------
@@ -192,6 +271,8 @@ def storyboard_local_generate(client: StudioClient, pid: str, prompt: str, count
 
 
 def storyboard_pick(client: StudioClient, pid: str) -> str:
+    # `GET /storyboard/candidates` devolve `{"ideas": [...]}` (chave `ideas`, não `candidates`) e a
+    # `thumb` já vem prefixada com `storyboard/` — ambos tratados por `_candidate_rows`/`_media_url`.
     return _pick(client, pid=pid, step="storyboard", cands_path=f"/api/projects/{pid}/storyboard/candidates",
                  select_path=f"/api/projects/{pid}/storyboard/candidates/select",
                  title="Escolha os keyframes do storyboard", minimum=1, maximum=None,
@@ -354,11 +435,14 @@ def portfolio(client: StudioClient) -> str:
 
 
 # ---------- Personagem e identidade (ADR-039) ----------
-def _char_images(cid: str, step: str, cands: list[dict]) -> list[dict]:
+def _char_images(cid: str, step: str, cands: Any) -> list[dict]:
+    """Mesmo helper de URL das etapas, com base `/cfiles/{cid}` (mount da biblioteca, ADR-039).
+    A legenda continua sendo `view`/`name`: personagem não tem lote nem termo de busca."""
     out = []
-    for c in cands:
-        if c.get("thumb"):
-            out.append({"id": c["id"], "thumb": f"/cfiles/{cid}/{step}/candidates/{c['thumb']}",
+    for c in _candidate_rows(cands):
+        thumb = c.get("thumb")
+        if thumb and isinstance(thumb, str) and c.get("id"):
+            out.append({"id": c["id"], "thumb": _media_url(f"/cfiles/{cid}", step, thumb),
                         "label": c.get("view") or c.get("name") or ""})
     return out
 
@@ -444,8 +528,15 @@ def character_pick(client: StudioClient, cid: str) -> str:
         return "Sem interface aqui. Variações: " + ", ".join(i["id"] for i in imgs) + ". Diga qual fixar."
     if not ans.get("answered") or not ans.get("selected"):
         return "O usuário não escolheu o personagem."
-    meta = client.post(f"/api/characters/{cid}/lock", {"candidate_id": ans["selected"][0], "step": "explore"})
-    return f"Personagem fixado. Descritor de identidade:\n{meta.get('descriptor', '(gerado)')}"
+    escolhido = ans["selected"][0]
+    try:
+        meta = client.post(f"/api/characters/{cid}/lock", {"candidate_id": escolhido, "step": "explore"}) or {}
+    except StudioApiError as e:
+        return str(e)   # mesma regra dos picks de etapa: erro vira texto acionável, sem sufixo JSON
+    # `next_step` é `null`: personagem é biblioteca global (ADR-039), fora da cadeia das 10 etapas —
+    # a chave fica no sufixo para o shape ser único nas 5 `*_pick`.
+    return (f"Personagem fixado. Descritor de identidade:\n{meta.get('descriptor', '(gerado)')}"
+            f"\n{_result_json([escolhido], None)}")
 
 
 def character_sheet(client: StudioClient, cid: str) -> str:

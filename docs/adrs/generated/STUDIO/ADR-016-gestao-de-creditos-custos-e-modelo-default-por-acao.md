@@ -77,3 +77,44 @@ do produto e é marcada `[extensão]` no código e na documentação.
   best-effort (nunca derruba a geração que já aconteceu).
 - **Fidelidade ao curso:** tudo aqui é `[extensão]` da aula 008; nenhuma etapa do curso muda de
   comportamento — só ganha custo visível e modelo default configurável.
+
+## Adendo (Wave 11) — o catálogo é o contrato entre quem grava e quem configura
+
+Card #92 · `ADH-OS-20260906-07` · FDD `docs/domains/creditos/features/creditos-actions-catalog-fdd.md`.
+
+A decisão original criou o catálogo `settings.ACTIONS` com **três papéis simultâneos** (universo de
+validação, fonte do painel admin e vocabulário do livro-caixa), mas nada garantia que os três
+falassem a mesma língua. Quatro gerações reais gravavam no ledger com chaves ausentes do catálogo:
+`storyboard.angles`, `storyboard.upscale`, `export.reframe` e a genérica `storyboard.video`. O
+efeito era um painel que **mente**: a ação existia no gasto, não na configuração; o usuário não
+podia trocar o modelo default dela e `POST /api/creditos/spend` a reprovava com 422.
+
+Fica registrada, sem revogar nada da decisão acima:
+
+1. **Regra — quem grava usa a chave que configura.** Toda ação passada a `record_generation` /
+   `record_spend` pertence a `settings.ACTION_KEYS`. As três primeiras chaves viraram entrada de
+   catálogo com o default de código **igual ao que o serviço já usava** (`angles.DEFAULT_MODEL`,
+   `angles.UPSCALE_MODEL`, `export.REFRAME_MODEL`) — catalogar não mudou comportamento nenhum. A
+   quarta era o lado que grava que estava errado: `studio/storyboard/service.py` passa a registrar
+   a mesma chave que já resolvia o modelo (`storyboard.video.scene` / `.transition`), e a genérica
+   `storyboard.video` **não** entra no catálogo, para não criar no painel uma linha de vídeo que
+   nenhum código leria. Linhas antigas do ledger com a chave genérica continuam legíveis (o
+   histórico agrupa por `step or action`); não há migração de arquivo.
+2. **A regra tem guarda dupla.** Estática: um teste varre `studio/**/*.py` por AST e reprova o CI
+   quando um literal de ação sai do catálogo; ações resolvidas por expressão ficam em uma lista
+   declarada, cada uma verificada pelo outro lado. Em tempo de execução: `record_spend` emite
+   `log.warning("gasto fora do catálogo …")` no logger `studio.creditos.ledger` — e **grava a linha
+   assim mesmo**, porque a geração já aconteceu e o registro nunca pode derrubá-la.
+3. **Família `reframe` no catálogo de preços.** `pricing.CATALOG` ganha o modelo real do CLI com
+   `kind` PRÓPRIO (com `kind: "video"` ele viraria opção selecionável para `animate.video` e para as
+   ações de vídeo do storyboard, permitindo configuração inválida) e `variants: {"*": None}` — sem
+   custo medido offline: os números desta tabela são medições reais do dono do produto e não há
+   medição de reframe. O painel mostra "—" e a estimativa ao vivo (`generate cost`) segue sendo a
+   fonte. Medir o custo real é dívida aberta.
+4. **Ações órfãs ficam.** `storyboard.scene` e `storyboard.multishot` estão no catálogo e nenhum
+   código as referencia. Não foram removidas (removê-las apagaria overrides já gravados no
+   `config.json` de usuários); o conjunto é fixado em teste, de modo que uma órfã **nova** reprove.
+5. **Limite conhecido.** As três ações novas são configuráveis mas ainda **não efetivas**: os
+   ângulos e o reframe continuam fixando o modelo no código (`angles.py`, `export/service.py`), ao
+   contrário do item 5 da Decisão acima. Ligar `settings.default_for` nesses dois pontos ficou
+   fora desta correção (território de outra frente da wave) e é dívida registrada.

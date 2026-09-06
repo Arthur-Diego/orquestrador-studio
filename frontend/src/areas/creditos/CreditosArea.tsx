@@ -25,7 +25,9 @@ interface Balance {
 }
 interface CostRow {
   variant?: string;
-  credits: number;
+  // `null` = modelo real do CLI SEM custo medido offline (`reframe`, wave 11 · card #92). A tabela
+  // mostra "—" e a estimativa ao vivo do `generate cost` continua sendo a fonte.
+  credits: number | null;
 }
 interface Model {
   id: string;
@@ -51,12 +53,12 @@ interface Summary {
   total_credits: number;
   count: number;
   by_step: { step: string; credits: number; count: number }[];
-  by_project: { name?: string; pid?: string; credits: number; count: number }[];
+  by_project: { name?: string | null; pid?: string | null; credits: number; count: number }[];
 }
 interface HistoryRow {
   at?: string;
-  project_name?: string;
-  pid?: string;
+  project_name?: string | null;
+  pid?: string | null;
   step?: string;
   action?: string;
   model?: string;
@@ -81,8 +83,19 @@ const STEP_LABEL: Record<string, string> = {
   storyboard: "Storyboard",
   animate: "Animação",
   music: "Trilha",
+  // Wave 11 (card #92): duas etapas que já gravavam no livro-caixa e apareciam com a chave crua.
+  // `moodboard` é o multishot da BIBLIOTECA global (ADR-013), que não tem campanha.
+  moodboard: "Biblioteca › Mood boards",
+  export: "Export e QA",
 };
 const stepLabel = (s?: string): string => (s ? STEP_LABEL[s] || s : "—");
+
+/** Rótulo da coluna "Projeto". Sem `pid` o gasto é da BIBLIOTECA global (ADR-013), não de uma
+ * campanha — mostrar só o nome do board esconderia isso, e "—" jogaria fora o nome. */
+const projLabel = (pid?: string | null, name?: string | null): string => {
+  if (pid) return name || pid;
+  return name ? `Biblioteca · ${name}` : "Biblioteca";
+};
 
 const keyCred = (pid: string | null) => ["creditos", pid ?? "__none__"] as const;
 
@@ -467,7 +480,8 @@ function CostTable({ data, models }: { data: Dashboard; models: Model[] }) {
                         </td>
                       ) : null}
                       <td>{r.variant ? r.variant : "—"}</td>
-                      <td className="cr-cost">{`${r.credits} cr`}</td>
+                      {/* wave 11: modelo sem custo medido (`reframe`) mostraria "null cr" sem esta guarda */}
+                      <td className="cr-cost">{r.credits != null ? `${r.credits} cr` : "—"}</td>
                       {i === 0 ? (
                         <td rowSpan={m.rows.length} className="cr-mnote">
                           {m.note || ""}
@@ -548,7 +562,7 @@ function HistorySection({ data, pid }: { data: Dashboard; pid: string | null }) 
               {byProj.length ? (
                 byProj.map((r, i) => (
                   <tr key={i}>
-                    <td>{r.name || r.pid || "—"}</td>
+                    <td>{projLabel(r.pid, r.name)}</td>
                     <td className="cr-cost">{`${r.credits} cr`}</td>
                     <td>{`${r.count}×`}</td>
                   </tr>
@@ -581,7 +595,7 @@ function HistorySection({ data, pid }: { data: Dashboard; pid: string | null }) 
               recent.map((h, i) => (
                 <tr key={i}>
                   <td>{(h.at || "").replace("T", " ").replace(/(\+00:00|Z)$/, "")}</td>
-                  <td>{h.project_name || h.pid || "—"}</td>
+                  <td>{projLabel(h.pid, h.project_name)}</td>
                   <td>{stepLabel(h.step || h.action)}</td>
                   <td>{`${h.model || ""}${h.variant ? ` · ${h.variant}` : ""}`}</td>
                   <td className="cr-cost">{h.credits != null ? `${h.credits} cr` : "—"}</td>

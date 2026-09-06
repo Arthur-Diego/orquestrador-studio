@@ -97,11 +97,26 @@ CATALOG: dict[str, dict] = {
         "variants": {"*": 0.94},
         "note": "Trilha (aula 013); custo aproximado por faixa.",
     },
+    # `[extensão]` wave 11 (card #92): o reframe pago da etapa 8 (ADR-028) já grava no livro-caixa,
+    # mas o modelo não existia aqui — logo a ação `export.reframe` não podia ser catalogada
+    # (`settings._valid` exige `pricing.known(model)`). Família PRÓPRIA de propósito: com `kind`
+    # de vídeo, `reframe` viraria opção selecionável para `animate.video` e para as duas ações de
+    # vídeo do storyboard (o `<select>` do painel filtra por `kind`), permitindo config inválida.
+    # `variants: {"*": None}` = modelo real do CLI SEM custo medido: os números desta tabela são
+    # medições do dono do produto e não há medição de reframe (não se inventa número).
+    "reframe": {
+        "label": "Reframe (CLI)",
+        "kind": "reframe",
+        "variants": {"*": None},
+        "note": "Reenquadra o master exportado (etapa 8). Sem custo medido offline: o valor vem do "
+                "`generate cost` ao vivo do CLI.",
+    },
 }
 
 #: Ordem das famílias na tela de custos.
-KIND_ORDER = ("image", "upscale", "video", "audio")
-KIND_LABEL = {"image": "Imagem", "upscale": "Upscale", "video": "Vídeo", "audio": "Áudio"}
+KIND_ORDER = ("image", "upscale", "video", "audio", "reframe")
+KIND_LABEL = {"image": "Imagem", "upscale": "Upscale", "video": "Vídeo", "audio": "Áudio",
+              "reframe": "Reenquadramento"}
 
 
 def known(model: str) -> bool:
