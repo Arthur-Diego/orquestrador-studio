@@ -26,6 +26,9 @@ export const TOOL_LABELS: Record<string, string> = {
   base_pick: "Aguardando você escolher a imagem base",
   storyboard_local_generate: "Gerando keyframes no motor local",
   storyboard_pick: "Aguardando você escolher os keyframes",
+  // Wave 11 · F10 (créditos no chat): rótulo acrescentado no merge, cobrado pela guarda
+  // `tests/test_chat_tool_labels.py`.
+  credits_status: "Conferindo o saldo de créditos",
   storyboard_scenes: "Lendo as cenas do storyboard",
   // Wave 11 · F09 (geração por cena): rótulos acrescentados no rebase, cobrados pela guarda
   // `tests/test_chat_tool_labels.py`.

@@ -756,6 +756,14 @@ def _plan(root: Path, kind: str, ref_ids: list[str] | None, count: int,
     return [{"ref_id": src.get("ref_id"), "prompt": "", "image_references": [str(root / src["file"])]}], ""
 
 
+def cost_model(pid: str, kind: str, model: str | None = None) -> str:
+    """Modelo que a estimativa/geração vai de fato usar: o explícito do cliente ou o default da
+    config (ADR-016). `[extensão]` wave 11: a rota de custo precisa NOMEAR o modelo no
+    `CostPreview`, e `estimate_cost` o resolve por dentro — a regra continua num lugar só.
+    """
+    return model or _default_model(pid, kind)
+
+
 def estimate_cost(pid: str, kind: str, model: str | None = None, ref_ids: list[str] | None = None,
                   count: int | None = None, aspect_ratio: str | None = None, resolution: str = "2k",
                   prompt: str = "", board: str | None = None, target: str = "") -> dict:

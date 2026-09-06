@@ -60,9 +60,28 @@ def test_paid_terminal_com_confirm_gera(monkeypatch):
     assert any(path.endswith("/mood/generate") for path, _ in cli.posts)
 
 
-def test_paid_com_ui_confirmado_gera(monkeypatch):
+def aprova(monkeypatch, *, token=True):
+    """Stub de `confirm_cost` que aprova e emite um token REAL, como o helper faz de verdade.
+
+    `[extensão]` wave 11 (ADR-038 §3): aprovar passou a emitir `_confirm_token`, e `_paid` só gera
+    depois de consumi-lo. `token=False` simula a aprovação SEM token — o caso de recusa 3.
+    """
+    guardado = {}
+
+    def _confirm(client, action, credits, model, detail="", *, breakdown=None):
+        guardado["breakdown"] = breakdown
+        ans = {"answered": True, "confirmed": True}
+        if token:
+            ans["_confirm_token"] = ui.issue_confirm_token(action, model)
+        return ans
+
     monkeypatch.setattr(ui, "chat_id", lambda: "cid")
-    monkeypatch.setattr(ui, "confirm_cost", lambda *a, **k: {"answered": True, "confirmed": True})
+    monkeypatch.setattr(ui, "confirm_cost", _confirm)
+    return guardado
+
+
+def test_paid_com_ui_confirmado_gera(monkeypatch):
+    aprova(monkeypatch)
     cli = Fake({"/api/projects/p/mood/cost": {"total": 5}})
     out = actions.mood_generate(cli, "p", ["x"])
     assert "Geração iniciada" in out
@@ -76,6 +95,162 @@ def test_paid_com_ui_recusado_nao_gera(monkeypatch):
     out = actions.mood_generate(cli, "p", ["x"])
     assert "cancelada" in out
     assert not any("generate" in path for path, _ in cli.posts)
+
+
+# ---------- breakdown e `confirm_token` `[extensão]` (wave 11 · F10, ADR-016/038 §3) ----------
+COST_RICO = {
+    "per_prompt": [{"credits": 4}], "total": 12,
+    "action": "mood.grid", "model": "nano_banana_2", "label": "Nano Banana Pro", "variant": "2k",
+    "kind": "image", "unit_credits": 4, "count": 3, "source": "cli", "note": None,
+    "balance": {"installed": True, "logged_in": True, "plan": "creator", "credits": 118},
+}
+
+
+@pytest.fixture(autouse=True)
+def _limpa_tokens():
+    ui._CONFIRM_TOKENS.clear()
+    yield
+    ui._CONFIRM_TOKENS.clear()
+    ui.CONFIRM_TOKEN_REQUIRED = True
+
+
+def gerou(cli) -> bool:
+    return any("generate" in path for path, _ in cli.posts)
+
+
+def test_paid_envia_o_breakdown_completo(monkeypatch):
+    """Critério 3: com aba de chat, o gate recebe o `CostPreview` inteiro, não só o escalar."""
+    visto = aprova(monkeypatch)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    actions.mood_generate(cli, "p", ["x"])
+    b = visto["breakdown"]
+    for k in ("model", "unit_credits", "count", "total", "source", "balance"):
+        assert k in b, f"breakdown sem {k}"
+    assert b["label"] == "Nano Banana Pro" and b["variant"] == "2k"
+    assert b["balance_after"] == 106  # 118 - 12, derivado
+
+
+def test_breakdown_sem_saldo_ou_sem_total_nao_deriva_saldo_depois():
+    assert "balance_after" not in actions._breakdown(
+        {"total": 12, "balance": {"credits": None}}, model="m", credits=12)
+    assert "balance_after" not in actions._breakdown(
+        {"total": None, "balance": {"credits": 118}}, model="m", credits=None)
+
+
+def test_recusa_token_ausente_nao_gera(monkeypatch):
+    """Recusa 3: aprovou, mas nenhum token veio — não gera."""
+    aprova(monkeypatch, token=False)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    out = actions.mood_generate(cli, "p", ["x"])
+    assert "Confirmação de gasto inválida" in out and not gerou(cli)
+
+
+def test_recusa_token_de_outra_acao_nao_gera(monkeypatch):
+    """Recusa 4: o token existe, mas é de outra ação."""
+    def _confirm(client, action, credits, model, detail="", *, breakdown=None):
+        return {"answered": True, "confirmed": True,
+                "_confirm_token": ui.issue_confirm_token("OUTRA AÇÃO", model)}
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm_cost", _confirm)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    out = actions.mood_generate(cli, "p", ["x"])
+    assert "Confirmação de gasto inválida" in out and not gerou(cli)
+
+
+def test_recusa_token_expirado_nao_gera(monkeypatch):
+    """Recusa 5: o token nasceu válido, mas o TTL passou antes do consumo."""
+    aprova(monkeypatch)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    relogio_real, consumo_real = ui.time.monotonic, ui.consume_confirm_token
+
+    def _consome(token, *, action, model):
+        # o token nasceu válido; entre a emissão e o consumo o TTL passou
+        monkeypatch.setattr(ui.time, "monotonic", lambda: relogio_real() + ui.CONFIRM_TTL + 1)
+        return consumo_real(token, action=action, model=model)
+
+    monkeypatch.setattr(ui, "consume_confirm_token", _consome)
+    out = actions.mood_generate(cli, "p", ["x"])
+    assert "Confirmação de gasto inválida" in out and not gerou(cli)
+
+
+def test_recusa_token_ja_consumido_nao_gera(monkeypatch):
+    """Recusa 6 + critério 5: o token do caminho feliz não serve uma segunda vez."""
+    def _confirm(client, action, credits, model, detail="", *, breakdown=None):
+        # o mesmo token nas duas chamadas: a segunda tem de ser recusada
+        tok = _confirm.tok or ui.issue_confirm_token(action, model)
+        _confirm.tok = tok
+        return {"answered": True, "confirmed": True, "_confirm_token": tok}
+    _confirm.tok = None
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm_cost", _confirm)
+
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    assert "Geração iniciada" in actions.mood_generate(cli, "p", ["x"])
+    cli2 = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    out = actions.mood_generate(cli2, "p", ["x"])
+    assert "Confirmação de gasto inválida" in out and not gerou(cli2)
+
+
+def test_caminho_feliz_gera_uma_vez_so(monkeypatch):
+    """Critério 5: exatamente um POST no gen_path."""
+    aprova(monkeypatch)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    actions.mood_generate(cli, "p", ["x"])
+    assert len([p for p, _ in cli.posts if p.endswith("/mood/generate")]) == 1
+
+
+def test_flag_desligada_volta_ao_gate_de_hoje(monkeypatch):
+    """Escape hatch do risco 2: sem exigir token, aprovação basta."""
+    aprova(monkeypatch, token=False)
+    monkeypatch.setattr(ui, "CONFIRM_TOKEN_REQUIRED", False)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    assert "Geração iniciada" in actions.mood_generate(cli, "p", ["x"]) and gerou(cli)
+
+
+def test_terminal_mostra_o_breakdown_em_markdown(monkeypatch):
+    """Critério 6: no terminal o único canal é texto, então as linhas vão no texto."""
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    out = actions.mood_generate(cli, "p", ["x"], confirm=False)
+    assert "Nano Banana Pro · 2k" in out and "4 créditos (CLI)" in out
+    assert "Quantidade: 3×" in out and "Saldo atual: 118" in out and "Saldo depois: 106" in out
+    assert "confirm=true" in out and not gerou(cli)
+
+
+def test_terminal_com_confirm_gera_sem_exigir_token(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    assert "Geração iniciada" in actions.mood_generate(cli, "p", ["x"], confirm=True)
+    assert gerou(cli) and ui._CONFIRM_TOKENS == {}
+
+
+def test_terminal_avisa_saldo_insuficiente_sem_bloquear(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: None)
+    pobre = {**COST_RICO, "balance": {**COST_RICO["balance"], "credits": 5}}
+    cli = Fake({"/api/projects/p/mood/cost": pobre})
+    out = actions.mood_generate(cli, "p", ["x"], confirm=False)
+    assert "Saldo menor que o total" in out
+
+
+def test_erro_da_rota_de_custo_nao_gera_nem_emite_token(monkeypatch):
+    aprova(monkeypatch)
+    cli = Fake({"/api/projects/p/mood/cost": StudioApiError("409: CLI da Higgsfield ausente")})
+    out = actions.mood_generate(cli, "p", ["x"])
+    assert "409" in out and not gerou(cli) and ui._CONFIRM_TOKENS == {}
+
+
+def test_token_nunca_aparece_no_texto_devolvido(monkeypatch):
+    guardado = {}
+
+    def _confirm(client, action, credits, model, detail="", *, breakdown=None):
+        guardado["tok"] = ui.issue_confirm_token(action, model)
+        return {"answered": True, "confirmed": True, "_confirm_token": guardado["tok"]}
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm_cost", _confirm)
+    cli = Fake({"/api/projects/p/mood/cost": COST_RICO})
+    out = actions.mood_generate(cli, "p", ["x"])
+    assert guardado["tok"] not in out
+    assert guardado["tok"] not in jsonlib.dumps(cli.posts)
 
 
 # ---------- escolha visual (pick) ----------

@@ -58,6 +58,10 @@ def build_server(client: StudioClient | None = None):
     def api_get(path: str) -> Any:
         return tools.api_get(cli, path)
 
+    @t(name="credits_status", description="Saldo de créditos da Higgsfield, plano e gasto já registrado (hoje, campanha, total) com os últimos gastos. Somente leitura, não gasta nada.")
+    def credits_status(pid: str = "") -> str:
+        return tools.credits_status(cli, pid)
+
     # ---------- ações: 1 Referências ----------
     @t(name="refs_suggest_terms", description="Sugere termos de busca de referências no Pinterest a partir do produto/vibe/marca.")
     def refs_suggest_terms(product: str = "", vibe: str = "", brand: str = "", pid: str = "") -> str:

@@ -236,6 +236,11 @@
 .chat-cost { background: var(--gate-soft); border-color: transparent; }
 .chat-cost-body { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
 .chat-cost-row { display: flex; justify-content: space-between; gap: 12px; }
+/* Gate de custo rico `[extensão]` (wave 11 · F10): as MESMAS linhas do CostSheet das telas. */
+.chat-cost-row.total { border-top: 1px solid var(--line); padding-top: 6px; font-weight: 600; }
+.chat-cost-warn { margin: 4px 0 0; font-size: 12.5px; color: var(--warn, #a15c00); }
+.chat-cost-note { margin: 6px 0 0; font-size: 12px; color: var(--ink-3); }
+.chat-head .chat-credits { flex: 0 0 auto; cursor: pointer; font-size: 12px; }
 .chat-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .chat-field input { border: 1px solid var(--ctl); border-radius: 8px; padding: 7px 9px; font: inherit; background: var(--surface); color: var(--ink); }
 .chat-field input:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }

@@ -74,9 +74,27 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "`[extensão]` Feedback ao vivo do assistente de chat (Wave 11 · F02), card #86 "
         "ADH-OS-20260906-04: ciclo de vida do turno, streaming de texto e progresso de job em "
         "`studio/chat/` (fora de NUCLEO_PREFIXOS). O núcleo tocado é só `frontend/` (dock, hook, "
-        "rótulos de tool e CSS) e o bundle `studio/web/dist/`. Nenhuma rota REST nova, nenhum "
-        "modelo Pydantic novo (`schema.ts` intocado), nenhuma etapa nem o shell tocados. "
-        "ADR-036/041, ADR-008/010/031/032.",
+        "rótulos de tool e CSS) e o bundle `studio/web/dist/`. Nenhuma rota REST nova e nenhum "
+        "modelo Pydantic novo; os GERADOS `src/api/schema.ts` e `frontend/openapi.json` entram "
+        "apenas regenerados por `make frontend-schema` (guarda de drift do CI). Nenhuma etapa nem "
+        "o shell tocados. ADR-036/041, ADR-008/010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
+    "feature/adh-os-20260906-12-creditos-chat": (
+        "`[extensão]` Créditos no chat, card #91 / ADH-OS-20260906-12 (wave 11 · F10): o gate de "
+        "custo do dock mostrava duas linhas enquanto as telas mostravam a planilha inteira "
+        "(ADR-016), e a ADR-038 §3 exigia um `confirm_token` que não existia no código. O grosso "
+        "do trabalho é FORA do núcleo (`studio/common/pricing.py`, `studio/common/settings.py`, "
+        "`studio/creditos/service.py`, `studio/mcp/**`, `studio/chat/prompts/`, os `router.py` das "
+        "etapas e `studio/moodboards/router.py`). Em `frontend/` o recorte é "
+        "`src/ui/{costRows.ts,CostSheet.tsx,index.ts}` (extração da fonte única das linhas de "
+        "custo, DOM do `CostSheet` inalterado), `src/areas/chat/*` (widget rico, `CreditsChip` no "
+        "cabeçalho, `toolCredits.ts`) e `src/areas/creditos/{CreditosArea.tsx,creditos.css}` "
+        "(gasto hoje/campanha/total e a reconciliação explicada), mais os GERADOS "
+        "`src/api/schema.ts` e `frontend/openapi.json`. Em `studio/web/` muda APENAS o bundle "
+        "GERADO `studio/web/dist/` (`make frontend-build`, guarda de drift do CI). "
+        "`src/styles/` (cópia byte-a-byte do vanilla) e `scripts/qa/cenarios/` NÃO são tocados. "
+        "ADR-004/016/037/038, ADR-010/031/032.",
         ("frontend/", "studio/web/"),
     ),
     "feature/adh-os-20260906-05-chat-sync": (

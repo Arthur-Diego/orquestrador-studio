@@ -118,3 +118,38 @@ Fica registrada, sem revogar nada da decisão acima:
    ângulos e o reframe continuam fixando o modelo no código (`angles.py`, `export/service.py`), ao
    contrário do item 5 da Decisão acima. Ligar `settings.default_for` nesses dois pontos ficou
    fora desta correção (território de outra frente da wave) e é dívida registrada.
+
+## Adendo (Wave 11 · F10) — o gate de custo do chat e o segundo gatilho do chip
+
+Card #91 / `ADH-OS-20260906-12`. FDD: `docs/domains/creditos/features/creditos-chat-fdd.md`.
+
+O §4 desta ADR descreve o `CreditsChip` global refrescado pelo funil `progressJob` e o modal rico
+`confirmCost({action, pid, count})`. Duas coisas mudam, ambas **aditivas**:
+
+1. **Shape comum das rotas `cost` (`CostPreview`).** Cada etapa devolvia o seu dicionário
+   (`per_item`, `per_take`, `per_track`, `per_prompt`, `per_image`) e nenhum carregava modelo,
+   variante, saldo e fonte juntos — o que obrigava o `CostSheet` a consultar uma OUTRA rota
+   (`GET /api/…/creditos/cost`) e deixava o gate do chat sem matéria-prima. `pricing.CostPreview`
+   documenta o shape e `pricing.cost_preview()` o produz, mesclando com as chaves legadas de cada
+   rota. **Em colisão de chave, o valor legado vence**; nenhuma chave de hoje é removida ou
+   renomeada, e nenhuma rota declara `response_model` (revalidar o retorno com Pydantic num caminho
+   pago só acrescentaria risco). Sete rotas adotaram: mood, base, animate, music, storyboard,
+   storyboard/video e o multishot da biblioteca. As de ângulos e `export/reframe` ficaram de fora
+   (fronteira de outra frente da mesma wave) e são dívida registrada.
+
+2. **Segundo gatilho de refresh do chip.** O funil `progressJob` do §4 não passa pelo chat: o dock
+   dispara a geração por `_paid` e espera por `job_wait`. Agora o `tool_result` de uma tool paga
+   (lista em `frontend/src/areas/chat/toolCredits.ts`, espelhando quem passa por `actions._paid`)
+   incrementa o `refreshKey` do `CreditsChip` do cabeçalho do dock, com debounce de 1500 ms —
+   `higgsfield account status` é subprocess de até 30 s e duas gerações seguidas não podem empilhar
+   duas leituras. O `?refresh=1` já fura o cache de 60 s de `hf.status`, então nenhum endpoint novo
+   de invalidação foi criado.
+
+Também aditivo: `settings.summary()` ganha `today_credits`/`today_count` (em UTC, o mesmo fuso do
+`at` gravado no livro-caixa) e `creditos.service.dashboard()` ganha `summary_global`, para o
+`BalanceCard` mostrar hoje / nesta campanha / total sem uma segunda rota.
+
+**Reconciliação continua impossível por construção**, e isso agora está dito na tela e nos textos do
+agente: o saldo vem do CLI, o gasto vem do livro-caixa local, e geração feita na UI da Higgsfield
+consome plano sem nunca entrar no livro-caixa. Inferir o gasto pela variação do saldo seria invenção
+de método (ADR-004) e não foi feito.

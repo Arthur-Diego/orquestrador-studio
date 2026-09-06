@@ -9,7 +9,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api, invalidarGuia } from "../../api";
 import { useShell } from "../../shell/context";
 import { emitStudioChange, type EscopoDaMudanca, type MudancaDoStudio } from "../../shell/events";
+import { avisoCli, costRows, costWarn, CreditsChip, NOTA_PADRAO, saldoInsuficiente } from "../../ui";
+import type { CostInfoLike } from "../../ui";
 import { MessageMarkdown } from "./MessageMarkdown";
+import { DEBOUNCE_SALDO_MS, isToolPaga } from "./toolCredits";
 import { useChatSocket } from "./useChatSocket";
 import { toolLabel } from "./toolLabels";
 import type { ChatEvent, ChatSession, ChatToolProgress } from "./types";
@@ -49,13 +52,17 @@ function mudancaDoEvento(ev: ChatEvent): MudancaDoStudio | null {
 }
 
 export function ChatDock() {
-  const { pid, project } = useShell();
+  const { pid, project, navigate } = useShell();
   const [open, setOpen] = useState<boolean>(() => localStorage.getItem(ABERTO_KEY) === "1");
   const [available, setAvailable] = useState<boolean | null>(null);
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem(ATIVO_KEY));
   // Turno vivo da conversa ativa (o socket sabe antes do polling; `Conversation` avisa por aqui).
   const [turnoAtivo, setTurnoAtivo] = useState(false);
+  // `[extensão]` wave 11 (ADR-016 §4): o chip do dock relê o saldo quando uma tool PAGA termina.
+  // O funil `progressJob` que a ADR descreve não passa pelo chat, então este é o segundo gatilho.
+  const [saldoKey, setSaldoKey] = useState(0);
+  const gastou = useCallback(() => setSaldoKey((k) => k + 1), []);
 
   useEffect(() => {
     localStorage.setItem(ABERTO_KEY, open ? "1" : "0");
@@ -155,6 +162,7 @@ export function ChatDock() {
 
       <div className="chat-head">
         <span className="chat-title">{ativa?.title || "Assistente do Studio"}</span>
+        <CreditsChip className="chat-credits" refreshKey={saldoKey} onClick={() => navigate("creditos")} />
         <button className="chat-iconbtn" type="button" onClick={novaAba} title="Nova conversa" aria-label="Nova conversa">
           +
         </button>
@@ -175,7 +183,13 @@ export function ChatDock() {
             <ChatTabs chats={chats} activeId={activeId} onSelect={setActiveId} onRename={renomear} onArchive={arquivar} />
           ) : null}
           {ativa ? (
-            <Conversation key={ativa.id} chatId={ativa.id} status={ativa.status} onTurn={setTurnoAtivo} />
+            <Conversation
+              key={ativa.id}
+              chatId={ativa.id}
+              status={ativa.status}
+              onTurn={setTurnoAtivo}
+              onGastou={gastou}
+            />
           ) : (
             <div className="chat-empty">Carregando…</div>
           )}
@@ -221,11 +235,14 @@ function Conversation({
   chatId,
   status,
   onTurn,
+  onGastou,
 }: {
   chatId: string;
   /** Status da aba vindo do polling de `/api/chats` — sem ele todo turno do replay vira obsoleto. */
   status: ChatSession["status"] | null;
   onTurn: (ativo: boolean) => void;
+  /** F10 (ADR-016): avisa o dock de que uma tool PAGA terminou, para o chip reler o saldo. */
+  onGastou?: () => void;
 }) {
   const { pid, view, navigate } = useShell();
   const qc = useQueryClient();
@@ -260,6 +277,19 @@ function Conversation({
   const [draft, setDraft] = useState("");
   const [answered, setAnswered] = useState<Set<string>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
+  const vistos = useRef(0);
+
+  // `[extensão]` wave 11: `tool_result` de tool PAGA relê o saldo do chip. Tool grátis não
+  // dispara nada, e o debounce impede que duas gerações seguidas empilhem dois subprocessos de
+  // até 30 s (`higgsfield account status`).
+  useEffect(() => {
+    const novos = events.slice(vistos.current);
+    vistos.current = events.length;
+    if (!onGastou) return;
+    if (!novos.some((e) => e.kind === "tool_result" && isToolPaga(e.name))) return;
+    const id = setTimeout(onGastou, DEBOUNCE_SALDO_MS);
+    return () => clearTimeout(id);
+  }, [events, onGastou]);
 
   const respond = useCallback(
     (askId: string, value: unknown) => {
@@ -613,33 +643,7 @@ function AskCard({
   }
 
   if (widget === "confirm_cost") {
-    return (
-      <div className="chat-ask chat-cost">
-        <div className="chat-ask-title">Confirmar geração paga</div>
-        <div className="chat-cost-body">
-          <div>
-            <b>{String(ev.action ?? "geração")}</b>
-          </div>
-          <div className="chat-cost-row">
-            <span>Custo estimado</span>
-            <b>{String(ev.credits ?? "—")} créditos</b>
-          </div>
-          <div className="chat-cost-row">
-            <span>Modelo</span>
-            <span className="mono">{String(ev.model ?? "—")}</span>
-          </div>
-          {ev.detail ? <div className="chat-note">{String(ev.detail)}</div> : null}
-        </div>
-        <div className="chat-ask-opts">
-          <button className="chat-send" type="button" onClick={() => onAnswer(askId, { confirmed: true })}>
-            Aprovar e gerar
-          </button>
-          <button className="chat-optbtn" type="button" onClick={() => onAnswer(askId, { confirmed: false })}>
-            Cancelar
-          </button>
-        </div>
-      </div>
-    );
+    return <CostCard ev={ev} askId={askId} onAnswer={onAnswer} />;
   }
 
   if (widget === "form") {
@@ -696,6 +700,66 @@ function AskCard({
         </button>
         <button className="chat-optbtn" type="button" onClick={() => onAnswer(askId, { confirmed: false })}>
           Não
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Cartão do gate de custo `[extensão]` (wave 11 · F10, ADR-016/038).
+ *
+ * Com `breakdown` (o `CostPreview` que `ui.confirm_cost` passou a mandar) renderiza as MESMAS
+ * linhas do `CostSheet` das telas, pela MESMA função pura `costRows` — nenhuma regra de custo é
+ * reescrita aqui, e é isso que impede tela e chat de divergirem de novo. Sem `breakdown`, cai no
+ * cartão de duas linhas de sempre, para um backend antigo continuar funcionando.
+ *
+ * O alerta de saldo insuficiente AVISA e não bloqueia: quem decide gastar é o usuário (ADR-038).
+ */
+function CostCard({ ev, askId, onAnswer }: { ev: ChatEvent; askId: string; onAnswer: (id: string, v: unknown) => void }) {
+  const b = (ev.breakdown ?? null) as CostInfoLike | null;
+  const n = Math.max(1, Number(b?.count) || 1);
+  const linhas = b ? costRows(b, n) : [];
+  const aviso = avisoCli(costWarn(b));
+  const semSaldo = saldoInsuficiente(b, n);
+
+  return (
+    <div className="chat-ask chat-cost">
+      <div className="chat-ask-title">Confirmar geração paga</div>
+      <div className="chat-cost-body">
+        <div>
+          <b>{String(ev.action ?? "geração")}</b>
+        </div>
+        {b ? (
+          linhas.map((r, i) => (
+            <div className={r.total ? "chat-cost-row total" : "chat-cost-row"} key={i}>
+              <span>{r.label}</span>
+              <b>{r.value}</b>
+            </div>
+          ))
+        ) : (
+          <>
+            <div className="chat-cost-row">
+              <span>Custo estimado</span>
+              <b>{String(ev.credits ?? "—")} créditos</b>
+            </div>
+            <div className="chat-cost-row">
+              <span>Modelo</span>
+              <span className="mono">{String(ev.model ?? "—")}</span>
+            </div>
+          </>
+        )}
+        {semSaldo ? <p className="chat-cost-warn">⚠ Saldo menor que o total estimado.</p> : null}
+        {aviso ? <p className="chat-cost-warn">{aviso}</p> : null}
+        {ev.detail ? <div className="chat-note">{String(ev.detail)}</div> : null}
+        {b ? <p className="chat-cost-note">{NOTA_PADRAO}</p> : null}
+      </div>
+      <div className="chat-ask-opts">
+        <button className="chat-send" type="button" onClick={() => onAnswer(askId, { confirmed: true })}>
+          Aprovar e gerar
+        </button>
+        <button className="chat-optbtn" type="button" onClick={() => onAnswer(askId, { confirmed: false })}>
+          Cancelar
         </button>
       </div>
     </div>
