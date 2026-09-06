@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../../api";
 import { useShell } from "../../shell/context";
+import { MessageMarkdown } from "./MessageMarkdown";
 import { useChatSocket } from "./useChatSocket";
 import type { ChatEvent, ChatSession } from "./types";
 import "./chat.css";
@@ -276,8 +277,14 @@ interface MessageProps {
   done: boolean;
 }
 
-/** Um evento do transcript renderizado por tipo. */
-function Message({ ev, onAnswer, onOpen, done }: MessageProps) {
+/**
+ * Um evento do transcript renderizado por tipo.
+ *
+ * Exportado (aditivamente) para o teste do recorte de markdown da Wave 11 · F01: o critério 6 do
+ * FDD afirma que a bolha do USUÁRIO não passa pelo parser, e afirmar isso pelo `ChatDock` inteiro
+ * exigiria falsear WebSocket e duas rotas só para chegar no `switch`.
+ */
+export function Message({ ev, onAnswer, onOpen, done }: MessageProps) {
   switch (ev.kind) {
     case "user":
       return (
@@ -286,15 +293,22 @@ function Message({ ev, onAnswer, onOpen, done }: MessageProps) {
         </div>
       );
     case "assistant_text":
+      // Wave 11 · F01 (card #85): a bolha do assistente é markdown; a do usuário continua crua.
       return (
         <div className="chat-msg assistant">
-          <div className="chat-bubble">{ev.text}</div>
+          <div className="chat-bubble" data-md="1">
+            <MessageMarkdown text={ev.text ?? ""} />
+          </div>
         </div>
       );
     case "tool_call":
       return <div className="chat-tool">🔧 {shortTool(ev.name)}</div>;
     case "tool_result":
-      return ev.is_error ? <div className="chat-tool" data-err="1">⚠ {String(ev.content ?? "erro na ferramenta")}</div> : null;
+      return ev.is_error ? (
+        <div className="chat-tool" data-err="1">
+          ⚠ <MessageMarkdown text={String(ev.content ?? "erro na ferramenta")} compact />
+        </div>
+      ) : null;
     case "notify":
       return <div className="chat-note" data-err={ev.level === "warn" ? "1" : "0"}>{ev.text}</div>;
     case "result":
