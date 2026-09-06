@@ -110,7 +110,13 @@ def _credits(cost: dict) -> Any:
 
 
 def _paid(client: StudioClient, *, step: str, cost_path: str, cost_body: dict, gen_path: str,
-          gen_body: dict, action: str, model: str, confirm: bool) -> str:
+          gen_body: dict, action: str, model: str, confirm: bool, follow: str | None = None) -> str:
+    """Gate de custo único das gerações pagas (ADR-016/038).
+
+    `follow` nomeia a tool de espera quando o job NÃO é de etapa (jobs de URL própria, como os da
+    biblioteca de mood boards). Sem ele, o texto continua apontando `job_wait` — o default preserva
+    byte a byte o retorno de todos os chamadores existentes.
+    """
     try:
         cost = client.post(cost_path, cost_body) or {}
     except StudioApiError as e:
@@ -128,6 +134,8 @@ def _paid(client: StudioClient, *, step: str, cost_path: str, cost_body: dict, g
         client.post(gen_path, gen_body)
     except StudioApiError as e:
         return str(e)
+    if follow:
+        return f"Geração iniciada ({model}). Acompanhe com `{follow}`."
     return f"Geração iniciada ({model}). Acompanhe com `job_wait` (etapa {step})."
 
 
@@ -432,6 +440,231 @@ def export_qa(client: StudioClient, pid: str) -> str:
 def portfolio(client: StudioClient) -> str:
     resp = client.get("/api/portfolio") or {}
     return f"Portfólio: {resp}"
+
+
+# ---------- Biblioteca de mood boards `[extensão]` (ADR-013) ----------
+# Bloco contíguo no fim do arquivo (antes do bloco de personagem) por decisão da wave 11: seis
+# frentes tocam este arquivo ao mesmo tempo, e acrescentar sempre no fim é o que mantém o rebase
+# barato. Tudo aqui é cliente HTTP da própria API em loopback (ADR-037): nenhuma função deste bloco
+# importa `studio.moodboards`, `studio.mood` ou qualquer serviço de etapa.
+
+#: Origens de importação que o chat alcança. `upload` é recusado em texto: o assistente nunca
+#: manipula os bytes das imagens do usuário (ADR-040) — isso é da tela.
+MB_IMPORT_SOURCES = ("downloads", "history")
+
+
+def _mb_label(c: dict) -> str:
+    """Legenda da grade do board: a origem da candidata (`downloads`, `upload`, `multishot`…),
+    caindo para o nome do arquivo e, por último, o prompt (truncado, como nas etapas)."""
+    for k in ("source", "name", "prompt"):
+        v = c.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()[:LABEL_MAX]
+    return ""
+
+
+def _mb_images(mbid: str, cands: Any) -> list[dict]:
+    """Payload de `ui.choose_images` para as candidatas de um MOOD BOARD da biblioteca.
+
+    O shape deste domínio é OUTRO, e confundi-lo com o das etapas é o risco 1 desta frente (recon
+    §4): `GET /api/moodboards/{mbid}/candidates` devolve **lista pura**, a `thumb` é relativa ao
+    diretório `candidates/` do board (`thumbs/<sha12>.jpg`, porque a biblioteca ingere com
+    `step=""`) e o mount estático é `/mbfiles`, não `/files`. Por isso NÃO se usa `_images_for`
+    nem `_media_url` aqui: eles montam `/files/{pid}/{step}/candidates/...`, e prefixar um thumb
+    que já vem prefixado é exatamente o defeito de `base_pick` que a F04 corrigiu — na biblioteca
+    sairia pior, porque não existe `pid` nem `step` para prefixar.
+    """
+    out = []
+    for c in _candidate_rows(cands):
+        cid, thumb = c.get("id"), c.get("thumb")
+        if not cid or not isinstance(thumb, str) or not thumb:
+            continue
+        out.append({"id": cid, "thumb": f"/mbfiles/{mbid}/candidates/{thumb}", "label": _mb_label(c)})
+    return out
+
+
+def _wait_job(client: StudioClient, job_path: str, *, timeout: int = 600,
+              _sleep: Callable[[float], None] = time.sleep) -> tuple[str, dict]:
+    """Espera GENÉRICA sobre a URL de um job arbitrário, no molde de `character_wait`.
+
+    Os jobs da biblioteca (mood-run, multishot) têm URL própria, diferente da URL de job das
+    etapas — por isso `job_wait` NÃO serve para eles. Polling de 2 s, sem retry de escrita.
+
+    Devolve `(estado, job)`:
+    - `("idle", {})` — nunca rodou (`state == "idle"` sem nunca ter visto `running`);
+    - `("error", job)` — terminou com `job["error"]` preenchido;
+    - `("done", job)` — terminou; o job final vai inteiro para o chamador formatar o texto;
+    - `("timeout", {})` — estourou `timeout` sem terminar;
+    - `("http", {"error": <texto>})` — a rota falhou (404, Studio fora do ar…).
+    """
+    deadline = time.monotonic() + max(1, timeout)
+    viu_running = False
+    while time.monotonic() < deadline:
+        try:
+            job = client.get(job_path) or {}
+        except StudioApiError as e:
+            return "http", {"error": str(e)}
+        if job.get("state") == "running":
+            viu_running = True
+            _sleep(2.0)
+            continue
+        if job.get("state") == "idle" and not viu_running:
+            return "idle", {}
+        if job.get("error"):
+            return "error", job
+        return "done", job
+    return "timeout", {}
+
+
+def _sugerir_tela(client: StudioClient, alvo: str, texto: str) -> str:
+    """Manda o usuário concluir na tela — ÚNICO ponto de troca com a frente F08 (chat-navigate).
+
+    Hoje a navegação para áreas GLOBAIS não existe: o `navigate` do shell monta `#/<pid>/<alvo>` e
+    a guarda de rota devolve o usuário para `overview` (recon §1.3/§4). Então o helper degrada para
+    a instrução textual por `ui.notify` e devolve a mesma frase. Quando a F08 integrar, o corpo
+    passa a chamar `ui_navigate(alvo)` (ex.: `moodboards/<mbid>`) e NENHUM chamador muda.
+    """
+    ui.notify(client, texto)
+    return texto
+
+
+def moodboard_list(client: StudioClient) -> str:
+    try:
+        boards = client.get("/api/moodboards") or []
+    except StudioApiError as e:
+        return str(e)
+    linhas = [f"- **{b.get('name') or b.get('id')}** (`{b.get('id')}`), "
+              f"{b.get('count', 0)} imagem(ns) curada(s)"
+              + (f", vibe: {b['vibe']}" if b.get("vibe") else "")
+              for b in boards if isinstance(b, dict)]
+    if not linhas:
+        return "Nenhum mood board na biblioteca ainda. Crie um com `moodboard_create`."
+    return ("Mood boards da biblioteca (global, `[extensão]`):\n" + "\n".join(linhas)
+            + "\nUse `moodboard_get` para ver um board ou `moodboard_create` para começar outro.")
+
+
+def moodboard_get(client: StudioClient, mbid: str) -> str:
+    try:
+        b = client.get(f"/api/moodboards/{mbid}") or {}
+    except StudioApiError as e:
+        return str(e)
+    cands = [c for c in (b.get("candidates") or []) if isinstance(c, dict)]
+    cores = (b.get("palette") or {}).get("colors") or []
+    linhas = [f"Mood board **{b.get('name') or mbid}** (`{b.get('id') or mbid}`)",
+              f"- Vibe: {b.get('vibe') or '(a definir)'} · nota: {b.get('note') or '(sem nota)'}",
+              f"- {len(cands)} candidata(s) importada(s), {b.get('count', 0)} curada(s) "
+              "(teto de 8, uma vibe por board, ADR-007)"]
+    if cores:
+        linhas.append("- Paleta: " + ", ".join(cores))
+    if b.get("prompt"):
+        linhas.append(f"- Prompt de vibe: {b['prompt']}")
+    ids = [c["id"] for c in cands if c.get("id")]
+    if ids:
+        linhas.append("- Candidatas para curar: " + ", ".join(ids) + " (use `moodboard_pick`)")
+    return "\n".join(linhas)
+
+
+def moodboard_create(client: StudioClient, name: str, note: str = "") -> str:
+    try:
+        b = client.post("/api/moodboards", {"name": name, "note": note}) or {}
+    except StudioApiError as e:
+        return f"{e}\nVeja os boards que já existem com `moodboard_list`."
+    return (f"Mood board **{b.get('name') or name}** criado (id `{b.get('id', '')}`). "
+            "Importe imagens com `moodboard_import`.")
+
+
+def moodboard_import(client: StudioClient, mbid: str, source: str = "downloads",
+                     since_minutes: int = 120) -> str:
+    """Importa candidatas para o board a partir da pasta Downloads ou do histórico da Higgsfield.
+
+    `source="upload"` é recusado ANTES de qualquer chamada de rota: o agente não manipula bytes
+    (ADR-040), então o upload continua exclusivo da tela do board.
+    """
+    if source == "upload":
+        return ("Enviar arquivos pelo chat não é possível: eu nunca manipulo os bytes das suas "
+                "imagens (ADR-040).\nSalve as imagens na pasta Downloads e use "
+                'source="downloads", ou faça o upload pela tela do board.')
+    if source not in MB_IMPORT_SOURCES:
+        return (f'Origem de importação desconhecida: "{source}". Use source="downloads" (pasta '
+                'Downloads) ou source="history" (histórico da Higgsfield).')
+    if source == "history":
+        try:
+            r = client.post(f"/api/moodboards/{mbid}/import/history", {}) or {}
+        except StudioApiError as e:
+            return str(e)
+        return (f"{r.get('added', 0)} imagem(ns) importada(s) do histórico da Higgsfield "
+                f"({r.get('jobs', 0)} job(s) lido(s)).\nAgora cure o board com `moodboard_pick`.")
+    try:
+        r = client.post(f"/api/moodboards/{mbid}/import/downloads",
+                        {"folder": None, "since_minutes": since_minutes}) or {}
+    except StudioApiError as e:
+        return str(e)
+    return (f"{r.get('added', 0)} imagem(ns) importada(s) da pasta Downloads "
+            f"({r.get('scanned', 0)} arquivo(s) varrido(s) em {r.get('folder', '?')}).\n"
+            "Agora cure o board com `moodboard_pick`.")
+
+
+def moodboard_pick(client: StudioClient, mbid: str, note: str = "") -> str:
+    """Mostra as candidatas do board e persiste SÓ o que o usuário escolheu na grade (ADR-038)."""
+    try:
+        cands = client.get(f"/api/moodboards/{mbid}/candidates")
+    except StudioApiError as e:
+        return str(e)
+    imgs = _mb_images(mbid, cands)
+    if not imgs:
+        return (f"O board `{mbid}` ainda não tem candidatas para curar. Importe imagens antes com "
+                "`moodboard_import`.")
+    ans = ui.choose_images(client, f"Escolha as imagens do board {mbid} (uma vibe só, até 8)",
+                           imgs, minimum=1, maximum=8)
+    if ans.get("no_ui"):
+        return (f"Sem interface para escolher aqui. Candidatas do board `{mbid}`: "
+                + ", ".join(i["id"] for i in imgs) + ". Diga quais escolher.")
+    if not ans.get("answered"):
+        return "O usuário não escolheu (sem resposta). Você pode perguntar de novo."
+    ids = ans.get("selected") or []
+    if not ids:
+        return "O usuário não selecionou nenhuma imagem do board."
+    try:
+        r = client.post(f"/api/moodboards/{mbid}/select", {"ids": ids, "note": note}) or {}
+    except StudioApiError as e:
+        return str(e)
+    cores = r.get("palette") or []
+    return (f"{r.get('selected', len(ids))} imagem(ns) curada(s) no board `{mbid}`."
+            + (f" Paleta: {', '.join(cores)}." if cores else "")
+            + "\nGere o prompt de vibe com `moodboard_prompt` ou use o board numa campanha com "
+              "`mood_pull`.")
+
+
+def moodboard_prompt(client: StudioClient, mbid: str, mode: str = "images", instruction: str = "",
+                     no_people: bool = True) -> str:
+    try:
+        r = client.post(f"/api/moodboards/{mbid}/prompt/generate",
+                        {"mode": mode, "instruction": instruction, "image_ids": [],
+                         "no_people": no_people}) or {}
+    except StudioApiError as e:
+        if mode in ("brief", "images"):
+            return f'{e}\nSem o Claude CLI, tente de novo com mode="template".'
+        return str(e)
+    return f"Prompt de vibe do board `{mbid}` (modo {r.get('mode') or mode}):\n{r.get('prompt', '')}"
+
+
+def moodboard_delete(client: StudioClient, mbid: str, confirm: bool = False) -> str:
+    """Apaga o board inteiro. Destrutivo e irreversível: nunca sem confirmação explícita (ADR-038)."""
+    if ui.chat_id():
+        ans = ui.confirm(client, f"Apagar o mood board {mbid}?",
+                         "Apaga do disco o board inteiro (candidatas, imagens curadas e paleta). "
+                         "É irreversível.")
+        if not ans.get("answered") or not ans.get("confirmed"):
+            return f"Mood board `{mbid}` NÃO foi apagado (o usuário não confirmou)."
+    elif not confirm:
+        return (f"Apagar um mood board é irreversível. Para apagar `{mbid}`, chame esta tool de "
+                "novo com confirm=true.")
+    try:
+        client.delete(f"/api/moodboards/{mbid}")
+    except StudioApiError as e:
+        return str(e)
+    return (f"Mood board `{mbid}` apagado. Campanhas que já puxaram este board não são afetadas "
+            "(a cópia para a campanha é independente).")
 
 
 # ---------- Personagem e identidade (ADR-039) ----------

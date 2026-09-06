@@ -154,6 +154,36 @@ def build_server(client: StudioClient | None = None):
     def portfolio() -> str:
         return actions.portfolio(cli)
 
+    # ---------- ações: biblioteca de mood boards `[extensão]` (ADR-013) ----------
+    @t(name="moodboard_list", description="Lista os mood boards da biblioteca (global, sem campanha). Comece por aqui; depois `moodboard_get`.")
+    def moodboard_list() -> str:
+        return actions.moodboard_list(cli)
+
+    @t(name="moodboard_get", description="Detalhe de um mood board: vibe, nota, paleta, prompt e as candidatas a curar. Depois use `moodboard_pick`.")
+    def moodboard_get(mbid: str) -> str:
+        return actions.moodboard_get(cli, mbid)
+
+    @t(name="moodboard_create", description="Cria um mood board na biblioteca (uma vibe só, ADR-007). Depois use `moodboard_import`.")
+    def moodboard_create(name: str, note: str = "") -> str:
+        return actions.moodboard_create(cli, name, note)
+
+    @t(name="moodboard_import", description="Importa candidatas para o board a partir da pasta Downloads ou do histórico da Higgsfield. source: downloads|history (upload é só pela tela). Depois use `moodboard_pick`.")
+    def moodboard_import(mbid: str, source: str = "downloads", since_minutes: int = 120) -> str:
+        return actions.moodboard_import(cli, mbid, source, since_minutes)
+
+    @t(name="moodboard_pick", description="Mostra as candidatas do board para o USUÁRIO escolher (até 8) e salva a curadoria + a paleta. Depois use `moodboard_prompt` ou `mood_pull`.")
+    def moodboard_pick(mbid: str, note: str = "") -> str:
+        return actions.moodboard_pick(cli, mbid, note)
+
+    @t(name="moodboard_prompt", description="Escreve o prompt de vibe do board a partir das imagens curadas (grátis). mode: template|brief|images.")
+    def moodboard_prompt(mbid: str, mode: str = "images", instruction: str = "",
+                         no_people: bool = True) -> str:
+        return actions.moodboard_prompt(cli, mbid, mode, instruction, no_people)
+
+    @t(name="moodboard_delete", description="Apaga um mood board da biblioteca (irreversível). Confirma com o usuário antes; no terminal exige confirm=true.")
+    def moodboard_delete(mbid: str, confirm: bool = False) -> str:
+        return actions.moodboard_delete(cli, mbid, confirm)
+
     # ---------- ui.* (humano-no-laço, ADR-038) ----------
     @t(name="ui_choose_one", description="Pede ao usuário que escolha UMA opção. options: [{label,value}].")
     def ui_choose_one(title: str, options: list[dict]) -> dict:
