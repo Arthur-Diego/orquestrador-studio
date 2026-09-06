@@ -27,6 +27,11 @@ projects/
 # biblioteca global de mood boards reutilizáveis [extensão] (ADR-013) — imagens ficam só locais
 # (ancorado na raiz: NÃO deve pegar docs/domains/moodboards/, que é a documentação da feature)
 /moodboards/
+# biblioteca de personagens [extensão] (ADR-039): refs/explorações/sheets locais — nunca versionar
+# (ancorado na raiz: NÃO deve pegar docs/domains/characters/, que é a documentação da feature)
+/characters/
+# transcript das conversas do assistente [extensão] (ADR-036) quando STUDIO_STATE aponta p/ o repo
+/chats/
 
 # mídia, transcrições e material bruto do curso — ficam só locais
 *.mp4
