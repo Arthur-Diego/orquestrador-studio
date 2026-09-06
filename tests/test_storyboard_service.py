@@ -1,5 +1,6 @@
 """Etapa 4 — o storyboard segue a aula 010: uma instrução por vez, 4/1 gerações, ~5 cenas em texto."""
 import json
+import logging
 import threading
 from pathlib import Path
 
@@ -286,7 +287,9 @@ def test_status_counts_ideas_scenes_and_base(sb, project, root, base):
                   "script": {"exists": False, "generated_at": None},
                   "script_preset_default": "documentary-street",
                   "script_models": [dict(m) for m in sb.SCRIPT_MODELS],
-                  "script_cli": sb.prompter.available()}
+                  "script_cli": sb.prompter.available(),
+                  # `[extensão]` Wave 11 · F06 (FDD §5.2): diagnóstico do CLI ao lado do booleano.
+                  "script_cli_diag": sb.prompter.cli_status()}
 
 
 # ---------- alternativa paga pelo CLI ----------
@@ -552,8 +555,11 @@ def test_video_generate_per_photo_stores_under_the_owning_photo(sb, project, mon
     assert job["state"] == "done" and job["video"] == rel and (root / rel).exists()
     assert sent["model"] == "seedance_2_0"
     scene = sb.load_scenes(project)["scenes"][0]
-    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "dolly na foto A", "videos": [rel]}
-    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "videos": []}
+    # `[extensão]` Wave 11 · F06 (FDD §5.5): `image_prompt` é aditivo e nasce vazio; `preset` e
+    # `origin` só existem quando o cliente os manda (chave ausente = herda o padrão da campanha).
+    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "dolly na foto A",
+                                  "image_prompt": "", "videos": [rel]}
+    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "image_prompt": "", "videos": []}
     assert scene["videos"] == [], "vídeo por foto não polui o par por-cena (legado)"
 
 
@@ -583,9 +589,9 @@ def test_scene_photos_migrates_legacy_per_scene_to_primary(sb, project, root):
         {"id": "cena01", "n": 1, "text": "t", "images": [a, b], "primary": a,
          "video_prompt": "prompt legado", "videos": ["storyboard/cena01/video/take_1.mp4"]}]}))
     scene = sb.load_scenes(project)["scenes"][0]
-    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "prompt legado",
+    assert scene["photos"][a] == {"video_desc": "", "video_prompt": "prompt legado", "image_prompt": "",
                                   "videos": ["storyboard/cena01/video/take_1.mp4"]}
-    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "videos": []}
+    assert scene["photos"][b] == {"video_desc": "", "video_prompt": "", "image_prompt": "", "videos": []}
 
 
 # ---------- ponte storyboard → montagem (`[extensão]` ADR-022, R2) ----------
@@ -1166,3 +1172,65 @@ def test_script_requires_the_rig_in_every_shot_of_a_scene(sb, project, base, roo
     assert job["state"] == "error"
     assert any("foto 2" in linha for linha in job["log"]), job["log"]
     assert not (root / "storyboard" / "script.json").is_file()
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.5/§5.11) — schema por foto e chaves de preset da etapa 4.
+# ==========================================================================================
+def test_legacy_photos_load_without_migration_or_invented_keys(sb, project, root):
+    """Um `scenes.json` de campanha antiga (só `video_desc`/`video_prompt`/`videos` por foto)
+    carrega sem migração: os campos novos são opcionais e aditivos."""
+    a, b = _two_ideas(sb, project)
+    (root / "storyboard").mkdir(parents=True, exist_ok=True)
+    (root / "storyboard" / "scenes.json").write_text(json.dumps({"scenes": [
+        {"id": "cena01", "n": 1, "text": "t", "images": [a, b], "primary": a,
+         "photos": {a: {"video_desc": "d", "video_prompt": "p", "videos": []}}}]}))
+    photos = sb.load_scenes(project)["scenes"][0]["photos"]
+    assert photos[a] == {"video_desc": "d", "video_prompt": "p", "image_prompt": "", "videos": []}
+    assert photos[b] == {"video_desc": "", "video_prompt": "", "image_prompt": "", "videos": []}
+    # Nem `preset` nem `origin` são inventados na leitura: ausente é o estado "herda".
+    assert all("preset" not in p and "origin" not in p for p in photos.values())
+
+
+def test_photos_are_pruned_to_the_images_still_in_the_scene(sb, project):
+    """Invariante 5: `photos` só contém chaves que estão em `images`, mesmo com os campos novos."""
+    a, b = _two_ideas(sb, project)
+    cheio = {"image_prompt": "keyframe", "video_prompt": "dolly", "videos": [],
+             "preset": "documentary-street",
+             "origin": {"image_prompt": {"source": "manual", "preset": None, "at": "2026-09-06T10:00:00"}}}
+    sb.save_scenes(project, [{"text": "t", "images": [a, b], "primary": a,
+                              "photos": {a: cheio, b: dict(cheio)}}])
+    assert set(sb.load_scenes(project)["scenes"][0]["photos"]) == {a, b}
+    # Removida a foto B da galeria, a entrada dela some junto (e a `primary` continua válida).
+    scene = sb.save_scenes(project, [{"text": "t", "images": [a], "primary": a,
+                                      "photos": {a: cheio, b: dict(cheio)}}])["scenes"][0]
+    assert set(scene["photos"]) == {a} and scene["primary"] == a
+    assert scene["photos"][a]["preset"] == "documentary-street"
+    assert set(sb.load_scenes(project)["scenes"][0]["photos"]) == {a}
+
+
+def test_scenes_saved_log_counts_image_prompts_and_photo_presets(sb, project, caplog):
+    """FDD §7: o log `scenes_saved` ganha `with_image_prompt` e `with_photo_preset` (aditivos)."""
+    a, b = _two_ideas(sb, project)
+    with caplog.at_level(logging.INFO, logger="studio.storyboard"):
+        sb.save_scenes(project, [
+            {"text": "t", "images": [a], "primary": a, "photos": {a: {"image_prompt": "keyframe"}}},
+            {"text": "u", "images": [b], "primary": b, "photos": {b: {"preset": None}}},
+            {"text": "v"}])
+    linha = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("scenes_saved"))
+    campos = json.loads(linha.split("scenes_saved ", 1)[1].replace("'", '"').replace("None", "null"))
+    assert campos["scenes"] == 3 and campos["with_image"] == 2
+    assert campos["with_image_prompt"] == 1 and campos["with_photo_preset"] == 1
+
+
+def test_step_registers_its_preset_actions_idempotently(sb):
+    """Critério C5: as chaves da etapa 4 entram no mapa ABERTO da provedora por `setdefault`, sem
+    editar `studio/common/settings.py` (território de F05) nem `angles.py` (território de F07)."""
+    from studio.common import settings
+    assert settings.PRESET_ACTIONS[sb.ANGLES_ACTION] is None
+    assert settings.PRESET_ACTIONS[sb.KEYFRAME_ACTION] is None
+    assert (sb.ANGLES_ACTION, sb.KEYFRAME_ACTION) == ("storyboard.angles", "storyboard.keyframe")
+    # `setdefault` é o que torna o rebase com F07 trivial: registrar de novo não sobrescreve quem
+    # chegou primeiro (F07 registra a MESMA chave em `angles.py`).
+    settings.PRESET_ACTIONS.setdefault(sb.ANGLES_ACTION, "arri-natural-narrative")
+    assert settings.PRESET_ACTIONS[sb.ANGLES_ACTION] is None

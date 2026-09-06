@@ -55,6 +55,10 @@ DEFAULT_SCENES = 5
 MAX_SCENES = 10
 MAX_TEXT = 300          # instrução de geração
 MAX_SCENE_TEXT = 500    # texto de uma cena
+#: `[extensão]` campos abertos de prompt por foto (FDD Wave 11 · F06 §5.5): teto de `image_prompt`
+#: e de `video_prompt`. Folgado de propósito — é texto que o usuário escreve ou aceita da IA, e um
+#: prompt de fotografia com rig, luz e negativos passa de 2000 caracteres sem esforço.
+MAX_PHOTO_PROMPT = 4000
 COUNTS = {"uncertain": 4, "tweak": 1}
 SUFFIX = "Keep everything else identical, realistic."
 
@@ -216,6 +220,10 @@ def status(pid: str) -> dict:
         "script_preset_default": settings.preset_default_for(SCRIPT_ACTION, pid)["preset"],
         "script_models": [dict(m) for m in SCRIPT_MODELS],
         "script_cli": prompter.available(),
+        # `[extensão]` Wave 11 · F06 (FDD §5.2): o MESMO diagnóstico da rota `script/cli`, porém
+        # SEM re-resolver o PATH — `status` é leitura barata, chamada a cada abertura da tela. A
+        # re-checagem explícita (`?refresh=true`) é gesto do usuário. `script_cli` fica intocado.
+        "script_cli_diag": prompter.cli_status(),
     }
 
 
@@ -508,16 +516,51 @@ def _scene_videos(s: dict) -> list[str]:
     return [v for v in videos if not (v in seen or seen.add(v))]
 
 
+#: `[extensão]` campos abertos de prompt por foto (FDD Wave 11 · F06 §5.5): quais campos podem ter
+#: procedência registrada e de onde um texto pode ter vindo. Enums FECHADOS — o que estiver fora
+#: deles é descartado sem derrubar o save (`origin` é metadado de UI, não contrato de geração).
+ORIGIN_FIELDS = ("image_prompt", "video_prompt")
+ORIGIN_SOURCES = ("ia", "manual", "template")
+
+
+def _photo_origin(raw: object) -> dict:
+    """Procedência por campo: `{campo: {source, preset, at}}`, LENIENTE (FDD §6).
+
+    Mesma leniência dos `videos` da foto: campo desconhecido, `source` fora do enum ou entrada que
+    não é um mapa somem em silêncio. Um chip de origem errado nunca pode custar ao usuário o texto
+    que ele acabou de escrever."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for field in ORIGIN_FIELDS:                  # a ordem é do enum, não do cliente
+        entry = raw.get(field)
+        if not isinstance(entry, dict) or entry.get("source") not in ORIGIN_SOURCES:
+            continue
+        preset = entry.get("preset")
+        at = entry.get("at")
+        out[field] = {"source": entry["source"],
+                      "preset": preset if isinstance(preset, str) else None,
+                      "at": at.strip() if isinstance(at, str) else ""}
+    return out
+
+
 def _scene_photos(s: dict, images: list[str], primary: str | None) -> dict:
     """`[extensão]` vídeo por FOTO (ADR-022): mapa `img_rel -> {video_prompt, videos}`, só para as
     imagens da cena. Aditivo/retrocompatível (ADR-018/021): cena antiga sem `photos` mas com o par
-    por-cena (`video_prompt`/`videos`) vê esse par migrado para a foto **principal** na leitura."""
+    por-cena (`video_prompt`/`videos`) vê esse par migrado para a foto **principal** na leitura.
+
+    `[extensão]` Wave 11 · F06 (FDD §5.5): a foto ganha ainda `image_prompt` (o keyframe que o
+    usuário escreve ou aceita da IA), `preset` e `origin`. `preset` tem TRÊS estados e a chave é
+    preservada literalmente (invariante 6): AUSENTE herda o default da ação, `null` desliga,
+    `"<id>"` usa esse id — colapsar ausente em `None` apagaria a rota de fuga do usuário. `origin`
+    só aparece quando sobra algo bem formado."""
     raw = s.get("photos") if isinstance(s.get("photos"), dict) else {}
     out: dict[str, dict] = {}
     for img in images:
         entry = raw.get(img) if isinstance(raw.get(img), dict) else {}
         vd = (entry.get("video_desc") or "").strip()
         vp = (entry.get("video_prompt") or "").strip()
+        ip = (entry.get("image_prompt") or "").strip()
         vids = entry.get("videos")
         vids = [v for v in vids if v] if isinstance(vids, list) else []
         if img == primary:                       # migração do par por-cena (ADR-022)
@@ -526,8 +569,15 @@ def _scene_photos(s: dict, images: list[str], primary: str | None) -> dict:
             if not vids and isinstance(s.get("videos"), list):
                 vids = [v for v in s["videos"] if v]
         seen: set[str] = set()
-        out[img] = {"video_desc": vd, "video_prompt": vp,
-                    "videos": [v for v in vids if not (v in seen or seen.add(v))]}
+        photo = {"video_desc": vd, "video_prompt": vp, "image_prompt": ip,
+                 "videos": [v for v in vids if not (v in seen or seen.add(v))]}
+        if "preset" in entry:                    # chave AUSENTE ≠ `null` (invariante 6)
+            preset = entry["preset"]
+            photo["preset"] = preset if isinstance(preset, str) else None
+        origin = _photo_origin(entry.get("origin"))
+        if origin:
+            photo["origin"] = origin
+        out[img] = photo
     return out
 
 
@@ -579,6 +629,28 @@ def _check_image(root: Path, image: str | None) -> str | None:
     return f"{IDEAS_DIR}/{p.name}"
 
 
+def _check_photo_prompt(scene_id: str, img: str, field: str, text: str) -> str:
+    """`[extensão]` FDD Wave 11 · F06 (§6, critério D10): teto de um prompt por foto.
+
+    A mensagem cita a CENA e a FOTO de propósito — com 5 cenas e 3 fotos por cena, um 422 genérico
+    não diz ao usuário qual campo estourou."""
+    t = (text or "").strip()
+    if len(t) > MAX_PHOTO_PROMPT:
+        raise Invalid(f"{scene_id} · {img}: {field} acima de {MAX_PHOTO_PROMPT} caracteres.")
+    return t
+
+
+def _check_photo_preset(scene_id: str, img: str, preset: str | None) -> str | None:
+    """`[extensão]` FDD Wave 11 · F06 (§5.5): id de preset por foto contra o catálogo do prompter.
+
+    `None` (o estado "sem preset") é sempre aceito; a chave AUSENTE nem chega aqui, porque quem
+    herda o default da ação não guarda valor nenhum."""
+    try:
+        return prompter.valid_preset(preset)
+    except ValueError as e:
+        raise Invalid(f"{scene_id} · {img}: {e}") from e
+
+
 def save_scenes(pid: str, scenes: list[dict]) -> dict:
     """Grava scenes.json e regrava storyboard.md na mesma chamada (nunca um sem o outro)."""
     root = project_dir(pid)
@@ -607,6 +679,10 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
         s["videos"] = checked_videos
         # `[extensão]` vídeo por foto (ADR-022): poda `photos` para as imagens válidas e valida
         # (leniente — não derruba o save) os mp4 de cada foto sob storyboard/<cena>/video/.
+        # `[extensão]` Wave 11 · F06: `image_prompt`/`video_prompt` têm teto (422 citando cena e
+        # foto), `preset` é validado contra o catálogo e `origin` atravessa como `_scene_photos` o
+        # deixou (já leniente). A chave `preset` só é escrita quando veio — ausente é o estado
+        # "herda o default da ação" (invariante 6).
         photos: dict[str, dict] = {}
         for img in checked:
             pe = s["photos"].get(img) or {}
@@ -618,12 +694,27 @@ def save_scenes(pid: str, scenes: list[dict]) -> dict:
                     okv = None
                 if okv and okv not in pv:
                     pv.append(okv)
-            photos[img] = {"video_desc": (pe.get("video_desc") or "").strip(),
-                           "video_prompt": (pe.get("video_prompt") or "").strip(), "videos": pv}
+            photo = {"video_desc": (pe.get("video_desc") or "").strip(),
+                     "video_prompt": _check_photo_prompt(s["id"], img, "video_prompt", pe.get("video_prompt")),
+                     "image_prompt": _check_photo_prompt(s["id"], img, "image_prompt", pe.get("image_prompt")),
+                     "videos": pv}
+            if "preset" in pe:
+                photo["preset"] = _check_photo_preset(s["id"], img, pe["preset"])
+            if pe.get("origin"):
+                photo["origin"] = pe["origin"]
+            photos[img] = photo
         s["photos"] = photos
     _write_scenes(root, norm)
     md = _write_md(root, norm)
-    log.info("scenes_saved %s", {"pid": pid, "scenes": len(norm), "with_image": sum(1 for s in norm if s["images"])})
+    log.info("scenes_saved %s", {
+        "pid": pid, "scenes": len(norm),
+        "with_image": sum(1 for s in norm if s["images"]),
+        # `[extensão]` Wave 11 · F06 (§7): cenas com pelo menos uma foto que já tem prompt de
+        # imagem escrito, e cenas com pelo menos uma foto com preset PRÓPRIO (a que herda o
+        # padrão da campanha não guarda a chave, então não conta aqui).
+        "with_image_prompt": sum(1 for s in norm if any(p.get("image_prompt") for p in s["photos"].values())),
+        "with_photo_preset": sum(1 for s in norm if any("preset" in p for p in s["photos"].values())),
+    })
     return {"scenes": norm, "storyboard_md": md}
 
 
@@ -1175,6 +1266,18 @@ SCRIPT_MODELS = [{"id": "nano_banana_2", "label": "Nano Banana Pro", "default": 
 # editar `studio/common/settings.py`. Com ele, `GET /api/prompter/presets` passa a exibir a chave
 # `storyboard.script` no mapa `defaults` e o `preset-config` aceita a ação sem mudança de código lá.
 settings.PRESET_ACTIONS.setdefault(SCRIPT_ACTION, SCRIPT_PRESET_DEFAULT)
+
+# `[extensão]` Wave 11 · F06 (FDD §5.11): as outras duas ações de preset da etapa 4, registradas
+# aqui pelo MESMO mecanismo. `storyboard.angles` é contrato consumido por F07 (os ângulos por cena)
+# e `storyboard.keyframe` é o papel novo do prompter (prompt de imagem por foto). Ficam neste
+# arquivo, e não em `studio/common/settings.py`, para não conflitar com F05 — e por `setdefault`,
+# que torna o registro idempotente: se F07 registrar `storyboard.angles` em `angles.py`, as duas
+# chamadas convivem e quem chegar primeiro decide. Default de código `None` nas duas: nenhuma aula
+# ensina presets, então sem escolha explícita do usuário nada é injetado no prompt (ADR-004).
+ANGLES_ACTION = "storyboard.angles"
+KEYFRAME_ACTION = "storyboard.keyframe"
+settings.PRESET_ACTIONS.setdefault(ANGLES_ACTION, None)
+settings.PRESET_ACTIONS.setdefault(KEYFRAME_ACTION, None)
 
 #: Registro PRÓPRIO do roteiro (ADR-006), separado da ideação (`_registry`) e do vídeo
 #: (`_video_registry`). O nome é `_story_registry` porque `studio/common/reset.py::_registries`

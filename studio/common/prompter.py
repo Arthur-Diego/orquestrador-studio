@@ -11,12 +11,15 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import time
 from pathlib import Path
 
-BIN = shutil.which("claude")
+from . import clibin
+
+#: Nome do binário do CLI. Fonte única: `cli_status` re-resolve por ele e o diagnóstico o cita.
+CLI_NAME = "claude"
+BIN = clibin.which(CLI_NAME)
 #: Modelo usado pelo bot (pedido do dono do produto: Opus 4.8). Sobrescreva com STUDIO_PROMPTER_MODEL.
 MODEL = os.environ.get("STUDIO_PROMPTER_MODEL", "claude-opus-4-8")
 TIMEOUT_S = 180
@@ -289,6 +292,23 @@ def _with_preset(result: dict, preset: str | None) -> dict:
 
 def available() -> bool:
     return BIN is not None
+
+
+def cli_status(refresh: bool = False) -> dict:
+    """`[extensão]` Diagnóstico do binário `claude` VISTO POR ESTE PROCESSO (FDD Wave 11 · F06 §5.10).
+
+    `refresh=True` re-resolve o PATH e **reatribui o módulo-global `BIN`** — é isso que faz o botão
+    "Verificar de novo" funcionar sem reiniciar o servidor (o `BIN` de import time é a causa-raiz do
+    defeito: instalar o CLI com o Studio no ar não adiantava nada).
+
+    `refresh=False` apenas descreve o `BIN` atual (leitura barata, sem tocar o sistema de arquivos),
+    então `monkeypatch.setattr(prompter, "BIN", …)` continua sendo o jeito de fingir o CLI nos
+    testes (ADR-008). `available()` segue sendo `BIN is not None` nos dois casos.
+    """
+    global BIN
+    if refresh:
+        BIN = clibin.which(CLI_NAME)
+    return clibin.describe(CLI_NAME, BIN)
 
 
 def _run(prompt: str, images: list[Path] | None = None, timeout: int = TIMEOUT_S) -> tuple[str, float]:

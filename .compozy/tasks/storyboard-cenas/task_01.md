@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Fundação — schema de foto, probe do CLI, chaves de preset e PATH do `run.sh`
 type: backend
 complexity: high
@@ -72,20 +72,23 @@ Build Order (§11 do `_techspec.md`).
 
 ## Subtasks
 
-- [ ] 1.1 Criar `studio/common/clibin.py` com `which` e `describe`, puros e testáveis sem rede.
-- [ ] 1.2 Acrescentar `prompter.cli_status(refresh=False)` reusando `clibin`, reatribuindo `BIN`
+- [x] 1.1 Criar `studio/common/clibin.py` com `which` e `describe`, puros e testáveis sem rede.
+- [x] 1.2 Acrescentar `prompter.cli_status(refresh=False)` reusando `clibin`, reatribuindo `BIN`
       quando `refresh=True`; manter `available()` intacto e patchável.
-- [ ] 1.3 Acrescentar `script_cli_diag` ao `status()` da etapa 4, sem re-resolver o PATH.
-- [ ] 1.4 Introduzir `MAX_PHOTO_PROMPT = 4000` e estender a normalização/poda de `_scene_photos`,
+- [x] 1.3 Acrescentar `script_cli_diag` ao `status()` da etapa 4, sem re-resolver o PATH.
+- [x] 1.4 Introduzir `MAX_PHOTO_PROMPT = 4000` e estender a normalização/poda de `_scene_photos`,
       `save_scenes` e `_blank_scenes` com `image_prompt`, `preset` (três estados) e `origin`.
-- [ ] 1.5 Validar `preset` por foto contra o catálogo (422 em id desconhecido) e os tetos de
+      _`_blank_scenes` ficou sem diff de propósito: cena vazia tem `photos: {}` e o contrato da
+      §5.5 é por FOTO — não há entrada onde pôr os campos, e a §5.5 não define nenhum campo de
+      nível de cena. Inventar um quebraria a forma da cena vazia sem contrato que o peça._
+- [x] 1.5 Validar `preset` por foto contra o catálogo (422 em id desconhecido) e os tetos de
       `image_prompt`/`video_prompt` (422 citando cena e foto).
-- [ ] 1.6 Tornar `origin` leniente: descartar chaves/valores fora do enum sem derrubar o save.
-- [ ] 1.7 Registrar `ANGLES_ACTION` e `KEYFRAME_ACTION` em `settings.PRESET_ACTIONS` por
+- [x] 1.6 Tornar `origin` leniente: descartar chaves/valores fora do enum sem derrubar o save.
+- [x] 1.7 Registrar `ANGLES_ACTION` e `KEYFRAME_ACTION` em `settings.PRESET_ACTIONS` por
       `setdefault`, dentro de `studio/storyboard/service.py`.
-- [ ] 1.8 Estender o log `scenes_saved` com `with_image_prompt` e `with_photo_preset`.
-- [ ] 1.9 Corrigir o PATH em `run.sh` (append, nunca prepend), com comentário da causa.
-- [ ] 1.10 Escrever os testes inline listados em `## Tests`.
+- [x] 1.8 Estender o log `scenes_saved` com `with_image_prompt` e `with_photo_preset`.
+- [x] 1.9 Corrigir o PATH em `run.sh` (append, nunca prepend), com comentário da causa.
+- [x] 1.10 Escrever os testes inline listados em `## Tests`.
 
 ## Implementation Details
 
@@ -178,34 +181,34 @@ Pontos exatos do código (levantados nesta worktree):
 Não há `_tests.md` neste workflow — os casos abaixo são as definições completas. Cada um nomeia
 entrada, condição e resultado esperado.
 
-- [ ] `clibin.describe` com `path=None` devolve as seis chaves, `available=False` e `hint` não
+- [x] `clibin.describe` com `path=None` devolve as seis chaves, `available=False` e `hint` não
       vazia; com `path="/x/claude"` devolve `available=True` e `hint == ""`.
-- [ ] `clibin.describe` põe em `searched_path` exatamente `os.environ["PATH"]` do processo
+- [x] `clibin.describe` põe em `searched_path` exatamente `os.environ["PATH"]` do processo
       (monkeypatch de `os.environ`).
-- [ ] `prompter.cli_status()` com `monkeypatch.setattr(prompter, "BIN", None)` devolve
+- [x] `prompter.cli_status()` com `monkeypatch.setattr(prompter, "BIN", None)` devolve
       `available=False`; com `BIN="/x/claude"` devolve `available=True, path="/x/claude"`.
-- [ ] `prompter.cli_status(refresh=True)` com `clibin.which` monkeypatchado para devolver
+- [x] `prompter.cli_status(refresh=True)` com `clibin.which` monkeypatchado para devolver
       `"/novo/claude"` **reatribui `prompter.BIN`** e devolve `available=True` — provando que
       não é preciso reiniciar o processo (critério A2).
-- [ ] `prompter.available()` continua devolvendo `BIN is not None` depois de `cli_status`.
-- [ ] `GET /api/projects/{pid}/storyboard` devolve `script_cli` booleano **e** `script_cli_diag`
+- [x] `prompter.available()` continua devolvendo `BIN is not None` depois de `cli_status`.
+- [x] `GET /api/projects/{pid}/storyboard` devolve `script_cli` booleano **e** `script_cli_diag`
       com as seis chaves (critério A3); projeto inexistente continua 404.
-- [ ] `PUT /scenes` com `photos[img]` sem a chave `preset` → `GET /scenes` devolve o objeto
+- [x] `PUT /scenes` com `photos[img]` sem a chave `preset` → `GET /scenes` devolve o objeto
       **sem** a chave `preset` (herda). Com `preset: null` → devolve `null`. Com
       `preset: "documentary-street"` → devolve o id. (critério C4, três estados)
-- [ ] `PUT /scenes` com `photos[img].preset = "nao-existe"` devolve 422.
-- [ ] `PUT /scenes` com `image_prompt` de 4001 caracteres devolve 422 e a mensagem cita a cena e a
+- [x] `PUT /scenes` com `photos[img].preset = "nao-existe"` devolve 422.
+- [x] `PUT /scenes` com `image_prompt` de 4001 caracteres devolve 422 e a mensagem cita a cena e a
       foto (critério D10). Com 4000 caracteres, salva.
-- [ ] `PUT /scenes` com `origin` malformado (`source: "extraterrestre"`, campo desconhecido)
+- [x] `PUT /scenes` com `origin` malformado (`source: "extraterrestre"`, campo desconhecido)
       salva com sucesso e descarta o que é inválido, sem 422.
-- [ ] `PUT /scenes` → `GET /scenes` preserva `image_prompt` e `origin` bem formado.
-- [ ] `scenes.json` legado (só `video_desc`/`video_prompt`/`videos` por foto) carrega sem erro e
+- [x] `PUT /scenes` → `GET /scenes` preserva `image_prompt` e `origin` bem formado.
+- [x] `scenes.json` legado (só `video_desc`/`video_prompt`/`videos` por foto) carrega sem erro e
       sem inventar chaves.
-- [ ] `photos` continua podado às chaves presentes em `images` depois de remover uma imagem.
-- [ ] `settings.PRESET_ACTIONS` contém `storyboard.angles` e `storyboard.keyframe` com valor
+- [x] `photos` continua podado às chaves presentes em `images` depois de remover uma imagem.
+- [x] `settings.PRESET_ACTIONS` contém `storyboard.angles` e `storyboard.keyframe` com valor
       `None`, e um `setdefault` repetido da mesma chave **não** altera um valor já registrado
       (critério C5 da §9).
-- [ ] `run.sh`: inspeção do script (sem subir servidor) prova que o PATH do usuário aparece
+- [x] `run.sh`: inspeção do script (sem subir servidor) prova que o PATH do usuário aparece
       **antes** dos diretórios acrescentados e que `$HOME/.local/bin` é acrescentado
       (critério A4).
 

@@ -1,10 +1,11 @@
 """O 'bot' de prompts (Claude CLI) — comando montado, parse do JSON, fallback e regras da aula 009."""
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from studio.common import prompter
+from studio.common import clibin, prompter
 
 
 def _fake_claude(payload: dict, calls: list):
@@ -549,3 +550,82 @@ def test_script_falls_back_to_one_shot_without_shot_prompts(monkeypatch, tmp_pat
                         arcs=["comeco", "desfecho"])
     for s in r["scenes"]:
         assert s["shots"] == 1 and s["shot_prompts"] == [s["image_prompt"]]
+
+
+# ==========================================================================================
+# `[extensão]` Wave 11 · F06 (FDD §5.9/§5.10) — diagnóstico do binário `claude`. O `BIN` resolvido
+# em import time era a causa-raiz do defeito 1 do PRD: instalar o CLI com o Studio no ar não
+# adiantava nada. Todo teste aqui é sem rede e sem subprocess (ADR-008).
+# ==========================================================================================
+DIAG_KEYS = {"name", "available", "path", "searched_path", "checked_at", "hint"}
+
+
+def test_clibin_describe_reports_missing_binary_with_a_hint():
+    """F06.1: sem binário, as seis chaves, `available: False` e uma dica de como resolver."""
+    d = clibin.describe("claude", None)
+    assert set(d) == DIAG_KEYS
+    assert d["name"] == "claude" and d["available"] is False and d["path"] is None
+    assert d["hint"] and "run.sh" in d["hint"]
+    # Com binário resolvido não há conselho a dar: `hint` fica vazia mesmo se for passada.
+    ok = clibin.describe("claude", "/x/claude", hint="ignorada")
+    assert set(ok) == DIAG_KEYS
+    assert ok["available"] is True and ok["path"] == "/x/claude" and ok["hint"] == ""
+
+
+def test_clibin_describe_reports_the_path_of_this_process(monkeypatch):
+    """F06.2: `searched_path` é o PATH DESTE processo — é ele que decide, não o do terminal."""
+    monkeypatch.setenv("PATH", "/so/isto")
+    assert clibin.describe("claude", None)["searched_path"] == "/so/isto"
+    monkeypatch.delenv("PATH", raising=False)
+    assert clibin.describe("claude", None)["searched_path"] == ""
+
+
+def test_cli_status_describes_the_current_bin_without_touching_the_path(monkeypatch):
+    """F06.3: sem `refresh`, `cli_status` só descreve o `BIN` atual — o monkeypatch de `BIN`
+    continua sendo o jeito de fingir o CLI nos testes (ADR-008)."""
+    monkeypatch.setattr(prompter, "BIN", None)
+    monkeypatch.setattr(prompter.clibin, "which", lambda name="claude": "/nao/deveria/ser/chamado")
+    ausente = prompter.cli_status()
+    assert set(ausente) == DIAG_KEYS
+    assert ausente["available"] is False and ausente["path"] is None and prompter.BIN is None
+
+    monkeypatch.setattr(prompter, "BIN", "/x/claude")
+    presente = prompter.cli_status()
+    assert presente["available"] is True and presente["path"] == "/x/claude"
+
+
+def test_cli_status_refresh_reassigns_bin_without_restarting_the_process(monkeypatch):
+    """F06.4 (critério A2): o CLI instalado DEPOIS de o servidor subir passa a valer com
+    `refresh=True` — é isso que faz o botão "Verificar de novo" funcionar sem restart."""
+    monkeypatch.setattr(prompter, "BIN", None)
+    monkeypatch.setattr(prompter.clibin, "which", lambda name="claude": "/novo/claude")
+    d = prompter.cli_status(refresh=True)
+    assert d["available"] is True and d["path"] == "/novo/claude"
+    assert prompter.BIN == "/novo/claude"          # o módulo-global foi REATRIBUÍDO
+    assert prompter.available() is True            # e `available()` enxerga o binário novo
+
+
+def test_available_still_reads_bin_after_cli_status(monkeypatch):
+    """F06.5: `available()` continua sendo `BIN is not None` — nenhuma chamada existente muda."""
+    monkeypatch.setattr(prompter, "BIN", "/x/claude")
+    prompter.cli_status()
+    assert prompter.available() is True
+    monkeypatch.setattr(prompter.clibin, "which", lambda name="claude": None)
+    prompter.cli_status(refresh=True)
+    assert prompter.BIN is None and prompter.available() is False
+
+
+# ------------------------------------------------------------------------------------------
+# `run.sh` (critério A4): inspeção do script, sem subir servidor e sem subprocess (ADR-008).
+# ------------------------------------------------------------------------------------------
+def test_run_sh_appends_user_bin_dirs_after_the_inherited_path():
+    src = (Path(__file__).resolve().parents[1] / "run.sh").read_text()
+    assert '"$HOME/.local/bin"' in src, "o diretório de binário do usuário precisa ser acrescentado"
+    atribuicoes = [ln.strip() for ln in src.splitlines() if "PATH=" in ln and "$PATH" in ln]
+    assert atribuicoes, "o script precisa montar o PATH"
+    for ln in atribuicoes:
+        valor = ln.split("PATH=", 1)[1]
+        # O PATH herdado vem PRIMEIRO: nada pode ser prefixado a ele (FDD §10, Risco 6), senão o
+        # Studio troca silenciosamente um `claude` que o usuário já tem.
+        assert valor.startswith('"$PATH'), f"prepend proibido em run.sh: {ln}"
+    assert "export PATH" in src
