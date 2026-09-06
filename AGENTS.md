@@ -24,7 +24,7 @@ Todo o contexto vive em `docs/`:
 - Gitflow: `docs/gitflow.md`
 - Fluxo DD: `docs/dd.md`, `docs/dd-parallel.md`
 - Guidelines: `docs/guidelines/python-development-guidelines.md`
-- Domínios (HLD): `docs/domains/<dominio>/hld.md` — `studio`, `higgsfield` e um por etapa (`refs`, `mood`, `base`, `storyboard`, `shots`, `animate`, `music`, `edit`, `export`, `publish`, `prospect`)
+- Domínios (HLD): `docs/domains/<dominio>/hld.md` — `studio`, `higgsfield`, `chat` (assistente `[extensão]`, ADR-036/037/038/040), `characters` (personagem `[extensão]`, ADR-039) e um por etapa (`refs`, `mood`, `base`, `storyboard`, `shots`, `animate`, `music`, `edit`, `export`, `publish`, `prospect`)
 - FDDs: `docs/domains/<dominio>/features/`
 - Diagramas: `docs/domains/<dominio>/diagrams/{mermaid,c4}/`
 - ADRs: `docs/adrs/generated/`; mapeamento em `docs/adrs/mapping.md`

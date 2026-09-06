@@ -86,6 +86,13 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
   é o componente default-exportado de `ui/index.tsx`, montado pelo `PluginHost` do shell.
 - Ponte com a Higgsfield **somente** via CLI oficial (`studio/higgsfield.py`, subprocess +
   `--json`). Nunca chamar `api.higgsfield.ai` direto; nunca automatizar a UI da Higgsfield.
+- **Assistente de chat `[extensão]`** (ADR-036/037/038/040): `studio/chat/` (runtime `claude -p`
+  stream-json + WebSocket `/ws/chat/{id}`) e `studio/mcp/` (servidor MCP stdio `python -m studio.mcp`,
+  cliente HTTP da própria API). O agente age **só** pelas tools `mcp__studio__*` (tools nativas off,
+  `--strict-mcp-config`); escolha visual e gasto são do usuário (`ui.*`, ADR-038). O MESMO MCP serve
+  o chat embutido e o terminal (`.mcp.json` do repo). Biblioteca de **Personagens** em
+  `studio/characters/` (ADR-039). Pontes de geração seguem sendo Higgsfield (paga) e motor local
+  (grátis, ADR-033) — o chat não cria caminho alternativo.
 - Testes: `pytest` sem rede e sem navegador (fakes); `make verify` = ruff + pytest.
 - Mudanças nessas decisões exigem ADR.
 
@@ -104,6 +111,9 @@ Antes de qualquer `git push`, abertura ou atualização de Pull Request, carrega
 | `cy-create-prd`, `cy-create-tasks`, `cy-execute-task`, `cy-review-round`, `cy-fix-reviews`, `cy-final-verify`, `cy-workflow-memory` | Pipeline SDD (Compozy) — acionadas pelo `dd-feature` |
 | `compozy` | Entender capacidades e fluxo do Compozy |
 | `git-rebase` | Resolver conflitos de rebase/merge |
+| `studio-conduzir` `[extensão]` | Conduzir a campanha ponta a ponta no terminal pelas tools do MCP `studio` (ADR-036/037) |
+| `studio-personagem` `[extensão]` | Criar/fixar personagem e aplicar identidade a uma campanha (ADR-039) |
+| `studio-ajuda` `[extensão]` | Tirar dúvidas do método/aplicação pelo guia ao vivo e resources do MCP |
 
 **Não acionar**: `cy-create-techspec` (o FDD é a techspec — ver `dd-feature`).
 
