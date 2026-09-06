@@ -80,6 +80,19 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "o shell tocados. ADR-036/041, ADR-008/010/031/032.",
         ("frontend/", "studio/web/"),
     ),
+    "feature/adh-os-20260906-14-chat-moodboards": (
+        "`[extensão]` Biblioteca de Mood boards no chat, card #90 / ADH-OS-20260906-14 (wave 11 · "
+        "F12): 16 tools MCP, resource e HLD do domínio. O trabalho é todo FORA do núcleo "
+        "(`studio/mcp/**`, `studio/chat/{prompts,mudancas.py}`, `tests/`, `docs/`). O único "
+        "toque em `frontend/` é UMA linha em `src/areas/chat/toolCredits.ts`: `moodboard_multishot` "
+        "passa por `actions._paid`, e o próprio módulo da F10 manda espelhar ali toda tool paga "
+        "nova, senão o dock não recarrega o saldo depois do gasto. Em `studio/web/` muda APENAS o "
+        "bundle GERADO `studio/web/dist/` (`make frontend-build`, guarda de drift do CI). "
+        "Nenhum componente, estilo ou rota do shell é alterado por esta frente — os demais "
+        "arquivos de `frontend/` que aparecem no diff vêm do MERGE de `develop` (F10 creditos-chat, "
+        "já revisada e mergeada), não de edição daqui. ADR-016/037/038, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-12-creditos-chat": (
         "`[extensão]` Créditos no chat, card #91 / ADH-OS-20260906-12 (wave 11 · F10): o gate de "
         "custo do dock mostrava duas linhas enquanto as telas mostravam a planilha inteira "

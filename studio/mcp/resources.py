@@ -2,7 +2,7 @@
 
 Resources são texto que o agente lê como referência (mais barato que uma tool por chamada). Aqui:
 - `studio://help` — o método do curso e como conduzir cada etapa (fonte de verdade do assistente);
-- `studio://help/<etapa>` — a dica curta de uma etapa;
+- `studio://help/<etapa>` — a dica curta de uma etapa (ou de uma ÁREA global, ver `HELP_AREAS`);
 - `studio://project/<pid>/guide` — o guia AO VIVO da campanha (via a API, ADR-010).
 """
 from __future__ import annotations
@@ -24,12 +24,29 @@ HELP: dict[str, str] = {
     "prospect": "Aula 001. Leads e DM com o script; teaser de 5–10 s.",
 }
 
+#: Dica curta por ÁREA global `[extensão]` — o que não é etapa do curso e não tem `pid` (ADR-013).
+#: Fica FORA de `HELP` de propósito: `HELP_GERAL` monta a lista "Etapas:" a partir dele, e a
+#: biblioteca de mood boards não é etapa. O resolvedor de `studio://help/{etapa}` consulta os dois.
+HELP_AREAS: dict[str, str] = {
+    "moodboards": (
+        "Biblioteca de mood boards `[extensão]` (ADR-013): global, sem campanha. Um board é UMA vibe (até 8\n"
+        "imagens curadas, ADR-007). Caminho: moodboard_create, moodboard_import (downloads|history),\n"
+        "moodboard_pick (o usuário escolhe), moodboard_patch (grava a VIBE em palavras),\n"
+        "moodboard_prompt, e mood_pull para semear a etapa 2 de uma\n"
+        "campanha. Peneira de vibes: vibes_list, vibes_pick, escolhidas_list. Cadeia gratuita de skills:\n"
+        "mood_run + mood_run_wait (demora minutos). Pago: moodboard_multishot (confirma o custo).\n"
+        "Upload de arquivo é pela tela: o assistente nunca manipula bytes."
+    ),
+}
+
 HELP_GERAL = (
     "Orquestrador Studio — método do curso 'O Orquestrador'. O assistente conduz a campanha do "
     "início ao fim, sempre pelo guia (tool `guide`/`guide_step`), deixando a escolha visual e o "
     "gasto com o usuário. Grátis na exploração (motor local), pago só na versão final (Higgsfield, "
     "com confirmação de custo). Etapas: "
     + " | ".join(f"{k}: {v}" for k, v in HELP.items())
+    + " Fora das etapas há áreas globais `[extensão]`, sem campanha: a biblioteca de mood boards "
+      "(`studio://help/moodboards`)."
 )
 
 
@@ -40,7 +57,17 @@ def register_resources(server, client: StudioClient) -> None:
 
     @server.resource("studio://help/{etapa}")
     def help_etapa(etapa: str) -> str:
-        return HELP.get(etapa, f"Etapa desconhecida: {etapa}. Etapas: {', '.join(HELP)}")
+        """Dica de uma etapa do curso ou de uma área global (`HELP` primeiro, `HELP_AREAS` depois).
+
+        Um resolvedor só, sem resource concreto por área: assim a resposta não depende da ordem em
+        que o FastMCP casa um resource literal com este template.
+        """
+        if etapa in HELP:
+            return HELP[etapa]
+        if etapa in HELP_AREAS:
+            return HELP_AREAS[etapa]
+        return (f"Tópico desconhecido: {etapa}. Etapas: {', '.join(HELP)}. "
+                f"Áreas globais: {', '.join(HELP_AREAS)}.")
 
     @server.resource("studio://project/{pid}/guide")
     def project_guide(pid: str) -> str:

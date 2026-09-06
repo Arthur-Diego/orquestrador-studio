@@ -74,6 +74,9 @@ class StudioClient:
     def patch(self, path: str, json: dict | None = None) -> Any:
         return self._call("PATCH", path, json=json)
 
+    def delete(self, path: str) -> Any:
+        return self._call("DELETE", path)
+
 
 def _detail(resp: httpx.Response) -> str:
     try:

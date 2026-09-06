@@ -8,6 +8,9 @@
 // saldo do dock volta a ficar correto sozinho.
 const PAGAS = new Set([
   "mood_generate",
+  // Biblioteca de mood boards (wave 11 · F12): o multishot da imagem de vibe é o único caminho
+  // pago da área global, e passa por `_paid` como as demais.
+  "moodboard_multishot",
   "base_generate",
   "storyboard_scene_generate",
   "animate_generate",

@@ -55,6 +55,23 @@ export const TOOL_LABELS: Record<string, string> = {
   character_apply: "Aplicando o personagem à campanha",
   character_bind_soul: "Treinando o Soul ID",
   character_score: "Medindo a semelhança do personagem",
+  // Biblioteca de mood boards (wave 11 · F12, ADR-013): área global, sem campanha.
+  moodboard_list: "Listando os mood boards",
+  moodboard_get: "Lendo o mood board",
+  moodboard_create: "Criando o mood board",
+  moodboard_patch: "Salvando a vibe do mood board",
+  moodboard_import: "Importando imagens para o mood board",
+  moodboard_pick: "Aguardando você curar o mood board",
+  moodboard_prompt: "Escrevendo o prompt de vibe do board",
+  moodboard_delete: "Apagando o mood board",
+  moodboard_multishot: "Gerando ângulos da imagem de vibe",
+  moodboard_multishot_wait: "Aguardando os ângulos novos",
+  vibes_list: "Listando o catálogo de vibes",
+  vibes_pick: "Aguardando você escolher as fotos de vibe",
+  escolhidas_list: "Listando as fotos escolhidas",
+  mood_run: "Rodando a cadeia de mood",
+  mood_run_wait: "Aguardando as pranchas de mood",
+  mood_pull: "Puxando o mood board para a campanha",
 };
 
 /**

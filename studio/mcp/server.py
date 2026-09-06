@@ -158,6 +158,75 @@ def build_server(client: StudioClient | None = None):
     def portfolio() -> str:
         return actions.portfolio(cli)
 
+    # ---------- ações: biblioteca de mood boards `[extensão]` (ADR-013) ----------
+    @t(name="moodboard_list", description="Lista os mood boards da biblioteca (global, sem campanha). Comece por aqui; depois `moodboard_get`.")
+    def moodboard_list() -> str:
+        return actions.moodboard_list(cli)
+
+    @t(name="moodboard_get", description="Detalhe de um mood board: vibe, nota, paleta, prompt e as candidatas a curar. Depois use `moodboard_pick`.")
+    def moodboard_get(mbid: str) -> str:
+        return actions.moodboard_get(cli, mbid)
+
+    @t(name="moodboard_create", description="Cria um mood board na biblioteca (uma vibe só, ADR-007). Depois use `moodboard_import`.")
+    def moodboard_create(name: str, note: str = "") -> str:
+        return actions.moodboard_create(cli, name, note)
+
+    @t(name="moodboard_patch", description="Edita os metadados de um mood board: name (só o rótulo — o id não muda), note e vibe. É a única forma de gravar a VIBE em palavras, que `mood_pull` leva para a campanha.")
+    def moodboard_patch(mbid: str, name: str = "", note: str = "", vibe: str = "") -> str:
+        return actions.moodboard_patch(cli, mbid, name, note, vibe)
+
+    @t(name="moodboard_import", description="Importa candidatas para o board a partir da pasta Downloads ou do histórico da Higgsfield. source: downloads|history (upload é só pela tela). Depois use `moodboard_pick`.")
+    def moodboard_import(mbid: str, source: str = "downloads", since_minutes: int = 120) -> str:
+        return actions.moodboard_import(cli, mbid, source, since_minutes)
+
+    @t(name="moodboard_pick", description="Mostra as candidatas do board para o USUÁRIO escolher (até 8) e salva a curadoria + a paleta. Depois use `moodboard_prompt` ou `mood_pull`.")
+    def moodboard_pick(mbid: str, note: str = "") -> str:
+        return actions.moodboard_pick(cli, mbid, note)
+
+    @t(name="moodboard_prompt", description="Escreve o prompt de vibe do board a partir das imagens curadas (grátis). mode: template|brief|images.")
+    def moodboard_prompt(mbid: str, mode: str = "images", instruction: str = "",
+                         no_people: bool = True) -> str:
+        return actions.moodboard_prompt(cli, mbid, mode, instruction, no_people)
+
+    @t(name="moodboard_delete", description="Apaga um mood board da biblioteca (irreversível). Confirma com o usuário antes; no terminal exige confirm=true.")
+    def moodboard_delete(mbid: str, confirm: bool = False) -> str:
+        return actions.moodboard_delete(cli, mbid, confirm)
+
+    @t(name="vibes_list", description="Lista o catálogo de fotos de vibe (global) com as vibes disponíveis e quantas já estão na peneira. Filtros: vibe (slug), origem (catalogo|usuario|sugestao).")
+    def vibes_list(vibe: str = "", origem: str = "", page: int = 1) -> str:
+        return actions.vibes_list(cli, vibe, origem, page)
+
+    @t(name="vibes_pick", description="Mostra as fotos de vibe para o USUÁRIO escolher e copia as escolhidas para a peneira (`_escolhidas/`). Depois use `escolhidas_list`.")
+    def vibes_pick(vibe: str = "", origem: str = "", page: int = 1) -> str:
+        return actions.vibes_pick(cli, vibe, origem, page)
+
+    @t(name="escolhidas_list", description="Lista a peneira de fotos escolhidas com o caminho absoluto de cada uma — é esse caminho que vai em `mood_run(foto=...)`.")
+    def escolhidas_list(page: int = 1) -> str:
+        return actions.escolhidas_list(cli, page)
+
+    @t(name="mood_run", description="Roda a cadeia de skills mood_ sobre uma foto-semente da peneira e monta pranchas no board. GRÁTIS em crédito, mas baixa dezenas de imagens e leva vários minutos: estima e confirma antes; no terminal exige confirm=true. Depois use `mood_run_wait`.")
+    def mood_run(mbid: str, foto: str = "", objetivos: list[str] | None = None,
+                 board: int | None = None, n: int | None = None, fundo: str = "",
+                 confirm: bool = False) -> str:
+        return actions.mood_run(cli, mbid, foto, objetivos, board, n, fundo, confirm)
+
+    @t(name="mood_run_wait", description="Espera a corrida de mood do board terminar e mostra as pranchas no chat. USE ESTA, não `job_wait` — a URL do job da corrida é própria.")
+    def mood_run_wait(mbid: str, timeout: int = 1800) -> str:
+        return actions.mood_run_wait(cli, mbid, timeout=timeout)
+
+    @t(name="moodboard_multishot", description="Gera ângulos novos de uma candidata do board (PAGA — Higgsfield, ADR-017). Estima e confirma o custo com o usuário antes; no terminal exige confirm=true. Depois use `moodboard_multishot_wait`.")
+    def moodboard_multishot(mbid: str, source_id: str, count: int = 4, model: str = "",
+                            confirm: bool = False) -> str:
+        return actions.moodboard_multishot(cli, mbid, source_id, count, model, confirm=confirm)
+
+    @t(name="moodboard_multishot_wait", description="Espera o multishot do board terminar e relata quantas candidatas novas entraram. USE ESTA, não `job_wait` — a URL do job do multishot é própria.")
+    def moodboard_multishot_wait(mbid: str, timeout: int = 600) -> str:
+        return actions.moodboard_multishot_wait(cli, mbid, timeout=timeout)
+
+    @t(name="mood_pull", description="Puxa um mood board da biblioteca para a etapa 2 de uma campanha (grátis): copia as imagens curadas, a paleta e a vibe. A cópia é independente do board; confira a prontidão com `guide_step`.")
+    def mood_pull(pid: str, mbid: str) -> str:
+        return actions.mood_pull(cli, pid, mbid)
+
     # ---------- ui.* (humano-no-laço, ADR-038) ----------
     @t(name="ui_choose_one", description="Pede ao usuário que escolha UMA opção. options: [{label,value}].")
     def ui_choose_one(title: str, options: list[dict]) -> dict:
