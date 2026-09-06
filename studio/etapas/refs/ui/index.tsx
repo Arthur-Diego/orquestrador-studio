@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { StepGuide, progressJob, useProgress, useUpload, poll } from "../../../../frontend/src/ui";
 import { useStudio } from "../../../../frontend/src/shell/plugin";
+import { useStudioChange } from "../../../../frontend/src/shell/events";
 
 interface Candidate {
   id: string;
@@ -208,6 +209,34 @@ export default function RefsScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid]);
+
+  // ---------- sincronização com o chat `[extensão]` (Wave 11 · F03) ----------
+  // O assistente age pelas tools `mcp__studio__*` e escreve nos MESMOS artefatos desta tela
+  // (`refs_search` dispara o job, `refs_pick` grava a escolha). O `ChatDock` avisa pelo barramento
+  // do shell e a tela reusa o que ela já tem: nada de segunda carga, nada de segundo poll.
+  //
+  // `load(true)` e não `load()`: `keepSel` preserva a marcação em curso do usuário, que ainda não
+  // foi salva no disco (§10 Risco 5 do FDD). Reler o job em seguida é o passo 9 do fluxo principal
+  // — o evento de `refs_search` sai quando o POST volta, não quando o scrape termina, então o que a
+  // tela precisa mostrar é o progresso, e quem faz isso é o `startPoll()` que já existe.
+  useStudioChange(
+    "refs",
+    () => {
+      void (async () => {
+        await load(true);
+        if (!ctx.pid()) return;
+        const j = (await ctx.api(`/api/projects/${ctx.pid()}/refs/job`)) as Job;
+        renderJob(j);
+        if (j.state === "running" && !pollRef.current) {
+          setBusy(true);
+          startPoll();
+        }
+      })().catch(() => {
+        /* aviso do chat é best-effort: falha de rede aqui não pode derrubar a tela */
+      });
+    },
+    { pid },
+  );
 
   // ---------- upload / drop ----------
   const doUpload = useCallback(

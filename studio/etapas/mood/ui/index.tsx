@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MoodMosaic, StepGuide } from "../../../../frontend/src/ui";
 import { useStudio } from "../../../../frontend/src/shell/plugin";
+import { useStudioChange } from "../../../../frontend/src/shell/events";
 
 const STEP_ID = "mood";
 
@@ -69,6 +70,19 @@ export default function MoodScreen() {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid]);
+
+  // Sincronização com o chat `[extensão]` (Wave 11 · F03): `mood_generate` e `mood_pick` mexem na
+  // biblioteca de boards e no mood da campanha. O mesmo `load()` do mount dá conta — ele substitui
+  // a lista inteira, e o efeito abaixo já descarta uma escolha que sumiu da lista.
+  useStudioChange(
+    "mood",
+    () => {
+      void load().catch(() => {
+        /* aviso do chat é best-effort: falha de rede aqui não pode derrubar a tela */
+      });
+    },
+    { pid },
+  );
 
   // A escolha que sumiu da lista deixa de valer (o `if (pick && !boards.some…)` do vanilla).
   useEffect(() => {

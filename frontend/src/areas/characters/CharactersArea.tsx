@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "../../api";
 import { useShell } from "../../shell/context";
+import { useStudioChange } from "../../shell/events";
 
 interface Character {
   id: string;
@@ -47,6 +48,13 @@ export function CharactersArea({ pid, refreshKey = 0 }: CharactersAreaProps) {
   useEffect(() => {
     void recarregar();
   }, [recarregar, refreshKey]);
+
+  // Sincronização com o chat `[extensão]` (Wave 11 · F03): as tools de personagem recebem `cid`, não
+  // `pid`, então o evento sai com `pid: null` — "vale para qualquer campanha". Esta é uma área
+  // GLOBAL: assina sem `opts.pid`, o que aceita qualquer campanha aberta (inclusive nenhuma).
+  useStudioChange("characters", () => {
+    void recarregar();
+  });
 
   if (selId) return <CharacterDetail cid={selId} pid={pid} onBack={() => { setSelId(null); void recarregar(); }} />;
 
