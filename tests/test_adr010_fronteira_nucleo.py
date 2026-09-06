@@ -70,6 +70,15 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-11-chat-audio": (
+        "`[extensão]` entrada por voz no chat (ADR-043), card #89 / ADH-OS-20260906-11 "
+        "(Wave 11 · F09): o backend novo vive em `studio/chat/` (`voice.py`, rota multipart e o "
+        "campo `via` no evento `user`), fora de NUCLEO_PREFIXOS. O núcleo tocado é `frontend/` "
+        "(composer do `ChatDock`, hook `useRecorder`, `chat.css`, `types.ts` e o `schema.ts` "
+        "regenerado pela rota nova) e o bundle `studio/web/dist/`. Nenhuma etapa nem o shell são "
+        "tocados. ADR-024/036/040/043, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-13-base-upscale-chat": (
         "`[extensão]` Wave 11 · frente F11 — revisão do upscale da etapa 3 pelo chat, card #94 "
         "(ADH-OS-20260906-13): o trabalho próprio vive fora do núcleo (`studio/base/service.py`, "

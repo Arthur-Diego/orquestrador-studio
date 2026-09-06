@@ -868,6 +868,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats/{chat_id}/transcribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chat Transcribe
+         * @description Áudio falado no dock → texto, sem que nada disso chegue ao agente (ADR-040/043).
+         *
+         *     O produto desta rota é `{text, provider, duration_s}`: quem decide o que fazer com o texto é o
+         *     composer, não o servidor — nenhuma mensagem é enviada aqui e nenhum evento é gravado.
+         *
+         *     A aba é conferida ANTES de ler o arquivo: mandar 10 MB pelo fio para descobrir que a conversa
+         *     não existe é desperdício, e o `detail` do 404 é o mesmo das outras rotas do domínio.
+         */
+        post: operations["chat_transcribe_api_chats__chat_id__transcribe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chats/{chat_id}/ask": {
         parameters: {
             query?: never;
@@ -4414,6 +4440,16 @@ export interface components {
              */
             prompt?: string;
         };
+        /** Body_chat_transcribe_api_chats__chat_id__transcribe_post */
+        Body_chat_transcribe_api_chats__chat_id__transcribe_post: {
+            /** File */
+            file: string;
+            /**
+             * Duration S
+             * @default 0
+             */
+            duration_s?: number;
+        };
         /** Body_mood_upload_api_projects__pid__mood_import_upload_post */
         Body_mood_upload_api_projects__pid__mood_import_upload_post: {
             /** Files */
@@ -7583,6 +7619,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_transcribe_api_chats__chat_id__transcribe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_chat_transcribe_api_chats__chat_id__transcribe_post"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

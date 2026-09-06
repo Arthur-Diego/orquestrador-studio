@@ -1,0 +1,624 @@
+{
+  "info": {
+    "name": "Orquestrador Studio — chat-audio (entrada por voz no chat) [extensão]",
+    "description": "Contrato público C1 da seção 5 do FDD `docs/domains/chat/features/chat-audio-fdd.md` (L263-348): `POST /api/chats/{chat_id}/transcribe`, multipart, campos `file` e `duration_s`, matriz 200/404/409/413/422/502 e `detail` sempre string.\n\nC2 (campo `via` no WebSocket `/ws/chat/{chat_id}`, FDD L371-397) e C3 (hook `useRecorder`, FDD L399-424) NÃO entram: um é stream, o outro é função de frontend — nenhum dos dois é request HTTP.\n\nSem `OPENAI_API_KEY` no ambiente o provedor resolvido é o `FakeTranscribe` e a rota responde **409** (ADR-024/043). Por isso o caminho executável desta coleção é: criar a aba → 409 na transcrição → 404, 413 e 422, que não dependem de provedor. O **200** e o **502** ficam documentados nos requests da pasta `01-transcricao (C1)`, sem asserção executável.\n\nGerada em 2026-09-06 a partir do commit `2dd12701e23dd5906c09a9d450c3c87b269dafda` da branch `feature/adh-os-20260906-11-chat-audio`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8776",
+      "type": "string"
+    },
+    {
+      "key": "chatId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "chatIdInexistente",
+      "value": "c_aba_que_nao_existe_0000",
+      "type": "string"
+    },
+    {
+      "key": "durationValida",
+      "value": "6.4",
+      "type": "string"
+    },
+    {
+      "key": "durationForaDoIntervalo",
+      "value": "999",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00-setup",
+      "description": "Produz o `{{chatId}}` que todos os requests de `/transcribe` consomem (FDD §4, passo 6: o cliente já está dentro de uma aba quando grava). `POST /api/chats` é rota preexistente do domínio, FORA da §5 deste FDD — está aqui só como fonte de dado.",
+      "item": [
+        {
+          "name": "criar aba de chat (fonte do {{chatId}})",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"title\": \"postman chat-audio\", \"pid\": null}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Rota preexistente (`studio/chat/router.py:115-117`), não declarada na §5 do FDD chat-audio. O `id` devolvido vira `{{chatId}}` — é o encadeamento que a §4 (passo 6) exige, porque `/transcribe` confere a existência da aba ANTES de ler o arquivo (`router.py:237-240`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 — aba criada', () => pm.response.to.have.status(200));",
+                  "const aba = pm.response.json();",
+                  "pm.test('a resposta traz o id da aba', () => pm.expect(aba.id).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('chatId', aba.id);",
+                  "console.log('chatId =', aba.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01-transcricao (C1)",
+      "description": "Os dois status do C1 que NÃO são executáveis neste ambiente: 200 exige `OPENAI_API_KEY` real (FDD L283-284) e 502 exige um provedor real que falhe (FDD L297-298). Ambos ficam aqui como contrato importável, com o teste marcado como `skip` enquanto a pré-condição não existir.",
+      "item": [
+        {
+          "name": "200 — transcrever fala (EXIGE OPENAI_API_KEY real)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/fala-min.webm",
+                  "contentType": "audio/webm"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "{{durationValida}}"
+                }
+              ]
+            },
+            "description": "FDD §5 C1, L283-284: `200` transcrição concluída, corpo `{text, provider, duration_s}`; `text` pode ser string vazia quando o provedor não ouviu nada.\n\n**Não executável por padrão.** Duas pré-condições, nenhuma satisfeita nesta worktree:\n1. `OPENAI_API_KEY` no ambiente — sem ela `get_transcribe()` devolve `FakeTranscribe` e a rota responde 409 (FDD L286-287, `studio/chat/voice.py:170-174`).\n2. Um áudio real. O fixture `fixtures/fala-min.webm` tem só a assinatura EBML (`1A 45 DF A3`) e enchimento: passa em `check_audio` mas não é um webm tocável. Para exercitar o 200 de verdade, troque o arquivo por uma gravação real do `MediaRecorder`.\n\nO teste vira `skip` quando a resposta for 409, e só assere o shape quando o 200 acontecer."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Sem OPENAI_API_KEY o caminho correto É o 409 (ADR-024/043). Só o 200 é asserido.",
+                  "if (pm.response.code === 409) {",
+                  "    pm.test.skip('200 exige OPENAI_API_KEY real — respondeu 409, que é o esperado sem chave', () => {});",
+                  "} else {",
+                  "    pm.test('200 — transcrição concluída (FDD §5 C1, L283)', () => pm.response.to.have.status(200));",
+                  "    const corpo = pm.response.json();",
+                  "    pm.test('corpo {text, provider, duration_s} (FDD L326-332)', () => {",
+                  "        pm.expect(corpo.text).to.be.a('string');",
+                  "        pm.expect(corpo.provider).to.be.a('string').and.not.empty;",
+                  "        pm.expect(corpo.duration_s).to.be.a('number');",
+                  "    });",
+                  "    pm.test('duration_s ecoa o valor enviado (FDD L269-270)', () => {",
+                  "        pm.expect(corpo.duration_s).to.eql(Number(pm.collectionVariables.get('durationValida')));",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "502 — ProviderError do provedor real (EXIGE STUB QUE LEVANTA)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/fala-min.webm",
+                  "contentType": "audio/webm"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "{{durationValida}}"
+                }
+              ]
+            },
+            "description": "FDD §5 C1, L297-298 e §6 L441: `502` quando o provedor REAL levanta `ProviderError` (ADR-024 §5, política assimétrica). O `detail` já vem redigido e truncado por `OpenAITranscribe._safe`.\n\n**Não executável por HTTP puro.** Produzir o 502 exige um provedor real que falhe — chave inválida contra a rede (proibido pela ADR-008 numa suíte determinística) ou o stub que levanta, que é exatamente o §9 critério 5, coberto em `tests/test_chat_transcribe.py`, não aqui. Sem chave nenhuma, este request devolve 409 e o teste vira `skip`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code !== 502) {",
+                  "    pm.test.skip('502 exige provedor real que falhe (stub) — respondeu ' + pm.response.code, () => {});",
+                  "} else {",
+                  "    pm.test('502 — ProviderError (FDD §5 C1, L297)', () => pm.response.to.have.status(502));",
+                  "    pm.test('detail é string (FDD L299)', () => pm.expect(pm.response.json().detail).to.be.a('string'));",
+                  "    pm.test('detail não vaza a chave (ADR-024, _safe)', () => {",
+                  "        pm.expect(String(pm.response.json().detail)).to.not.match(/sk-[A-Za-z0-9]/);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "erros",
+      "description": "Uma linha da matriz de erros da §6 (FDD L432-449) por request, restrita às que nomeiam um status HTTP numa rota concreta. Todas executáveis sem provedor: são exatamente os quatro status que o servidor produz sozinho.",
+      "item": [
+        {
+          "name": "404 — aba de chat inexistente",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatIdInexistente}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatIdInexistente}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/fala-min.webm",
+                  "contentType": "audio/webm"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "{{durationValida}}"
+                }
+              ]
+            },
+            "description": "FDD §5 C1 L285 e §6 L434: `404 conversa não encontrada: {id}`, a mesma mensagem de `/events`, `/ask` e `/emit`. O §9 critério 4 exige que a checagem aconteça ANTES de qualquer leitura do arquivo (`studio/chat/router.py:237-241`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 — aba inexistente (FDD §5 C1, L285)', () => pm.response.to.have.status(404));",
+                  "const detail = pm.response.json().detail;",
+                  "pm.test('detail é string (FDD L299)', () => pm.expect(detail).to.be.a('string'));",
+                  "pm.test('mensagem padrão do domínio (FDD §6, L434)', () => {",
+                  "    pm.expect(detail).to.eql('conversa não encontrada: ' + pm.collectionVariables.get('chatIdInexistente'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 — sem provedor real de transcrição",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/fala-min.webm",
+                  "contentType": "audio/webm"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "{{durationValida}}"
+                }
+              ]
+            },
+            "description": "FDD §5 C1 L286-287 e §6 L440: `409` quando o provedor resolvido é o `FakeTranscribe`; o `detail` é a própria dica de correção (exemplo do FDD, L334-340). §9 critério 2: o detail cita `OPENAI_API_KEY` e `.env.local`, e nunca 200 com texto de mentira.\n\n**Este é o resultado esperado deste request enquanto não houver `OPENAI_API_KEY` no ambiente do servidor.** Com a chave configurada ele passa a devolver 200 e o teste avisa no console."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    console.warn('respondeu 200: há OPENAI_API_KEY no ambiente do servidor, então o 409 não é observável nesta execução');",
+                  "    pm.test.skip('409 exige ausência de OPENAI_API_KEY — o servidor tem provedor real', () => {});",
+                  "} else {",
+                  "    pm.test('409 — capacidade não configurada (FDD §5 C1, L286)', () => pm.response.to.have.status(409));",
+                  "    const detail = pm.response.json().detail;",
+                  "    pm.test('detail é string (FDD L299)', () => pm.expect(detail).to.be.a('string'));",
+                  "    pm.test('detail cita OPENAI_API_KEY e .env.local (§9 critério 2)', () => {",
+                  "        pm.expect(detail).to.include('OPENAI_API_KEY');",
+                  "        pm.expect(detail).to.include('.env.local');",
+                  "    });",
+                  "    pm.test('nunca devolve texto do FakeTranscribe (ADR-024 §5)', () => {",
+                  "        pm.expect(pm.response.text()).to.not.include('palavra1');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "413 — corpo acima de 10 MB",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "multipart/form-data; boundary=----orquestradorStudio413"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "(o corpo real é montado no script de pre-request: 10 MB + 1 KB de enchimento)"
+            },
+            "description": "FDD §5 C1 L292 e §6 L435: `413 fala.webm: arquivo acima de 10 MB`, teto `MAX_AUDIO_BYTES = 10 * 1024 * 1024` (FDD L271, `studio/chat/voice.py:33`).\n\n**Único request da coleção com o corpo montado por script.** Um fixture de 10 MB não entra num diretório de documentação, então o multipart é escrito à mão no pre-request, com o mesmo boundary declarado no header `Content-Type` acima. O enchimento é `A` repetido: o router confere o tamanho ANTES da assinatura (`router.py:249-254`), então o corpo não precisa parecer um webm.\n\nCusto: ~10 MB pelo loopback por execução."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// MAX_AUDIO_BYTES = 10 * 1024 * 1024 (FDD §5 C1, L271). +1 KB para cruzar o teto com folga.",
+                  "const boundary = '----orquestradorStudio413';",
+                  "const recheio = 'A'.repeat(10 * 1024 * 1024 + 1024);",
+                  "const corpo = [",
+                  "    '--' + boundary,",
+                  "    'Content-Disposition: form-data; name=\"file\"; filename=\"grande.webm\"',",
+                  "    'Content-Type: audio/webm',",
+                  "    '',",
+                  "    recheio,",
+                  "    '--' + boundary,",
+                  "    'Content-Disposition: form-data; name=\"duration_s\"',",
+                  "    '',",
+                  "    '5',",
+                  "    '--' + boundary + '--',",
+                  "    ''",
+                  "].join('\\r\\n');",
+                  "pm.request.body.update({ mode: 'raw', raw: corpo });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('413 — corpo acima de 10 MB (FDD §5 C1, L292)', () => pm.response.to.have.status(413));",
+                  "const detail = pm.response.json().detail;",
+                  "pm.test('detail é string (FDD L299)', () => pm.expect(detail).to.be.a('string'));",
+                  "pm.test('detail traz o nome do arquivo e o teto (FDD §6, L435)', () => {",
+                  "    pm.expect(detail).to.eql('grande.webm: arquivo acima de 10 MB');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — arquivo de áudio vazio",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/vazio.webm",
+                  "contentType": "audio/webm"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "FDD §5 C1 L293 e §6 L436: `422 file: arquivo de áudio vazio`. `fixtures/vazio.webm` tem 0 byte."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 — arquivo vazio (FDD §6, L436)', () => pm.response.to.have.status(422));",
+                  "const detail = pm.response.json().detail;",
+                  "pm.test('detail é string, não a lista do FastAPI (FDD L299 — ver divergencias.md)', () => {",
+                  "    pm.expect(detail).to.be.a('string');",
+                  "});",
+                  "pm.test('detail começa pelo nome do campo (FDD L294-296)', () => {",
+                  "    pm.expect(detail).to.match(/^file: /);",
+                  "});",
+                  "pm.test('mensagem da matriz de erros', () => pm.expect(detail).to.eql('file: arquivo de áudio vazio'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — content_type fora da allowlist",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/fala-min.webm",
+                  "contentType": "audio/aac"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "{{durationValida}}"
+                }
+              ]
+            },
+            "description": "FDD §5 C1 L274-279 (allowlist) e §6 L437: `422 file: formato não suportado: {tipo}`, com a lista no `detail`. `audio/aac` não está na allowlist do `whisper-1`; o mesmo fixture do 409 é enviado com o tipo trocado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 — formato fora da allowlist (FDD §6, L437)', () => pm.response.to.have.status(422));",
+                  "const detail = pm.response.json().detail;",
+                  "pm.test('detail é string (FDD L299)', () => pm.expect(detail).to.be.a('string'));",
+                  "pm.test('detail nomeia o campo e o tipo recusado', () => {",
+                  "    pm.expect(detail).to.match(/^file: formato não suportado: audio\\/aac/);",
+                  "});",
+                  "pm.test('detail lista os tipos aceitos (FDD L437: \"lista no detail\")', () => {",
+                  "    ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/wav', 'audio/mpeg'].forEach(t => {",
+                  "        pm.expect(detail).to.include(t);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — assinatura de bytes incompatível",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/nao-e-webm.webm",
+                  "contentType": "audio/webm"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "{{durationValida}}"
+                }
+              ]
+            },
+            "description": "FDD §5 C1 L293-296, exemplo em L342-348, e §6 L438: `422 file: o arquivo não parece um {tipo} (assinatura inválida)`. É o caso \"webm inválido\" do §9 critério 3, fechado sem ffmpeg e sem rede (ADR-008): o fixture declara `audio/webm` mas os primeiros bytes não são `1A 45 DF A3`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 — assinatura inválida (FDD §6, L438)', () => pm.response.to.have.status(422));",
+                  "const detail = pm.response.json().detail;",
+                  "pm.test('detail é string (FDD L299)', () => pm.expect(detail).to.be.a('string'));",
+                  "pm.test('mensagem exata do exemplo da §5 (FDD L342-348)', () => {",
+                  "    pm.expect(detail).to.eql('file: o arquivo não parece um audio/webm (assinatura inválida)');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 — duration_s fora de [0, 120]",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/chats/{{chatId}}/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chats",
+                "{{chatId}}",
+                "transcribe"
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "fixtures/fala-min.webm",
+                  "contentType": "audio/webm"
+                },
+                {
+                  "key": "duration_s",
+                  "type": "text",
+                  "value": "{{durationForaDoIntervalo}}"
+                }
+              ]
+            },
+            "description": "FDD §5 C1 L269-272 (`duration_s` aceito em `[0, 120]`, `MAX_AUDIO_SECONDS`) e §6 L439: `422 duration_s: fora do intervalo (0 a 120 s)`. É o único 422 cujo `detail` começa por `duration_s:` em vez de `file:`.\n\nAtenção: `duration_s` **não numérico** (ex.: `\"abc\"`) NÃO cai aqui — cai na validação do próprio FastAPI, que devolve `detail` como **lista de objetos**, contrariando a §5 L299. Ver `divergencias.md`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 — duração fora do intervalo (FDD §6, L439)', () => pm.response.to.have.status(422));",
+                  "const detail = pm.response.json().detail;",
+                  "pm.test('detail é string (FDD L299)', () => pm.expect(detail).to.be.a('string'));",
+                  "pm.test('detail começa pelo nome do campo (FDD L294-296)', () => {",
+                  "    pm.expect(detail).to.match(/^duration_s: /);",
+                  "});",
+                  "pm.test('mensagem da matriz de erros', () => {",
+                  "    pm.expect(detail).to.eql('duration_s: fora do intervalo (0 a 120 s)');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

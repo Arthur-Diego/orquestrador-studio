@@ -850,3 +850,25 @@ Relaciona ADR-004 (a aula manda escrever o prompt à mão — os campos ficam ab
 ADR-035 (remoção do combo de fórmulas: instrução sempre autoral), ADR-037 (as tools rodam no
 subprocess do MCP, clientes HTTP da própria API) e ADR-010/031/032 (núcleo gerado — `schema.ts` e
 `studio/web/dist/` — com titularidade declarada).
+
+---
+
+**ADR nova: ADR-043** (STUDIO) — **entrada por voz no chat `[extensão]`** (Wave 11 · frente F09,
+card #89, ADH-OS-20260906-11). O composer do dock ganha microfone, e a decisão arquitetural é onde
+a fala vira texto: **no servidor**, em `POST /api/chats/{chat_id}/transcribe` (multipart, teto de
+10 MB e de 120 s), reusando `TranscribeProvider.transcribe_text()` da ADR-024 sem mover o módulo —
+segundo consumidor do mesmo provedor, nenhuma tool MCP nova. O produto da rota é **texto**: ele cai
+no draft para revisão do usuário (enviar sozinho é opt-in, `studio.chat.voiceAutoSend`) e o agente
+nunca recebe áudio (ADR-040). **Sem provedor real a rota responde 409 com diagnóstico**, jamais o
+texto do `FakeTranscribe` — aqui não existe roteiro nosso para comparar, o áudio É a mensagem, e
+transcrição inventada numa bolha é pior que a ausência da funcionalidade. Os bytes vivem só num
+`TemporaryDirectory` fechado no `finally`; só o texto entra em `events.jsonl` (ADR-003 intacta).
+O evento `user` ganha o campo aditivo `via:"voice"`, registrado como **linha do protocolo v2 no
+ADR-041** (a frente preenche a reserva que aquela ADR deixou, em vez de abrir ADR concorrente).
+Mantém a recusa da Web Speech API da ADR-024 (conflito com a ADR-008: suíte sem rede e sem
+navegador) e **registra**, sem fechar, a lacuna da ADR-016 — o custo do `whisper-1` continua fora
+do livro-caixa, agora com dois consumidores. Novo: `studio/chat/voice.py`,
+`frontend/src/areas/chat/useRecorder.ts`. Relaciona ADR-001 (loopback e sem auth ⇒ gravar exige
+contexto seguro, logo não funciona pelo IP da rede local), ADR-004 (`[extensão]`, fora do roteiro
+do curso), ADR-031 (`schema.ts` regenerado e `studio/web/dist/` recomitado), ADR-036/037/038
+(runtime, MCP e ponte humano-no-laço intocados).
