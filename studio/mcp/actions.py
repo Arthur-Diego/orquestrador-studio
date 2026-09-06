@@ -476,6 +476,320 @@ def storyboard_scenes(client: StudioClient, pid: str) -> str:
     return "Cenas do storyboard:\n" + "\n".join(linhas)
 
 
+# ---------- 4b · Storyboard `[extensão]` Wave 11 · F06: roteiro, anexo e prompt por foto ----------
+# Todas escrevem em `scenes.json` pelo `PUT .../storyboard/scenes` e SÓ depois de autorização
+# humana (`ui.confirm`/`ui.choose_images`, ou `confirm=true` no terminal) — invariante 8 do FDD e
+# ADR-025: o servidor nunca aplica o roteiro às cenas, quem aplica é um cliente por gesto do
+# usuário. Nenhuma importa serviço de etapa (ADR-037) e nenhuma levanta exceção crua: entrada
+# inválida vira texto e não escreve nada.
+def _sb_scenes(client: StudioClient, pid: str) -> list[dict]:
+    resp = client.get(f"/api/projects/{pid}/storyboard/scenes") or {}
+    scenes = resp.get("scenes") if isinstance(resp, dict) else resp
+    return [s for s in scenes if isinstance(s, dict)] if isinstance(scenes, list) else []
+
+
+def _sb_scene(scenes: list[dict], scene: str) -> dict | None:
+    """Aceita o id da cena (`cena02`), o número (`2`) ou o número com zero à esquerda (`02`)."""
+    alvo = str(scene or "").strip()
+    for s in scenes:
+        if s.get("id") == alvo:
+            return s
+    digitos = "".join(ch for ch in alvo if ch.isdigit())
+    if digitos:
+        for s in scenes:
+            if s.get("n") == int(digitos):
+                return s
+    return None
+
+
+def _sb_photo(scene: dict, image: str) -> str | None:
+    """`image` é o caminho relativo completo OU só o nome do arquivo, resolvido contra a cena."""
+    alvo = str(image or "").strip()
+    imgs = [i for i in (scene.get("images") or []) if i]
+    if alvo in imgs:
+        return alvo
+    nome = alvo.rsplit("/", 1)[-1]
+    for i in imgs:
+        if i.rsplit("/", 1)[-1] == nome:
+            return i
+    return None
+
+
+def _sb_put(client: StudioClient, pid: str, scenes: list[dict]) -> None:
+    client.put(f"/api/projects/{pid}/storyboard/scenes", {"scenes": scenes})
+
+
+def _sb_origin(photo: dict, field: str, source: str, preset: str | None) -> None:
+    origin = dict(photo.get("origin") or {})
+    origin[field] = {"source": source, "preset": preset}
+    photo["origin"] = origin
+
+
+def _sb_trecho(texto: str, teto: int = 160) -> str:
+    t = " ".join((texto or "").split())
+    return t if len(t) <= teto else t[:teto].rstrip() + " …"
+
+
+def storyboard_script(client: StudioClient, pid: str, count: int = 5, arc: str = "",
+                      preset: str | None = None) -> str:
+    """`[extensão]` (ADR-025) Pede ao Claude um roteiro de `count` cenas. Não toca `scenes.json`."""
+    body: dict[str, Any] = {"count": count, "instruction": arc}
+    if preset is not None:            # chave AUSENTE = o servidor resolve o default da ação
+        body["preset"] = preset
+    try:
+        client.post(f"/api/projects/{pid}/storyboard/script/generate", body)
+    except StudioApiError as e:
+        return str(e)                 # o 409 sem CLI já chega com a mensagem literal do servidor
+    return (f"Roteiro em geração: {count} cenas (preset {preset or 'padrão da campanha'}). "
+            "Acompanhe com `storyboard_script_wait`.")
+
+
+def _sb_script_resumo(client: StudioClient, pid: str) -> str:
+    try:
+        data = client.get(f"/api/projects/{pid}/storyboard/script") or {}
+    except StudioApiError as e:
+        return str(e)
+    script = data.get("script") if isinstance(data, dict) else None
+    if not isinstance(script, dict):
+        return ("O job terminou, mas não há roteiro salvo. Peça de novo com `storyboard_script`.")
+    cenas = [s for s in (script.get("scenes") or []) if isinstance(s, dict)]
+    arcos = ", ".join(s.get("arc", "?") for s in cenas)
+    fotos = [len(s.get("shot_prompts") or []) or 1 for s in cenas] or [0]
+    faixa = f"{min(fotos)} a {max(fotos)}" if min(fotos) != max(fotos) else str(min(fotos))
+    return (f"Roteiro pronto: {script.get('count', len(cenas))} cenas ({arcos}), "
+            f"{faixa} fotos por cena, preset {script.get('preset') or 'nenhum'}. "
+            "Aplique com `storyboard_apply_script` (mode=empty não sobrescreve o que você escreveu).")
+
+
+def storyboard_script_wait(client: StudioClient, pid: str, timeout: int = 600, poll: float = 2.0,
+                           _sleep=time.sleep) -> str:
+    """Espera o job do roteiro (URL própria, `…/script/job`) e resume. `_sleep` injetável no teste."""
+    deadline = time.monotonic() + max(1, timeout)
+    while time.monotonic() < deadline:
+        try:
+            g = client.get(f"/api/projects/{pid}/storyboard/script/job") or {}
+        except StudioApiError as e:
+            return str(e)
+        if g.get("state") == "running":
+            _sleep(poll)
+            continue
+        if g.get("state") == "error" or g.get("error"):
+            linhas = [x for x in (g.get("log") or []) if x]
+            ultima = linhas[-1] if linhas else (g.get("error") or "erro desconhecido")
+            return f"O roteiro falhou: {ultima}. Nada foi gravado; peça de novo."
+        return _sb_script_resumo(client, pid)
+    return (f"O roteiro ainda está rodando depois de {timeout} s. "
+            "Chame `storyboard_script_wait` de novo.")
+
+
+def storyboard_apply_script(client: StudioClient, pid: str, mode: str = "empty",
+                            with_prompts: bool = False, confirm: bool = False) -> str:
+    """Aplica o `script.json` às cenas — a ESCRITA que a ADR-025 proíbe ao servidor, por gesto humano."""
+    if mode not in ("empty", "replace"):
+        return ("mode inválido: use `empty` (só as cenas sem texto) ou `replace` (todas). "
+                "Nada foi escrito em scenes.json.")
+    try:
+        data = client.get(f"/api/projects/{pid}/storyboard/script") or {}
+        scenes = _sb_scenes(client, pid)
+    except StudioApiError as e:
+        return str(e)
+    script = data.get("script") if isinstance(data, dict) else None
+    if not isinstance(script, dict):
+        return "Nenhum roteiro gerado ainda. Use `storyboard_script` e depois `storyboard_script_wait`."
+    sugeridas = [s for s in (script.get("scenes") or []) if isinstance(s, dict)]
+    if not scenes:
+        return "Nenhuma cena no storyboard para preencher."
+    com_texto = [s["id"] for s in scenes if (s.get("text") or "").strip()]
+    alvos = [(i, s) for i, s in enumerate(scenes)
+             if i < len(sugeridas) and (mode == "replace" or not (s.get("text") or "").strip())]
+    if not alvos:
+        return (f"Nada a preencher (mode={mode}): as {len(com_texto)} cena(s) com texto ficam como "
+                "estão. Use mode=replace para sobrescrever.")
+    detalhe = (f"{len(alvos)} cena(s) recebem o texto do roteiro; "
+               + (f"com texto hoje: {', '.join(com_texto)}." if com_texto else "nenhuma cena tem texto hoje."))
+    if ui.chat_id():
+        ans = ui.confirm(client, f"Aplicar o roteiro a {len(alvos)} cena(s)? (mode={mode})", detalhe)
+        if not ans.get("answered") or not ans.get("confirmed"):
+            return "Aplicação cancelada pelo usuário. Nada foi escrito em scenes.json."
+    elif not confirm:
+        return (f"O roteiro preencheria {len(alvos)} cena(s) (mode={mode}). {detalhe} "
+                "Para aplicar, chame esta tool de novo com confirm=true. Nada foi escrito.")
+    for i, s in alvos:
+        sug = sugeridas[i]
+        s["text"] = (sug.get("text") or "").strip()
+        if not with_prompts:
+            continue
+        # `shot_prompts[k]` vai para a k-ésima foto JÁ anexada; prompt sobrando não cria foto.
+        prompts = [p for p in (sug.get("shot_prompts") or [sug.get("image_prompt") or ""])]
+        photos = dict(s.get("photos") or {})
+        for k, img in enumerate(s.get("images") or []):
+            if k >= len(prompts) or not (prompts[k] or "").strip():
+                continue
+            entry = dict(photos.get(img) or {})
+            entry["image_prompt"] = prompts[k].strip()
+            _sb_origin(entry, "image_prompt", "ia", script.get("preset"))
+            photos[img] = entry
+        s["photos"] = photos
+    try:
+        _sb_put(client, pid, scenes)
+    except StudioApiError as e:
+        return str(e)
+    sobras = len(sugeridas) - len(alvos)
+    txt = (f"{len(alvos)} cena(s) preenchida(s) pelo roteiro (mode={mode}, prompts de imagem: "
+           f"{'sim' if with_prompts else 'não'}).")
+    if sobras > 0:
+        txt += f" {sobras} sugestão(ões) sobraram: use `storyboard_scenes` para conferir."
+    return txt
+
+
+def storyboard_scene_attach(client: StudioClient, pid: str, scene: str,
+                            ids: list[str] = []) -> str:  # noqa: B006
+    """Anexa fotos ESCOLHIDAS a uma cena, somando à galeria (ADR-018).
+
+    Monta a própria lista de imagens a partir do `thumb` já relativo à raiz do projeto — de
+    propósito NÃO passa por `_images_for`, que prefixa `candidates/` e duplicaria o caminho
+    (decisão auto-aceita 10 do FDD: o conserto do `_images_for` é entrega de outra frente).
+    """
+    try:
+        scenes = _sb_scenes(client, pid)
+        data = client.get(f"/api/projects/{pid}/storyboard/candidates") or {}
+    except StudioApiError as e:
+        return str(e)
+    alvo = _sb_scene(scenes, scene)
+    if alvo is None:
+        return f"Cena {scene} não existe no storyboard. Veja as cenas com `storyboard_scenes`."
+    ideias = data.get("ideas") if isinstance(data, dict) else data
+    escolhidas = [c for c in (ideias or []) if isinstance(c, dict) and c.get("selected")]
+    if not escolhidas:
+        return ("Nenhuma ideia escolhida ainda. Use `storyboard_pick` para o usuário escolher, "
+                "ou `storyboard_local_generate` para gerar de graça no motor local.")
+    imgs = [{"id": c["id"], "thumb": f"/files/{pid}/{c['thumb']}", "label": c.get("prompt") or ""}
+            for c in escolhidas if c.get("thumb")]
+    if ids:
+        pegas = [c for c in escolhidas if c.get("id") in ids]
+        if not pegas:
+            return ("Nenhum dos ids passados está entre as ideias escolhidas. Escolhidas: "
+                    + ", ".join(c["id"] for c in escolhidas) + ".")
+    else:
+        ans = ui.choose_images(client, f"Escolha as fotos da cena {alvo.get('n', scene)}", imgs,
+                               minimum=1)
+        if ans.get("no_ui"):
+            return ("Sem interface para escolher aqui. Ideias escolhidas disponíveis: "
+                    + ", ".join(c["id"] for c in escolhidas) + ". Diga quais anexar.")
+        if not ans.get("answered"):
+            return "O usuário não escolheu (sem resposta). Você pode perguntar de novo."
+        sel = ans.get("selected") or []
+        pegas = [c for c in escolhidas if c.get("id") in sel]
+        if not pegas:
+            return "O usuário não selecionou nenhuma foto."
+    images = [i for i in (alvo.get("images") or []) if i]
+    novas = [c["file"] for c in pegas if c.get("file") and c["file"] not in images]
+    images += novas                                       # soma, dedup, ordem preservada
+    alvo["images"] = images
+    if not alvo.get("primary"):                           # a ★ só nasce quando não havia nenhuma
+        alvo["primary"] = images[0] if images else None
+    try:
+        _sb_put(client, pid, scenes)
+    except StudioApiError as e:
+        return str(e)
+    return (f"{len(novas)} foto(s) anexada(s) à {alvo['id']} (agora com {len(images)}). "
+            "Próxima ação: `storyboard_keyframe_prompt` para escrever o prompt de imagem de cada "
+            "foto, ou `storyboard_scenes` para revisar.")
+
+
+def storyboard_keyframe_prompt(client: StudioClient, pid: str, scene: str, image: str,
+                               kind: str = "image", description: str = "") -> str:
+    """Escreve o prompt de imagem ou de vídeo de UMA foto da cena (Claude, sem crédito)."""
+    if kind not in ("image", "video"):
+        return ("kind inválido: use `image` (prompt do keyframe) ou `video` (prompt da animação). "
+                "Nada foi escrito em scenes.json.")
+    field = "image_prompt" if kind == "image" else "video_prompt"
+    rotulo = "Prompt de imagem" if kind == "image" else "Prompt de vídeo"
+    try:
+        scenes = _sb_scenes(client, pid)
+    except StudioApiError as e:
+        return str(e)
+    alvo = _sb_scene(scenes, scene)
+    if alvo is None:
+        return f"Cena {scene} não existe no storyboard. Veja as cenas com `storyboard_scenes`."
+    img = _sb_photo(alvo, image)
+    if not img:
+        return (f"A foto {image} não está anexada à {alvo['id']}. Anexe com "
+                "`storyboard_scene_attach` ou veja as fotos com `storyboard_scenes`.")
+    nome = img.rsplit("/", 1)[-1]
+    body = ({"scene_id": alvo["id"], "photo": img, "description": description} if kind == "image"
+            else {"scene_id": alvo["id"], "description": description,
+                  "frames": {"mode": "single", "image": img}})   # `preset` AUSENTE: herda o default
+    try:
+        resp = client.post(f"/api/projects/{pid}/storyboard/{'image' if kind == 'image' else 'video'}-prompt",
+                           body) or {}
+    except StudioApiError as e:
+        return str(e)
+    prompt = (resp.get("prompt") or "").strip()
+    source, preset = resp.get("source") or "template", resp.get("preset")
+    if not prompt:
+        return f"O servidor não devolveu prompt para {alvo['id']}/{nome}. Nada foi escrito."
+    photo = dict((alvo.get("photos") or {}).get(img) or {})
+    atual = (photo.get(field) or "").strip()
+    origem = (photo.get("origin") or {}).get(field) or {}
+    if atual and origem.get("source") == "manual":
+        if not ui.chat_id():
+            return (f"O {field} de {alvo['id']}/{nome} foi escrito à mão e NÃO foi sobrescrito. "
+                    f"Sugestão da IA (fonte: {source}): \"{_sb_trecho(prompt)}\". "
+                    "Para gravar, use `storyboard_keyframe_set`.")
+        ans = ui.confirm(client, f"Sobrescrever o {field} manual de {alvo['id']}/{nome}?",
+                         "O texto atual foi escrito à mão pelo usuário; a sugestão da IA vai substituí-lo.")
+        if not ans.get("answered") or not ans.get("confirmed"):
+            return (f"Mantido o {field} manual de {alvo['id']}/{nome}. Nada foi escrito. "
+                    f"Sugestão da IA: \"{_sb_trecho(prompt)}\".")
+    photo[field] = prompt
+    _sb_origin(photo, field, source, preset)
+    photos = dict(alvo.get("photos") or {})
+    photos[img] = photo
+    alvo["photos"] = photos
+    try:
+        _sb_put(client, pid, scenes)
+    except StudioApiError as e:
+        return str(e)
+    return (f"{rotulo} escrito para {alvo['id']}/{nome} (fonte: {source}, preset "
+            f"{preset or 'nenhum'}): \"{_sb_trecho(prompt)}\" ({len(prompt)} chars). "
+            "Ajuste com `storyboard_keyframe_set`.")
+
+
+def storyboard_keyframe_set(client: StudioClient, pid: str, scene: str, image: str, field: str,
+                            text: str) -> str:
+    """Escreve à mão um campo de texto de UMA foto da cena e marca a origem como `manual`."""
+    if field not in ("image_prompt", "video_prompt", "video_desc"):
+        return ("field inválido: use `image_prompt`, `video_prompt` ou `video_desc`. "
+                "Nada foi escrito em scenes.json.")
+    try:
+        scenes = _sb_scenes(client, pid)
+    except StudioApiError as e:
+        return str(e)
+    alvo = _sb_scene(scenes, scene)
+    if alvo is None:
+        return f"Cena {scene} não existe no storyboard. Veja as cenas com `storyboard_scenes`."
+    img = _sb_photo(alvo, image)
+    if not img:
+        return (f"A foto {image} não está anexada à {alvo['id']}. Anexe com "
+                "`storyboard_scene_attach` ou veja as fotos com `storyboard_scenes`.")
+    nome = img.rsplit("/", 1)[-1]
+    texto = (text or "").strip()
+    photo = dict((alvo.get("photos") or {}).get(img) or {})
+    photo[field] = texto
+    _sb_origin(photo, field, "manual", None)
+    photos = dict(alvo.get("photos") or {})
+    photos[img] = photo
+    alvo["photos"] = photos
+    try:
+        _sb_put(client, pid, scenes)
+    except StudioApiError as e:
+        return str(e)   # o 422 do teto do servidor volta como texto, nunca como exceção crua
+    return (f"{field} de {alvo['id']}/{nome} atualizado (manual, {len(texto)} chars). "
+            "Gere a animação pela tela (`ui_open` storyboard) ou peça `storyboard_keyframe_prompt` "
+            "para reescrever com IA.")
+
+
 # ---------- 5 · Animação ----------
 def animate_shots(client: StudioClient, pid: str) -> str:
     resp = client.get(f"/api/projects/{pid}/animate/shots") or {}

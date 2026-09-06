@@ -50,3 +50,28 @@ def test_connection_error_is_friendly():
 def test_204_returns_none():
     cli = StudioClient(runner=lambda m, u, **k: _resp(204))
     assert cli.post("/api/x") is None
+
+
+# ---------- `[extensão]` Wave 11 · F06: PUT, exigido pelas tools que escrevem em scenes.json ----------
+def test_put_usa_o_verbo_e_o_mesmo_call_do_post():
+    vistos = []
+
+    def runner(method, url, **kw):
+        vistos.append((method, url, kw.get("json")))
+        return _resp(200, json={"scenes": []})
+
+    cli = StudioClient("http://studio", runner=runner)
+    assert cli.put("/api/projects/p/storyboard/scenes", {"scenes": []}) == {"scenes": []}
+    assert vistos == [("PUT", "http://studio/api/projects/p/storyboard/scenes", {"scenes": []})]
+
+
+def test_put_422_vira_studio_api_error():
+    cli = StudioClient(runner=lambda m, u, **k: _resp(422, json={"detail": "cena01: texto acima"}))
+    with pytest.raises(StudioApiError) as e:
+        cli.put("/api/x", {"scenes": []})
+    assert e.value.status == 422 and "Entrada inválida" in str(e.value)
+
+
+def test_put_204_devolve_none():
+    cli = StudioClient(runner=lambda m, u, **k: _resp(204))
+    assert cli.put("/api/x", {"scenes": []}) is None

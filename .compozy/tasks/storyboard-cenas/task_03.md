@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Seis tools MCP do storyboard (roteiro, aplicação, anexo e prompt por foto)
 type: backend
 complexity: medium
@@ -67,22 +67,22 @@ Não toca frontend nenhum, então roda em paralelo com as tasks de UI.
 
 ## Subtasks
 
-- [ ] 3.0 Acrescentar `put(path, json=None)` ao `StudioClient` (`studio/mcp/client.py`), espelhando
+- [x] 3.0 Acrescentar `put(path, json=None)` ao `StudioClient` (`studio/mcp/client.py`), espelhando
       `post`; sem ele nenhuma das quatro tools de escrita funciona.
-- [ ] 3.1 Implementar `storyboard_script(pid, count, arc, preset)` chamando `POST /script/generate`.
-- [ ] 3.2 Implementar `storyboard_script_wait(pid, timeout)` com o polling de 2 s e o resumo final.
-- [ ] 3.3 Implementar `storyboard_apply_script(pid, mode, with_prompts, confirm)` montando o
+- [x] 3.1 Implementar `storyboard_script(pid, count, arc, preset)` chamando `POST /script/generate`.
+- [x] 3.2 Implementar `storyboard_script_wait(pid, timeout)` com o polling de 2 s e o resumo final.
+- [x] 3.3 Implementar `storyboard_apply_script(pid, mode, with_prompts, confirm)` montando o
       payload em memória e escrevendo **só** depois de `ui.confirm`/`confirm=true`.
-- [ ] 3.4 Implementar `storyboard_scene_attach(pid, scene, ids)` com lista de imagens própria
+- [x] 3.4 Implementar `storyboard_scene_attach(pid, scene, ids)` com lista de imagens própria
       (sem `_images_for`) e soma à galeria da cena.
-- [ ] 3.5 Implementar `storyboard_keyframe_prompt(pid, scene, image, kind, description)` com a
+- [x] 3.5 Implementar `storyboard_keyframe_prompt(pid, scene, image, kind, description)` com a
       confirmação sobre texto `manual`.
-- [ ] 3.6 Implementar `storyboard_keyframe_set(pid, scene, image, field, text)`.
-- [ ] 3.7 Registrar as seis em `studio/mcp/server.py`, no fim do bloco de storyboard, com as
+- [x] 3.6 Implementar `storyboard_keyframe_set(pid, scene, image, field, text)`.
+- [x] 3.7 Registrar as seis em `studio/mcp/server.py`, no fim do bloco de storyboard, com as
       descrições de §5.13–§5.18.
-- [ ] 3.8 Anunciar as tools novas em `studio/chat/prompts/sistema.md` (acréscimo mínimo, sem
+- [x] 3.8 Anunciar as tools novas em `studio/chat/prompts/sistema.md` (acréscimo mínimo, sem
       reescrever o arquivo).
-- [ ] 3.9 Escrever os testes inline listados em `## Tests`.
+- [x] 3.9 Escrever os testes inline listados em `## Tests`.
 
 ## Implementation Details
 
@@ -153,56 +153,56 @@ gesto humano.
 
 Não há `_tests.md` — os casos abaixo são as definições completas. Todos com `StudioClient` fingido.
 
-- [ ] `storyboard_script` com o servidor devolvendo 202 retorna o texto de sucesso citando o número
+- [x] `storyboard_script` com o servidor devolvendo 202 retorna o texto de sucesso citando o número
       de cenas e o preset, e sugerindo `storyboard_script_wait`.
-- [ ] `storyboard_script` com o servidor devolvendo 409 sem CLI retorna a mensagem **literal** do
+- [x] `storyboard_script` com o servidor devolvendo 409 sem CLI retorna a mensagem **literal** do
       servidor.
-- [ ] `storyboard_script_wait` com o job indo de `running` para `done` retorna o resumo do roteiro
+- [x] `storyboard_script_wait` com o job indo de `running` para `done` retorna o resumo do roteiro
       (número de cenas, momentos do arco, faixa de fotos por cena, preset) e sugere
       `storyboard_apply_script`.
-- [ ] `storyboard_script_wait` com o job em `error` retorna a última linha do log e diz que nada
+- [x] `storyboard_script_wait` com o job em `error` retorna a última linha do log e diz que nada
       foi gravado.
-- [ ] `storyboard_script_wait` com o job ainda `running` no fim do `timeout` retorna a mensagem de
+- [x] `storyboard_script_wait` com o job ainda `running` no fim do `timeout` retorna a mensagem de
       timeout pedindo nova chamada.
-- [ ] `storyboard_apply_script` **sem** `ui.chat_id()` e **sem** `confirm=true` **não** chama
+- [x] `storyboard_apply_script` **sem** `ui.chat_id()` e **sem** `confirm=true` **não** chama
       `PUT /scenes` e devolve texto explicando como confirmar.
-- [ ] `storyboard_apply_script` com `ui.confirm` recusando **não** chama `PUT /scenes` e devolve
+- [x] `storyboard_apply_script` com `ui.confirm` recusando **não** chama `PUT /scenes` e devolve
       "Aplicação cancelada pelo usuário. Nada foi escrito em scenes.json."
-- [ ] `storyboard_apply_script(mode="empty")` com `ui.confirm` aceitando escreve **apenas** nas
+- [x] `storyboard_apply_script(mode="empty")` com `ui.confirm` aceitando escreve **apenas** nas
       cenas sem texto e devolve a contagem; cenas com texto ficam intactas.
-- [ ] `storyboard_apply_script(mode="replace")` sobrescreve todas.
-- [ ] `storyboard_apply_script(mode="lixo")` devolve erro **sem** chamar `PUT /scenes`.
-- [ ] `storyboard_apply_script(with_prompts=True)` leva `shot_prompts[k]` para o `image_prompt` da
+- [x] `storyboard_apply_script(mode="replace")` sobrescreve todas.
+- [x] `storyboard_apply_script(mode="lixo")` devolve erro **sem** chamar `PUT /scenes`.
+- [x] `storyboard_apply_script(with_prompts=True)` leva `shot_prompts[k]` para o `image_prompt` da
       k-ésima foto **já anexada** da cena, com `origin.image_prompt.source == "ia"`; prompts
       sobrando **não** criam foto nenhuma.
-- [ ] `storyboard_scene_attach` sem `ids` chama `ui.choose_images` com as imagens montadas a partir
+- [x] `storyboard_scene_attach` sem `ids` chama `ui.choose_images` com as imagens montadas a partir
       de `/files/{pid}/{thumb}` — asserção sobre a URL, que **não** pode conter
       `candidates/candidates/` nem passar por `_images_for`.
-- [ ] `storyboard_scene_attach` anexa duas fotos a uma cena que já tinha uma, resultando em três
+- [x] `storyboard_scene_attach` anexa duas fotos a uma cena que já tinha uma, resultando em três
       na ordem e sem duplicar, e devolve a contagem e a próxima ação (critério B10).
-- [ ] `storyboard_scene_attach` define `primary` só quando a cena não tinha nenhuma; com `primary`
+- [x] `storyboard_scene_attach` define `primary` só quando a cena não tinha nenhuma; com `primary`
       já definida, ela é preservada.
-- [ ] `storyboard_scene_attach` sem nenhuma ideia `selected` devolve a orientação citando
+- [x] `storyboard_scene_attach` sem nenhuma ideia `selected` devolve a orientação citando
       `storyboard_pick` e `storyboard_local_generate`, sem chamar `PUT /scenes` (critério B10).
-- [ ] `storyboard_scene_attach` ignora ideias com `selected: false` mesmo quando o id é passado
+- [x] `storyboard_scene_attach` ignora ideias com `selected: false` mesmo quando o id é passado
       explicitamente.
-- [ ] `storyboard_keyframe_prompt(kind="image")` chama `POST /image-prompt`, grava por
+- [x] `storyboard_keyframe_prompt(kind="image")` chama `POST /image-prompt`, grava por
       `PUT /scenes` e marca `origin.image_prompt` com o `source` e o `preset` da resposta
       (critério D9).
-- [ ] `storyboard_keyframe_prompt(kind="video")` chama `POST /video-prompt`.
-- [ ] `storyboard_keyframe_prompt(kind="lixo")` devolve erro sem chamar rota nenhuma.
-- [ ] `storyboard_keyframe_prompt` sobre campo de origem `manual`, **sem** chat, **não**
+- [x] `storyboard_keyframe_prompt(kind="video")` chama `POST /video-prompt`.
+- [x] `storyboard_keyframe_prompt(kind="lixo")` devolve erro sem chamar rota nenhuma.
+- [x] `storyboard_keyframe_prompt` sobre campo de origem `manual`, **sem** chat, **não**
       sobrescreve e devolve o texto sugerido.
-- [ ] `storyboard_keyframe_prompt` aceita `image` como só o nome do arquivo e resolve contra as
+- [x] `storyboard_keyframe_prompt` aceita `image` como só o nome do arquivo e resolve contra as
       imagens da cena.
-- [ ] `storyboard_keyframe_set(field="video_prompt")` escreve o texto e marca
+- [x] `storyboard_keyframe_set(field="video_prompt")` escreve o texto e marca
       `origin.video_prompt = {"source": "manual", "preset": null}` (critério D9).
-- [ ] `storyboard_keyframe_set(field="lixo")` devolve erro sem escrever.
-- [ ] `storyboard_keyframe_set` com texto acima do teto recebe o 422 do servidor e o devolve como
+- [x] `storyboard_keyframe_set(field="lixo")` devolve erro sem escrever.
+- [x] `storyboard_keyframe_set` com texto acima do teto recebe o 422 do servidor e o devolve como
       texto, sem levantar exceção.
-- [ ] As seis tools aparecem registradas em `studio/mcp/server.py` (teste de registro, como o já
+- [x] As seis tools aparecem registradas em `studio/mcp/server.py` (teste de registro, como o já
       existente para as tools de storyboard).
-- [ ] `StudioClient.put` existe, faz `PUT` pelo mesmo `_call` de `post`, levanta `StudioApiError`
+- [x] `StudioClient.put` existe, faz `PUT` pelo mesmo `_call` de `post`, levanta `StudioApiError`
       em `>=400` e devolve `None` em 204/corpo vazio.
 
 ## Success Criteria
