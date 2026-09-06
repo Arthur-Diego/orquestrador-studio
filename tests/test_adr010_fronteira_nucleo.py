@@ -80,6 +80,8 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "`frontend/openapi.json`; em `studio/web/` muda APENAS o bundle GERADO `studio/web/dist/` "
         "(`make frontend-schema` + `make frontend-build`, guarda de drift do CI). Nenhuma fonte do "
         "shell ou do design system é tocada. ADR-002/004/016/033/037, ADR-010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-03-chat-markdown": (
         "`[extensão]` Wave 11 · F01 — markdown na bolha do assistente do dock de chat, card #85 "
         "(https://trello.com/c/lqrj73sV), FDD `docs/domains/chat/features/chat-markdown-fdd.md`. "
