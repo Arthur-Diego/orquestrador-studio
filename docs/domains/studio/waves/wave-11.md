@@ -70,8 +70,10 @@ Worktree: `../orquestrador-studio-worktrees/<branch>`.
 
 ### Feature: creditos-actions-catalog (F05)
 **Provides**
-- `ACTIONS`/`DEFAULTS` com `storyboard.angles`, `storyboard.upscale`, `storyboard.video`, `export.reframe`;
-  teste de cobertura "toda ação gravada no ledger está no catálogo"; rótulo "Biblioteca" para gastos sem pid.
+- `ACTIONS`/`DEFAULTS` com `storyboard.angles`, `storyboard.upscale`, `export.reframe` (ajuste do gate P1:
+  `storyboard.video` NÃO vira ação; a gravação passa a usar `storyboard.video.scene/.transition` via
+  `video_action(mode)`); teste de cobertura AST "toda ação gravada no ledger está no catálogo"; rótulo
+  "Biblioteca · <board>" para gastos sem pid; modelo `reframe` em `pricing.CATALOG` (família própria).
 **Consumes**: — (candidata imediata)
 
 ### Feature: storyboard-cenas (F06)
@@ -212,11 +214,84 @@ CI verde, merge, limpeza da worktree.
 - `studio/web/dist/` e `frontend/src/api/schema.ts`: sempre regenerados na integração.
 - `tests/test_adr010_fronteira_nucleo.py` (`TITULARES_DO_NUCLEO`): toda frente que toca núcleo acrescenta a
   própria entrada no **topo** do dict — conflito trivial de inserção.
+- `studio/chat/mudancas.py` (`TOOL_STEPS`, criado por F03): o teste de drift por AST exige uma entrada para
+  TODA tool registrada em `server.py`. Frentes que registram tools novas (F06, F07, F11, F12) acrescentam a
+  etapa das suas tools ao mapa no rebase sobre F03 — critério `[cross-feature]` cobrado na W5.
+- ADR-041 (protocolo do WS v2, aditivo): criado por F03 com `state_changed`; F02 acrescenta `turn_started`,
+  `turn_ended`, `assistant_delta`, `tool_progress`; F09 acrescenta `user.via`. Numeração reservada: ADR-042
+  (F06, se o schema de `scenes.json` mudar), ADR-043 (F09, entrada por voz). F08 faz adendo no ADR-038.
 
-## Gate W3 — aprovação em lote
+## Gate W3 — aprovação em lote (2026-09-06)
 
-(preenchido ao fim da W3)
+Specs aprovadas em lote por delegação explícita do dono nesta wave ("sem me perguntar nada, você tem minha
+total aprovação para realizar tudo"). 12 FDDs gerados em modo batch; todos os `[auto-aceito]` estão na seção 12
+de cada FDD e os relevantes abaixo. Nenhuma divergência com contrato publicado (`schema.ts`/`openapi.json`):
+todas as mudanças de rota são aditivas.
 
-## Resultado da integração (W5)
+| Frente | FDD | §11 (contratos/fluxos/arquivos) | Caminho | Auto-aceites relevantes | Pendências | Núcleo | Frente disparada |
+|---|---|---|---|---|---|---|---|
+| F01 chat-markdown | docs/domains/chat/features/chat-markdown-fdd.md | 2/1/8 → direta | direta | react-markdown 10 + remark-gfm 4 pinados; HTML cru descartado; imagem fora da allowlist não renderiza; todos os links em nova aba; `pre-wrap` movido para bolha do usuário; `data-md="1"`; HLD fica para W5 | P1 bundle +40 KB gz (aceito; gatilho lazy > 60 KB) | frontend/, studio/web/ | sim (2026-09-06) |
+| F04 mcp-pick-shape | docs/domains/chat/features/mcp-pick-shape-fdd.md | 3/1/4 → direta | direta | robustez em `_images_for` sem mudar rotas; `storyboard_pick` (shape `{ideas}` + thumb prefixado) entra no escopo; `next_step` = `current` do guia; sufixo JSON só no sucesso; `character_pick` next_step null; `base_pick` reescrita sobre `_pick`; sistema.md fica com F08 | nenhuma | nenhum | sim |
+| F03 chat-sync | docs/domains/chat/features/chat-sync-fdd.md | 7/1/21 → SDD | SDD | `TOOL_STEPS` explícito em `studio/chat/mudancas.py` (tools rodam no subprocess, path HTTP invisível ao router); teste de drift AST server.py × TOOL_STEPS; callback `useChatSocket(chatId, onEvent)`; debounce reusa constante 400 ms; `useStudioChange(step, cb, opts?)`; sem refetchInterval; `invalidarGuia` exportado; sem frontend-schema | nenhuma; decisão: F03 cria ADR-041, F02 acrescenta | frontend/, studio/web/ | sim |
+| F02 chat-feedback | docs/domains/chat/features/chat-feedback-fdd.md | 9/3/20 → SDD | SDD | `assistant_delta`/`tool_progress` efêmeros (sem seq); `turn_ended` no finally; stream_event desconhecido → vazio; sonda `--include-partial-messages` cacheada + `STUDIO_CHAT_PARTIAL`; poller via loopback; `tool_progress.state`; saneamento de aba presa em GET /api/chats; `/trace` com métricas de turno | P1 ADR-041 → F03 cria, F02 acrescenta (F09 → ADR-043); P2 teste de rótulos duro; P3 aceito; P4 prova manual no PR | frontend/, studio/web/ | sim |
+| F09 chat-audio (SW2) | docs/domains/chat/features/chat-audio-fdd.md | 3/1/14 → SDD | SDD | sem conversão webm→wav (whisper-1 aceita webm); 409 sem provider; `detail` string; provider NÃO extraído para common (dependência inversa); clique liga/desliga; validação por assinatura de bytes; `duration_s` do cliente; auto-send em localStorage; atalho Ctrl/⌘+Shift+M | fallback SpeechRecognition FORA (ADR-024); custo do whisper no ledger → pendência ao dono; STT local fora; ADR-043; OPENAI_API_KEY nunca commitada | frontend/, studio/web/ | aguarda F02 |
+| F08 chat-navigate (SW2) | docs/domains/chat/features/chat-navigate-fdd.md | 6/1/17 → SDD | SDD | gramática do hash intocada (params por barramento sticky); recusa via /emit (sem rota nova); ready = navegável (/api/steps) × liberada (guia); open→done só na transição para done, opt-in refs/mood/base; replay nunca navega (seq); toggle `studio.chat.follow` ligado; teto 1500 ms; adendo dentro do ADR-038 | P1 done automático flexibiliza ADR-038 §2 (aceito, registrado); P2 toggle nasce ligado (aceito, pedido do dono); P3 depende de nomes de F03/F04 | frontend/, studio/web/ | aguarda F03, F04 |
+| F05 creditos-actions-catalog | docs/domains/creditos/features/creditos-actions-catalog-fdd.md | 3/1/8 → direta | direta | declarar em settings.py (precedente ADR-025 rejeitado: ACTION_KEYS derivado, ordem do painel, settings não é núcleo); `storyboard.video` corrige gravação → `.scene/.transition`; família `kind: reframe`; reframe sem medição; `edit.captions` fora; `storyboard.scene/multishot` órfãs nomeadas no teste; guarda credits null; warning em record_spend | P1 aceito (ajustar Provides na wave-11); P2 aceito; P3 → F07; P4 baseline textContent regerado na W5; P5 dívida docs créditos | frontend/src/areas/creditos, studio/web/ | sim |
+| F07 storyboard-geracao-por-cena | docs/domains/storyboard/features/storyboard-geracao-por-cena-fdd.md | 7/3/20 → SDD (T1–T7) | SDD | cadeia defensiva do prompt (scenes.json → script.json → text); custo em modo simples até F05; `preset=none` explícito; bloco de preset composto em angles.py (sem tocar prompter.ROLES); pick normaliza local (sem tocar `_pick`); sem job por cena (ADR-006 + reset.py); zero edição em Ideation.tsx; `setdefault("storyboard.angles")` | P1 preset substitui câmera manual (aprovado); P2 F05 cataloga; Postman shots ainda em `/shots/` (coleção nova) | frontend/ (schema.ts), studio/web/ | sim |
+| F11 base-upscale-chat (SW2) | docs/domains/base/features/base-upscale-chat-fdd.md | 4/1/16 → SDD | SDD | /base/job sem response_model (schema.ts intacto); `actions` no ask de choose_images (não no show); URLs absolutas só na borda; source_id inferido no import; `base_review` min=0 com "Manter a atual", sem _paid; MediaCard extraído para MediaCard.tsx; sem migração de candidates.json | card #45 coberto pela base-cli-generation-fdd; upscale do storyboard fora (F07); `_paid` sem confirm_token → F10; HLD base/chat na W5 | frontend/src/areas/chat, studio/web/ | aguarda F03, F04 |
+| F10 creditos-chat (SW2) | docs/domains/creditos/features/creditos-chat-fdd.md | 7/3/36 → SDD | SDD | confirm_token (TTL 900 s, escopo action/model/chat, terminal mantém confirm=true); rotas cost sem response_model (valor legado vence); ângulos/reframe fora; costRows.ts puro; balance?refresh=1 já ignora cache; notify de gasto no fim de job_wait; credits_status em tools.py; summary ganha today_* e dashboard summary_global | P1 notas ADR-016/038 na W5; P2 sem HLD créditos; P3 CostPreview não tipado no schema; P4 3 rotas cost fora; P5 conflito com F11 (tools.py job_wait, ChatDock) → ordem F10 antes de F11; P6 reconciliação saldo×ledger impossível por construção | frontend/ (ui, areas/chat, areas/creditos, schema.ts), studio/web/ | aguarda F05 |
+| F12 chat-moodboards (SW2) | docs/domains/moodboards/features/chat-moodboards-fdd.md | 17/3/9 → SDD | SDD | catálogo curado (5 rotas fora); `moodboard_multishot_wait`; `_paid(follow=)`; `HELP_AREAS`; `_sugerir_tela` mockado até F08; mood_run confirma com ui.confirm (não confirm_cost); `_mb_images` próprio; FDD da biblioteca corrigido (29 operações/26 caminhos) | P1 studio/mcp e studio/chat NÃO são núcleo (decisão: manter ADR-010 como está); P2 rótulos toolLabels + TOOL_STEPS → F12 acrescenta no rebase (declara frontend/ mínimo); P3 guarda de drift ADR-037 → retro; P4 fusão vibes futura | nenhum (frontend/ só se toolLabels) | aguarda F08 (mock) |
+| F06 storyboard-cenas | docs/domains/storyboard/features/storyboard-cenas-fdd.md | 18/4/29 → SDD (18 tasks) | SDD | A2 já feito (painel 02 antes do 03) → rename + prompts por cena; causa raiz do PATH (`run.sh` sem normalizar, `BIN` em import time) → `cli_status(refresh=True)`; `/image-prompt` sem 409 (template); ação `storyboard.keyframe`; seletor grava 5 kinds; setdefault em storyboard/service.py; desanexar não remove de ideas/; origin.<campo>.preset; não toca `_pick`; PATH acrescentado depois | P1 ADR-042 aprovada; P2 baseline textContent na W5; P3 `{ideas}` coberto por F04; P4 mcp/chat não núcleo; P5 custo do Claude fora do ledger (registro) | frontend/ (schema.ts; opcional areas/creditos), studio/web/ | sim |
 
-(preenchido ao fim da W5)
+### Decisões transversais do gate
+1. **ADR-041** "Protocolo do WebSocket do chat v2 (aditivo)": criada por F03 (`state_changed`), estendida por
+   F02 (`turn_started`, `turn_ended`, `assistant_delta`, `tool_progress`) e F09 (`user.via`). **ADR-042**
+   (F06: campo autoral por foto, preset persistido de 3 estados, tools aplicando roteiro após `ui_confirm`,
+   política de desanexo). **ADR-043** (F09: entrada por voz). F08 faz adendo dentro do ADR-038.
+2. `studio/chat/` e `studio/mcp/` **não** são núcleo nesta wave (ADR-010 permanece como está).
+3. Testes de drift **duros**: `TOOL_STEPS` (F03) e `toolLabels` (F02). Toda frente que registra tool nova
+   acrescenta etapa e rótulo no rebase (F06, F07, F11, F12).
+4. Baseline de `textContent` do QA (`docs/qa/reports/2026-09-03-react-e0-v2/textcontent/`): telas Créditos e
+   Storyboard mudam texto de propósito (F05, F06); o baseline é artefato compartilhado e é regerado na W5.
+5. `storyboard.video` não vira ação nova: a gravação passa a usar `storyboard.video.scene/.transition`
+   (F05) — ajuste ao Provides literal de F05 acima.
+6. Preset configurado **substitui** o bloco de câmera manual nos prompts de ângulos (F07).
+7. `confirm_token` do ADR-038 entra pela F10 (escopo action/model/chat, TTL 900 s; terminal mantém
+   `confirm=true`).
+8. Fallback `SpeechRecognition` do navegador fica fora (ADR-024 o rejeitou); STT local fora da wave.
+9. Pendências ao dono (não bloqueiam): custo do whisper/Claude CLI fora do ledger (unidade diferente de
+   créditos Higgsfield); reconciliação saldo × ledger é impossível por construção (gasto na UI da Higgsfield
+   nunca entra no livro-caixa); domínio créditos sem HLD; guarda de drift manifesto × openapi (ADR-037 §6)
+   inexistente; Postman de `shots` ainda em `/shots/`.
+
+## W4 — frentes disparadas (2026-09-06)
+
+Sub-wave 1 (7 frentes, `dd-parallel-sub-agent-frente`, Opus): F01, F04, F03, F02, F05, F07, F06 — worktrees em
+`../orquestrador-studio-worktrees/feature/adh-os-20260906-{03..09}-*`. Sub-wave 2 (F08, F09, F10, F11, F12)
+dispara após a integração das provedoras.
+
+## Resultado da integração (W5, 2026-09-06)
+
+| Frente | PR | Caminho | Estado |
+|---|---|---|---|
+| F01 chat-markdown | #132 | direta | mergeado |
+| F04 mcp-pick-shape | #133 | direta | mergeado (branch atualizada pela proteção "em dia") |
+| F05 creditos-actions-catalog | #134 | direta | mergeado |
+| F07 storyboard-geracao-por-cena | #135 | direta (soft fail: runner sem daemon) | mergeado (dist regenerado pela integração; 2 merges com develop) |
+| F03 chat-sync | #136 | SDD 4/4 | mergeado (ADR-041 criada) |
+| F10 creditos-chat | #137 | SDD (task 1) + direta (soft fail: 429) | mergeado |
+| F02 chat-feedback | #139 | SDD 6/6 | mergeado (drift de schema corrigido na integração) |
+| F12 chat-moodboards | #138 | SDD 4/4 (2 re-runs por 429) | mergeado (2 rebases) |
+| F08 chat-navigate | #140 | SDD 5/5 (re-run por 429) | mergeado (3 rebases) |
+| F06 storyboard-cenas | #142 | SDD 7/7 (re-run por 429) | mergeado (ADR-042 criada) |
+| F11 base-upscale-chat | #141 | SDD 7/7 | mergeado |
+| F09 chat-audio | #143 | SDD 3/4 + direta (job 2 parked por activity timeout) | mergeado (2 rebases; HLD chat convergido em v1.5) |
+
+Suíte no tronco ao fim: `make verify` 1964 passed / 2 failed pré-existentes (`tests/test_edit_captions.py`,
+métrica de fonte local, verde no CI); `make frontend-verify` 689 testes / 63 arquivos. Baseline no início da wave:
+1384 / 356.
+
+Critérios `[cross-feature]` cobrados no estado integrado por testes das próprias frentes (guardas duras `TOOL_STEPS`
+e `toolLabels` reprovaram e foram atendidas a cada rebase). Os que exigem navegador/agente real (refs_pick →
+navegação para mood; upscale → base_review → tela Base; `ui_navigate("moodboards/<mbid>")`) ficam para a rodada
+`/qa-studio` no tronco, registrada como pendência.
