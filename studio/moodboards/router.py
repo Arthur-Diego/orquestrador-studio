@@ -210,3 +210,8 @@ router.include_router(vibes_router)
 from .mood_run_router import router as mood_run_router  # noqa: E402  (bloco de inclusão no fim, wave 10)
 
 router.include_router(mood_run_router)
+
+# ---------- coleta do `mood_vibe_scout` pela tela `[extensão]` (ADH-OS-20260905-03) ----------
+from .vibe_scout_router import router as vibe_scout_router  # noqa: E402
+
+router.include_router(vibe_scout_router)

@@ -99,14 +99,16 @@ describe("MoodboardsArea — biblioteca", () => {
 });
 
 describe("MoodboardsArea — editor", () => {
-  it("mostra nome, pasta e os três painéis, com a curadoria dividida por seleção", async () => {
+  it("mostra nome, pasta e os quatro painéis, com a curadoria dividida por seleção", async () => {
     stubFetch([{ match: "/api/moodboards/b1", corpo: BOARD }]);
     renderArea("b1");
 
     await waitFor(() => expect(document.querySelector("#mbGallery")).toBeInTheDocument());
     expect(document.querySelector("#mbTitle")?.textContent).toBe("Neon Snow");
     expect(document.querySelector("#mbFolder")?.textContent).toBe("/tmp/mb/b1");
-    expect(document.querySelectorAll("section.panel")).toHaveLength(3);
+    // painel 04 `[extensão]`: corrida das skills de mood.
+    expect(document.querySelectorAll("section.panel")).toHaveLength(4);
+    expect(document.querySelector("#btnMbMoodRun")).toBeInTheDocument();
     // não-selecionada no painel 01, selecionada no 02.
     expect(document.querySelectorAll("#mbImported .msc-card")).toHaveLength(1);
     expect(document.querySelectorAll("#mbGallery .msc-card")).toHaveLength(1);
