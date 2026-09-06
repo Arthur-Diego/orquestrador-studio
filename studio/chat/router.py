@@ -16,7 +16,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from . import mudancas, runtime, sessions
+from . import mudancas, progress, runtime, sessions
 from .uibridge import bridge
 
 router = APIRouter()
@@ -321,16 +321,22 @@ async def _run_turn(chat_id: str, text: str) -> None:
     turn_id = uuid4().hex[:12]
     reason = "error"  # sem passar por nenhum caminho conhecido, o turno morreu
     sem_resultado = False
+    pollers: dict[str, asyncio.Task] = {}  # tasks de progresso do turno, por `tool_call.id`
     sessions.patch(chat_id, status="running")
     # `tool_call.id` -> mudança pendente. Local ao turno: um `tool_call` órfão morre com ele.
     pendentes: dict[str, tuple[str, str, str, str | None]] = {}
     try:
         await _persistir_e_empurrar(chat_id, {"kind": "turn_started", "turn_id": turn_id})
         async for event in runtime.run_turn(chat_id, text):
-            if event.get("kind") in EFEMEROS:  # feedback: WS direto, sem seq e sem disco
+            kind = event.get("kind")
+            if kind in EFEMEROS:  # feedback: WS direto, sem seq e sem disco
                 await manager.push(chat_id, {"turn_id": turn_id, **event})
                 continue  # efêmero nunca vira `state_changed`: não é evento de transcript
-            if event.get("kind") == "result" and event.get("synthetic"):
+            if kind == "tool_call":
+                _abrir_progresso(chat_id, turn_id, event, pollers)
+            elif kind == "tool_result":
+                _fechar_progresso(event.get("id"), pollers)
+            elif kind == "result" and event.get("synthetic"):
                 sem_resultado = True  # o CLI não fechou o ciclo (runtime sintetizou o result)
             await _persistir_e_empurrar(chat_id, event)
             for mudanca in mudancas.derivar(event, pendentes):  # F03: chat → telas
@@ -349,6 +355,7 @@ async def _run_turn(chat_id: str, text: str) -> None:
         await manager.push(chat_id, {"kind": "result", "is_error": True, "text": f"{type(e).__name__}: {e}"})
         sessions.patch(chat_id, status="error")
     finally:
+        await _encerrar_progresso(pollers)  # nenhuma task de progresso sobrevive ao turno
         fim = {"kind": "turn_ended", "turn_id": turn_id, "reason": reason}
         seq = sessions.append_event(chat_id, fim)  # o par no disco é o que o replay lê
         # O WS pode já ter morrido junto com o turno; o transcript acima é a garantia.
@@ -360,3 +367,45 @@ async def _persistir_e_empurrar(chat_id: str, event: dict) -> None:
     """Evento de transcript: grava (ganha `seq` e `ts`) e empurra pelo WS."""
     seq = sessions.append_event(chat_id, event)
     await manager.push(chat_id, {"seq": seq, **event})
+
+
+# ---------- progresso de job: uma task por `tool_call.id`, viva só dentro do turno ----------
+def _abrir_progresso(chat_id: str, turn_id: str, event: dict, pollers: dict) -> None:
+    """Abre a task de progresso de um `tool_call` observado (`job_wait`/`character_wait`).
+
+    Tool não observada ou input malformado não abrem task (`job_url_for` devolve `None`), e nunca
+    há duas tasks para o mesmo `id`.
+    """
+    call_id = event.get("id")
+    if not call_id or call_id in pollers:
+        return
+    url = progress.job_url_for(event.get("name") or "", event.get("input") or {})
+    if not url:
+        return
+
+    async def _push(cid: str, ev: dict) -> None:
+        await manager.push(cid, {"turn_id": turn_id, **ev})  # efêmero: sem seq, sem disco
+
+    pollers[call_id] = asyncio.create_task(progress.watch(chat_id, call_id, url, _push))
+
+
+def _fechar_progresso(call_id: str | None, pollers: dict) -> None:
+    """O `tool_result` chegou: a espera acabou, a task daquele `id` não tem mais o que contar."""
+    task = pollers.pop(call_id, None) if call_id else None
+    if task is not None and not task.done():
+        task.cancel()
+
+
+async def _encerrar_progresso(pollers: dict) -> None:
+    """Cancela toda task de progresso remanescente e ESPERA cada uma morrer.
+
+    Roda no `finally` do turno — inclusive no caminho de `CancelledError` — para que um `tool_call`
+    sem `tool_result` (progresso órfão) não deixe task viva depois do `turn_ended`.
+    """
+    vivas = [t for t in pollers.values() if not t.done()]
+    for t in vivas:
+        t.cancel()
+    for t in vivas:
+        with contextlib.suppress(BaseException):  # noqa: BLE001 — task descartada; erro dela não é do turno
+            await t
+    pollers.clear()

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Poller de progresso de job (`studio/chat/progress.py`)
 type: backend
 complexity: medium
@@ -58,21 +58,21 @@ ciclo de vida dessas tasks ao turno em `studio/chat/router.py`, emitindo o event
 
 ## Subtasks
 
-- [ ] 2.1 Criar `studio/chat/progress.py` com as constantes e as quatro funções puras do contrato 6.
-- [ ] 2.2 Implementar `job_url_for` para as duas tools observadas, tolerante a nome curto/cru e a
+- [x] 2.1 Criar `studio/chat/progress.py` com as constantes e as quatro funções puras do contrato 6.
+- [x] 2.2 Implementar `job_url_for` para as duas tools observadas, tolerante a nome curto/cru e a
       input malformado.
-- [ ] 2.3 Implementar `pct_of` e `label_of` com os formatos do `_techspec.md` (`Etapa refs: 13/31`,
+- [x] 2.3 Implementar `pct_of` e `label_of` com os formatos do `_techspec.md` (`Etapa refs: 13/31`,
       `Personagem c3f1: gerando`).
-- [ ] 2.4 Implementar `should_emit` (mudança de `pct`/`state` ou batimento).
-- [ ] 2.5 Implementar `watch` com `fetch`/`sleep` injetáveis, contador de falhas, teto duro de tempo
+- [x] 2.4 Implementar `should_emit` (mudança de `pct`/`state` ou batimento).
+- [x] 2.5 Implementar `watch` com `fetch`/`sleep` injetáveis, contador de falhas, teto duro de tempo
       e cancelamento limpo.
-- [ ] 2.6 Implementar o `fetch` default em loopback com `httpx.AsyncClient` (timeout de 5 s por
+- [x] 2.6 Implementar o `fetch` default em loopback com `httpx.AsyncClient` (timeout de 5 s por
       requisição), derivando a base da mesma env que o runtime usa.
-- [ ] 2.7 `router.py`: ao processar um `tool_call`, abrir a task de progresso quando `job_url_for`
+- [x] 2.7 `router.py`: ao processar um `tool_call`, abrir a task de progresso quando `job_url_for`
       devolver uma URL; guardar por `tool_call.id` no escopo do turno.
-- [ ] 2.8 `router.py`: cancelar a task no `tool_result` de mesmo `id` e cancelar todas as
+- [x] 2.8 `router.py`: cancelar a task no `tool_result` de mesmo `id` e cancelar todas as
       remanescentes no `finally` do turno.
-- [ ] 2.9 Escrever `tests/test_chat_progress.py` (funções puras + `watch` com fakes) e acrescentar
+- [x] 2.9 Escrever `tests/test_chat_progress.py` (funções puras + `watch` com fakes) e acrescentar
       os casos de ciclo de vida a `tests/test_chat_api.py`.
 
 ## Implementation Details
@@ -129,15 +129,15 @@ Consultar `_techspec.md`: §4 fluxo B, §5 contratos 4 e 6, §6 (linhas de falha
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] T-PG-01, T-PG-02, T-PG-03, T-PG-04, T-PG-05 — `job_url_for`: as duas tools observadas, tool
+- [x] T-PG-01, T-PG-02, T-PG-03, T-PG-04, T-PG-05 — `job_url_for`: as duas tools observadas, tool
       não observada, input malformado e nome curto/cru.
-- [ ] T-PG-06, T-PG-07, T-PG-08 — `pct_of`: cálculo, ausência de `total` e saturação.
-- [ ] T-PG-09 — `label_of` para etapa e para personagem.
-- [ ] T-PG-10, T-PG-11, T-PG-12, T-PG-13 — `should_emit`: primeira leitura, mudança de `pct`/`state`,
+- [x] T-PG-06, T-PG-07, T-PG-08 — `pct_of`: cálculo, ausência de `total` e saturação.
+- [x] T-PG-09 — `label_of` para etapa e para personagem.
+- [x] T-PG-10, T-PG-11, T-PG-12, T-PG-13 — `should_emit`: primeira leitura, mudança de `pct`/`state`,
       silêncio e batimento.
-- [ ] T-PG-14, T-PG-15, T-PG-16, T-PG-17 — `watch`: running → running → done, três falhas seguidas,
+- [x] T-PG-14, T-PG-15, T-PG-16, T-PG-17 — `watch`: running → running → done, três falhas seguidas,
       cancelamento e teto duro de tempo.
-- [ ] T-API-11, T-API-12, T-API-13 — ciclo de vida no router: abre no `tool_call` observado, cancela
+- [x] T-API-11, T-API-12, T-API-13 — ciclo de vida no router: abre no `tool_call` observado, cancela
       no `tool_result`, limpa órfãs no fim do turno, não abre para tool não observada.
 
 ## Success Criteria

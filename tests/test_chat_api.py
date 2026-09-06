@@ -1,4 +1,5 @@
 """Rotas do chat (ADR-036/038) via FastAPI TestClient: REST das abas, WebSocket e ponte de UI."""
+import asyncio
 
 
 def test_status_e_crud_de_abas(client):
@@ -304,3 +305,122 @@ def test_turno_sem_result_do_cli_fecha_o_par_com_error(client, monkeypatch):
     assert recebidos[-1]["kind"] == "turn_ended" and recebidos[-1]["reason"] == "error"
     _inicio, fim = _par_de_turno(client, cid)
     assert fim["reason"] == "error"
+
+
+# ---------- ciclo de vida das tasks de progresso no turno (chat-feedback, FDD contrato 6) ----------
+class _EspiaoDeProgresso:
+    """Substitui `progress.watch`: registra o que foi observado e se a task foi cancelada."""
+
+    def __init__(self):
+        self.abertas: list[tuple[str, str, str]] = []
+        self.canceladas: list[str] = []
+
+    async def watch(self, chat_id, call_id, url, push, **kw):
+        self.abertas.append((chat_id, call_id, url))
+        try:
+            await asyncio.Event().wait()  # espera para sempre: só morre cancelada
+        except asyncio.CancelledError:
+            self.canceladas.append(call_id)
+            raise
+
+
+def _com_espiao(monkeypatch):
+    from studio.chat import progress
+    espiao = _EspiaoDeProgresso()
+    monkeypatch.setattr(progress, "watch", espiao.watch)
+    return espiao
+
+
+def test_t_api_11_tool_call_observado_abre_a_task_e_o_tool_result_a_cancela(client, monkeypatch):
+    from studio.chat import runtime
+    espiao = _com_espiao(monkeypatch)
+    cid = client.post("/api/chats", json={"title": "progresso"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "tool_call", "id": "toolu_01A9", "name": "mcp__studio__job_wait",
+               "input": {"pid": "p1", "step": "refs"}}
+        await asyncio.sleep(0)  # deixa a task de progresso realmente subir
+        yield {"kind": "tool_result", "id": "toolu_01A9", "content": "ok", "is_error": False}
+        yield {"kind": "result", "is_error": False, "text": "fim", "cost": 0.0}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "gera"})
+        for _ in range(6):
+            ws.receive_json()
+
+    assert espiao.abertas == [(cid, "toolu_01A9", "/api/projects/p1/refs/job")]
+    assert espiao.canceladas == ["toolu_01A9"]  # o `tool_result` encerrou a espera
+    # progresso é efêmero: nada dele entra no transcript
+    assert _kinds_no_disco(client, cid) == ["user", "turn_started", "tool_call", "tool_result",
+                                            "result", "turn_ended"]
+
+
+def test_t_api_12_fim_do_turno_cancela_toda_task_de_progresso_orfa(client, monkeypatch):
+    from studio.chat import runtime
+    espiao = _com_espiao(monkeypatch)
+    cid = client.post("/api/chats", json={"title": "orfa"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "tool_call", "id": "toolu_A", "name": "mcp__studio__job_wait",
+               "input": {"pid": "p1", "step": "refs"}}
+        yield {"kind": "tool_call", "id": "toolu_B", "name": "mcp__studio__character_wait",
+               "input": {"cid": "c3f1"}}
+        await asyncio.sleep(0)
+        yield {"kind": "result", "is_error": False, "text": "fim", "cost": 0.0}  # nenhum tool_result
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "gera"})
+        recebidos = [ws.receive_json() for _ in range(6)]
+
+    assert [c for _, c, _ in espiao.abertas] == ["toolu_A", "toolu_B"]
+    # quando o `turn_ended` chega, nenhuma das duas sobreviveu ao turno
+    assert recebidos[-1]["kind"] == "turn_ended"
+    assert sorted(espiao.canceladas) == ["toolu_A", "toolu_B"]
+
+
+def test_t_api_12b_turno_interrompido_tambem_cancela_o_progresso(client, monkeypatch):
+    """O `finally` roda também no caminho de `CancelledError` (botão Parar)."""
+    from studio.chat import runtime
+    espiao = _com_espiao(monkeypatch)
+    cid = client.post("/api/chats", json={"title": "parar"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "tool_call", "id": "toolu_A", "name": "job_wait",
+               "input": {"pid": "p1", "step": "refs"}}
+        await asyncio.Event().wait()
+        yield {"kind": "result", "is_error": False, "text": "nunca chega"}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "gera"})
+        ws.receive_json(), ws.receive_json(), ws.receive_json()  # user, turn_started, tool_call
+        ws.send_json({"type": "stop"})
+        while (e := ws.receive_json())["kind"] != "turn_ended":
+            pass
+        assert e["reason"] == "stopped"
+
+    assert espiao.canceladas == ["toolu_A"]
+
+
+def test_t_api_13_tool_nao_observada_nao_abre_task_de_progresso(client, monkeypatch):
+    from studio.chat import runtime
+    espiao = _com_espiao(monkeypatch)
+    cid = client.post("/api/chats", json={"title": "sem progresso"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "tool_call", "id": "toolu_A", "name": "mcp__studio__refs_search",
+               "input": {"pid": "p1", "terms": ["gelo"]}}
+        yield {"kind": "tool_call", "id": "toolu_B", "name": "mcp__studio__job_wait",
+               "input": {"step": "refs"}}  # input malformado: sem `pid`
+        await asyncio.sleep(0)
+        yield {"kind": "result", "is_error": False, "text": "fim", "cost": 0.0}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "busca"})
+        for _ in range(6):
+            ws.receive_json()
+
+    assert espiao.abertas == []
