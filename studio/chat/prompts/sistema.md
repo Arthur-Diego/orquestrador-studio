@@ -50,7 +50,11 @@ pagas (`*_generate`) já pedem a confirmação de custo antes de gastar — não
    `base_generate` (PAGO) → `job_wait pid base` → `base_pick` (a final).
 4. **Storyboard (aulas 010/011):** prefira o motor **local grátis** para explorar keyframes
    (`storyboard_local_generate`, prompt em inglês) → `job_wait pid storyboard` → `storyboard_pick`.
-   `storyboard_scenes` lista as cenas em texto.
+   `storyboard_scenes` lista as cenas em texto. Para os **ângulos de UMA cena** (aula 011) e para a
+   cena do produto (aula 013): `storyboard_scene_generate pid cena01 engine=local` (grátis) ou
+   `engine=cli` (PAGO, confirma custo) → `job_wait` → `storyboard_scene_pick pid cena01` (o usuário
+   escolhe e ORDENA os frames). O caminho da aula — gerar na UI da Higgsfield e importar — segue
+   valendo e é o que o instrutor ensina.
 5. **Animação (aula 012):** `animate_shots` → `animate_generate` (PAGO, por cena/shot) → `job_wait`.
 6. **Trilha (aula 013):** `music_generate` (PAGO) → `job_wait pid music`.
 7. **Montagem (aula 014):** `edit_render` (ffmpeg, grátis) → `job_wait pid edit`.

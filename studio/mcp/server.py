@@ -113,6 +113,17 @@ def build_server(client: StudioClient | None = None):
     def storyboard_scenes(pid: str) -> str:
         return actions.storyboard_scenes(cli, pid)
 
+    # `[extensão]` geração POR CENA (ângulos da aula 011 e cena do produto da aula 013).
+    @t(name="storyboard_scene_generate", description="Gera a imagem/os ângulos de UMA cena (cena01… ou 'product'). engine='local' é GRÁTIS (motor local); engine='cli' é PAGO (Higgsfield) e confirma o custo antes.")
+    def storyboard_scene_generate(pid: str, scene: str, engine: str = "local", prompt: str = "",
+                                  count: int = 4, model: str = "", confirm: bool = False) -> str:
+        return actions.storyboard_scene_generate(cli, pid, scene, engine, prompt, count, model,
+                                                 confirm=confirm)
+
+    @t(name="storyboard_scene_pick", description="Mostra os candidatos de UMA cena para o USUÁRIO escolher e ORDENAR os frames (shot01, shot02…) e salva a ordem.")
+    def storyboard_scene_pick(pid: str, scene: str) -> str:
+        return actions.storyboard_scene_pick(cli, pid, scene)
+
     # ---------- ações: 5-9 ----------
     @t(name="animate_shots", description="Lista os shots prontos para animar (etapa 5).")
     def animate_shots(pid: str) -> str:
