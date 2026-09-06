@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Fechamento — ADR, HLD, diagrama, bundle e verificação
 type: docs
 complexity: medium
@@ -57,18 +57,21 @@ CI reprova por drift e a decisão fica sem registro.
 
 ## Subtasks
 
-- [ ] 6.1 Verificar se `docs/adrs/generated/STUDIO/ADR-041-*.md` existe e seguir o ramo
+- [x] 6.1 Verificar se `docs/adrs/generated/STUDIO/ADR-041-*.md` existe e seguir o ramo
       correspondente (acrescentar a tabela × criar `ADR-041.pendente-f02.md`).
-- [ ] 6.2 Escrever a tabela dos quatro eventos desta frente (nome, direção, persistido/efêmero,
+- [x] 6.2 Escrever a tabela dos quatro eventos desta frente (nome, direção, persistido/efêmero,
       campos, semântica) e a nota sobre `normalize_event`/`stream_event`.
-- [ ] 6.3 Acrescentar a nota de emenda em ADR-036 apontando para o ADR-041.
-- [ ] 6.4 Se um ADR novo for criado, acrescentar a linha correspondente em `docs/adrs/mapping.md`.
-- [ ] 6.5 Subir `docs/domains/chat/hld.md` para v1.1: bump, parágrafo da fatia e tabela de eventos.
-- [ ] 6.6 Publicar o diagrama Mermaid do fluxo em `docs/domains/chat/diagrams/mermaid/`.
-- [ ] 6.7 Rodar `make frontend-build` e commitar `studio/web/dist/`.
-- [ ] 6.8 Rodar `make verify` e `make frontend-verify` com output real e conferir que
+- [x] 6.3 Acrescentar a nota de emenda em ADR-036 apontando para o ADR-041.
+- [x] 6.4 Se um ADR novo for criado, acrescentar a linha correspondente em `docs/adrs/mapping.md`.
+      **N/A**: nenhum ADR novo foi criado (só o fragmento `ADR-041.pendente-f02.md`), e
+      `ADR-036`..`ADR-040` também não estão em `mapping.md`. A linha do ADR-041 é da F03 e
+      está registrada como passo 4 do bloco "Como fundir" do fragmento.
+- [x] 6.5 Subir `docs/domains/chat/hld.md` para v1.1: bump, parágrafo da fatia e tabela de eventos.
+- [x] 6.6 Publicar o diagrama Mermaid do fluxo em `docs/domains/chat/diagrams/mermaid/`.
+- [x] 6.7 Rodar `make frontend-build` e commitar `studio/web/dist/`.
+- [x] 6.8 Rodar `make verify` e `make frontend-verify` com output real e conferir que
       `frontend/src/api/schema.ts` e `frontend/openapi.json` não estão no diff da branch.
-- [ ] 6.9 Conferir que `tests/test_adr010_fronteira_nucleo.py` passa e que os prefixos declarados
+- [x] 6.9 Conferir que `tests/test_adr010_fronteira_nucleo.py` passa e que os prefixos declarados
       cobrem exatamente o que a branch tocou (`frontend/` e `studio/web/`).
 
 ## Implementation Details
@@ -123,13 +126,13 @@ critérios 18 e 19, §11 ordens 1 e 9, §12 pendência P1.
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] T-FIM-01 — `make verify` verde (ruff + pytest), com as duas falhas pré-existentes de
+- [x] T-FIM-01 — `make verify` verde (ruff + pytest), com as duas falhas pré-existentes de
       `tests/test_edit_captions.py` isoladas como `pre-existing failure`.
-- [ ] T-FIM-02 — `make frontend-verify` verde.
-- [ ] T-FIM-03 — `make frontend-build` reconstrói `studio/web/dist/` e o bundle é commitado.
-- [ ] T-FIM-04 — `tests/test_adr010_fronteira_nucleo.py` passa com a branch registrada com os
+- [x] T-FIM-02 — `make frontend-verify` verde.
+- [x] T-FIM-03 — `make frontend-build` reconstrói `studio/web/dist/` e o bundle é commitado.
+- [x] T-FIM-04 — `tests/test_adr010_fronteira_nucleo.py` passa com a branch registrada com os
       prefixos `frontend/` e `studio/web/`.
-- [ ] T-FIM-05 — `frontend/src/api/schema.ts` e `frontend/openapi.json` inalterados no diff.
+- [x] T-FIM-05 — `frontend/src/api/schema.ts` e `frontend/openapi.json` inalterados no diff.
 
 ## Success Criteria
 

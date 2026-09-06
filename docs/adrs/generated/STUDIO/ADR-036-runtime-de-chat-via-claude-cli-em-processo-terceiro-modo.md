@@ -3,7 +3,7 @@
 **Status:** Aceito
 **Data:** 2026-09-05
 **Task-Id:** ADH-OS-20260905-04
-**ADRs relacionados:** [ADR-001 (single-process, loopback)](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-003 (persistência em arquivos)](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004 (fidelidade ao curso)](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006 (jobs em thread + polling)](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008 (testes sem rede)](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md), [ADR-034 (execução de skill do Claude CLI)](./ADR-034-execucao-de-skill-do-claude-cli-com-escrita-em-disco.md), [ADR-037](./ADR-037-servidor-mcp-do-studio-como-cliente-http-da-propria-api.md), [ADR-040](./ADR-040-agente-sem-tools-nativas-e-isolado-das-configuracoes-do-usuario.md)
+**ADRs relacionados:** [ADR-001 (single-process, loopback)](./ADR-001-monolito-single-process-sem-autenticacao-bind-loopback.md), [ADR-003 (persistência em arquivos)](./ADR-003-persistencia-em-sistema-de-arquivos-sem-banco-de-dados.md), [ADR-004 (fidelidade ao curso)](./ADR-004-fidelidade-ao-roteiro-do-curso-como-restricao-arquitetural.md), [ADR-006 (jobs em thread + polling)](./ADR-006-jobs-assincronos-em-threads-com-estado-em-memoria-e-polling.md), [ADR-008 (testes sem rede)](./ADR-008-estrategia-de-testes-sem-rede-ci-ruff-pytest-gitflow-task-id.md), [ADR-034 (execução de skill do Claude CLI)](./ADR-034-execucao-de-skill-do-claude-cli-com-escrita-em-disco.md), [ADR-037](./ADR-037-servidor-mcp-do-studio-como-cliente-http-da-propria-api.md), [ADR-040](./ADR-040-agente-sem-tools-nativas-e-isolado-das-configuracoes-do-usuario.md), ADR-041 (protocolo do WS do chat v2 — ver Emenda 1)
 
 ## Contexto e Problema
 
@@ -70,3 +70,34 @@ dependência da Onda A.
 - Sem deltas de texto (blocos inteiros por mensagem), até adotarmos `--include-partial-messages`.
 - O CI nunca exercita o `claude` real (ADR-008); a corrida ponta a ponta é validação manual
   registrada na PR — feita na Onda A (o turno real chamou `projects`→`guide`→`guide_step`).
+
+
+---
+
+## Emenda 1 — o protocolo do WebSocket passa a ser mantido no ADR-041 (2026-09-06)
+
+**Task-Id:** ADH-OS-20260906-04 (Wave 11 · F02, chat-feedback) · **Status desta ADR: inalterado.**
+
+Esta é uma **nota**, não uma revogação: tudo o que o ADR-036 decide continua valendo — um turno é um
+subprocess `claude -p` de vida curta, a ponte com o modelo é a assinatura, `normalize_event` e
+`build_argv` seguem puros, o single-process do ADR-001 fica de pé.
+
+O que muda é **onde a lista de eventos do WebSocket é mantida**. O item 2 da Decisão enumera os
+eventos do protocolo (`assistant_text`, `tool_call`, `tool_result`, `result`, `system`, `notify`,
+`ask`, `raw`) porque, na Onda A, essa lista era fechada. Ela deixou de ser: a Wave 11 acrescenta
+eventos em mais de uma frente. A partir daqui:
+
+- **O ADR-041 ("Protocolo do WebSocket do chat v2, aditivo") é a lista viva dos eventos do WS.** A
+  enumeração do item 2 acima é o retrato da Onda A e não deve ser lida como exaustiva nem editada a
+  cada evento novo — o lugar de acrescentar é a tabela do ADR-041, que é aditiva e ordenada por nome.
+- **O protocolo é aditivo por contrato.** Nenhum evento existente muda de forma; nenhum campo é
+  removido ou renomeado. Um cliente antigo ignora evento novo pelo `default` do `switch`.
+- **Consequência que caiu.** A consequência negativa "sem deltas de texto (blocos inteiros por
+  mensagem), até adotarmos `--include-partial-messages`" deixa de valer quando o CLI instalado
+  suporta a flag: o turno passa a emitir `assistant_delta`, e `run_turn` decide pela sonda
+  `supports_partial()` (com `STUDIO_CHAT_PARTIAL=1|0` como escape hatch e gancho de teste, ADR-008).
+  Onde a flag não existe, o comportamento é exatamente o descrito acima — blocos inteiros.
+- **`normalize_event` mudou de comportamento** para as linhas `stream_event` (deixam de virar `raw`).
+  A mudança está descrita no ADR-041; a função continua pura e continua devolvendo lista.
+- **A validação manual continua exigida por esta ADR.** O CI nunca exercita o `claude` real
+  (ADR-008), então cada frente que mexe no protocolo anexa à PR a corrida ponta a ponta.
