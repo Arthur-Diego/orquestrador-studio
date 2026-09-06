@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Shape comum de custo (`CostPreview`) nas 7 rotas + agregados do ledger
 type: backend
 complexity: high
@@ -88,26 +88,26 @@ produz.
   de `hf.status` sem `refresh`.
 
 ## Subtasks
-- [ ] 1.1 Escrever `tests/test_cost_preview.py` com um teste de contrato por rota afirmando as
+- [x] 1.1 Escrever `tests/test_cost_preview.py` com um teste de contrato por rota afirmando as
       chaves de HOJE (nome e tipo) das 7 rotas em escopo. Rodar e ver passar contra o código
       atual, antes de mudar qualquer rota.
-- [ ] 1.2 Implementar `CostPreview` e `cost_preview()` em `studio/common/pricing.py`, marcados
+- [x] 1.2 Implementar `CostPreview` e `cost_preview()` em `studio/common/pricing.py`, marcados
       `[extensão]`, com os testes unitários do construtor puro.
-- [ ] 1.3 Adotar o construtor na rota `POST /api/projects/{pid}/mood/cost`, preservando
+- [x] 1.3 Adotar o construtor na rota `POST /api/projects/{pid}/mood/cost`, preservando
       `per_prompt` (lista de dicts do CLI) e `total`.
-- [ ] 1.4 Adotar na rota `POST /api/projects/{pid}/base/cost`, preservando `per_item`, `count`,
+- [x] 1.4 Adotar na rota `POST /api/projects/{pid}/base/cost`, preservando `per_item`, `count`,
       `total`, `raw`; a `action` sai da `KIND_ACTION` existente.
-- [ ] 1.5 Adotar na rota `POST /api/projects/{pid}/animate/cost`, preservando `per_take`,
+- [x] 1.5 Adotar na rota `POST /api/projects/{pid}/animate/cost`, preservando `per_take`,
       `total`, `credits_unknown`, `model`, `count`, `error`.
-- [ ] 1.6 Adotar na rota `POST /api/projects/{pid}/music/generate/cost`, preservando `per_track`,
+- [x] 1.6 Adotar na rota `POST /api/projects/{pid}/music/generate/cost`, preservando `per_track`,
       `total`, `raw`, `error`.
-- [ ] 1.7 Adotar nas rotas `POST /api/projects/{pid}/storyboard/cost` (`per_image`, `total`) e
+- [x] 1.7 Adotar nas rotas `POST /api/projects/{pid}/storyboard/cost` (`per_image`, `total`) e
       `POST /api/projects/{pid}/storyboard/video/cost` (`model`, `per_item`, `total`).
-- [ ] 1.8 Adotar na rota `POST /api/moodboards/{mbid}/multishot/cost`, preservando `model`,
+- [x] 1.8 Adotar na rota `POST /api/moodboards/{mbid}/multishot/cost`, preservando `model`,
       `count`, `per_image`, `total`, `source` (a chave `source` já existe com a mesma semântica).
-- [ ] 1.9 Acrescentar `today_credits`/`today_count` a `settings.summary()` e `summary_global` a
+- [x] 1.9 Acrescentar `today_credits`/`today_count` a `settings.summary()` e `summary_global` a
       `creditos.service.dashboard(pid)`, com os testes em `tests/test_creditos_api.py`.
-- [ ] 1.10 Rodar a suíte inteira e conferir que nenhum teste existente de custo quebrou.
+- [x] 1.10 Rodar a suíte inteira e conferir que nenhum teste existente de custo quebrou.
 
 ## Implementation Details
 
@@ -177,26 +177,26 @@ widget degrada como a seção 6 do `_techspec.md` descreve.
 Sem `_tests.md` neste workflow. Casos inline, derivados dos critérios 1, 2 e 18 da seção 9 do
 `_techspec.md`:
 
-- [ ] **Contrato por rota (7 casos, critério 1).** Para cada uma das 7 rotas, um teste que
+- [x] **Contrato por rota (7 casos, critério 1).** Para cada uma das 7 rotas, um teste que
       chama a rota com um payload válido e afirma: (a) cada chave de hoje está presente; (b) o
       tipo de cada uma é o mesmo de hoje; (c) as chaves do `CostPreview` foram somadas. Ex.:
       `POST /api/projects/<pid>/base/cost` com `{"kind":"upscale","model":"bytedance_image_upscale","count":1}`
       devolve 200 com `per_item`, `count`, `total`, `raw` **e** `action == "base.upscale"`,
       `model`, `label`, `variant`, `kind`, `unit_credits`, `source`, `balance`, `note`.
-- [ ] **`cost_preview` colisão de chave (critério 2).** `cost_preview(action="a", model="m",
+- [x] **`cost_preview` colisão de chave (critério 2).** `cost_preview(action="a", model="m",
       total=…, legacy={"total": 99})` devolve `total == 99` — o valor legado vence.
-- [ ] **`cost_preview` total derivado (critério 2).** `unit_credits=4, count=3` ⇒ `total == 12`;
+- [x] **`cost_preview` total derivado (critério 2).** `unit_credits=4, count=3` ⇒ `total == 12`;
       `unit_credits=None, count=3` ⇒ `total is None`.
-- [ ] **`cost_preview` precedência de `source` (critério 2).** `"cli"` acima de `"measured"`
+- [x] **`cost_preview` precedência de `source` (critério 2).** `"cli"` acima de `"measured"`
       acima de `"unknown"`; o default sem informação é `"unknown"`.
-- [ ] **`cost_preview` é pura (critério 2).** Chamada duas vezes com a mesma entrada devolve
+- [x] **`cost_preview` é pura (critério 2).** Chamada duas vezes com a mesma entrada devolve
       dicionários iguais e não toca disco nem subprocess.
-- [ ] **`summary` aditivo (critério 18).** Com um ledger de fixture contendo linhas de hoje e de
+- [x] **`summary` aditivo (critério 18).** Com um ledger de fixture contendo linhas de hoje e de
       ontem, `summary()` devolve `today_credits`/`today_count` só com as de hoje (UTC), e
       `total_credits`, `count`, `by_step`, `by_project` continuam com os valores de antes.
-- [ ] **`dashboard` aditivo (critério 18).** `dashboard(pid)` devolve `summary_global` e mantém
+- [x] **`dashboard` aditivo (critério 18).** `dashboard(pid)` devolve `summary_global` e mantém
       `summary` com o mesmo conteúdo de hoje.
-- [ ] **Ledger ausente.** Sem o arquivo `spend-ledger.jsonl`, `summary()` devolve zeros em
+- [x] **Ledger ausente.** Sem o arquivo `spend-ledger.jsonl`, `summary()` devolve zeros em
       `today_credits`/`today_count` e nada levanta.
 
 ## Success Criteria

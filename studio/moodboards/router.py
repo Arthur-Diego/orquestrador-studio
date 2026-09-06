@@ -10,6 +10,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from .. import higgsfield as hf
+from ..common import pricing
+from ..creditos import service as creditos
 from . import service as mb
 
 router = APIRouter(tags=["moodboards"])
@@ -172,9 +174,15 @@ def board_multishot_cost(mbid: str, req: MultishotReq):
     if not hf.available():   # custo é caminho SUAVE: não barra login (o gate duro mora no generate)
         raise HTTPException(409, hf.NO_CLI_MSG)
     try:
-        return mb.multishot_cost(mbid, req.source_id, req.count, req.model)
+        legado = mb.multishot_cost(mbid, req.source_id, req.count, req.model)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+    # `[extensão]` wave 11 (ADR-016): shape comum de custo, ADITIVO — as chaves de cima vencem
+    # (`model`, `count`, `source` já existiam aqui, com a MESMA semântica do `CostPreview`).
+    return pricing.cost_preview(action="mood.multishot", model=legado.get("model"),
+                                count=legado.get("count", 1), unit_credits=legado.get("per_image"),
+                                source=legado.get("source", "unknown"),
+                                balance=creditos.balance(), legacy=legado)
 
 
 @router.post("/api/moodboards/{mbid}/multishot/generate")

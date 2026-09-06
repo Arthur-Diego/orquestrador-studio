@@ -8,6 +8,8 @@ from pydantic import BaseModel
 
 from ... import higgsfield as hf
 from ...animate import service as animate
+from ...common import pricing
+from ...creditos import service as creditos
 from ...refs import service as refs
 
 router = APIRouter(tags=["animate"])
@@ -159,7 +161,13 @@ def animate_like(pid: str, scene: str, shot: str, take: str, req: LikeReq):
 @router.post("/api/projects/{pid}/animate/cost")
 def animate_cost(pid: str, req: CostReq):
     _cli_ready()
-    return _call(animate.cost, pid, req.scene, req.shot, req.model, req.count)
+    legado = _call(animate.cost, pid, req.scene, req.shot, req.model, req.count)
+    # `[extensão]` wave 11 (ADR-016): shape comum de custo, ADITIVO — as chaves de cima vencem.
+    por_take = legado.get("per_take")
+    return pricing.cost_preview(action="animate.video", model=legado.get("model") or req.model,
+                                count=legado.get("count", 1), unit_credits=por_take,
+                                source="cli" if por_take is not None else "unknown",
+                                balance=creditos.balance(), legacy=legado)
 
 
 @router.post("/api/projects/{pid}/animate/generate", status_code=202)
