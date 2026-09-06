@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Ciclo de vida do turno no servidor e streaming de texto
 type: backend
 complexity: high
@@ -64,27 +64,27 @@ no transcript e a sanear aba presa em `running`; `studio/chat/runtime.py` passa 
 
 ## Subtasks
 
-- [ ] 1.1 Registrar a branch em `TITULARES_DO_NUCLEO` no topo do dict, com motivo verificável (card
+- [x] 1.1 Registrar a branch em `TITULARES_DO_NUCLEO` no topo do dict, com motivo verificável (card
       #86, `[extensão]`, ADR-036/041, ADR-010/031/032) e os prefixos `("frontend/", "studio/web/")`.
-- [ ] 1.2 `runtime.py`: acrescentar `supports_partial(_probe=None)` — env `STUDIO_CHAT_PARTIAL` como
+- [x] 1.2 `runtime.py`: acrescentar `supports_partial(_probe=None)` — env `STUDIO_CHAT_PARTIAL` como
       escape hatch, cache por processo, sonda default `claude --help` com timeout curto, nunca lança.
-- [ ] 1.3 `runtime.py`: acrescentar o parâmetro `partial` a `build_argv`, mantendo o argv de hoje
+- [x] 1.3 `runtime.py`: acrescentar o parâmetro `partial` a `build_argv`, mantendo o argv de hoje
       byte a byte quando `partial=False`.
-- [ ] 1.4 `runtime.py`: tratar `type == "stream_event"` em `normalize_event` conforme a tabela do
+- [x] 1.4 `runtime.py`: tratar `type == "stream_event"` em `normalize_event` conforme a tabela do
       contrato 5 — `text_delta` vira `assistant_delta`, todo o resto vira `[]`, nada vira `raw`.
-- [ ] 1.5 `runtime.py`: `run_turn` decide o `partial` chamando `supports_partial()` e passa a
+- [x] 1.5 `runtime.py`: `run_turn` decide o `partial` chamando `supports_partial()` e passa a
       `build_argv`.
-- [ ] 1.6 `router.py`: gerar `turn_id` (`uuid4().hex[:12]`), gravar e empurrar `turn_started` antes do
+- [x] 1.6 `router.py`: gerar `turn_id` (`uuid4().hex[:12]`), gravar e empurrar `turn_started` antes do
       subprocess; emitir `turn_ended {turn_id, reason}` num `finally`, com o `reason` decidido pelo
       caminho de saída.
-- [ ] 1.7 `router.py`: separar eventos **persistidos** de **efêmeros** no laço de `_run_turn` — os
+- [x] 1.7 `router.py`: separar eventos **persistidos** de **efêmeros** no laço de `_run_turn` — os
       efêmeros (`assistant_delta`, `tool_progress`) vão direto ao `manager.push`, sem `seq`.
-- [ ] 1.8 `router.py`: sanear aba órfã em `GET /api/chats` (status `running` sem task viva em
+- [x] 1.8 `router.py`: sanear aba órfã em `GET /api/chats` (status `running` sem task viva em
       `_turns` → `idle`), preservando a forma da resposta.
-- [ ] 1.9 `router.py`: acrescentar os três campos derivados ao `GET /api/chats/{id}/trace`.
-- [ ] 1.10 Escrever os testes atribuídos em `tests/test_chat_runtime.py` e `tests/test_chat_api.py`,
+- [x] 1.9 `router.py`: acrescentar os três campos derivados ao `GET /api/chats/{id}/trace`.
+- [x] 1.10 Escrever os testes atribuídos em `tests/test_chat_runtime.py` e `tests/test_chat_api.py`,
       com as linhas canônicas do CLI 2.1.263 (tabela do contrato 5) como fixture.
-- [ ] 1.11 Rodar `make verify` e confirmar que `frontend/src/api/schema.ts` e
+- [x] 1.11 Rodar `make verify` e confirmar que `frontend/src/api/schema.ts` e
       `frontend/openapi.json` não aparecem em `git status`.
 
 ## Implementation Details
@@ -149,18 +149,18 @@ invariantes), §11 ordens 2 e 3.
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] T-RT-01, T-RT-02, T-RT-03, T-RT-04, T-RT-05, T-RT-06 — `normalize_event` com `stream_event`:
+- [x] T-RT-01, T-RT-02, T-RT-03, T-RT-04, T-RT-05, T-RT-06 — `normalize_event` com `stream_event`:
       delta de texto vira evento, todo o resto vira lista vazia, nada vira `raw`, e o `raw` dos
       tipos realmente desconhecidos é preservado.
-- [ ] T-RT-07, T-RT-08 — `build_argv` com e sem `partial`.
-- [ ] T-RT-09, T-RT-10, T-RT-11, T-RT-12 — `supports_partial`: env, sonda injetada, falha da sonda,
+- [x] T-RT-07, T-RT-08 — `build_argv` com e sem `partial`.
+- [x] T-RT-09, T-RT-10, T-RT-11, T-RT-12 — `supports_partial`: env, sonda injetada, falha da sonda,
       cache.
-- [ ] T-RT-13 — `run_turn` com `line_source` falso: ordem dos eventos e ausência de texto duplicado.
-- [ ] T-API-01, T-API-02, T-API-03, T-API-04 — par de turno nos três caminhos e posição do
+- [x] T-RT-13 — `run_turn` com `line_source` falso: ordem dos eventos e ausência de texto duplicado.
+- [x] T-API-01, T-API-02, T-API-03, T-API-04 — par de turno nos três caminhos e posição do
       `turn_started`.
-- [ ] T-API-05, T-API-06 — eventos efêmeros não entram no `events.jsonl` e chegam sem `seq`.
-- [ ] T-API-07, T-API-08 — saneamento de aba órfã em `GET /api/chats`.
-- [ ] T-API-09, T-API-10 — campos novos do `/trace`.
+- [x] T-API-05, T-API-06 — eventos efêmeros não entram no `events.jsonl` e chegam sem `seq`.
+- [x] T-API-07, T-API-08 — saneamento de aba órfã em `GET /api/chats`.
+- [x] T-API-09, T-API-10 — campos novos do `/trace`.
 
 ## Success Criteria
 
