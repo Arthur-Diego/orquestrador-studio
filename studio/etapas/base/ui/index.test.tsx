@@ -4,11 +4,13 @@
 // inteiro + os ~15 testes de `test_base_api.py` que liam a view — recon §7.1). A regra de ouro (recon
 // §7.2): NÃO copiar o assert-de-substring; renderizar o componente e asseverar DOM + comportamento. Os
 // asserts de fidelidade ao curso (ADR-004 — um texto de aula específico na tela) são preservados.
-import { render, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, fireEvent, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import BaseScreen from "./index";
 import { api, apiUpload } from "../../../../frontend/src/api";
+import { DEBOUNCE_GUIA_MS } from "../../../../frontend/src/api/guide-sync";
+import { emitStudioChange } from "../../../../frontend/src/shell/events";
 import type { StudioCtx } from "../../../../frontend/src/shell/plugin";
 import { StudioProvider } from "../../../../frontend/src/shell/plugin";
 import { ShellProvider } from "../../../../frontend/src/shell/context";
@@ -461,5 +463,190 @@ describe("Etapa 3 · Imagem base (porte React)", () => {
     const title = container.querySelector("#btnBaseDownloads")?.getAttribute("title") || "";
     expect(title).toContain("120 min");
     expect(container.querySelector("#main")).toBeNull(); // o #main é do shell; a tela não o repete
+  });
+});
+
+// =================================================================================================
+// Wave 11 · frente `base-upscale-chat` (card #94) — critérios 12 e 13 da seção 9 do FDD. `[extensão]`
+//
+// **Critério 12 — recarga por evento.** A assinatura já existia antes desta frente: a tela chama
+// `useStudioChange("base", () => void load().catch(...), { pid })` desde a F03 (card #87), com o
+// debounce por par `(pid do evento, step)` de `frontend/src/shell/events.ts`. O que faltava era
+// COBERTURA. Estes testes provam o contrato observável — recarrega no pid da tela, ignora o de outra
+// campanha, colapsa a rajada num `load()` só — sem tocar no código de produção da assinatura.
+// Modelo: `studio/etapas/refs/ui/index.test.tsx` (UT-19).
+//
+// **Critério 13 — antes/depois por `source_id`.** O "antes" do par sai da candidata do resultado
+// (`source_id`, gravado pelo backend nesta mesma frente), não da cadeia selecionada agora. Sem
+// `source_id` — candidata antiga, import sem origem — vale a heurística `originFor` de sempre.
+// =================================================================================================
+describe("Etapa 3 · sincronização com o chat e antes/depois por `source_id` [extensão]", () => {
+  const CANDS = `GET /api/projects/${PID}/base/candidates`;
+  const UPLOAD = `POST /api/projects/${PID}/base/import/upload`;
+
+  const contaCandidatas = (f: ReturnType<typeof instalarFetch>) =>
+    f.mock.calls.filter((c) => String(c[0]) === `/api/projects/${PID}/base/candidates`).length;
+
+  const S1 = {
+    id: "s1",
+    kind: "situation",
+    selected: true,
+    file: "base/candidates/s1.png",
+    source: "upload",
+    source_id: null,
+  };
+  const L1 = {
+    id: "l1",
+    kind: "label",
+    selected: true,
+    file: "base/candidates/l1.png",
+    source: "upload",
+    source_id: "s1",
+  };
+  const u1De = (sourceId: string | null) => ({
+    id: "u1",
+    kind: "upscale",
+    selected: false,
+    file: "base/candidates/u1.png",
+    source: "cli",
+    source_id: sourceId,
+  });
+
+  const esperaODebounce = async () => {
+    // Timers reais: a janela inteira do debounce mais folga. Se fosse recarregar, já recarregou.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, DEBOUNCE_GUIA_MS + 200));
+    });
+  };
+
+  // ---------- critério 12 ----------
+
+  it("recarrega as candidatas ao receber a mudança do seu step e do seu pid", async () => {
+    const rotas = respostasBase();
+    const fetchFalso = instalarFetch(rotas);
+    const { container } = renderBase();
+    await waitFor(() => expect(container.querySelectorAll("#baseGallery .card")).toHaveLength(1));
+    // o chat gerou mais uma candidata por fora da tela
+    rotas[CANDS] = { candidates: [S1, u1De("s1")], final: "base/base_final.png" };
+    fetchFalso.mockClear();
+
+    act(() => emitStudioChange({ pid: PID, step: "base", scope: "candidates", tool: "base_generate" }));
+    await esperaODebounce();
+
+    expect(contaCandidatas(fetchFalso)).toBe(1);
+    await waitFor(() => expect(container.querySelectorAll("#baseGallery .card")).toHaveLength(2));
+  });
+
+  it("ignora a mudança de outra campanha", async () => {
+    const rotas = respostasBase();
+    const fetchFalso = instalarFetch(rotas);
+    const { container } = renderBase();
+    await waitFor(() => expect(container.querySelectorAll("#baseGallery .card")).toHaveLength(1));
+    rotas[CANDS] = { candidates: [S1, u1De("s1")], final: "base/base_final.png" };
+    fetchFalso.mockClear();
+
+    act(() => emitStudioChange({ pid: "camp-b", step: "base", scope: "candidates", tool: "base_generate" }));
+    await esperaODebounce();
+
+    expect(contaCandidatas(fetchFalso)).toBe(0);
+    expect(container.querySelectorAll("#baseGallery .card")).toHaveLength(1);
+  });
+
+  it("colapsa uma rajada de eventos numa recarga só (debounce de 400 ms)", async () => {
+    const rotas = respostasBase();
+    const fetchFalso = instalarFetch(rotas);
+    const { container } = renderBase();
+    await waitFor(() => expect(container.querySelectorAll("#baseGallery .card")).toHaveLength(1));
+    fetchFalso.mockClear();
+
+    act(() => {
+      emitStudioChange({ pid: PID, step: "base", scope: "job", tool: "base_generate" });
+      emitStudioChange({ pid: PID, step: "base", scope: "candidates", tool: "base_generate" });
+      emitStudioChange({ pid: PID, step: "base", scope: "selection", tool: "base_pick" });
+    });
+    await esperaODebounce();
+
+    expect(contaCandidatas(fetchFalso)).toBe(1);
+  });
+
+  it("troca a imagem base final com cache-bust novo quando o evento traz outra final", async () => {
+    const rotas = respostasBase();
+    instalarFetch(rotas);
+    const { container } = renderBase();
+    await waitFor(() => expect(container.querySelector("#baseFinalCard img")).not.toBeNull());
+    const antes = container.querySelector("#baseFinalCard img")!.getAttribute("src") || "";
+    expect(antes).toContain("?v=");
+
+    rotas[CANDS] = { candidates: [S1, u1De("s1")], final: "base/base_final_v2.png" };
+    act(() => emitStudioChange({ pid: PID, step: "base", scope: "selection", tool: "base_pick" }));
+    await esperaODebounce();
+
+    await waitFor(() =>
+      expect(container.querySelector("#baseFinalCard img")!.getAttribute("src")).toContain("base_final_v2.png"),
+    );
+    const depois = container.querySelector("#baseFinalCard img")!.getAttribute("src") || "";
+    expect(depois).toContain("?v=");
+    expect(depois.split("?v=")[1]).not.toBe(antes.split("?v=")[1]);
+  });
+
+  // ---------- critério 13 ----------
+
+  /** Importa um upscale pela tela e devolve o DOM já com o bloco "antes → depois" montado. */
+  async function importaUpscale(iniciais: unknown[], u1: unknown) {
+    const rotas = respostasBase({ candidates: iniciais });
+    rotas[UPLOAD] = { added: 1, warnings: [] };
+    instalarFetch(rotas);
+    const r = renderBase();
+    await waitFor(() => expect(r.container.querySelectorAll("#baseGallery .card")).toHaveLength(iniciais.length));
+    fireEvent.click(r.container.querySelector("#baseChain [data-step=upscale]")!);
+    rotas[CANDS] = { candidates: [...iniciais, u1], final: "base/base_final.png" };
+    fireEvent.drop(r.container.querySelector("#baseDrop")!, {
+      dataTransfer: { files: [new File(["x"], "u1.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(r.container.querySelectorAll("#baseGenResult .pair")).toHaveLength(1));
+    return r;
+  }
+
+  /** `[antes, depois]` do par — legenda e `src` de cada figura. */
+  const parDe = (container: HTMLElement) =>
+    [...container.querySelectorAll("#baseGenResult .pair .ba figure")].map((f) => ({
+      legenda: f.querySelector("figcaption")?.textContent,
+      src: f.querySelector("img")?.getAttribute("src"),
+    }));
+
+  it("o antes do par sai da candidata apontada por `source_id`", async () => {
+    const { container } = await importaUpscale([S1], u1De("s1"));
+
+    const [antes, depois] = parDe(container);
+    expect(antes).toEqual({ legenda: "antes · situação", src: `/files/${PID}/base/candidates/s1.png` });
+    expect(depois).toEqual({ legenda: "depois · upscale", src: `/files/${PID}/base/candidates/u1.png` });
+    // o DOM do bloco é o mesmo que os cenários de QA leem
+    expect(container.querySelector("#baseGenResult")?.className).toBe("bs-result");
+    expect(container.querySelector("#baseGenResult .arrow")?.textContent).toBe("→");
+    expect(container.querySelector("#baseGenResult .link.dl")?.getAttribute("href")).toBe(
+      `/files/${PID}/base/candidates/u1.png`,
+    );
+  });
+
+  it("`source_id` manda mesmo quando a cadeia selecionada apontaria para outra candidata", async () => {
+    // a heurística escolheria o rótulo `l1` (o mais avançado da cadeia); o `source_id` diz `s1`
+    const { container } = await importaUpscale([S1, L1], u1De("s1"));
+
+    const [antes] = parDe(container);
+    expect(antes).toEqual({ legenda: "antes · situação", src: `/files/${PID}/base/candidates/s1.png` });
+  });
+
+  it("sem `source_id` o antes continua vindo da heurística da cadeia", async () => {
+    const { container } = await importaUpscale([S1, L1], u1De(null));
+
+    const [antes] = parDe(container);
+    expect(antes).toEqual({ legenda: "antes · rótulo", src: `/files/${PID}/base/candidates/l1.png` });
+  });
+
+  it("`source_id` apontando para candidata que sumiu cai na mesma heurística", async () => {
+    const { container } = await importaUpscale([S1, L1], u1De("apagada"));
+
+    const [antes] = parDe(container);
+    expect(antes).toEqual({ legenda: "antes · rótulo", src: `/files/${PID}/base/candidates/l1.png` });
   });
 });

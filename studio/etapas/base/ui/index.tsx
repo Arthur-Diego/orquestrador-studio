@@ -101,6 +101,12 @@ interface Candidate {
   prompt?: string;
   name?: string;
   job_id?: string;
+  /**
+   * Candidata de ORIGEM deste passo (upscale/rótulo/limpeza), gravada pelo backend `[extensão]`.
+   * `null` em `situation`, em candidatas antigas e quando o import não tinha origem selecionada —
+   * nesse caso o antes/depois cai na heurística `originFor` (§9 critério 13 do FDD).
+   */
+  source_id?: string | null;
 }
 interface CandidatesResp {
   candidates: Candidate[];
@@ -489,6 +495,18 @@ function BaseInner({ pid }: { pid: string | null }) {
     return f ? { url: ctx.files(f.file), label: "referência" } : null;
   }
 
+  // O "antes" do par é da CANDIDATA, não da cadeia selecionada agora: `source_id` diz de que
+  // candidata este passo saiu, então o par continua certo mesmo que a seleção mude depois (ou que o
+  // resultado tenha vindo do chat). Sem `source_id` — candidata antiga, `situation`, import sem
+  // origem — vale a heurística de sempre. §9 critério 13 do FDD. `[extensão]`
+  function originDe(c: Candidate): { url: string; label: string } | null {
+    if (c.source_id) {
+      const src = st.cands.find((x) => x.id === c.source_id);
+      if (src) return { url: ctx.files(src.file), label: KINDS[src.kind] || src.kind };
+    }
+    return originFor(st.resultKind);
+  }
+
   function showResult(newIds: string[], kind: Step = st.step): void {
     const results = st.cands.filter((c) => newIds.includes(c.id));
     if (!results.length) {
@@ -642,7 +660,6 @@ function BaseInner({ pid }: { pid: string | null }) {
   const ci = cardInfo();
   const brandHas = !!st.brandFile;
   const results = st.cands.filter((c) => st.resultIds.includes(c.id));
-  const origin = results.length ? originFor(st.resultKind) : null;
   const depoisLbl = KINDS[st.resultKind] || st.resultKind;
   const stepsParaGuia = shell.steps.map((s) => ({ id: s.id, n: s.n }));
 
@@ -1182,14 +1199,15 @@ function BaseInner({ pid }: { pid: string | null }) {
               </div>
               {results.map((c) => {
                 const after = ctx.files(c.file);
+                const origem = originDe(c);
                 return (
                   <div className="pair" key={c.id}>
                     <div className="ba">
-                      {origin ? (
+                      {origem ? (
                         <>
                           <figure>
-                            <img src={origin.url} alt={`antes (${origin.label})`} loading="lazy" />
-                            <figcaption>antes · {origin.label}</figcaption>
+                            <img src={origem.url} alt={`antes (${origem.label})`} loading="lazy" />
+                            <figcaption>antes · {origem.label}</figcaption>
                           </figure>
                           <span className="arrow">→</span>
                         </>
