@@ -5,3 +5,5 @@ pillow
 python-multipart
 numpy
 openai>=1.40
+httpx
+mcp>=1.0,<2
