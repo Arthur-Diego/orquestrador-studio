@@ -39,9 +39,21 @@ describe("MessageMarkdown", () => {
     expect(container.querySelector("b")).toBeNull();
     expect(container.querySelector("script")).toBeNull();
     expect(janela.x).toBeUndefined();
-    // O texto vizinho ao HTML descartado sobrevive.
-    expect(container.textContent).toContain("antes");
-    expect(container.textContent).toContain("depois");
+    // Sem `rehype-raw` a lib ESCAPA e exibe: as tags aparecem como texto literal, e é isso que
+    // fecha a superfície de injeção. Afirmar o texto inteiro impede que uma regressão troque o
+    // escape por render sem que nenhum teste perceba.
+    expect(container.textContent).toBe("antes <b>oi</b> <script>window.x=1</script> depois");
+  });
+
+  it("3b. nota de rodapé do GFM não vaza o rótulo 'Footnotes' visível", () => {
+    const { container } = renderMd("texto[^1]\n\n[^1]: a nota");
+    // O `remark-gfm` gera um `h2.sr-only` com o rótulo em inglês. `.sr-only` não existia em
+    // nenhuma folha do repo, então sem a regra de `chat.css` a palavra apareceria na bolha.
+    const rotulo = container.querySelector("#footnote-label");
+    expect(rotulo).not.toBeNull();
+    expect(rotulo!.className).toContain("sr-only");
+    expect(container.querySelector("section.footnotes")).not.toBeNull();
+    expect(container.querySelector("sup a")).not.toBeNull();
   });
 
   it("4. link abre em nova aba com rel=noopener noreferrer", () => {

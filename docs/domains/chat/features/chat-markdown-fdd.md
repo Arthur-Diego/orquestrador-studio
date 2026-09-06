@@ -1,6 +1,8 @@
 ### FDD: chat-markdown `[extensão]`
 
-Versão: 1.0
+Versão: 1.1 (v1.1: correções da fiscalização `dd-parallel-doc-sync` do fechamento — conjunto
+fechado de tags com as notas de rodapé do GFM, semântica real do HTML cru, export de `Message`,
+custo de bundle medido)
 Data: 2026-09-06
 Responsável: Arthur Diego (modo autônomo /dd-parallel, Wave 11)
 Task-Id: ADH-OS-20260906-03
@@ -47,7 +49,10 @@ herda a marcação `[extensão]`.
 **Provides**
 - Componente `frontend/src/areas/chat/MessageMarkdown.tsx` (react-markdown + remark-gfm, sem HTML
   cru, imagens só de `/files|/mbfiles|/cfiles`), usado em `assistant_text` e `tool_result` de erro.
-- Estilos `.chat-bubble` para markdown em `chat.css` (dois temas).
+- Estilos de markdown escopados em `.chat-md*` dentro de `chat.css` (dois temas). A regra
+  `.chat-bubble` em si só perde o `white-space: pre-wrap`, que desce para a bolha do usuário.
+  (A linha correspondente de `wave-11.md` dizia "estilos `.chat-bubble`"; o escopo real é `.chat-md`,
+  como manda a seção 5.)
 
 **Consumes**: nenhum (candidata imediata, sub-wave 1).
 
@@ -151,8 +156,11 @@ herda a marcação `[extensão]`.
   `<img src="/files/…" alt="base" class="chat-md-img" loading="lazy">`.
 - *Imagem externa.* `![x](https://exemplo.com/a.png)` **não** produz elemento algum (o override
   de `img` devolve `null`), conforme a proposta do card.
-- *HTML cru.* `<b>oi</b>` produz o texto `oi` sem elemento `b`; `<script>alert(1)</script>`
-  não produz elemento `script` nem executa nada. O nó `html` é descartado pelo pipeline.
+- *HTML cru.* Sem `rehype-raw` o `react-markdown` **escapa e exibe** o HTML cru como texto
+  literal, em vez de convertê-lo em elemento: `<b>oi</b>` aparece escrito com as tags na bolha, e
+  `<script>alert(1)</script>` também — sem produzir elemento `b` nem `script`, e sem executar nada.
+  É o escape, não o descarte, que fecha a superfície de injeção. Verificado com o pipeline real no
+  teste 3 da seção 9, que afirma o `textContent` inteiro.
 - *Markdown incompleto.* `**Camp` (herança do futuro `assistant_delta` de F02) renderiza o texto
   literal `**Camp` como parágrafo, sem exceção. Nenhuma marcação parcial derruba o dock.
 - *Bloco de código.* Uma cerca ```` ```bash ```` produz
@@ -192,7 +200,7 @@ export interface MessageMarkdownProps {
   compact?: boolean;
 }
 
-export function MessageMarkdown({ text, compact }: MessageMarkdownProps): JSX.Element;
+export function MessageMarkdown({ text, compact }: MessageMarkdownProps);
 ```
 
 - Semântica:
@@ -202,10 +210,13 @@ export function MessageMarkdown({ text, compact }: MessageMarkdownProps): JSX.El
   - O componente é **puro**: mesma `text`, mesmo DOM. Não guarda estado, não faz fetch, não lê
     `localStorage`.
 - Conjunto **fechado** de elementos que o componente pode produzir: `p`, `strong`, `em`, `del`,
-  `code`, `pre`, `ul`, `ol`, `li`, `input[type=checkbox][disabled]` (checklist do GFM),
-  `blockquote`, `h1` a `h6`, `hr`, `br`, `a`, `img`, `table`, `thead`, `tbody`, `tr`, `th`, `td`,
-  mais os `div`/`button` do wrapper de bloco de código. Qualquer outra tag pedida pelo texto
-  (via HTML cru) é descartada.
+  `code`, `pre`, `ul`, `ol`, `li`, `input[type=checkbox][disabled]` (checklist do GFM, dentro de
+  `ul.contains-task-list > li.task-list-item`), `blockquote`, `h1` a `h6`, `hr`, `br`, `a`, `img`,
+  `table`, `thead`, `tbody`, `tr`, `th`, `td`, mais os `div`/`button` do wrapper de bloco de
+  código, mais o que as **notas de rodapé do GFM** produzem: `sup > a[data-footnote-ref]`,
+  `section[data-footnotes].footnotes`, `h2.sr-only#footnote-label` e `a[data-footnote-backref]`.
+  Qualquer outra tag pedida pelo texto (via HTML cru) não é criada — o HTML cru é escapado e
+  exibido como texto.
 - Configuração do `react-markdown` (o miolo do contrato):
 
 ```tsx
@@ -262,6 +273,17 @@ export function MessageMarkdown({ text, compact }: MessageMarkdownProps): JSX.El
 </div>
 ```
 
+**[Contrato 3] Export aditivo de `Message` em `ChatDock.tsx`**
+
+- `function Message(...)` passa a ser `export function Message(...)`. É superfície nova do módulo
+  do dock, aditiva: nenhum consumidor existente muda, e o `ChatDock` continua sendo o único
+  export usado em produção.
+- Motivo: o critério 6 (a bolha do usuário não passa pelo parser) precisa renderizar o `switch`;
+  fazê-lo pelo `ChatDock` inteiro exigiria falsear WebSocket e duas rotas. O próprio critério 6
+  prevê a alternativa ("renderizando o `ChatDock` **ou o `Message`**").
+- Impacto de integração: `ChatDock.tsx` é rota de colisão de F02, F03, F08, F09, F10 e F11. O
+  export fica no topo da declaração de `Message`, fora das regiões que essas frentes tocam.
+
 **[Contrato 2] Catálogo de classes CSS acrescentadas em `chat.css`**
 
 - Tipo: contrato DOM/CSS (`frontend/src/areas/chat/chat.css`)
@@ -270,14 +292,19 @@ export function MessageMarkdown({ text, compact }: MessageMarkdownProps): JSX.El
 | Seletor | Papel |
 | --- | --- |
 | `.chat-md` | Container do markdown renderizado dentro de `.chat-bubble` ou `.chat-tool`. |
-| `.chat-md.compact` | Variante do chip de erro de tool: herda fonte e cor, zera margens. |
+| `.chat-md.compact` | Variante do chip de erro de tool: herda fonte e cor, zera as margens de bloco e tira o fundo do `code` inline. |
 | `.chat-md-img` | Imagem markdown aprovada pela allowlist (largura 100%, `border-radius` 8px). |
 | `.chat-md-code` | Wrapper do bloco de código (posiciona o `button.link.copy` no canto). |
 
 - Atributo **novo** no DOM existente: `data-md="1"` na `div.chat-bubble` do assistente. Serve de
   gancho estável para teste e para um futuro cenário Playwright, sem inventar classe nova.
-- Regras internas do `.chat-md` (todas escopadas, nenhuma global): `p`, `ul`, `ol`, `li`, `code`,
-  `pre`, `a`, `strong`, `em`, `blockquote`, `h1` a `h4`, `hr`, `table`, `th`, `td`, `img`.
+- Regras internas do `.chat-md` (todas escopadas, nenhuma global): `p`, `ul`, `ol`, `li`,
+  `li > input[type="checkbox"]`, `code`, `pre`, `a`, `strong`, `em`, `del`, `blockquote`,
+  `h1` a `h4`, `hr`, `table`, `th`, `td`, `img`, mais `sup`, `.footnotes` e `.sr-only` (o rótulo
+  "Footnotes" que o `remark-gfm` gera; `.sr-only` **não existia** em nenhuma folha do repositório,
+  então sem esta regra a palavra apareceria visível na bolha), e as do wrapper de código
+  `.chat-md-code pre`, `.chat-md-code .link.copy` com `:hover`/`:focus-visible` e o
+  `@media (prefers-reduced-motion: reduce)` que desliga a transição do botão.
 - Mudança em regra existente: `white-space: pre-wrap` sai de `.chat-bubble` (`chat.css:95-103`) e
   passa a `.chat-msg.user .chat-bubble` (`chat.css:104`). O restante da regra `.chat-bubble`
   (padding, raio, tamanho, `word-break`, `max-width`) fica intacto.
@@ -294,7 +321,7 @@ export function MessageMarkdown({ text, compact }: MessageMarkdownProps): JSX.El
 | --- | --- | --- |
 | `text` vazio, `null` ou `undefined` | Chamador coage para `""`; o componente renderiza `.chat-md` vazio | Sem `null` crash; a bolha some visualmente por não ter conteúdo |
 | Markdown incompleto (`**Camp`, fence aberto) | O remark degrada para texto literal; nenhuma exceção | Requisito de convivência com `assistant_delta` (F02) |
-| HTML cru no texto (`<b>`, `<script>`, `<iframe>`) | Nó `html` descartado pelo pipeline (sem `rehype-raw`); o texto adjacente sobrevive | Fecha a superfície de injeção |
+| HTML cru no texto (`<b>`, `<script>`, `<iframe>`) | **Escapado e exibido como texto literal** pelo pipeline (sem `rehype-raw`); nenhum elemento é criado | Fecha a superfície de injeção. O usuário vê as tags escritas na bolha — comportamento padrão da lib desde a v9, e o que o card pede ("HTML cru escapado") |
 | `href` com protocolo perigoso (`javascript:`, `data:`) | `defaultUrlTransform` do `react-markdown` zera o `href` | Comportamento padrão da lib, mantido de propósito |
 | `src` de imagem fora da allowlist | `srcPermitida` devolve `""` e o override de `img` devolve `null` | Nada aparece, nenhuma requisição sai |
 | `textoDoBloco(node)` com forma inesperada de hast | Guarda devolve `""`; o `CopyButton` copia string vazia | Nunca lança; o bloco continua visível |
@@ -311,6 +338,8 @@ que é exatamente o comportamento de hoje. Ou seja, o pior caso desta feature é
 
 **Invariantes**
 - I1: nenhum elemento fora do conjunto fechado da seção 5 é criado a partir do texto do modelo.
+  O conjunto inclui o que o `remark-gfm` gera por conta própria (checklist e notas de rodapé);
+  HTML cru nunca acrescenta nada a ele, porque é escapado antes de virar texto.
 - I2: nenhuma requisição de rede para host diferente do próprio Studio sai da bolha.
 - I3: a bolha do usuário nunca passa pelo parser de markdown.
 - I4: nenhuma classe CSS pré-existente de `chat.css` é renomeada ou removida.
@@ -325,9 +354,16 @@ runtime, log estruturado nem tracing no frontend. A observabilidade desta featur
 **de build e de teste**, e é isso que o PR precisa evidenciar.
 
 **Métricas**
-- Delta de tamanho de `studio/web/dist/` (bytes brutos e gz do chunk principal) medido antes e
-  depois de `make frontend-build`, colado no corpo do PR. Referência de plano: ~40 KB gz.
-- Contagem de testes Vitest do arquivo novo (alvo: 9 casos, seção 9).
+- Delta de tamanho de `studio/web/dist/` medido antes e depois de `make frontend-build` e colado
+  no corpo do PR, em **duas** escalas, porque elas contam histórias diferentes:
+  (a) o custo de carregamento — chunk principal em bruto e gz; (b) o custo em git — o diretório
+  inteiro, **com** os `.map` (`build.sourcemap: true` em `vite.config.ts`), que é o que de fato
+  engorda o repositório a cada commit de bundle. Referência de plano: ~40 KB gz.
+  **Medido:** chunk 323.835 → 483.105 B bruto e 98.292 → 146.744 B gz (**+47,3 KB gz**, +18% acima
+  da referência do plano, abaixo do gatilho de ~60 KB gz de R3); CSS +0,4 KB gz; diretório inteiro
+  com `.map` 2,96 MB → 4,09 MB (**+1,08 MB de blobs novos em git**).
+- Contagem de testes Vitest do arquivo novo (alvo: 13 casos — os 9 numerados da seção 9 mais
+  3b, 4b, 5b e 7b).
 
 **Logs**
 - Nenhum `console.log`/`console.warn` novo. O lint do repo (`npm run lint`) é a guarda.
@@ -391,7 +427,12 @@ exigidos pelo card #85):
 2. **Lista.** `- a\n- b` renderiza um `ul` com exatamente dois `li` (`a` e `b`).
 3. **HTML cru escapado.** O texto `<b>oi</b> <script>window.x=1</script>` não produz elemento
    `b` nem `script` (`container.querySelector("b")` e `("script")` são `null`), e `window.x`
-   continua `undefined`.
+   continua `undefined`. O teste afirma o `textContent` **inteiro**, para que uma regressão que
+   troque o escape por render não passe despercebida.
+3b. **Nota de rodapé do GFM não vaza rótulo em inglês.** `texto[^1]\n\n[^1]: a nota` produz
+   `sup > a`, `section.footnotes` e o `h2#footnote-label` com classe `sr-only` — e `chat.css`
+   define `.chat-md .sr-only` para esconder o rótulo "Footnotes", que o repositório não escondia
+   em nenhuma outra folha.
 4. **Link externo.** `[site](https://exemplo.com)` produz `a[href="https://exemplo.com"]` com
    `target="_blank"` e `rel="noopener noreferrer"`.
 5. **Imagem externa não renderiza.** `![x](https://exemplo.com/a.png)` não produz nenhum `img`;
@@ -401,6 +442,11 @@ exigidos pelo card #85):
    evento `kind: "user"` e texto `**a**`, o DOM não tem `strong` e o `textContent` contém `**a**`.
 7. **Bloco de código.** Uma cerca com linguagem produz `pre > code.language-bash` dentro de
    `.chat-md-code` e um `button.link.copy` ao lado; clicar copia o texto cru do bloco.
+4b. **`href` perigoso zerado.** `[x](javascript:alert(1))` sai com `href` vazio pelo
+   `defaultUrlTransform`.
+5b. **`srcPermitida` isolada.** Rejeita `https://exemplo.com/files/…`, `//evil.example/files/…`,
+   caminho fora dos mounts e `undefined`.
+7b. **`textoDoBloco` defensivo.** Devolve `""` para hast de forma inesperada, sem lançar.
 8. **Markdown incompleto tolerado.** `**Camp` renderiza sem lançar e o `textContent` contém
    `**Camp`.
 9. **Escopo de aplicação.** Um `tool_result` com `is_error: true` e conteúdo `**falhou**` renderiza
@@ -533,7 +579,7 @@ Critérios `[cross-feature]`:
 | --- | --- |
 | `frontend/src/areas/chat/MessageMarkdown.tsx` | novo |
 | `frontend/src/areas/chat/MessageMarkdown.test.tsx` | novo |
-| `frontend/src/areas/chat/ChatDock.tsx` | editado (2 pontos do `switch` do `Message`) |
+| `frontend/src/areas/chat/ChatDock.tsx` | editado (2 pontos do `switch` do `Message`, o atributo `data-md="1"` e o export aditivo de `Message` — Contrato 3) |
 | `frontend/src/areas/chat/chat.css` | editado (classes novas + `pre-wrap` movido) |
 | `frontend/package.json` | editado (2 deps pinadas) |
 | `frontend/package-lock.json` | editado (regenerado pelo npm) |
@@ -562,7 +608,7 @@ declarados `studio/app.py`, `studio/steps.py`, `studio/config.py`, `studio/higgs
 | # | Decisão | Fonte / razão |
 | --- | --- | --- |
 | A1 | `react-markdown` 10.x + `remark-gfm` 4.x, **versões pinadas exatas** (sem `^`), contrariando o `^` usado no resto do `package.json`. | O card #85 manda "versões pinadas"; a linha 10.x é a que casa com React 19 e com a API `urlTransform`. A versão exata resolvida pelo npm entra no PR. |
-| A2 | HTML cru é **descartado** pelo pipeline, não escapado e exibido. | Comportamento padrão do `react-markdown` desde a v9 sem `rehype-raw`. É a opção mais conservadora e a que o card pede ("sem HTML cru, não usar rehype-raw"). O critério 3 afirma "nenhum elemento criado", que é o que de fato garante segurança. |
+| A2 | HTML cru é **escapado e exibido como texto literal**, não convertido em elemento. *(Corrigido na v1.1: a v1.0 dizia "descartado", o que não é o comportamento real da lib — verificado com o pipeline de verdade.)* | Comportamento padrão do `react-markdown` desde a v9 sem `rehype-raw`, e o que o card pede ("HTML cru escapado"). O critério 3 afirma "nenhum elemento criado", que é o que de fato garante segurança; o efeito visível é o usuário ver as tags escritas. |
 | A3 | Imagem fora da allowlist renderiza **nada** (nem o texto alternativo). | Leitura literal do card ("externas não renderizam"). Alternativa descartada: mostrar o `alt` como texto, que exigiria decidir um estilo de placeholder sem fonte. |
 | A4 | **Todos** os links abrem em nova aba, inclusive relativos. | O card diz "links em nova aba com rel=noopener" sem distinguir. Reforço: o dock é um painel fixo do shell; navegar a própria aba mataria a conversa em andamento. |
 | A5 | Bloco de código implementado pelo override de `pre` (lendo o texto cru do nó hast), não pelo override de `code`. | Na v9+ o `react-markdown` removeu a prop `inline` de `code`; distinguir inline de bloco pelo `pre` é o caminho estável. |
@@ -576,9 +622,12 @@ declarados `studio/app.py`, `studio/steps.py`, `studio/config.py`, `studio/higgs
 | A13 | `docs/domains/chat/hld.md` **não** é editado por esta frente; o componente fica apenas listado aqui. | Instrução do brief da W3 e do recon §0.6: a atualização de HLD é da W5 via `dd-parallel-doc-sync`. |
 | A14 | Sem cenário Playwright novo em `scripts/qa/cenarios/`. | Não existe `chat.py` (recon §0.5) e a regra da wave é não editar cenários existentes; criar a suíte de QA do chat é trabalho próprio, fora deste card. |
 
+| A15 | `Message` passa a ser **exportado** de `ChatDock.tsx` (Contrato 3 da seção 5). | O critério 6 precisa renderizar o `switch`; pelo `ChatDock` inteiro exigiria falsear WebSocket e duas rotas só para chegar nele. O próprio critério 6 prevê "renderizando o `ChatDock` **ou o `Message`**". Aditivo: nenhum consumidor existente muda. |
+| A16 | O rótulo "Footnotes" das notas de rodapé do GFM é escondido por uma regra `.chat-md .sr-only` local, em vez de desabilitar as notas de rodapé no `remark-gfm`. | `.sr-only` é a classe que o `remark-gfm` já emite; escondê-la é o tratamento padrão e preserva a leitura por leitor de tela. Desligar a extensão exigiria configurar o plugin e tiraria uma capacidade que o modelo pode usar. |
+
 **Pendências para o gate em lote**
 
 | # | Pendência | Por que não foi auto-aceita |
 | --- | --- | --- |
-| P1 | Aceitar ~40 KB gz a mais no chunk **sempre carregado** de `studio/web/dist/`, que é versionado em git e cresce a cada commit de bundle. | É um custo permanente no repositório, não só na experiência do usuário. O card e o plano (`plano-chat-orquestrador.md:331`) preveem o número, e o dono aprovou a wave em lote, mas o trade-off "bundle versionado maior" merece registro explícito para a retro. Gatilho objetivo já definido em R3: acima de ~60 KB gz medidos, trocar por `React.lazy` antes de abrir o PR. |
+| P1 | Aceitar **+47,3 KB gz** no chunk sempre carregado e — o número que a v1.0 subestimava — **+1,08 MB de blobs novos em git** por commit de bundle, porque `studio/web/dist/` é versionado *com* sourcemaps (`build.sourcemap: true`). | É um custo permanente no repositório, não só na experiência do usuário, e a ordem de grandeza real está nos `.map`, não no chunk. O gatilho de R3 (~60 KB gz) **não** foi atingido, então o import segue estático e o PR foi aberto sem `React.lazy`. Fica para a retro decidir se vale desligar o sourcemap do bundle versionado — decisão de núcleo, fora do escopo desta frente. |
 | P2 | Nenhuma outra. Não há divergência com contrato publicado (`frontend/src/api/schema.ts` não muda), não há merge, não há remoção destrutiva e não há "porquê" de negócio sem fonte. | Registro de auditoria. |

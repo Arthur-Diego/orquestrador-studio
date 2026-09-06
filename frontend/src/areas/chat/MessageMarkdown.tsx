@@ -5,8 +5,9 @@
 // então asterisco, crase e hífen de lista apareciam literais na tela.
 //
 // A superfície de injeção é fechada POR CONSTRUÇÃO, não por sanitização: sem `rehypePlugins` e sem
-// `rehype-raw`, todo nó `html` do markdown é descartado antes de virar React — um `<script>` no
-// texto do modelo não vira elemento nenhum. Nunca usar `dangerouslySetInnerHTML` aqui.
+// `rehype-raw`, a lib ESCAPA o HTML cru e o exibe como texto literal em vez de convertê-lo em
+// elemento — um `<script>` vindo do modelo aparece escrito na bolha e não vira nó `script`.
+// Nunca usar `dangerouslySetInnerHTML` aqui.
 //
 // Ver `docs/domains/chat/features/chat-markdown-fdd.md` (seções 5 e 6).
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
