@@ -1,30 +1,149 @@
-// Hook do WebSocket do chat (ADR-036): conecta em /ws/chat/{id}, faz replay do transcript e
-// acumula os eventos do turno. Reconexão robusta e replay incremental por `seq` vêm na Onda C;
-// aqui a conexão é única por aba, com replay inicial via GET /events.
-import { useCallback, useEffect, useRef, useState } from "react";
+// Hook do WebSocket do chat (ADR-036, protocolo v2 do ADR-041): conecta em /ws/chat/{id}, faz
+// replay do transcript e separa as duas naturezas do stream — o que é **transcript** (persistido,
+// com `seq`) fica no array `events`; o que é **efêmero** (`assistant_delta`, `tool_progress`)
+// alimenta o estado vivo `turn` e nunca entra no array. `busy` vem do par turn_started/turn_ended
+// do servidor, com a heurística antiga de fallback. Reconexão robusta e replay incremental por
+// `seq` seguem fora de escopo; aqui a conexão é única por aba, com replay inicial via GET /events.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../../api";
-import type { ChatEvent } from "./types";
+import type { ChatEvent, ChatSession, ChatToolProgress, ChatTurn } from "./types";
 
 interface EventsResponse {
   events: ChatEvent[];
   pending: ChatEvent[];
 }
 
+/**
+ * Eventos efêmeros do protocolo v2: chegam sem `seq`, nunca são gravados no `events.jsonl` e por
+ * isso não entram no transcript do cliente. Evento efêmero novo entra nesta constante e ganha um
+ * caso em `aplicarEfemero` — não um `if` paralelo no `onmessage`.
+ */
+const EFEMEROS = new Set<ChatEvent["kind"]>(["assistant_delta", "tool_progress"]);
+
+/** Coalescência dos deltas: ~12 quadros por segundo de texto, sem re-render por caractere. */
+const FLUSH_MS = 80;
+
+const TURNO_VAZIO: ChatTurn = { id: null, text: "", progress: {} };
+
+/** Último turno aberto do transcript: `turn_started` sem o `turn_ended` do mesmo `turn_id`. */
+function turnoAbertoNoTranscript(evs: ChatEvent[]): string | null {
+  let aberto: string | null = null;
+  for (const ev of evs) {
+    if (ev.kind === "turn_started") aberto = ev.turn_id ?? null;
+    else if (ev.kind === "turn_ended" && (ev.turn_id == null || ev.turn_id === aberto)) aberto = null;
+  }
+  return aberto;
+}
+
+/** Heurística das conversas antigas (sem par de turno): último `user` depois do último `result`. */
+function busyHeuristico(evs: ChatEvent[]): boolean {
+  let r = -1;
+  let u = -1;
+  evs.forEach((e, i) => {
+    if (e.kind === "result") r = i;
+    if (e.kind === "user") u = i;
+  });
+  return u > r;
+}
+
+function semChave(mapa: Record<string, ChatToolProgress>, chave: string): Record<string, ChatToolProgress> {
+  const copia = { ...mapa };
+  delete copia[chave];
+  return copia;
+}
+
+/**
+ * @param chatId aba ativa; `null` desconecta e zera tudo.
+ * @param onEvent (Wave 11 · F03) chamado APENAS para mensagens que chegam ao vivo pelo WebSocket,
+ *   nunca no replay de `GET /api/chats/{id}/events`. É o seam que separa "o transcript tem isto" de
+ *   "isto acabou de acontecer": um efeito sobre o array `events` reprocessaria o replay inteiro ao
+ *   abrir a aba e dispararia recarga de todas as etapas tocadas na história da conversa.
+ * @param status (Wave 11 · F02) status da aba vindo do polling de `GET /api/chats` que o dock já
+ *   faz. É opcional de propósito: mantém a chamada de um argumento só (contrato `[cross-feature]`
+ *   com a F09) e evita que o hook abra uma requisição própria. Sem ele, um turno aberto no replay é
+ *   tratado como obsoleto — o pior caso vira o comportamento de hoje, nunca um dock preso em
+ *   "Respondendo…".
+ *
+ * Os dois parâmetros novos são opcionais e o retorno só cresce: chamadores antigos seguem válidos.
+ */
 export function useChatSocket(
   chatId: string | null,
-  /**
-   * Chamado APENAS para mensagens que chegam ao vivo pelo WebSocket, nunca no replay de
-   * `GET /api/chats/{id}/events` (Wave 11 · F03, Contrato 5). É o seam que separa "o transcript
-   * tem isto" de "isto acabou de acontecer": um efeito sobre o array `events` reprocessaria o
-   * replay inteiro ao abrir a aba e dispararia recarga de todas as etapas tocadas na história da
-   * conversa. O parâmetro é opcional e o retorno não muda — chamadores atuais seguem válidos.
-   */
   onEvent?: (ev: ChatEvent) => void,
+  status?: ChatSession["status"] | null,
 ) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [turn, setTurn] = useState<ChatTurn>(TURNO_VAZIO);
   const wsRef = useRef<WebSocket | null>(null);
+  // Os deltas se acumulam fora do estado: o React só vê o texto no flush.
+  const bufferRef = useRef("");
+  const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Turnos que o replay trouxe abertos mas que já morreram; ignorados para sempre.
+  const obsoletosRef = useRef<Set<string>>(new Set());
+  const statusRef = useRef(status);
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const limparFlush = useCallback(() => {
+    if (flushRef.current !== null) {
+      clearTimeout(flushRef.current);
+      flushRef.current = null;
+    }
+    bufferRef.current = "";
+  }, []);
+
+  const aplicarEfemero = useCallback((ev: ChatEvent) => {
+    if (ev.kind === "assistant_delta") {
+      bufferRef.current += ev.text ?? "";
+      if (flushRef.current === null) {
+        flushRef.current = setTimeout(() => {
+          flushRef.current = null;
+          const texto = bufferRef.current;
+          setTurn((t) => (t.text === texto ? t : { ...t, text: texto }));
+        }, FLUSH_MS);
+      }
+      return;
+    }
+    // `tool_progress`: estado vivo indexado pelo `tool_use_id` do `tool_call` correspondente.
+    const id = ev.id;
+    if (!id) return;
+    const progresso: ChatToolProgress = { id, pct: ev.pct ?? null, label: ev.label, state: ev.state };
+    setTurn((t) => ({ ...t, progress: { ...t.progress, [id]: progresso } }));
+  }, []);
+
+  const aplicarPersistido = useCallback(
+    (ev: ChatEvent) => {
+      switch (ev.kind) {
+        case "turn_started": {
+          const id = ev.turn_id ?? null;
+          if (id && obsoletosRef.current.has(id)) return;
+          limparFlush();
+          setTurn({ id, text: "", progress: {} });
+          return;
+        }
+        case "turn_ended":
+          limparFlush();
+          setTurn(TURNO_VAZIO);
+          return;
+        case "assistant_text":
+          // Invariante: o texto final é sempre o do evento persistido, nunca a soma dos deltas.
+          limparFlush();
+          setTurn((t) => (t.text === "" ? t : { ...t, text: "" }));
+          return;
+        case "tool_result": {
+          // A tool fechou: o progresso dela deixa de ser corrente (o chip passa a ler o transcript).
+          const id = ev.id;
+          setTurn((t) => (id && t.progress[id] ? { ...t, progress: semChave(t.progress, id) } : t));
+          return;
+        }
+        default:
+          return;
+      }
+    },
+    [limparFlush],
+  );
 
   // A ref existe para o efeito NÃO depender da identidade do callback: o dock passa uma arrow nova
   // a cada render, e pôr `onEvent` no array de dependências reconectaria o socket a cada render.
@@ -37,13 +156,29 @@ export function useChatSocket(
     if (!chatId) {
       setEvents([]);
       setConnected(false);
+      setTurn(TURNO_VAZIO);
       return;
     }
     let cancelled = false;
     setEvents([]);
+    setTurn(TURNO_VAZIO);
+    bufferRef.current = "";
+    obsoletosRef.current = new Set();
+
     void api(`/api/chats/${chatId}/events`)
       .then((r) => {
-        if (!cancelled) setEvents((r as EventsResponse).events ?? []);
+        if (cancelled) return;
+        const replay = (r as EventsResponse).events ?? [];
+        setEvents(replay);
+        const aberto = turnoAbertoNoTranscript(replay);
+        if (!aberto) return;
+        if (statusRef.current === "running") {
+          // Turno de verdade em andamento: o dock reabriu no meio dele.
+          setTurn((t) => ({ ...t, id: aberto }));
+        } else {
+          // Turno obsoleto: o par ficou aberto no disco mas a aba não está rodando.
+          obsoletosRef.current.add(aberto);
+        }
       })
       .catch(() => undefined);
 
@@ -54,21 +189,30 @@ export function useChatSocket(
     ws.onclose = () => !cancelled && setConnected(false);
     ws.onmessage = (m) => {
       if (cancelled) return;
+      let ev: ChatEvent;
       try {
-        const ev = JSON.parse(m.data) as ChatEvent;
-        setEvents((prev) => (ev.seq != null && prev.some((p) => p.seq === ev.seq) ? prev : [...prev, ev]));
-        // Só aqui: o replay acima (`GET /events`) alimenta `setEvents` e não passa por este ramo.
-        onEventRef.current?.(ev);
+        ev = JSON.parse(m.data) as ChatEvent;
       } catch {
-        /* linha inválida ignorada */
+        return; /* linha inválida ignorada */
       }
+      // Só aqui: o replay acima (`GET /events`) alimenta `setEvents` e não passa por este ramo.
+      // Vale para todo evento ao vivo, efêmero inclusive — quem filtra por `kind` é o assinante.
+      onEventRef.current?.(ev);
+      if (EFEMEROS.has(ev.kind)) {
+        aplicarEfemero(ev);
+        return;
+      }
+      // Persistidos: transcript (dedup por `seq`, que o efêmero não tem) e ciclo de vida do turno.
+      setEvents((prev) => (ev.seq != null && prev.some((p) => p.seq === ev.seq) ? prev : [...prev, ev]));
+      aplicarPersistido(ev);
     };
     return () => {
       cancelled = true;
+      limparFlush();
       ws.close();
       wsRef.current = null;
     };
-  }, [chatId]);
+  }, [chatId, aplicarEfemero, aplicarPersistido, limparFlush]);
 
   const send = useCallback((text: string, context?: unknown) => {
     wsRef.current?.send(JSON.stringify({ type: "user", text, context }));
@@ -78,5 +222,11 @@ export function useChatSocket(
   }, []);
   const stop = useCallback(() => wsRef.current?.send(JSON.stringify({ type: "stop" })), []);
 
-  return { events, connected, send, answer, stop };
+  const busy = useMemo(() => {
+    // Com pares de turno no transcript quem manda é o servidor; sem eles, a heurística de sempre.
+    if (events.some((e) => e.kind === "turn_started")) return turn.id !== null;
+    return busyHeuristico(events);
+  }, [events, turn.id]);
+
+  return { events, connected, send, answer, stop, turn, busy };
 }

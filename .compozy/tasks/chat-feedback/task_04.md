@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Estado vivo do turno no cliente (`useChatSocket`)
 type: frontend
 complexity: high
@@ -52,20 +52,20 @@ task 5 (dock) e a frente F09 (chat-audio) consomem.
 
 ## Subtasks
 
-- [ ] 4.1 `types.ts`: acrescentar `turn_started`, `turn_ended`, `assistant_delta` e `tool_progress`
+- [x] 4.1 `types.ts`: acrescentar `turn_started`, `turn_ended`, `assistant_delta` e `tool_progress`
       ao `kind` do `ChatEvent` e os campos novos (`turn_id`, `reason`, `pct`, `state`), sem remover
       nem renomear nada.
-- [ ] 4.2 `types.ts`: declarar o tipo do estado vivo do turno (`turn`) exposto pelo hook.
-- [ ] 4.3 `useChatSocket.ts`: classificar o evento que chega — persistido vai para `events`, efêmero
+- [x] 4.2 `types.ts`: declarar o tipo do estado vivo do turno (`turn`) exposto pelo hook.
+- [x] 4.3 `useChatSocket.ts`: classificar o evento que chega — persistido vai para `events`, efêmero
       vai para o estado vivo.
-- [ ] 4.4 Acumular `assistant_delta` num `ref` com flush por intervalo (~80 ms), descartando o
+- [x] 4.4 Acumular `assistant_delta` num `ref` com flush por intervalo (~80 ms), descartando o
       buffer quando chega o `assistant_text` do bloco.
-- [ ] 4.5 Indexar `tool_progress` por `id` no estado vivo.
-- [ ] 4.6 Derivar `busy` dos pares de turno, com fallback heurístico quando não há `turn_started` no
+- [x] 4.5 Indexar `tool_progress` por `id` no estado vivo.
+- [x] 4.6 Derivar `busy` dos pares de turno, com fallback heurístico quando não há `turn_started` no
       transcript.
-- [ ] 4.7 Implementar a regra do turno obsoleto no primeiro render após o replay.
-- [ ] 4.8 Limpar timers e estado vivo no unmount e na troca de `chatId`.
-- [ ] 4.9 Estender `useChatSocket.test.ts` com os casos atribuídos, mantendo os quatro existentes
+- [x] 4.7 Implementar a regra do turno obsoleto no primeiro render após o replay.
+- [x] 4.8 Limpar timers e estado vivo no unmount e na troca de `chatId`.
+- [x] 4.9 Estender `useChatSocket.test.ts` com os casos atribuídos, mantendo os quatro existentes
       intactos.
 
 ## Implementation Details
@@ -122,15 +122,15 @@ presa, progresso órfão), §9 critérios 1, 3, 12, 14 e 20, §10 riscos 1, 2 e 
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] T-HK-01 — a API pública continua com os sete nomes e os cinco antigos intactos.
-- [ ] T-HK-02 — `turn_started` liga `busy`, `turn_ended` desliga.
-- [ ] T-HK-03, T-HK-05 — efêmeros (`assistant_delta`, `tool_progress`) alimentam o estado vivo e não
+- [x] T-HK-01 — a API pública continua com os sete nomes e os cinco antigos intactos.
+- [x] T-HK-02 — `turn_started` liga `busy`, `turn_ended` desliga.
+- [x] T-HK-03, T-HK-05 — efêmeros (`assistant_delta`, `tool_progress`) alimentam o estado vivo e não
       entram em `events`.
-- [ ] T-HK-04 — o `assistant_text` do bloco descarta o buffer vivo, sem duplicar texto.
-- [ ] T-HK-06 — replay sem `turn_started` cai na heurística, sem erro no console.
-- [ ] T-HK-07 — `turn_started` órfão com aba não-`running` é marcado obsoleto.
-- [ ] T-HK-08 — deltas coalescidos (flush ~80 ms), sem render por caractere.
-- [ ] T-HK-09 — os quatro testes existentes continuam passando sem alteração.
+- [x] T-HK-04 — o `assistant_text` do bloco descarta o buffer vivo, sem duplicar texto.
+- [x] T-HK-06 — replay sem `turn_started` cai na heurística, sem erro no console.
+- [x] T-HK-07 — `turn_started` órfão com aba não-`running` é marcado obsoleto.
+- [x] T-HK-08 — deltas coalescidos (flush ~80 ms), sem render por caractere.
+- [x] T-HK-09 — os quatro testes existentes continuam passando sem alteração.
 
 ## Success Criteria
 
