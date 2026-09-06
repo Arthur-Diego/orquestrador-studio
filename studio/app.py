@@ -15,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import higgsfield as hf
+from .characters.router import router as characters_router
+from .characters.service import CHARACTERS_DIR
 from .chat.router import router as chat_router
 from .common import atomic
 from .common import guide as guide_lib
@@ -39,6 +41,9 @@ app.include_router(creditos_router)
 #: os endpoints da ponte humano-no-laço (ADR-038). Área global campanha-independente, como as duas
 #: acima; o agente age só pelas tools do MCP (`studio/mcp/`, ADR-037), que falam com esta API.
 app.include_router(chat_router)
+#: `[extensão]` Biblioteca de Personagens e identidade (ADR-039): área global campanha-independente
+#: (CRUD, explorar/fixar/sheet no motor local) + binding por campanha (`/api/projects/{pid}/character`).
+app.include_router(characters_router)
 
 #: Formatos aceitos em `project.aspect_ratio` `[extensão]` — a aula 007 manda escolher o
 #: formato pelo destino (vertical para Reels/TikTok, wide para YouTube). Default: 16:9.
@@ -211,6 +216,8 @@ for _id, _plugin in PLUGINS.items():
 app.mount("/files", StaticFiles(directory=str(PROJECTS_DIR)), name="files")
 # imagens da biblioteca global de mood boards `[extensão]` (ADR-013)
 app.mount("/mbfiles", StaticFiles(directory=str(MOODBOARDS_DIR)), name="mbfiles")
+# imagens da biblioteca de personagens `[extensão]` (ADR-039)
+app.mount("/cfiles", StaticFiles(directory=str(CHARACTERS_DIR)), name="cfiles")
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 

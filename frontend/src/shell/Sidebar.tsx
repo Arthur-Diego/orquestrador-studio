@@ -89,6 +89,15 @@ export function Sidebar() {
         >
           <span aria-hidden="true">◈</span> Créditos &amp; Custos <span className="ext">[extensão]</span>
         </button>
+        <button
+          id="btnPersonagens"
+          className={`navlink${s.area === "characters" ? " active" : ""}`}
+          type="button"
+          title="Personagens reutilizáveis: acerte a identidade e reaplique nas campanhas"
+          onClick={s.irParaPersonagens}
+        >
+          <span aria-hidden="true">☺</span> Personagens <span className="ext">[extensão]</span>
+        </button>
       </section>
 
       <nav aria-label="Etapas do curso">

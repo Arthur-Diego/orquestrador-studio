@@ -15,6 +15,7 @@ def studio_env(tmp_path, monkeypatch):
     """Isola PROJECTS_DIR e STATE_DIR e recarrega os módulos para que leiam o novo ambiente."""
     monkeypatch.setenv("STUDIO_PROJECTS", str(tmp_path / "projects"))
     monkeypatch.setenv("STUDIO_MOODBOARDS", str(tmp_path / "moodboards"))
+    monkeypatch.setenv("STUDIO_CHARACTERS", str(tmp_path / "characters"))
     monkeypatch.setenv("STUDIO_STATE", str(tmp_path / "state"))
     monkeypatch.setenv("STUDIO_DOWNLOADS", str(tmp_path / "downloads"))
     (tmp_path / "downloads").mkdir()

@@ -70,6 +70,15 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260905-07-chat-onda-d": (
+        "`[extensão]` Onda D — biblioteca de Personagens e identidade (ADR-039), card "
+        "ADH-OS-20260905-07: novo domínio `studio/characters/` e `studio/mcp/` (fora de "
+        "NUCLEO_PREFIXOS). Núcleo tocado: `studio/app.py` (include do router + mount /cfiles), "
+        "`studio/higgsfield.py` (soul_id_create/list — Soul ID via CLI oficial, ADR-002), "
+        "`frontend/` (área Personagens + link/rota no shell) e o bundle `studio/web/dist/`. "
+        "Nenhuma etapa é tocada. ADR-039, ADR-002/033/010/031/032.",
+        ("studio/app.py", "studio/higgsfield.py", "frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260905-06-chat-onda-c": (
         "`[extensão]` Onda C do assistente de chat (abas paralelas, ui.open, limite de ativos), "
         "card ADH-OS-20260905-06: mudanças em `studio/chat/` e `studio/mcp/` (fora de "

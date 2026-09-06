@@ -240,6 +240,39 @@ def generate(model: str, params: dict, timeout_s: int = 600) -> dict:
     return {"raw": data, "urls": urls, "id": _pick(flat, "id", "job_id")}
 
 
+# ---------- Soul ID (identidade paga, ADR-039) ----------
+def soul_list() -> list[dict]:
+    """Lista os Souls treinados na conta (`soul-id list`). Gate de login único (ADR-002)."""
+    require_cli()
+    code, out, err = _run(["soul-id", "list"], timeout=60)
+    if code != 0:
+        raise RuntimeError((err or out).strip()[:300])
+    data = _json(out)
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("items") or data.get("references") or []
+    return []
+
+
+def soul_create(name: str, images: list[str], variant: str = "soul-2", timeout_s: int = 1800) -> dict:
+    """Treina um Soul (`soul-id create`) a partir de fotos locais. Cobra plano Basic+ na conta.
+
+    `variant`: `soul-2` (imagem, default) ou `soul-cinematic` (vídeo). Devolve o JSON com o id
+    de referência a usar depois em `--soul-id`. Gate de login e de plano ficam no CLI (ADR-002)."""
+    require_cli()
+    flag = "--soul-cinematic" if "cinema" in variant else "--soul-2"
+    args = ["soul-id", "create", "--name", name, flag]
+    for img in images[:20]:
+        args += ["--image", img]
+    code, out, err = _run(args, timeout=timeout_s)
+    if code != 0:
+        raise RuntimeError((err or out).strip()[:400])
+    data = _json(out)
+    flat = _flatten(data if isinstance(data, dict) else {"d": data})
+    return {"raw": data, "id": _pick(flat, "id", "reference_id", "soul_id"), "variant": variant}
+
+
 # ---------- utilidades ----------
 _MEDIA_EXT_RE = re.compile(r"\.(?:png|jpe?g|webp|mp4|mov|webm|wav|mp3|m4a)$", re.I)
 

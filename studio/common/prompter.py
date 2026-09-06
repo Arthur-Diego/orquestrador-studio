@@ -150,6 +150,16 @@ ROLES = {
         "EXACTLY the camera rig given below in EVERY scene (same body, same lens, same format — a commercial is shot "
         "with one rig). No contradictions between scenes: same product, same palette, same world."
     ),
+    # `[extensão]` (ADR-039): biblioteca de personagem. NENHUMA aula ensina character sheet — é
+    # extensão. Este papel escreve o DESCRITOR CANÔNICO de identidade: os traços que NÃO podem
+    # mudar entre cenas (rosto, cabelo, roupa-assinatura, paleta), para reancorar o personagem.
+    "character": (
+        "You are a character designer writing a CANONICAL identity descriptor for a recurring character in an ad "
+        "campaign. From the given reference image(s), write ONE dense English paragraph describing ONLY what must "
+        "stay identical across every scene: face shape and features, skin tone, hair (color, length, style), eye "
+        "color, signature outfit and materials, distinctive marks, and the character's color palette. Be concrete "
+        "and reusable as a prompt prefix — no scene, no background, no action, no camera. 60–120 words."
+    ),
 }
 
 OUTPUT_SPEC = (

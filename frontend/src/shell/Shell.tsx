@@ -16,7 +16,7 @@ import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { api, apiUpload, useGuideSync, useProject, useProjectGuide, useProjects, useSteps } from "../api";
 import type { Guide, Project } from "../api";
 import { ShellProvider, type ShellApi } from "./context";
-import { CR_ROUTE, MB_ROUTE } from "./constants";
+import { CHAR_ROUTE, CR_ROUTE, MB_ROUTE } from "./constants";
 import { useHashRouter } from "./router";
 import { aplicarTema, proximoTema, temaSalvo, type Tema } from "./theme";
 import { toast } from "./toast";
@@ -28,6 +28,7 @@ import { NoProject, Overview } from "./Overview";
 import { EditModal, ResetCampaignModal, ResetStepModal, WizardModal } from "./modals";
 import { MoodboardsArea } from "../areas/moodboards/MoodboardsArea";
 import { CreditosArea } from "../areas/creditos/CreditosArea";
+import { CharactersArea } from "../areas/characters/CharactersArea";
 import { ChatDock } from "../areas/chat/ChatDock";
 
 type ModalState =
@@ -100,6 +101,10 @@ export function Shell() {
     if (location.hash === "#/creditos") setResetNonce((n) => n + 1);
     else location.hash = "#/creditos";
   }, []);
+  const irParaPersonagens = useCallback(() => {
+    if (location.hash === "#/characters") setResetNonce((n) => n + 1);
+    else location.hash = "#/characters";
+  }, []);
   const continuar = useCallback(() => {
     const c = guideAll?.current;
     if (c) navigate(c);
@@ -128,6 +133,7 @@ export function Shell() {
       selectProject,
       irParaMoodboards,
       irParaCreditos,
+      irParaPersonagens,
       continuar,
       openWizard,
       openEdit,
@@ -137,7 +143,7 @@ export function Shell() {
     }),
     [
       stepsList, projectsList, project, guideAll, area, pid, view, tema, booted,
-      navigate, go, selectProject, irParaMoodboards, irParaCreditos, continuar,
+      navigate, go, selectProject, irParaMoodboards, irParaCreditos, irParaPersonagens, continuar,
       openWizard, openEdit, confirmResetStep, confirmResetCampaign, cycleTheme,
     ],
   );
@@ -246,6 +252,7 @@ function computeReactNode(args: {
   // Áreas globais em React (Wave 10 · E6): moodboards e créditos.
   if (area === MB_ROUTE) return <MoodboardsArea sub={sub} refreshKey={refreshKey} />;
   if (area === CR_ROUTE) return <CreditosArea pid={pid} refreshKey={refreshKey} />;
+  if (area === CHAR_ROUTE) return <CharactersArea pid={pid} refreshKey={refreshKey} />;
   if (view === "overview") return <Overview />;
   if (view === null) return <NoProject />; // sem campanhas (router zera view)
   // Tela da etapa: todas as 10 são React (E4…E9), descobertas por `import.meta.glob`. O `PluginHost`

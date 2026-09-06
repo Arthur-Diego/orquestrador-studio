@@ -89,3 +89,33 @@ def test_refs_search_dispara():
 
 def test_storyboard_local_exige_prompt():
     assert "Escreva o prompt" in actions.storyboard_local_generate(Fake(), "p", "  ")
+
+
+# ---------- personagem (ADR-039) ----------
+def test_character_pick_fixa_o_escolhido(monkeypatch):
+    monkeypatch.setattr(ui, "choose_images", lambda *a, **k: {"answered": True, "selected": ["cand1"]})
+    cli = Fake({
+        "/api/characters/eden/candidates": [{"id": "cand1", "thumb": "thumbs/cand1.jpg", "file": "cand1.png"}],
+        "/api/characters/eden/lock": {"descriptor": "silver hair, dark coat"},
+    })
+    out = actions.character_pick(cli, "eden")
+    assert "fixado" in out and "silver hair" in out
+    assert any(p.endswith("/lock") for p, _ in cli.posts)
+
+
+def test_character_prefix_injeta_no_base_prompt(monkeypatch):
+    cli = Fake({
+        "/api/projects/p/character": {"character": {"id": "eden", "descriptor": "silver hair"}},
+        "/api/projects/p/base/prompts/generate": {"prompt": "..."},
+    })
+    actions.base_prompt(cli, "p", instruction="on a rooftop")
+    body = [j for path, j in cli.posts if path.endswith("/base/prompts/generate")][0]
+    assert "silver hair" in body["instruction"] and "rooftop" in body["instruction"]
+
+
+def test_character_bind_soul_confirma_quando_ha_ui(monkeypatch):
+    monkeypatch.setattr(ui, "chat_id", lambda: "cid")
+    monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": False})
+    cli = Fake()
+    out = actions.character_bind_soul(cli, "eden")
+    assert "cancelado" in out and cli.posts == []  # recusou → não treina

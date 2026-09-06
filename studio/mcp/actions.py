@@ -135,6 +135,9 @@ def mood_pick(client: StudioClient, pid: str, note: str = "") -> str:
 # ---------- 3 · Imagem base ----------
 def base_prompt(client: StudioClient, pid: str, ref_id: str | None = None, mode: str = "images",
                 instruction: str = "") -> str:
+    prefix = _character_prefix(client, pid)
+    if prefix:
+        instruction = (f"Keep this exact character identity: {prefix}. " + instruction).strip()
     resp = client.post(f"/api/projects/{pid}/base/prompts/generate",
                        {"ref_id": ref_id, "mode": mode, "instruction": instruction}) or {}
     prompt = resp.get("prompt") if isinstance(resp, dict) else None
@@ -176,6 +179,9 @@ def storyboard_local_generate(client: StudioClient, pid: str, prompt: str, count
                               model: str = "flux-schnell") -> str:
     if not prompt.strip():
         return "Escreva o prompt do keyframe (em inglês, aula 007)."
+    prefix = _character_prefix(client, pid)
+    if prefix:
+        prompt = f"{prompt}. Character identity (keep identical): {prefix}"
     try:
         client.post(f"/api/projects/{pid}/storyboard/local/generate",
                     {"prompt": prompt, "count": count, "model": model})
@@ -254,3 +260,106 @@ def export_qa(client: StudioClient, pid: str) -> str:
 def portfolio(client: StudioClient) -> str:
     resp = client.get("/api/portfolio") or {}
     return f"Portfólio: {resp}"
+
+
+# ---------- Personagem e identidade (ADR-039) ----------
+def _char_images(cid: str, step: str, cands: list[dict]) -> list[dict]:
+    out = []
+    for c in cands:
+        if c.get("thumb"):
+            out.append({"id": c["id"], "thumb": f"/cfiles/{cid}/{step}/candidates/{c['thumb']}",
+                        "label": c.get("view") or c.get("name") or ""})
+    return out
+
+
+def _character_prefix(client: StudioClient, pid: str) -> str:
+    """Descritor do personagem aplicado à campanha, para reancorar os prompts (ADR-039)."""
+    try:
+        data = client.get(f"/api/projects/{pid}/character") or {}
+    except StudioApiError:
+        return ""
+    ch = data.get("character") if isinstance(data, dict) else None
+    return (ch or {}).get("descriptor", "") if ch else ""
+
+
+def character_list(client: StudioClient) -> str:
+    data = client.get("/api/characters") or []
+    if not data:
+        return "Nenhum personagem ainda. Crie um com `character_create`."
+    return "Personagens:\n" + "\n".join(
+        f"- {c['name']} (id `{c['id']}`, {c.get('style', 'foto')})"
+        + (" — fixado" if c.get("locked_ref") else " — a fixar") for c in data)
+
+
+def character_create(client: StudioClient, name: str, style: str = "foto") -> str:
+    c = client.post("/api/characters", {"name": name, "style": style})
+    return f"Personagem '{c['name']}' criado (id `{c['id']}`). Explore variações com `character_explore`."
+
+
+def character_explore(client: StudioClient, cid: str, brief: str, count: int = 6) -> str:
+    if not brief.strip():
+        return "Escreva um brief do personagem (em inglês)."
+    try:
+        client.post(f"/api/characters/{cid}/explore", {"brief": brief, "count": count})
+    except StudioApiError as e:
+        return str(e)
+    return f"Explorando {count} variações no motor local (grátis). Acompanhe e depois use `character_pick`."
+
+
+def character_pick(client: StudioClient, cid: str) -> str:
+    """Mostra as variações para o USUÁRIO escolher o personagem e o fixa (gera o descritor)."""
+    try:
+        cands = client.get(f"/api/characters/{cid}/candidates", {"step": "explore"}) or []
+    except StudioApiError as e:
+        return str(e)
+    imgs = _char_images(cid, "explore", cands)
+    if not imgs:
+        return "Nenhuma variação ainda — rode `character_explore` antes."
+    ans = ui.choose_images(client, "Escolha o personagem (o que você acertou)", imgs, minimum=1, maximum=1)
+    if ans.get("no_ui"):
+        return "Sem interface aqui. Variações: " + ", ".join(i["id"] for i in imgs) + ". Diga qual fixar."
+    if not ans.get("answered") or not ans.get("selected"):
+        return "O usuário não escolheu o personagem."
+    meta = client.post(f"/api/characters/{cid}/lock", {"candidate_id": ans["selected"][0], "step": "explore"})
+    return f"Personagem fixado. Descritor de identidade:\n{meta.get('descriptor', '(gerado)')}"
+
+
+def character_sheet(client: StudioClient, cid: str) -> str:
+    try:
+        client.post(f"/api/characters/{cid}/sheet", {})
+    except StudioApiError as e:
+        return str(e)
+    return "Gerando o character sheet (frente, 3/4, perfil, corpo inteiro) no motor local. Acompanhe o job."
+
+
+def character_apply(client: StudioClient, pid: str, cid: str) -> str:
+    try:
+        client.post(f"/api/projects/{pid}/character", {"cid": cid})
+    except StudioApiError as e:
+        return str(e)
+    return ("Personagem aplicado à campanha. A partir de agora eu injeto o descritor de identidade "
+            "nos prompts das etapas 3–5, para manter a mesma pessoa entre as cenas.")
+
+
+def character_bind_soul(client: StudioClient, cid: str, variant: str = "soul-2") -> str:
+    """Treina um Soul ID (Higgsfield, PAGO — plano Basic+) para identidade em foto/vídeo."""
+    if ui.chat_id():
+        ans = ui.confirm(client, "Treinar Soul ID (Higgsfield, plano pago)",
+                         "Treina um modelo de identidade da pessoa. Requer plano Basic+ na Higgsfield.")
+        if not ans.get("answered") or not ans.get("confirmed"):
+            return "Treino de Soul cancelado pelo usuário."
+    try:
+        client.post(f"/api/characters/{cid}/soul", {"variant": variant})
+    except StudioApiError as e:
+        return str(e)
+    return f"Soul treinado ({variant}). A identidade paga fica disponível para gerar com `--soul-id`."
+
+
+def character_score(client: StudioClient, cid: str, candidate_id: str, step: str = "explore") -> str:
+    try:
+        res = client.post(f"/api/characters/{cid}/score", {"candidate_id": candidate_id, "step": step})
+    except StudioApiError as e:
+        return str(e)
+    if not res.get("available"):
+        return f"Nota de identidade indisponível: {res.get('reason')}"
+    return f"Nota de identidade (similaridade facial): {res.get('score')}"

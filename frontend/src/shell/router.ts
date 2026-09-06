@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Project, Step } from "../api";
-import { CHAVES_STORE, CR_ROUTE, MB_ROUTE, type Area } from "./constants";
+import { CHAVES_STORE, CHAR_ROUTE, CR_ROUTE, MB_ROUTE, type Area } from "./constants";
 import { store } from "./store";
 
 export interface RotaResolvida {
@@ -99,6 +99,11 @@ export function useHashRouter(
     }
     if (hr && hr.pid === CR_ROUTE) {
       setRota({ area: "creditos", pid: pidRef.current, view: null, sub: null });
+      return;
+    }
+    if (hr && hr.pid === CHAR_ROUTE) {
+      const sub = hr.view && hr.view !== "overview" ? hr.view : null;
+      setRota({ area: "characters", pid: pidRef.current, view: null, sub });
       return;
     }
 

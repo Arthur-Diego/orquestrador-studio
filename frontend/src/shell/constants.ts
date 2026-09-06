@@ -21,6 +21,8 @@ export const ASPECT_LABEL: Record<string, string> = {
 export const MB_ROUTE = "moodboards";
 /** Prefixo de rota reservado de créditos & custos (`app.js` CR_ROUTE, ADR-016). */
 export const CR_ROUTE = "creditos";
+/** Prefixo de rota reservado da biblioteca de personagens (ADR-039). */
+export const CHAR_ROUTE = "characters";
 
 /** Rótulo do botão de tema por estado (`app.js` TEMA_LABEL). */
 export const TEMA_LABEL: Record<string, string> = {
@@ -37,4 +39,4 @@ export const CHAVES_STORE = {
 } as const;
 
 /** Área ativa do shell (`app.js` `area`). */
-export type Area = "campaign" | "moodboards" | "creditos";
+export type Area = "campaign" | "moodboards" | "creditos" | "characters";
