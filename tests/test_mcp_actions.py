@@ -113,6 +113,22 @@ def test_character_prefix_injeta_no_base_prompt(monkeypatch):
     assert "silver hair" in body["instruction"] and "rooftop" in body["instruction"]
 
 
+def test_character_wait_usa_a_url_de_job_do_personagem():
+    # a URL do job de personagem é /api/characters/{cid}/job (não a das etapas) — regressão do 404
+    cli = Fake({"/api/characters/eden/job": {"state": "done", "mode": "explore", "added": 6, "total": 6}})
+    out = actions.character_wait(cli, "eden", _sleep=lambda _s: None)
+    assert "concluído" in out and "6/6" in out
+
+
+def test_character_pick_avisa_quando_ainda_gerando(monkeypatch):
+    cli = Fake({
+        "/api/characters/eden/candidates": [],
+        "/api/characters/eden/job": {"state": "running", "added": 2, "total": 6},
+    })
+    out = actions.character_pick(cli, "eden")
+    assert "gerando" in out and "2/6" in out
+
+
 def test_character_bind_soul_confirma_quando_ha_ui(monkeypatch):
     monkeypatch.setattr(ui, "chat_id", lambda: "cid")
     monkeypatch.setattr(ui, "confirm", lambda *a, **k: {"answered": True, "confirmed": False})
