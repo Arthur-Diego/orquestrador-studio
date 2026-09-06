@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: "Hook do gravador — `useRecorder`"
 type: frontend
 complexity: high
@@ -8,6 +8,13 @@ complexity: high
 # Task 2: Hook do gravador — `useRecorder`
 
 ## Overview
+
+> **Reconciliação do run `tasks-chat-audio-046ef1-…`.** O job desta task foi `parked` pelo
+> runner por *activity timeout* (3 min sem output) — soft fail transitório, não erro de
+> implementação: nenhum arquivo chegou a ser escrito. O `useRecorder.ts` acabou saindo dentro da
+> task_03, que precisava dele; o entregável remanescente (`useRecorder.test.ts`, UT-10…UT-17) foi
+> executado à parte no commit `636d348`, com `make frontend-verify` verde. Fechada aqui em vez de
+> re-rodar o job, porque o run inteiro seria repetido por um único arquivo de teste.
 
 Não existe nenhuma linha de captura de áudio em `frontend/src` (`MediaRecorder`, `getUserMedia` e
 `SpeechRecognition` não aparecem). Esta task cria `frontend/src/areas/chat/useRecorder.ts`: toda a

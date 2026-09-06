@@ -46,3 +46,17 @@ aprovado `docs/domains/chat/features/chat-audio-fdd.md`). Contrato de testes: `_
 
 `_tests.md` não veio do gate em lote (a wave aprovou o FDD, não um catálogo de testes). Foi derivado
 da §9 do `_techspec.md` nesta decomposição — registrado como soft fail no relatório da frente.
+
+## Reconciliação do run
+
+Run `tasks-chat-audio-046ef1-20260906-160332-362268000-a03e080a29f9de6f`, `status: parked`.
+
+| Task | Job | Decisão |
+| --- | --- | --- |
+| task_01 | `succeeded`, exit 0 | nada a fazer (commit `3f9f620`) |
+| task_02 | **`parked`** — activity timeout de 3 min, sem nenhum arquivo escrito | soft fail transitório. O `useRecorder.ts` saiu dentro da task_03; o `useRecorder.test.ts` foi executado à parte (commit `636d348`). Task fechada sem re-rodar o run inteiro por um arquivo de teste. |
+| task_03 | `succeeded`, exit 0 | nada a fazer (commit `e3fbb25`) |
+| task_04 | `succeeded`, exit 0 | o `--auto-commit` não disparou porque o run agregado terminou como falho; os arquivos estavam na árvore e foram commitados à mão (`2dd1270`). |
+
+O `status` agregado `parked` vem do job 2 e **não** significa trabalho perdido: nenhum critério
+da §9 do `_techspec.md` ficou descoberto.
