@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Dock — evento navigate, toggle seguir o assistente, recusa por notify e open→done automático
 type: frontend
 complexity: high
@@ -59,24 +59,24 @@ nenhum clique.
 
 ## Subtasks
 
-- [ ] 3.1 Acrescentar `"navigate"` à união de `kind` em `frontend/src/areas/chat/types.ts` e o campo
+- [x] 3.1 Acrescentar `"navigate"` à união de `kind` em `frontend/src/areas/chat/types.ts` e o campo
       `params` ao payload de `ask`.
-- [ ] 3.2 Implementar, no `Conversation`, a marca d'água de `seq` e o conjunto de `seq` já
+- [x] 3.2 Implementar, no `Conversation`, a marca d'água de `seq` e o conjunto de `seq` já
       executados (idempotência), estendendo o `aoEventoAoVivo` que a F03 já instalou.
-- [ ] 3.3 Implementar a espera do refresh do guia com teto de 1500 ms e a chamada à decisão pura,
+- [x] 3.3 Implementar a espera do refresh do guia com teto de 1500 ms e a chamada à decisão pura,
       com a navegação ou a emissão do `notify` conforme o resultado.
-- [ ] 3.4 Implementar o toggle "seguir o assistente" no cabeçalho do dock, persistido em
+- [x] 3.4 Implementar o toggle "seguir o assistente" no cabeçalho do dock, persistido em
       `studio.chat.follow`, ligado por padrão.
-- [ ] 3.5 Renderizar o cartão do evento `navigate` no `switch` do `Message` (texto com `reason` e,
+- [x] 3.5 Renderizar o cartão do evento `navigate` no `switch` do `Message` (texto com `reason` e,
       com o toggle desligado, o botão "Ir agora").
-- [ ] 3.6 Fazer o `AskCard` do widget `open` publicar a intenção com `params` ao navegar.
-- [ ] 3.7 Implementar o `open → done` automático com a captura do status no nascimento do cartão, a
+- [x] 3.6 Fazer o `AskCard` do widget `open` publicar a intenção com `params` ao navegar.
+- [x] 3.7 Implementar o `open → done` automático com a captura do status no nascimento do cartão, a
       constante `AUTO_DONE_STEPS` e o envio único de `{done: true, auto: true}`.
-- [ ] 3.8 Acrescentar as regras de CSS necessárias em `frontend/src/areas/chat/chat.css`.
-- [ ] 3.9 Acrescentar os casos CT-01..CT-14 a `frontend/src/areas/chat/ChatDock.test.tsx`, reusando
+- [x] 3.8 Acrescentar as regras de CSS necessárias em `frontend/src/areas/chat/chat.css`.
+- [x] 3.9 Acrescentar os casos CT-01..CT-14 a `frontend/src/areas/chat/ChatDock.test.tsx`, reusando
       o `FakeWS`, o `vi.stubGlobal("WebSocket", …)`, o `vi.mock("../../shell/events", …)` e o array
       `replay` que o arquivo já tem — sem regredir nenhum teste existente.
-- [ ] 3.10 Rodar `make frontend-verify` e registrar o output real.
+- [x] 3.10 Rodar `make frontend-verify` e registrar o output real.
 
 ## Implementation Details
 
@@ -157,16 +157,16 @@ mock de `../../shell/events` precisará expor também `emitNavIntent` para o CT-
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] CT-01, CT-02, CT-03 — navegar com o toggle ligado (ordem refresh → decisão), não navegar com
+- [x] CT-01, CT-02, CT-03 — navegar com o toggle ligado (ordem refresh → decisão), não navegar com
       o toggle desligado, e o botão "Ir agora".
-- [ ] CT-04, CT-05 — recusa por guia `blocked` e por alvo `soon`/desconhecido, com `notify` e hash
+- [x] CT-04, CT-05 — recusa por guia `blocked` e por alvo `soon`/desconhecido, com `notify` e hash
       intacto.
-- [ ] CT-06, CT-07 — replay não navega; o mesmo `seq` navega uma só vez.
-- [ ] CT-08, CT-09 — persistência e default do toggle; teto de 1500 ms do refresh do guia.
-- [ ] CT-10 — publicação da intenção de abertura com `params`.
-- [ ] CT-11, CT-12, CT-13 — `open → done` automático: transição responde uma vez; etapa já `done` no
+- [x] CT-06, CT-07 — replay não navega; o mesmo `seq` navega uma só vez.
+- [x] CT-08, CT-09 — persistência e default do toggle; teto de 1500 ms do refresh do guia.
+- [x] CT-10 — publicação da intenção de abertura com `params`.
+- [x] CT-11, CT-12, CT-13 — `open → done` automático: transição responde uma vez; etapa já `done` no
       nascimento nunca responde; alvo fora do opt-in nunca responde.
-- [ ] CT-14 — o cartão exibe o `reason`.
+- [x] CT-14 — o cartão exibe o `reason`.
 
 ## Success Criteria
 

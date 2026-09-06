@@ -4,14 +4,20 @@
 // paralelas** (várias conversas ao mesmo tempo, cada uma ligada a uma campanha), status por aba
 // e o widget `open` (o agente abre uma tela e espera o usuário concluir — ADR-038).
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 
-import { api, invalidarGuia } from "../../api";
+import { api, chaves, invalidarGuia, type GuideAll } from "../../api";
 import { useShell } from "../../shell/context";
-import { emitStudioChange, type EscopoDaMudanca, type MudancaDoStudio } from "../../shell/events";
+import {
+  emitNavIntent,
+  emitStudioChange,
+  type EscopoDaMudanca,
+  type MudancaDoStudio,
+} from "../../shell/events";
 import { avisoCli, costRows, costWarn, CreditsChip, NOTA_PADRAO, saldoInsuficiente } from "../../ui";
 import type { CostInfoLike } from "../../ui";
 import { MessageMarkdown } from "./MessageMarkdown";
+import { decidirNavegacao } from "./navigate";
 import { DEBOUNCE_SALDO_MS, isToolPaga } from "./toolCredits";
 import { useChatSocket } from "./useChatSocket";
 import { toolLabel } from "./toolLabels";
@@ -22,6 +28,77 @@ const ABERTO_KEY = "studio.chat.open";
 const ATIVO_KEY = "studio.chat.active";
 /** Prefixo do título da aba do navegador enquanto houver turno em andamento (critério 7). */
 const TITULO_BADGE = "● ";
+
+/** Wave 11 · F08: "seguir o assistente". Mesmo padrão de persistência das duas chaves acima. */
+const SEGUIR_KEY = "studio.chat.follow";
+
+/**
+ * Teto da espera pelo agregado do guia antes de decidir uma navegação (A6/E9 do FDD).
+ *
+ * Não é um timeout de rede: é o quanto a UI aceita ficar parada entre "o assistente pediu a tela"
+ * e "a tela trocou". Estourado o teto, decide-se com o cache que houver — a guarda do roteador
+ * continua sendo a última linha de defesa.
+ */
+const TEMPO_MAX_GUIA_MS = 1500;
+
+/**
+ * As únicas etapas cujo `open` o dock pode fechar sozinho quando o guia passa a `done` (A9/E14).
+ *
+ * A lista é curta de propósito (risco R4): são as três etapas cujo guia tem output verificável em
+ * disco, então "está `done`" quer mesmo dizer "a edição fina terminou". Esvaziar esta constante
+ * devolve tudo ao "Concluí" manual, sem tocar em contrato nenhum.
+ */
+const AUTO_DONE_STEPS: readonly string[] = ["refs", "mood", "base"];
+
+function esperar(ms: number): { promessa: Promise<void>; cancelar: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const promessa = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  return { promessa, cancelar: () => clearTimeout(timer) };
+}
+
+/**
+ * Invalida o guia e espera o AGREGADO voltar, com teto (I3/E9).
+ *
+ * `invalidarGuia` cobre as três chaves do guia mas devolve `void`; a segunda chamada, no agregado e
+ * com `exact`, existe só para ter a Promise do refetch nas mãos — `invalidateQueries` resolve
+ * quando as queries ATIVAS daquela chave terminam de refazer. As duas são disparadas no mesmo tick,
+ * então o custo é, no pior caso, um GET a mais do agregado.
+ *
+ * O teto é uma CORRIDA, nunca um `setTimeout` que navega por conta própria: quem decide é sempre o
+ * caminho de decisão, depois desta função retornar.
+ */
+async function refrescarGuia(qc: QueryClient, pid: string): Promise<void> {
+  invalidarGuia(qc, pid);
+  const teto = esperar(TEMPO_MAX_GUIA_MS);
+  try {
+    await Promise.race([qc.invalidateQueries({ queryKey: chaves.guia(pid), exact: true }), teto.promessa]);
+  } finally {
+    teto.cancelar();
+  }
+}
+
+/**
+ * O agregado do guia mais fresco que existe: o do cache, com o do shell como piso.
+ *
+ * Depois do `await` de `refrescarGuia` o cache já tem o agregado novo, mas o React pode ainda não
+ * ter re-renderizado o shell — ler só o contexto decidiria com o guia de antes do refresh, que é
+ * exatamente a corrida R2. `null` (sem campanha, ou guia indisponível) é resposta válida: a decisão
+ * pura trata guia ausente como informativo, não como bloqueio (E8).
+ */
+function guiaMaisFresco(qc: QueryClient, pid: string | null, doShell: GuideAll | null): GuideAll | null {
+  if (!pid) return null;
+  return (qc.getQueryData(chaves.guia(pid)) as GuideAll | undefined) ?? doShell;
+}
+
+/** A recusa vira um cartão no transcript pela rota que já existe — nenhuma rota nova (I4/I6). */
+async function emitirRecusa(chatId: string, texto: string): Promise<void> {
+  await api(`/api/chats/${chatId}/emit`, {
+    method: "POST",
+    body: JSON.stringify({ event: { kind: "notify", level: "warn", text: texto } }),
+  }).catch(() => undefined);
+}
 
 /** Enum fechado do campo `scope` do evento `state_changed` (Contrato 1 da Wave 11 · F03). */
 const ESCOPOS: readonly EscopoDaMudanca[] = ["job", "candidates", "selection", "library"];
@@ -63,10 +140,16 @@ export function ChatDock() {
   // O funil `progressJob` que a ADR descreve não passa pelo chat, então este é o segundo gatilho.
   const [saldoKey, setSaldoKey] = useState(0);
   const gastou = useCallback(() => setSaldoKey((k) => k + 1), []);
+  // Nasce LIGADO: a chave ausente vale "sim" (`!== "0"`), e não o `=== "1"` do painel aberto. É a
+  // diferença entre "o usuário ainda não opinou" e "o usuário desligou" (§12, decisão 3).
+  const [seguir, setSeguir] = useState<boolean>(() => localStorage.getItem(SEGUIR_KEY) !== "0");
 
   useEffect(() => {
     localStorage.setItem(ABERTO_KEY, open ? "1" : "0");
   }, [open]);
+  useEffect(() => {
+    localStorage.setItem(SEGUIR_KEY, seguir ? "1" : "0");
+  }, [seguir]);
   useEffect(() => {
     if (activeId) localStorage.setItem(ATIVO_KEY, activeId);
   }, [activeId]);
@@ -163,6 +246,15 @@ export function ChatDock() {
       <div className="chat-head">
         <span className="chat-title">{ativa?.title || "Assistente do Studio"}</span>
         <CreditsChip className="chat-credits" refreshKey={saldoKey} onClick={() => navigate("creditos")} />
+        <label className="chat-follow" title="Quando ligado, o assistente pode trocar a tela sozinho.">
+          <input
+            type="checkbox"
+            checked={seguir}
+            onChange={(e) => setSeguir(e.target.checked)}
+            aria-label="Seguir o assistente"
+          />
+          <span>Seguir</span>
+        </label>
         <button className="chat-iconbtn" type="button" onClick={novaAba} title="Nova conversa" aria-label="Nova conversa">
           +
         </button>
@@ -188,6 +280,7 @@ export function ChatDock() {
               chatId={ativa.id}
               status={ativa.status}
               onTurn={setTurnoAtivo}
+              seguir={seguir}
               onGastou={gastou}
             />
           ) : (
@@ -235,17 +328,83 @@ function Conversation({
   chatId,
   status,
   onTurn,
+  seguir,
   onGastou,
 }: {
   chatId: string;
   /** Status da aba vindo do polling de `/api/chats` — sem ele todo turno do replay vira obsoleto. */
   status: ChatSession["status"] | null;
   onTurn: (ativo: boolean) => void;
+  /** F08 (ADR-038, adendo): "seguir o assistente" ligado permite o dock trocar a tela sozinho. */
+  seguir: boolean;
   /** F10 (ADR-016): avisa o dock de que uma tool PAGA terminou, para o chip reler o saldo. */
   onGastou?: () => void;
 }) {
-  const { pid, view, navigate } = useShell();
+  const { pid, view, navigate, steps, guideAll } = useShell();
   const qc = useQueryClient();
+
+  /**
+   * Os fatos que o caminho de decisão precisa, sempre na versão mais recente.
+   *
+   * A decisão é assíncrona (espera o refresh do guia) e nasce dentro de um callback estável — sem
+   * a ref ela decidiria com o `pid` e o catálogo capturados no render em que o socket conectou.
+   * A escrita acontece em efeito, e não no corpo do render, para não mutar durante a renderização.
+   */
+  const ctxRef = useRef({ pid, steps, guideAll, seguir });
+  useEffect(() => {
+    ctxRef.current = { pid, steps, guideAll, seguir };
+  });
+
+  /**
+   * Marca d'água de replay (A7/E12) e os `seq` já executados (E11/I5).
+   *
+   * `marcaRef` cresce com o transcript ATÉ o primeiro evento ao vivo: dali em diante o que chega
+   * é novidade por definição, e congelar a marca impede que uma reentrega de história (`seq` menor
+   * ou igual) troque a tela do usuário. `executados` é a segunda guarda, para o caso de o MESMO
+   * `seq` ser empurrado duas vezes — o `useChatSocket` deduplica o array de eventos, mas chama o
+   * `onEvent` nas duas.
+   */
+  const marcaRef = useRef(-1);
+  const vivoRef = useRef(false);
+  const executadosRef = useRef<Set<number>>(new Set());
+
+  /**
+   * O ÚNICO caminho de decisão de navegação do dock (Wave 11 · F08).
+   *
+   * Passam por aqui o evento `navigate` ao vivo, o botão "Ir agora" do cartão e o "Abrir a tela" do
+   * widget `open` — por isso etapa bloqueada continua bloqueada mesmo quando o clique é do usuário,
+   * e por isso a recusa tem sempre a mesma voz. A ordem é fixa: refrescar o guia, decidir, agir.
+   *
+   * Nenhuma regra de prontidão mora aqui (ADR-010 item a): a decisão inteira vem da função pura de
+   * `navigate.ts`, inclusive o texto da recusa. Este callback só entrega os fatos e executa.
+   *
+   * `intencao` acompanha o `open` com `params` (A8): a publicação no barramento acontece ANTES do
+   * `navigate`, porque a tela alvo ainda não existe e a intenção é sticky de um disparo — e só
+   * quando a decisão foi navegar, para não deixar intenção órfã retida depois de uma recusa.
+   */
+  const irPara = useCallback(
+    async (alvo: unknown, intencao?: { params: Record<string, unknown>; askId?: string }) => {
+      const pidAntes = ctxRef.current.pid;
+      if (pidAntes) await refrescarGuia(qc, pidAntes);
+
+      const { pid: pidAgora, steps: catalogo, guideAll: doShell } = ctxRef.current;
+      const decisao = decidirNavegacao(alvo, pidAgora, catalogo, guiaMaisFresco(qc, pidAgora, doShell));
+      if (decisao.acao === "recusar") {
+        await emitirRecusa(chatId, decisao.texto);
+        return;
+      }
+      if (intencao && Object.keys(intencao.params).length) {
+        emitNavIntent({
+          pid: pidAgora,
+          target: decisao.target,
+          params: intencao.params,
+          ...(intencao.askId ? { askId: intencao.askId } : {}),
+        });
+      }
+      navigate(decisao.target);
+    },
+    [qc, chatId, navigate],
+  );
 
   /**
    * A ponte chat → telas (Wave 11 · F03). Roda só para mensagem ao vivo do socket: o replay do
@@ -258,13 +417,29 @@ function Conversation({
    */
   const aoEventoAoVivo = useCallback(
     (ev: ChatEvent) => {
-      if (ev.kind !== "state_changed") return;
-      const mudanca = mudancaDoEvento(ev);
-      if (!mudanca) return;
-      if (mudanca.pid) invalidarGuia(qc, mudanca.pid);
-      emitStudioChange(mudanca);
+      // A partir do primeiro evento ao vivo o transcript deixa de crescer por replay: a marca
+      // d'água congela aqui, e não num efeito, porque este callback roda ANTES do re-render.
+      vivoRef.current = true;
+
+      if (ev.kind === "state_changed") {
+        const mudanca = mudancaDoEvento(ev);
+        if (!mudanca) return;
+        if (mudanca.pid) invalidarGuia(qc, mudanca.pid);
+        emitStudioChange(mudanca);
+        return;
+      }
+
+      if (ev.kind !== "navigate") return;
+      // I2: com o toggle desligado nenhum evento do chat toca o hash. O cartão ganha "Ir agora".
+      if (!ctxRef.current.seguir) return;
+      const seq = ev.seq;
+      if (typeof seq === "number") {
+        if (seq <= marcaRef.current || executadosRef.current.has(seq)) return;
+        executadosRef.current.add(seq);
+      }
+      void irPara(ev.target);
     },
-    [qc],
+    [qc, irPara],
   );
 
   // F03 assina os eventos ao vivo (`aoEventoAoVivo`); F02 passa o `status` da aba, que é o que
@@ -276,6 +451,10 @@ function Conversation({
   );
   const [draft, setDraft] = useState("");
   const [answered, setAnswered] = useState<Set<string>>(new Set());
+  /** `askId` → status da etapa alvo quando o cartão `open` nasceu (A9). */
+  const nascimentoRef = useRef<Map<string, string>>(new Map());
+  /** Os `askId` fechados pelo guia, e não pelo usuário — o cartão diz isso em voz alta. */
+  const [autoConcluidos, setAutoConcluidos] = useState<Set<string>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
   const vistos = useRef(0);
 
@@ -300,10 +479,57 @@ function Conversation({
   );
 
   const abrirTela = useCallback(
-    (target: string) => {
-      if (target) navigate(target);
+    (target: string, params?: Record<string, unknown>, askId?: string) => {
+      if (!target) return;
+      void irPara(target, { params: params ?? {}, ...(askId ? { askId } : {}) });
     },
-    [navigate],
+    [irPara],
+  );
+
+  // Marca d'água de replay: o maior `seq` que o transcript já tinha quando a conversa abriu.
+  useEffect(() => {
+    if (vivoRef.current) return;
+    for (const e of events) {
+      if (typeof e.seq === "number" && e.seq > marcaRef.current) marcaRef.current = e.seq;
+    }
+  }, [events]);
+
+  /**
+   * `open → done` automático (A9/A10, I7).
+   *
+   * O status de nascimento é o pulo do gato: o dock guarda, na primeira vez que vê aquele `askId`,
+   * como a etapa estava naquele instante — e só responde quando o guia TRANSITA para `done` vindo
+   * de outro status. `open` nascido com a etapa já `done` é um pedido de edição fina de algo
+   * completo: fechá-lo sozinho seria responder pelo usuário (risco R4), então esse caso registra o
+   * nascimento e nunca mais faz nada.
+   *
+   * Nenhum `answer` duplicado: `respond` já marca o `askId` em `answered`, e a primeira linha do
+   * laço pula o que está respondido — inclusive na re-execução que o próprio `setAnswered` provoca.
+   */
+  useEffect(() => {
+    for (const ev of events) {
+      if (ev.kind !== "ask") continue;
+      const askId = ev.ask_id ? String(ev.ask_id) : "";
+      if (!askId || answered.has(askId)) continue;
+      if (String(ev.widget ?? inferWidget(ev)) !== "open") continue;
+      const alvo = String(ev.target ?? "");
+      if (!AUTO_DONE_STEPS.includes(alvo)) continue; // E14: o resto segue manual
+
+      const agora = guideAll?.steps.find((g) => g.id === alvo)?.status ?? "unknown";
+      if (!nascimentoRef.current.has(askId)) {
+        nascimentoRef.current.set(askId, agora);
+        continue;
+      }
+      if (agora !== "done" || nascimentoRef.current.get(askId) === "done") continue;
+      respond(askId, { done: true, auto: true });
+      setAutoConcluidos((prev) => new Set(prev).add(askId));
+    }
+  }, [events, guideAll, answered, respond]);
+
+  /** Título humano da etapa para o cartão. Fora do catálogo (área global), o próprio id serve. */
+  const tituloDoAlvo = useCallback(
+    (alvo: string) => steps.find((s) => s.id === alvo)?.title || alvo,
+    [steps],
   );
 
   // --- feedback ao vivo do turno (chat-feedback, ADR-041) -----------------------------------
@@ -418,6 +644,9 @@ function Conversation({
               onOpen={abrirTela}
               done={e.ask_id ? answered.has(String(e.ask_id)) : false}
               chip={e.kind === "tool_call" ? chipDe(e, i) : undefined}
+              auto={e.ask_id ? autoConcluidos.has(String(e.ask_id)) : false}
+              seguir={seguir}
+              tituloDoAlvo={tituloDoAlvo}
             />
           ))
         )}
@@ -486,11 +715,15 @@ interface ChipInfo {
 interface MessageProps {
   ev: ChatEvent;
   onAnswer: (askId: string, value: unknown) => void;
-  onOpen: (target: string) => void;
+  onOpen: (target: string, params?: Record<string, unknown>, askId?: string) => void;
   done: boolean;
-  /** chat-feedback: preenchido só para `tool_call`; correlação por `id` feita na `Conversation`. */
   /** Só `tool_call` tem chip; opcional para que quem renderiza um evento sem chip não o declare. */
   chip?: ChipInfo | undefined;
+  /** O `ask` foi fechado pelo guia, não pelo usuário (A9). Opcional: default é "foi o usuário". */
+  auto?: boolean;
+  /** Estado do toggle do dock. Opcional e default LIGADO, como o próprio toggle (§12, decisão 3). */
+  seguir?: boolean;
+  tituloDoAlvo?: (alvo: string) => string;
 }
 
 /**
@@ -500,7 +733,16 @@ interface MessageProps {
  * FDD afirma que a bolha do USUÁRIO não passa pelo parser, e afirmar isso pelo `ChatDock` inteiro
  * exigiria falsear WebSocket e duas rotas só para chegar no `switch`.
  */
-export function Message({ ev, onAnswer, onOpen, done, chip }: MessageProps) {
+export function Message({
+  ev,
+  onAnswer,
+  onOpen,
+  done,
+  chip,
+  auto,
+  seguir,
+  tituloDoAlvo,
+}: MessageProps) {
   switch (ev.kind) {
     case "user":
       return (
@@ -532,10 +774,51 @@ export function Message({ ev, onAnswer, onOpen, done, chip }: MessageProps) {
     case "show":
       return <MediaCard title={ev.title as string | undefined} media={(ev.media as MediaItem[]) ?? []} />;
     case "ask":
-      return <AskCard ev={ev} onAnswer={onAnswer} onOpen={onOpen} done={done} />;
+      return <AskCard ev={ev} onAnswer={onAnswer} onOpen={onOpen} done={done} auto={auto ?? false} />;
+    case "navigate":
+      return <NavigateCard ev={ev} onOpen={onOpen} seguir={seguir !== false} tituloDoAlvo={tituloDoAlvo} />;
     default:
       return null;
   }
+}
+
+/**
+ * O cartão do evento `navigate`.
+ *
+ * Ele conta duas histórias diferentes com o mesmo evento, porque o toggle é do usuário e não do
+ * transcript: ligado, o cartão narra o que já aconteceu; desligado, ele vira um convite com o botão
+ * "Ir agora" — que passa pelo MESMO caminho de decisão, e portanto pode ser recusado.
+ *
+ * O `reason` é o que o agente disse para justificar a troca ("referências escolhidas"). Ele é a
+ * mitigação de R1 escrita na tela: navegação automática sem explicação é a tela pulando sozinha.
+ */
+function NavigateCard({
+  ev,
+  onOpen,
+  seguir,
+  tituloDoAlvo,
+}: {
+  ev: ChatEvent;
+  onOpen: (target: string, params?: Record<string, unknown>, askId?: string) => void;
+  seguir: boolean;
+  tituloDoAlvo: ((alvo: string) => string) | undefined;
+}) {
+  const alvo = String(ev.target ?? "");
+  const titulo = tituloDoAlvo ? tituloDoAlvo(alvo) : alvo;
+  const motivo = typeof ev.reason === "string" ? ev.reason.trim() : "";
+  return (
+    <div className="chat-nav" data-follow={seguir ? "1" : "0"}>
+      <span className="chat-nav-text">
+        {seguir ? `Fui para ${titulo}.` : `O assistente sugeriu abrir ${titulo}.`}
+        {motivo ? ` ${motivo}` : ""}
+      </span>
+      {seguir ? null : (
+        <button className="chat-optbtn chat-nav-go" type="button" onClick={() => onOpen(alvo)}>
+          Ir agora
+        </button>
+      )}
+    </div>
+  );
 }
 
 interface MediaItem {
@@ -585,18 +868,20 @@ function AskCard({
   onAnswer,
   onOpen,
   done,
+  auto,
 }: {
   ev: ChatEvent;
   onAnswer: (askId: string, value: unknown) => void;
-  onOpen: (target: string) => void;
+  onOpen: (target: string, params?: Record<string, unknown>, askId?: string) => void;
   done: boolean;
+  auto: boolean;
 }) {
   const askId = String(ev.ask_id);
   const widget = String(ev.widget ?? inferWidget(ev));
   const [selected, setSelected] = useState<string[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
 
-  if (done) return <div className="chat-note">Respondido.</div>;
+  if (done) return <div className="chat-note">{auto ? "Concluído automaticamente" : "Respondido."}</div>;
   const title = String(ev.title ?? "O assistente pediu uma decisão.");
 
   if (widget === "choose_images") {
@@ -670,12 +955,15 @@ function AskCard({
 
   if (widget === "open") {
     const target = String(ev.target ?? "");
+    // Contrato 3: `params` são os dados de abertura da tela (`{"scene": "cena02"}`). Eles viajam
+    // pelo barramento de intenção do shell, não pelo hash — a gramática de rota não muda (§12.1).
+    const params = (ev.params ?? {}) as Record<string, unknown>;
     return (
       <div className="chat-ask">
         <div className="chat-ask-title">{title}</div>
         {ev.detail ? <div className="chat-note">{String(ev.detail)}</div> : null}
         <div className="chat-ask-opts">
-          <button className="chat-send" type="button" onClick={() => onOpen(target)}>
+          <button className="chat-send" type="button" onClick={() => onOpen(target, params, askId)}>
             {String(ev.label ?? "Abrir a tela")}
           </button>
           <button className="chat-optbtn" type="button" onClick={() => onAnswer(askId, { done: true })}>
