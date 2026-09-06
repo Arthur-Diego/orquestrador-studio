@@ -80,6 +80,14 @@ TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
         "`frontend/openapi.json`; em `studio/web/` muda APENAS o bundle GERADO `studio/web/dist/` "
         "(`make frontend-schema` + `make frontend-build`, guarda de drift do CI). Nenhuma fonte do "
         "shell ou do design system é tocada. ADR-002/004/016/033/037, ADR-010/031/032.",
+    "feature/adh-os-20260906-03-chat-markdown": (
+        "`[extensão]` Wave 11 · F01 — markdown na bolha do assistente do dock de chat, card #85 "
+        "(https://trello.com/c/lqrj73sV), FDD `docs/domains/chat/features/chat-markdown-fdd.md`. "
+        "Recorte mínimo: `frontend/` (componente novo `src/areas/chat/MessageMarkdown.tsx`, duas "
+        "chamadas no `switch` do `Message` em `ChatDock.tsx`, regras `.chat-md*` em `chat.css` e "
+        "as deps pinadas `react-markdown`/`remark-gfm` em `package.json` — ADR-031) e "
+        "`studio/web/` só pelo bundle regenerado por `make frontend-build` (ADR-032). Nenhuma "
+        "rota nem modelo Pydantic muda, logo `schema.ts` não é regenerado.",
         ("frontend/", "studio/web/"),
     ),
     "fix/adh-os-20260905-09-schema-drift-trace": (
