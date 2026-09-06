@@ -70,6 +70,15 @@ NUCLEO_PREFIXOS = (
 #: Uma frente de etapa NÃO aparece aqui e continua barrada. Uma frente de núcleo aparece com o
 #: recorte mínimo do que precisa tocar — o registro é auditável no PR.
 TITULARES_DO_NUCLEO: dict[str, tuple[str, tuple[str, ...]]] = {
+    "feature/adh-os-20260906-04-chat-feedback": (
+        "`[extensão]` Feedback ao vivo do assistente de chat (Wave 11 · F02), card #86 "
+        "ADH-OS-20260906-04: ciclo de vida do turno, streaming de texto e progresso de job em "
+        "`studio/chat/` (fora de NUCLEO_PREFIXOS). O núcleo tocado é só `frontend/` (dock, hook, "
+        "rótulos de tool e CSS) e o bundle `studio/web/dist/`. Nenhuma rota REST nova, nenhum "
+        "modelo Pydantic novo (`schema.ts` intocado), nenhuma etapa nem o shell tocados. "
+        "ADR-036/041, ADR-008/010/031/032.",
+        ("frontend/", "studio/web/"),
+    ),
     "feature/adh-os-20260906-05-chat-sync": (
         "`[extensão]` Wave 11 · frente F03 — sincronização chat → telas, card #87 "
         "(ADH-OS-20260906-05): o evento `state_changed` nasce em `studio/chat/` e o mapa de tools "

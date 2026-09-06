@@ -38,14 +38,18 @@ def test_websocket_streama_o_turno(client, monkeypatch):
         ws.send_json({"type": "user", "text": "o que falta?", "context": {"pid": "gelo"}})
         e1 = ws.receive_json()  # eco do usuário
         assert e1["kind"] == "user" and e1["text"] == "o que falta?"
-        e2 = ws.receive_json()
-        assert e2["kind"] == "assistant_text" and "eco: o que falta?" in e2["text"]
+        e2 = ws.receive_json()  # o servidor conta que o turno subiu (chat-feedback)
+        assert e2["kind"] == "turn_started" and e2["turn_id"]
         e3 = ws.receive_json()
-        assert e3["kind"] == "result" and e3["text"] == "pronto"
+        assert e3["kind"] == "assistant_text" and "eco: o que falta?" in e3["text"]
+        e4 = ws.receive_json()
+        assert e4["kind"] == "result" and e4["text"] == "pronto"
+        e5 = ws.receive_json()
+        assert e5["kind"] == "turn_ended" and e5["reason"] == "done" and e5["turn_id"] == e2["turn_id"]
 
     # o transcript persistiu os eventos do turno
     kinds = [e["kind"] for e in client.get(f"/api/chats/{cid}/events").json()["events"]]
-    assert kinds == ["user", "assistant_text", "result"]
+    assert kinds == ["user", "turn_started", "assistant_text", "result", "turn_ended"]
 
 
 def test_emit_empurra_cartao_sem_esperar(client):
@@ -96,3 +100,207 @@ def test_websocket_recusa_aba_inexistente(client):
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws/chat/nao-existe") as ws:
             ws.receive_json()
+
+
+# ---------- ciclo de vida do turno: turn_started/turn_ended (chat-feedback, FDD contratos 1 e 2) ----------
+def _kinds_no_disco(client, cid):
+    return [e["kind"] for e in client.get(f"/api/chats/{cid}/events").json()["events"]]
+
+
+def _eventos_no_disco(client, cid, kind):
+    return [e for e in client.get(f"/api/chats/{cid}/events").json()["events"] if e["kind"] == kind]
+
+
+def _par_de_turno(client, cid):
+    """O par do transcript: exatamente um `turn_started` e um `turn_ended` de mesmo `turn_id`."""
+    inicios = _eventos_no_disco(client, cid, "turn_started")
+    fins = _eventos_no_disco(client, cid, "turn_ended")
+    assert len(inicios) == 1 and len(fins) == 1
+    assert inicios[0]["turn_id"] and inicios[0]["turn_id"] == fins[0]["turn_id"]
+    return inicios[0], fins[0]
+
+
+def test_t_api_01_e_04_turno_de_sucesso_fecha_o_par(client, monkeypatch):
+    from studio.chat import runtime
+    cid = client.post("/api/chats", json={"title": "ok"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "assistant_text", "text": "pronto"}
+        yield {"kind": "result", "is_error": False, "text": "fim", "cost": 0.0}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "vai"})
+        # T-API-04: o primeiro sinal depois do eco do usuário é o turno subindo
+        assert ws.receive_json()["kind"] == "user"
+        assert ws.receive_json()["kind"] == "turn_started"
+        for _ in range(2):
+            ws.receive_json()
+        fim = ws.receive_json()
+        assert fim["kind"] == "turn_ended" and fim["reason"] == "done" and "seq" in fim
+
+    inicio, fim = _par_de_turno(client, cid)
+    assert fim["reason"] == "done"
+    assert _kinds_no_disco(client, cid) == ["user", "turn_started", "assistant_text", "result", "turn_ended"]
+    # o par é persistido com seq e ts, como todo evento de transcript
+    assert isinstance(inicio["seq"], int) and inicio["ts"] and fim["ts"]
+    assert client.get(f"/api/chats/{cid}").json()["status"] == "idle"
+
+
+def test_t_api_02_turno_com_excecao_fecha_o_par_com_error(client, monkeypatch):
+    from studio.chat import runtime
+    cid = client.post("/api/chats", json={"title": "boom"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "assistant_text", "text": "começando"}
+        raise RuntimeError("o subprocess morreu")
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "vai"})
+        recebidos = [ws.receive_json() for _ in range(5)]
+
+    assert [e["kind"] for e in recebidos] == ["user", "turn_started", "assistant_text", "result", "turn_ended"]
+    assert recebidos[3]["is_error"] is True
+    _inicio, fim = _par_de_turno(client, cid)
+    assert fim["reason"] == "error"
+    assert client.get(f"/api/chats/{cid}").json()["status"] == "error"
+
+
+def test_t_api_03_turno_cancelado_fecha_o_par_com_stopped(client, monkeypatch):
+    import asyncio
+
+    from studio.chat import runtime
+    cid = client.post("/api/chats", json={"title": "parar"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "assistant_text", "text": "pensando"}
+        await asyncio.sleep(30)  # o turno fica pendurado até o usuário mandar parar
+        yield {"kind": "result", "is_error": False, "text": "nunca chega"}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "vai"})
+        assert ws.receive_json()["kind"] == "user"
+        assert ws.receive_json()["kind"] == "turn_started"
+        assert ws.receive_json()["kind"] == "assistant_text"
+        ws.send_json({"type": "stop"})
+        aviso = ws.receive_json()
+        fim = ws.receive_json()
+
+    # o notify que já existia continua sendo emitido — o turn_ended vem ALÉM dele, não no lugar
+    assert aviso["kind"] == "notify" and aviso["text"] == "Turno interrompido."
+    assert fim["kind"] == "turn_ended" and fim["reason"] == "stopped"
+    _inicio, gravado = _par_de_turno(client, cid)
+    assert gravado["reason"] == "stopped"
+    assert "notify" in _kinds_no_disco(client, cid)
+    assert client.get(f"/api/chats/{cid}").json()["status"] == "idle"
+
+
+def test_t_api_05_e_06_eventos_efemeros_nao_tocam_o_disco(client, monkeypatch):
+    from studio.chat import runtime
+    cid = client.post("/api/chats", json={"title": "efemeros"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "assistant_delta", "text": "olá "}
+        yield {"kind": "assistant_delta", "text": "mundo"}
+        yield {"kind": "tool_progress", "id": "toolu_01A9", "pct": 42,
+               "label": "Etapa refs: 13/31", "state": "running"}
+        yield {"kind": "assistant_text", "text": "olá mundo"}
+        yield {"kind": "result", "is_error": False, "text": "fim", "cost": 0.0}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "vai"})
+        recebidos = [ws.receive_json() for _ in range(8)]
+
+    efemeros = [e for e in recebidos if e["kind"] in ("assistant_delta", "tool_progress")]
+    assert len(efemeros) == 3
+    # T-API-06: chegam ao WS sem `seq` (não são transcript), mas correlacionados ao turno
+    turn_id = recebidos[1]["turn_id"]
+    assert all("seq" not in e and e["turn_id"] == turn_id for e in efemeros)
+    # T-API-05: e nenhum deles entra no events.jsonl
+    assert _kinds_no_disco(client, cid) == [
+        "user", "turn_started", "assistant_text", "result", "turn_ended"]
+
+
+# ---------- saneamento de aba órfã em GET /api/chats (FDD contrato 8) ----------
+def test_t_api_07_aba_running_sem_task_viva_volta_a_idle(client):
+    from studio.chat import sessions
+    cid = client.post("/api/chats", json={"title": "orfa", "pid": "gelo"}).json()["id"]
+    sessions.patch(cid, status="running")  # resíduo de um servidor reiniciado no meio do turno
+
+    listagem = client.get("/api/chats").json()
+    aba = next(c for c in listagem if c["id"] == cid)
+    assert aba["status"] == "idle"
+    # a forma da resposta não muda: os mesmos campos de sempre
+    assert set(aba) == {"id", "title", "pid", "turns", "status", "created", "updated"}
+    assert sessions.get(cid).status == "idle"  # o saneamento é persistido
+
+
+def test_t_api_08_aba_running_com_task_viva_nao_e_saneada(client, monkeypatch):
+    from studio.chat import router as chat_router
+    from studio.chat import sessions
+
+    class _Viva:
+        def done(self):
+            return False
+
+    cid = client.post("/api/chats", json={"title": "viva"}).json()["id"]
+    sessions.patch(cid, status="running")
+    monkeypatch.setitem(chat_router._turns, cid, _Viva())
+
+    aba = next(c for c in client.get("/api/chats").json() if c["id"] == cid)
+    assert aba["status"] == "running"
+    assert sessions.get(cid).status == "running"
+
+
+# ---------- métricas de turno no /trace (FDD contrato 9) ----------
+def test_t_api_09_trace_deriva_as_metricas_dos_pares(client, monkeypatch):
+    from studio.chat import sessions
+    cid = client.post("/api/chats", json={"title": "t", "pid": "gelo"}).json()["id"]
+    relogio = iter(["2026-09-06T14:00:00Z", "2026-09-06T14:00:30Z",
+                    "2026-09-06T14:01:00Z", "2026-09-06T14:01:20Z"])
+    monkeypatch.setattr(sessions, "_now", lambda: next(relogio))
+    sessions.append_event(cid, {"kind": "turn_started", "turn_id": "aaa"})
+    sessions.append_event(cid, {"kind": "turn_ended", "turn_id": "aaa", "reason": "done"})
+    sessions.append_event(cid, {"kind": "turn_started", "turn_id": "bbb"})
+    sessions.append_event(cid, {"kind": "turn_ended", "turn_id": "bbb", "reason": "stopped"})
+
+    t = client.get(f"/api/chats/{cid}/trace").json()
+    assert t["turnos_iniciados"] == 2
+    assert t["turnos_interrompidos"] == 1
+    assert t["duracao_media_s"] == 25.0  # (30 s + 20 s) / 2
+
+
+def test_t_api_10_trace_sem_pares_zera_sem_quebrar_os_campos_de_hoje(client):
+    from studio.chat import sessions
+    cid = client.post("/api/chats", json={"title": "antigo", "pid": "gelo"}).json()["id"]
+    sessions.append_event(cid, {"kind": "user", "text": "vai"})
+    sessions.append_event(cid, {"kind": "tool_call", "name": "mcp__studio__guide"})
+    sessions.append_event(cid, {"kind": "result", "is_error": False, "cost": 0.12})
+
+    t = client.get(f"/api/chats/{cid}/trace").json()
+    assert (t["turnos_iniciados"], t["turnos_interrompidos"], t["duracao_media_s"]) == (0, 0, 0)
+    assert t["events"] == 3 and t["tools"]["guide"] == 1
+    assert t["usd_estimado"] == 0.12 and t["erros"] == 0 and t["chat_id"] == cid
+
+
+def test_turno_sem_result_do_cli_fecha_o_par_com_error(client, monkeypatch):
+    """FDD §6: o `result` sintetizado pelo runtime não conta como ciclo do CLI completo."""
+    from studio.chat import runtime
+    cid = client.post("/api/chats", json={"title": "sem result"}).json()["id"]
+
+    async def fake_run_turn(chat_id, text, **kw):
+        yield {"kind": "assistant_text", "text": "comecei"}
+        yield {"kind": "result", "is_error": True, "synthetic": True,
+               "text": "o turno terminou sem resultado do modelo"}
+
+    monkeypatch.setattr(runtime, "run_turn", fake_run_turn)
+    with client.websocket_connect(f"/ws/chat/{cid}") as ws:
+        ws.send_json({"type": "user", "text": "vai"})
+        recebidos = [ws.receive_json() for _ in range(5)]
+
+    assert recebidos[-1]["kind"] == "turn_ended" and recebidos[-1]["reason"] == "error"
+    _inicio, fim = _par_de_turno(client, cid)
+    assert fim["reason"] == "error"
