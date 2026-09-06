@@ -40,6 +40,36 @@ export interface Roteador extends RotaResolvida {
   navigate: (target: string, opts?: { pid?: string; replace?: boolean }) => void;
 }
 
+/** Prefixos de rota reservados que o efeito de resolução já entende (ADR-013/016/039). */
+const AREAS_GLOBAIS: readonly string[] = [MB_ROUTE, CR_ROUTE, CHAR_ROUTE];
+/** Dessas, as que têm sub-tela. `creditos` não tem: a sub-rota é descartada (FDD §5, Contrato 5). */
+const AREAS_COM_SUB: readonly string[] = [MB_ROUTE, CHAR_ROUTE];
+
+/**
+ * Monta o hash do alvo — a única parte de `navigate` que é pura.
+ *
+ * Wave 11 · F10 (card #88): as áreas globais já eram RESOLVIDAS pelo efeito abaixo (`#/moodboards`,
+ * `#/creditos`, `#/characters`), mas não eram MONTÁVEIS por `navigate`, que só sabia `#/<pid>/<view>`.
+ * Resultado: `navigate("moodboards")` gerava `#/<pid>/moodboards`, que caía na guarda de view não
+ * `ready` e ia para o overview em silêncio. Agora as três são alvos de primeira classe.
+ *
+ * A gramática do hash NÃO muda (dois segmentos, no máximo) e nenhuma chamada existente muda de
+ * resultado: hoje ninguém chama `navigate` com esses alvos — `Shell.tsx` escreve `location.hash`
+ * direto nos botões da sidebar.
+ *
+ * @returns o hash, ou `null` quando o alvo é de campanha e não há campanha.
+ */
+function hashDoAlvo(target: string, pid: string | null): string | null {
+  const [prefixo, sub] = target.split("/");
+  if (prefixo && AREAS_GLOBAIS.includes(prefixo)) {
+    // Sub-segmento além do primeiro não caberia em `#/<a>/<b>`; o dock já recusa esses alvos.
+    if (sub && AREAS_COM_SUB.includes(prefixo)) return `#/${prefixo}/${encodeURIComponent(sub)}`;
+    return `#/${prefixo}`;
+  }
+  if (!pid) return null;
+  return `#/${encodeURIComponent(pid)}/${encodeURIComponent(target)}`;
+}
+
 /**
  * Resolve a rota ativa a partir do hash, das campanhas e do catálogo de etapas.
  *
@@ -59,12 +89,12 @@ export function useHashRouter(
 
   const navigate = useCallback(
     (target: string, opts?: { pid?: string; replace?: boolean }) => {
-      const p = opts?.pid ?? pidRef.current;
-      if (!p) {
+      // `pidRef` NÃO é limpo ao entrar numa área global: o efeito preserva o pid corrente.
+      const h = hashDoAlvo(target, opts?.pid ?? pidRef.current);
+      if (h === null) {
         forcar();
         return;
       }
-      const h = `#/${encodeURIComponent(p)}/${encodeURIComponent(target)}`;
       if (location.hash === h) {
         forcar();
         return;

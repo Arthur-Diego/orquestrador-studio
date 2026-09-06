@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Contratos puros do frontend — decisão de navegação, áreas globais no router e barramento de intenção
 type: frontend
 complexity: medium
@@ -57,22 +57,22 @@ morar nele, menor o conflito de rebase.
 
 ## Subtasks
 
-- [ ] 2.1 Ler `frontend/src/api/types.ts` (`Step`, `Guide`, `GuideAll`, `StepStatus`) e
+- [x] 2.1 Ler `frontend/src/api/types.ts` (`Step`, `Guide`, `GuideAll`, `StepStatus`) e
       `frontend/src/shell/constants.ts` para fixar o vocabulário exato.
-- [ ] 2.2 Criar `frontend/src/areas/chat/navigate.ts` com o tipo de decisão e a função pura,
+- [x] 2.2 Criar `frontend/src/areas/chat/navigate.ts` com o tipo de decisão e a função pura,
       cobrindo os casos A2–A6 e E4–E10 da §4/§6 do `_techspec.md`, com os textos de recusa
       literais que o `_tests.md` especifica.
-- [ ] 2.3 Criar `frontend/src/areas/chat/navigate.test.ts` com os casos UT-10..UT-20.
-- [ ] 2.4 Estender `navigate` em `frontend/src/shell/router.ts` para as áreas globais, sem tocar a
+- [x] 2.3 Criar `frontend/src/areas/chat/navigate.test.ts` com os casos UT-10..UT-20.
+- [x] 2.4 Estender `navigate` em `frontend/src/shell/router.ts` para as áreas globais, sem tocar a
       resolução de rota (o efeito que lê o hash já entende essas rotas hoje).
-- [ ] 2.5 Acrescentar os casos UT-21..UT-27 a `frontend/src/shell/router.test.ts`, reusando as
+- [x] 2.5 Acrescentar os casos UT-21..UT-27 a `frontend/src/shell/router.test.ts`, reusando as
       fixtures `PROJECTS`/`STEPS` de `frontend/src/shell/test-utils.tsx` e o padrão
       `renderHook` + `history.replaceState` que o arquivo já usa.
-- [ ] 2.6 Acrescentar `NavIntent`/`emitNavIntent`/`useNavIntent` a `frontend/src/shell/events.ts`,
+- [x] 2.6 Acrescentar `NavIntent`/`emitNavIntent`/`useNavIntent` a `frontend/src/shell/events.ts`,
       documentando por que a intenção é sticky (a corrida entre navegar e montar a tela).
-- [ ] 2.7 Acrescentar os casos UT-28..UT-32 a `frontend/src/shell/events.test.ts`, mantendo o
+- [x] 2.7 Acrescentar os casos UT-28..UT-32 a `frontend/src/shell/events.test.ts`, mantendo o
       padrão de `vi.useFakeTimers()` do arquivo e sem quebrar nenhum teste existente.
-- [ ] 2.8 Rodar `make frontend-verify` (typecheck + lint + vitest, sem `--watch`) e registrar o
+- [x] 2.8 Rodar `make frontend-verify` (typecheck + lint + vitest, sem `--watch`) e registrar o
       output real.
 
 ## Implementation Details
@@ -140,11 +140,11 @@ instala os matchers do jest-dom: qualquer stub é local ao teste (ADR-008).
 Cases assigned from `_tests.md`, the test contract — read each ID's full definition there before
 writing tests.
 
-- [ ] UT-10, UT-11, UT-12, UT-13, UT-14, UT-15, UT-16, UT-17, UT-18, UT-19, UT-20 — decisão pura de
+- [x] UT-10, UT-11, UT-12, UT-13, UT-14, UT-15, UT-16, UT-17, UT-18, UT-19, UT-20 — decisão pura de
       navegação: navegável × liberada, áreas globais, alvos inválidos, sem campanha, guia ausente.
-- [ ] UT-21, UT-22, UT-23, UT-24, UT-25, UT-26, UT-27 — `navigate` do shell com áreas globais e a
+- [x] UT-21, UT-22, UT-23, UT-24, UT-25, UT-26, UT-27 — `navigate` do shell com áreas globais e a
       não-regressão dos alvos de campanha.
-- [ ] UT-28, UT-29, UT-30, UT-31, UT-32 — barramento de intenção sticky e a não-regressão do
+- [x] UT-28, UT-29, UT-30, UT-31, UT-32 — barramento de intenção sticky e a não-regressão do
       barramento de mudanças da F03.
 
 ## Success Criteria
