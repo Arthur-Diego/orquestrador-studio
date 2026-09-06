@@ -339,6 +339,20 @@ describe("ChatDock — entrada por voz no composer", () => {
     expect(segunda).not.toHaveProperty("via");
   });
 
+  it("§5 C2: botão de ação rápida nunca herda o via de um draft ditado e abandonado", async () => {
+    await montar();
+    // O usuário dita, se arrepende do que ditou e clica numa pergunta enlatada.
+    await gravarEParar();
+    expect(textarea().value).toBe("olá");
+
+    await userEvent.click(screen.getByRole("button", { name: "O que falta?" }));
+
+    const msg = JSON.parse(enviados()[0]!) as Record<string, unknown>;
+    expect(msg["text"]).toBe("O que falta nesta campanha para avançar?");
+    // Ninguém falou essa frase: rotulá-la como voz sujaria o `via` e o `/trace` (§12 decisão 12).
+    expect(msg).not.toHaveProperty("via");
+  });
+
   it("UT-26: Ctrl+Shift+M e ⌘+Shift+M alternam a gravação, e o listener morre com o dock", async () => {
     const { unmount } = await montar();
 

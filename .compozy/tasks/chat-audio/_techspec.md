@@ -357,8 +357,13 @@ NO_PROVIDER: str = "transcrição por voz indisponível: ..."   # texto do 409
 class VoiceError(ValueError): ...        # vira 422 no router
 class NoProvider(RuntimeError): ...      # vira 409 no router
 
-def check_audio(data: bytes, content_type: str, filename: str) -> str:
-    """Valida tamanho, tipo e assinatura; devolve a extensão canônica. Levanta VoiceError."""
+def check_audio(data: bytes, content_type: str, filename: str, duration_s: float = 0.0) -> str:
+    """Valida tamanho, tipo, assinatura e duração; devolve a extensão canônica.
+
+    Levanta VoiceError. `duration_s` tem default dentro de `[0, 120]`, então a chamada de três
+    argumentos continua válida; ele entra aqui, e não num segundo validador, porque separar as
+    quatro checagens em dois lugares é como uma delas acaba ficando para trás.
+    """
 
 def transcribe(data: bytes, content_type: str, filename: str, duration_s: float) -> dict:
     """{'text','provider','duration_s'} usando get_transcribe().transcribe_text().
@@ -409,6 +414,7 @@ interface RecorderApi {
   seconds: number;          // 0..120, contador da gravação em curso
   level: number;            // 0..1, nível de entrada (0 quando não há AudioContext)
   error: string;            // mensagem pronta para exibir (vazia quando não há erro)
+  errorStatus: number;      // status HTTP do último erro vindo da ROTA; 0 quando não veio dela
   supported: boolean;       // false quando falta MediaRecorder/getUserMedia
   secure: boolean;          // false em HTTP fora de localhost
   start(): void;
@@ -421,6 +427,9 @@ export function useRecorder(chatId: string, onText: (text: string) => void): Rec
 
 - Semântica: `onText` recebe SÓ o texto transcrito; a decisão de concatenar no draft ou enviar
   direto é do `ChatDock`, nunca do hook. O hook não conhece o `useChatSocket`.
+- `errorStatus` existe para o composer distinguir o **409** — o único erro terminal, que desabilita
+  o microfone até a próxima montagem do dock — dos transitórios (413/422/502/rede). A alternativa
+  seria casar o texto do `detail` por prefixo, acoplando a UI a uma string do servidor.
 - Limites: uma gravação por vez; `start()` em estado diferente de `idle`/`error` é no-op.
 
 ---

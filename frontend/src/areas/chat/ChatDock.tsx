@@ -660,12 +660,21 @@ function Conversation({
   // renderizar, e um `useState` aqui re-renderizaria o dock a cada tecla (§10, Risco 1).
   const viaVozRef = useRef(false);
 
+  /**
+   * @param via procedência **do texto que está sendo enviado**, explícita por parâmetro.
+   *
+   * Ler `viaVozRef` aqui dentro seria mais curto e estaria errado: os três botões de ação rápida
+   * chamam `enviar` com texto próprio, e um draft ditado e abandonado rotularia a mensagem
+   * enlatada como falada. O rótulo é procedência (§5 C2, §12 decisão 12); um `via` falso no
+   * `events.jsonl` e no `/trace` é exatamente o que fechar o enum quis evitar. Quem sabe a origem
+   * é o chamador — daí o parâmetro.
+   */
   const enviar = useCallback(
-    (texto: string) => {
+    (texto: string, via?: "voice") => {
       const t = texto.trim();
       if (!t || busy || !connected) return;
       // `via` só quando o texto veio do microfone; digitado manda o payload de sempre (§5 C2).
-      send(t, { pid, view }, viaVozRef.current ? "voice" : undefined);
+      send(t, { pid, view }, via);
       viaVozRef.current = false;
       setDraft("");
     },
@@ -695,7 +704,7 @@ function Conversation({
     draft: string;
     vozAuto: boolean;
     busy: boolean;
-    enviar: (texto: string) => void;
+    enviar: (texto: string, via?: "voice") => void;
     micOff: boolean;
     gravando: boolean;
     start: () => void;
@@ -732,7 +741,7 @@ function Conversation({
     }
     setVozAviso("");
     if (auto) {
-      mandar(combinado);
+      mandar(combinado, "voice");
       return;
     }
     textareaRef.current?.focus();
@@ -794,10 +803,14 @@ function Conversation({
 
   // --- fim do bloco da entrada por voz --------------------------------------------------------
 
+  /** `viaVozRef` só é consultada nos DOIS caminhos manuais (Enter e o botão Enviar), que são os
+   *  únicos em que o texto enviado é o draft — o passo 10 do fluxo principal do FDD. */
+  const viaDoDraft = () => (viaVozRef.current ? ("voice" as const) : undefined);
+
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      enviar(draft);
+      enviar(draft, viaDoDraft());
     }
   };
 
@@ -916,7 +929,7 @@ function Conversation({
             direto
           </label>
         </div>
-        <button className="chat-send" type="button" onClick={() => enviar(draft)} disabled={busy || !connected || !draft.trim()}>
+        <button className="chat-send" type="button" onClick={() => enviar(draft, viaDoDraft())} disabled={busy || !connected || !draft.trim()}>
           Enviar
         </button>
       </div>
