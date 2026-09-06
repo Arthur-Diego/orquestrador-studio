@@ -13,6 +13,13 @@ import {
   useProgress,
   useUpload,
 } from "../../../../frontend/src/ui";
+import {
+  CampaignPreset,
+  PRESET_INHERIT,
+  PRESET_OFF,
+  presetLabel,
+  presetsUrl,
+} from "./CampaignPreset";
 import { Annotate } from "./Annotate";
 import { MaskEditor } from "./MaskEditor";
 import type { StudioCtx } from "../../../../frontend/src/shell/plugin";
@@ -23,6 +30,8 @@ import type {
   InstructionsMeta,
   ModelMeta,
   PhotoMeta,
+  PhotoOrigin,
+  PresetDefaults,
   RealismPreset,
   Scene,
   ScriptScene,
@@ -34,6 +43,8 @@ const SCRIPT_NO_CLI =
   "Claude CLI não encontrado: escreva as cenas à mão no painel 03 (aula 010) ou instale o Claude Code.";
 const SCRIPT_TARGET = "Nano Banana Pro";
 const SCRIPT_ACTION = "storyboard.script";
+/** Ação de preset do prompt de vídeo por foto (`settings.resolve_preset("motion", …)`). */
+const MOTION_ACTION = "motion";
 const SCRIPT_COUNT_DEFAULT = 5;
 const SCRIPT_COUNT_MAX = 10;
 const SCRIPT_IDEA_IMAGES = 3;
@@ -41,6 +52,8 @@ const AREA_NO_CLI =
   "Sem CLI: marque e gere pelo inpaint na própria interface da Higgsfield (ilimitado no plano).";
 
 const pkey = (sid: string, img: string) => `${sid}:${img}`;
+/** Foto ainda sem estado na tela: herda o padrão da campanha e não tem procedência. */
+const EMPTY_PHOTO_META: PhotoMeta = { desc: "", prompt: "", videos: [], preset: PRESET_INHERIT, origin: {} };
 const DIACRITICS = /[̀-ͯ]/g;
 const momOf = (label: string) =>
   String(label || "")
@@ -106,21 +119,56 @@ function seedPhotos(sc: Scene[]): PhotoState {
         desc: e.video_desc || "",
         prompt: e.video_prompt || "",
         videos: (e.videos || []).slice(),
-        preset: null,
+        // Os três estados voltam do arquivo do jeito que foram: chave ausente herda, `null` é a
+        // rota de fuga "(sem preset)" e a string é o id escolhido (invariante 6).
+        preset: !("preset" in e) ? PRESET_INHERIT : e.preset === null ? PRESET_OFF : e.preset,
+        origin: { ...(e.origin || {}) },
       };
     });
   });
   return out;
 }
 
+/**
+ * Procedência de um campo a partir da resposta de uma rota de prompt. O `source` do servidor
+ * (`claude`/`template`) é traduzido para o enum de `origin` (`ia`/`template`) — o backend descarta
+ * em silêncio o que não bate, e um chip de origem errado não pode custar o texto ao usuário.
+ */
+function originOf(source: string | undefined, preset: string | null | undefined): PhotoOrigin {
+  return {
+    source: source === "template" ? "template" : "ia",
+    preset: typeof preset === "string" ? preset : null,
+    at: new Date().toISOString(),
+  };
+}
+
+/** Uma foto no corpo do `PUT /scenes`. `preset` e `origin` são opcionais de propósito (§5.5). */
+interface PhotoPayload {
+  video_desc: string;
+  video_prompt: string;
+  videos: string[];
+  preset?: string | null;
+  origin?: Record<string, PhotoOrigin>;
+}
+
 /** Payload do PUT /scenes a partir do estado controlado — o que o `collect()` do vanilla montava. */
 function buildPayload(sc: Scene[], ph: PhotoState): Scene[] {
   return sc.map((s) => {
     const sid = s.id || "";
-    const photos: Record<string, { video_desc: string; video_prompt: string; videos: string[] }> = {};
+    const photos: Record<string, PhotoPayload> = {};
     (s.images || []).forEach((img) => {
-      const m = ph[pkey(sid, img)] || { desc: "", prompt: "", videos: [] };
-      photos[img] = { video_desc: m.desc || "", video_prompt: m.prompt || "", videos: (m.videos || []).slice() };
+      const m = ph[pkey(sid, img)] || EMPTY_PHOTO_META;
+      const photo: PhotoPayload = {
+        video_desc: m.desc || "",
+        video_prompt: m.prompt || "",
+        videos: (m.videos || []).slice(),
+      };
+      // A chave `preset` só existe no corpo quando o usuário decidiu algo: herdar é a AUSÊNCIA
+      // dela, e é isso que faz o padrão da campanha valer na geração seguinte (critério C4).
+      if (m.preset === PRESET_OFF) photo.preset = null;
+      else if (m.preset) photo.preset = m.preset;
+      if (m.origin && Object.keys(m.origin).length) photo.origin = { ...m.origin };
+      photos[img] = photo;
     });
     const prim = s.primary ? ph[pkey(sid, s.primary)] : undefined;
     return {
@@ -172,7 +220,8 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   const [scriptPresetDefault, setScriptPresetDefault] = useState("");
   const [scriptModels, setScriptModels] = useState<{ label?: string; default?: boolean }[]>([]);
   const [scriptSelectedIdeas, setScriptSelectedIdeas] = useState(0);
-  const [scriptDefaults, setScriptDefaults] = useState<Record<string, { preset?: string }>>({});
+  /** `defaults` de `GET /api/prompter/presets?pid=` — a herança de TODAS as ações, não só a do roteiro. */
+  const [presetDefaults, setPresetDefaults] = useState<PresetDefaults>({});
   const [script, setScript] = useState<import("./types").Script | null>(null);
   const [scriptPreset, setScriptPreset] = useState("");
   const [scriptCount, setScriptCount] = useState(SCRIPT_COUNT_DEFAULT);
@@ -267,12 +316,21 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     return (m && m.label) || SCRIPT_TARGET;
   }, [scriptModels]);
 
-  const resolveScriptPreset = useCallback(
-    (presetList: RealismPreset[], defaults: Record<string, { preset?: string }>, serverDefault: string) => {
-      const def = serverDefault || (defaults[SCRIPT_ACTION] || {}).preset || "";
-      return presetList.some((p) => p.id === def) ? def : "";
+  /**
+   * Preset que a CAMPANHA resolve para uma ação — o "X" de "(padrão da campanha: X)". Sai dos
+   * `defaults` do servidor (projeto → global → código); `null` quando a campanha também não tem
+   * preset, e `null` também quando o id resolvido saiu do catálogo (a tela nunca fica presa a um
+   * id morto, mesma regra do `preset_default_for`).
+   */
+  const inheritedPreset = useCallback(
+    (action: string): string | null => {
+      // Para o roteiro o `script_preset_default` do `GET /storyboard` continua vencendo, como no
+      // `resolveScriptPreset` que este hook substitui: é a mesma resolução, vinda de outra rota.
+      const fromStatus = action === SCRIPT_ACTION ? scriptPresetDefault : "";
+      const def = fromStatus || presetDefaults[action]?.preset || "";
+      return realismPresets.some((p) => p.id === def) ? def : null;
     },
-    [],
+    [presetDefaults, realismPresets, scriptPresetDefault],
   );
 
   // Boot / troca de projeto (o `onProject` do vanilla).
@@ -292,11 +350,11 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
       }
       // catálogo de realismo (`[extensão]`)
       let rp: RealismPreset[] = [];
-      let defaults: Record<string, { preset?: string }> = {};
+      let defaults: PresetDefaults = {};
       try {
-        const r = (await api(`/api/prompter/presets?pid=${encodeURIComponent(ctx.pid() || "")}`)) as {
+        const r = (await api(presetsUrl(ctx.pid() || ""))) as {
           presets?: RealismPreset[];
-          defaults?: Record<string, { preset?: string }>;
+          defaults?: PresetDefaults;
         };
         rp = r.presets || [];
         defaults = r.defaults || {};
@@ -306,7 +364,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
       }
       if (!vivo) return;
       setRealismPresets(rp);
-      setScriptDefaults(defaults);
+      setPresetDefaults(defaults);
       await loadStatus();
       await loadIdeas();
       // cenas — o GET cria/garante o `storyboard/scenes.json` no backend
@@ -373,10 +431,11 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     { pid: ctx.pid() },
   );
 
-  // Preset default do roteiro reage ao catálogo/status.
+  // O seletor do roteiro nasce HERDANDO o padrão da campanha (valor vazio) — antes ele nascia com
+  // o id resolvido escrito dentro, o que transformava a herança numa escolha explícita e congelada.
   useEffect(() => {
-    setScriptPreset(resolveScriptPreset(realismPresets, scriptDefaults, scriptPresetDefault));
-  }, [realismPresets, scriptDefaults, scriptPresetDefault, resolveScriptPreset]);
+    setScriptPreset(PRESET_INHERIT);
+  }, [bootKey]);
 
   // Modelo default do painel de área marcada quando `meta.models` chega.
   useEffect(() => {
@@ -450,12 +509,12 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
 
   // ---------------- painel 03: cenas ----------------
   const pm = (sid: string, img: string): PhotoMeta =>
-    photos[pkey(sid, img)] || { desc: "", prompt: "", videos: [], preset: null };
+    photos[pkey(sid, img)] || EMPTY_PHOTO_META;
 
   const updatePhoto = (sid: string, img: string, patch: Partial<PhotoMeta>) =>
     setPhotos((prev) => {
       const k = pkey(sid, img);
-      const cur = prev[k] || { desc: "", prompt: "", videos: [], preset: null };
+      const cur = prev[k] || EMPTY_PHOTO_META;
       return { ...prev, [k]: { ...cur, ...patch } };
     });
 
@@ -535,17 +594,33 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
     if (!sid) return toast("Salve as cenas primeiro.");
     const m = pm(sid, img);
     const description = (m.desc || "").trim();
-    const preset = m.preset ? m.preset : null;
     prog.progress({ title: "Gerar prompt de vídeo", subtitle: "o Claude escreve o prompt de movimento" });
     prog.step("Chamando o Claude…");
     try {
+      // A chave `preset` só entra no corpo quando a foto NÃO herda. Mandar `null` sempre — o que a
+      // tela fazia — significava "sem preset explícito" e anulava o default da ação `motion`, que é
+      // justamente o padrão visual da campanha (critérios C2 e C3).
+      const body: Record<string, unknown> = {
+        scene_id: sid,
+        description,
+        frames: { mode: "single", image: img },
+      };
+      if (m.preset === PRESET_OFF) body.preset = null;
+      else if (m.preset) body.preset = m.preset;
       const r = (await api(url("/video-prompt"), {
         method: "POST",
-        body: JSON.stringify({ scene_id: sid, description, frames: { mode: "single", image: img }, preset }),
-      })) as { prompt?: string; source?: string; seconds?: number };
+        body: JSON.stringify(body),
+      })) as { prompt?: string; source?: string; seconds?: number; preset?: string | null };
       const nextPhotos: PhotoState = {
         ...photos,
-        [pkey(sid, img)]: { ...m, desc: description, prompt: r.prompt || "", preset: preset || "" },
+        [pkey(sid, img)]: {
+          ...m,
+          desc: description,
+          prompt: r.prompt || "",
+          // O preset RESOLVIDO pelo servidor vira procedência do campo; a escolha do usuário
+          // (`m.preset`) continua intacta — herdar não pode virar escolha explícita ao gerar.
+          origin: { ...m.origin, video_prompt: originOf(r.source, r.preset) },
+        },
       };
       setPhotos(nextPhotos);
       prog.ok("Prompt pronto");
@@ -613,7 +688,11 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   async function runScript() {
     if (!scriptCli) return toast(SCRIPT_NO_CLI);
     const count = Math.min(SCRIPT_COUNT_MAX, Math.max(1, scriptCount || SCRIPT_COUNT_DEFAULT));
-    const body = { preset: scriptPreset || null, count, instruction: scriptInstruction.trim() };
+    // Mesmo contrato de três estados do `/video-prompt`: herdar é OMITIR a chave (o serviço resolve
+    // o default de `storyboard.script`), `off` manda `null` e o id vai como está.
+    const body: Record<string, unknown> = { count, instruction: scriptInstruction.trim() };
+    if (scriptPreset === PRESET_OFF) body.preset = null;
+    else if (scriptPreset) body.preset = scriptPreset;
     try {
       await progressJob(prog, {
         title: "Gerar roteiro (Claude) [extensão]",
@@ -835,6 +914,19 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
   return (
     <>
       <style>{STYLE}</style>
+
+      {/* `[extensão]` Padrão visual da campanha (card #98) — no TOPO da etapa, porque ele é o
+          default de tudo que vem abaixo. Só aparece com campanha aberta. */}
+      {ctx.pid() ? (
+        <CampaignPreset
+          api={api}
+          pid={ctx.pid() as string}
+          toast={toast}
+          presets={realismPresets}
+          defaults={presetDefaults}
+          onReload={setPresetDefaults}
+        />
+      ) : null}
 
       {/* Painel 01 — ideias a partir da imagem base */}
       <section
@@ -1097,7 +1189,12 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
         </p>
         <div className="sb-script-ctrls">
           <div id="sbScriptPreset">
-            <RealismField value={scriptPreset} presets={realismPresets} onChange={setScriptPreset} />
+            <RealismField
+              value={scriptPreset}
+              presets={realismPresets}
+              inherited={inheritedPreset(SCRIPT_ACTION)}
+              onChange={setScriptPreset}
+            />
           </div>
           <label className="field">
             <span className="eyebrow lbl">nº de cenas</span>
@@ -1290,6 +1387,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
                       fileUrl={ctx.files(img)}
                       filesUrl={(rel) => ctx.files(rel)}
                       realismPresets={realismPresets}
+                      inheritedPreset={inheritedPreset(MOTION_ACTION)}
                       onDesc={(v) => updatePhoto(sid, img, { desc: v })}
                       onPreset={(v) => updatePhoto(sid, img, { preset: v })}
                       onStar={() => setPrimary(i, img)}
@@ -1418,6 +1516,7 @@ export function Ideation({ ctx, refreshGuide, bootKey, onScenesReady }: Ideation
           models={models}
           modelDefaults={videoModelDefaults}
           realismPresets={realismPresets}
+          inheritedPreset={inheritedPreset(MOTION_ACTION)}
           filesUrl={(rel) => ctx.files(rel)}
           onDesc={(v) => updatePhoto(modal.sid, modal.img, { desc: v })}
           onPreset={(v) => updatePhoto(modal.sid, modal.img, { preset: v })}
@@ -1549,14 +1648,24 @@ function AutoTextarea({
   );
 }
 
-/** Seletor de preset de realismo — `[extensão]`, com a rota de fuga `(sem preset)`. */
+/**
+ * Seletor de preset de realismo — `[extensão]`, com HERANÇA explícita (FDD §4 fluxo 3, item 3).
+ *
+ * Três opções distintas, e o default é a primeira: "(padrão da campanha: X)" com valor VAZIO
+ * (herda — a chave `preset` sai ausente do corpo), "(sem preset)" com valor `off` (manda `null`,
+ * a rota de fuga que o vanilla já tinha) e cada preset do catálogo. A classe `sbRealismPreset` e
+ * o `aria-label` são contrato de DOM e não mudam.
+ */
 function RealismField({
   value,
   presets,
+  inherited,
   onChange,
 }: {
   value: string;
   presets: RealismPreset[];
+  /** Preset que a campanha resolve para esta ação (`null` quando ela também não tem preset). */
+  inherited: string | null;
   onChange: (v: string) => void;
 }) {
   return (
@@ -1565,7 +1674,8 @@ function RealismField({
         preset de realismo <span className="ext">[extensão]</span>
       </span>
       <select className="sbRealismPreset" aria-label="Preset de realismo (extensão)" value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">(sem preset)</option>
+        <option value={PRESET_INHERIT}>{`(padrão da campanha: ${presetLabel(presets, inherited)})`}</option>
+        <option value={PRESET_OFF}>(sem preset)</option>
         {presets.map((p) => (
           <option key={p.id} value={p.id} title={p.desc_pt}>
             {`${p.name} — ${p.desc_pt}`}
@@ -1586,6 +1696,8 @@ interface PhotoRowProps {
   fileUrl: string;
   filesUrl: (rel: string) => string;
   realismPresets: RealismPreset[];
+  /** Preset que a campanha resolve para a ação `motion` — o "X" de "(padrão da campanha: X)". */
+  inheritedPreset: string | null;
   onDesc: (v: string) => void;
   onPreset: (v: string) => void;
   onStar: () => void;
@@ -1631,7 +1743,12 @@ function PhotoRow(p: PhotoRowProps) {
           value={p.meta.desc}
           onChange={p.onDesc}
         />
-        <RealismField value={p.meta.preset == null ? "" : p.meta.preset} presets={p.realismPresets} onChange={p.onPreset} />
+        <RealismField
+          value={p.meta.preset}
+          presets={p.realismPresets}
+          inherited={p.inheritedPreset}
+          onChange={p.onPreset}
+        />
         <div className={`prompt sm sbVidPromptBox${has ? "" : " hidden"}`}>
           <div className="row">
             <span className="eyebrow">Prompt de vídeo</span>
@@ -1859,6 +1976,8 @@ interface AnimateModalProps {
   models: string[];
   modelDefaults: { single: string; start_end: string };
   realismPresets: RealismPreset[];
+  /** Preset que a campanha resolve para a ação `motion`. */
+  inheritedPreset: string | null;
   filesUrl: (rel: string) => string;
   onDesc: (v: string) => void;
   onPreset: (v: string) => void;
@@ -1904,7 +2023,12 @@ function AnimateModal(p: AnimateModalProps) {
         </div>
         <div className="sb-anim-ctrls">
           <AutoTextarea className="txt sbVidDesc" rows={2} placeholder="o que acontece no vídeo (em inglês)" value={p.meta.desc} onChange={p.onDesc} />
-          <RealismField value={p.meta.preset == null ? "" : p.meta.preset} presets={p.realismPresets} onChange={p.onPreset} />
+          <RealismField
+          value={p.meta.preset}
+          presets={p.realismPresets}
+          inherited={p.inheritedPreset}
+          onChange={p.onPreset}
+        />
           <div className="row wrap">
             <button type="button" className="ghost mini sbVidPrompt" onClick={p.onGenPrompt}>
               Gerar prompt de vídeo

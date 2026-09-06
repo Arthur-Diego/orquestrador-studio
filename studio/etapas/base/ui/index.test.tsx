@@ -145,7 +145,9 @@ describe("Etapa 3 · Imagem base (porte React)", () => {
 
     const pns = [...container.querySelectorAll(".panel-head .pn")].map((e) => e.textContent);
     expect(pns).toEqual(["01", "02", "03"]);
-    expect(container.querySelectorAll("section.panel")).toHaveLength(3);
+    // `.sb-campaign` é o bloco `[extensão]` "Padrão visual da campanha" (Wave 11 · F06), que não é
+    // painel de aula: a fidelidade que este teste guarda é a de não inventar um painel 04 do CURSO.
+    expect(container.querySelectorAll("section.panel:not(.sb-campaign)")).toHaveLength(3);
     expect(container.querySelector("details.lesson")).toBeNull();
     // o texto do cabeçalho é conteúdo de aula (ADR-004)
     expect(container.querySelector(".stephead .eyebrow")?.textContent).toBe("Etapa 3 · aula 009");

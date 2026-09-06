@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 title: Frontend — padrão visual da campanha e herança de preset por foto
 type: frontend
 complexity: high
@@ -59,22 +59,27 @@ quando a foto herda. É a task 8 e 9 da Build Order (§11).
 
 ## Subtasks
 
-- [ ] 4.1 Criar o bloco `#sbCampaignPreset` no topo da etapa 4, lendo `GET /api/prompter/presets`.
-- [ ] 4.2 Implementar o estado "(misto)" e o nivelamento ao escolher.
-- [ ] 4.3 Implementar a escrita em série dos cinco `kind` (e `mood` opcional) e o `DELETE` para
+- [x] 4.1 Criar o bloco `#sbCampaignPreset` no topo da etapa 4, lendo `GET /api/prompter/presets`.
+- [x] 4.2 Implementar o estado "(misto)" e o nivelamento ao escolher.
+- [x] 4.3 Implementar a escrita em série dos cinco `kind` (e `mood` opcional) e o `DELETE` para
       "(herdar do global)".
-- [ ] 4.4 Implementar o relatório de falha parcial por `kind` e a recarga do estado real.
-- [ ] 4.5 Dar ao `RealismField` as três opções de herança, com o vazio como default.
-- [ ] 4.6 Passar `PhotoMeta.preset` a três estados em `types.ts`, `buildPayload` e `seedPhotos`.
-- [ ] 4.7 Corrigir `genVideoPrompt` para omitir/`null`/id conforme o estado.
-- [ ] 4.8 Gravar o preset resolvido da resposta em `origin.<campo>.preset`.
-- [ ] 4.9 Espelhar o bloco na etapa 3 (`studio/etapas/base/ui/index.tsx`).
-- [ ] 4.10 Escrever `studio/etapas/storyboard/ui/ideation-preset.test.tsx` com os casos abaixo e
+- [x] 4.4 Implementar o relatório de falha parcial por `kind` e a recarga do estado real.
+- [x] 4.5 Dar ao `RealismField` as três opções de herança, com o vazio como default.
+- [x] 4.6 Passar `PhotoMeta.preset` a três estados em `types.ts`, `buildPayload` e `seedPhotos`.
+- [x] 4.7 Corrigir `genVideoPrompt` para omitir/`null`/id conforme o estado.
+- [x] 4.8 Gravar o preset resolvido da resposta em `origin.<campo>.preset`.
+- [x] 4.9 Espelhar o bloco na etapa 3 (`studio/etapas/base/ui/index.tsx`).
+- [x] 4.10 Escrever `studio/etapas/storyboard/ui/ideation-preset.test.tsx` com os casos abaixo e
       ajustar a asserção de `.sbRealismPreset` em `storyboard.test.tsx`.
-- [ ] 4.11 (**OPCIONAL — só se sobrar tempo**) C5: coluna "preset" por ação no painel
+- [ ] 4.11 (**OPCIONAL — NÃO FEITA**) C5: coluna "preset" por ação no painel
       Créditos › Modelos default (`frontend/src/areas/creditos/CreditosArea.tsx` +
       `CreditosArea.test.tsx`), gravando o default **global** pela rota existente
       `PUT /api/prompter/preset-config`. Pode sair do PR sem prejuízo.
+      **Motivo de não ter saído:** os dois registros de ação não compartilham UMA chave —
+      `settings.ACTIONS` (modelos) tem `base.image`, `storyboard.scene`, `animate.video`… e
+      `settings.PRESET_ACTIONS` tem `base`, `mood`, `motion`, `storyboard.{script,keyframe,angles}`.
+      A coluna exige inventar o mapeamento entre os dois, e nenhum documento da frente o
+      especifica. Precisa dessa decisão de produto antes de codar.
 
 ## Implementation Details
 
@@ -159,28 +164,28 @@ gerar três bundles conflitantes ao longo da cadeia de frontend.
 
 Não há `_tests.md` — casos completos abaixo. Vitest com jsdom, sem rede (fetch fingido).
 
-- [ ] O bloco `#sbCampaignPreset` renderiza com o valor resolvido de
+- [x] O bloco `#sbCampaignPreset` renderiza com o valor resolvido de
       `GET /api/prompter/presets?pid=`.
-- [ ] Quando os cinco `kind` resolvem para presets diferentes, o seletor mostra "(misto)".
-- [ ] Escolher um preset dispara **cinco** `PUT .../prompter/preset-config`, um por `kind`, com o
+- [x] Quando os cinco `kind` resolvem para presets diferentes, o seletor mostra "(misto)".
+- [x] Escolher um preset dispara **cinco** `PUT .../prompter/preset-config`, um por `kind`, com o
       `kind` correto em cada corpo (critério C1).
-- [ ] Com a caixa "aplicar também ao mood board" marcada, dispara **seis**.
-- [ ] Escolher "(herdar do global)" dispara cinco `DELETE .../preset-config/{kind}`.
-- [ ] Falha em dois dos cinco `PUT` mostra a mensagem citando **os dois `kind`** e refaz o
+- [x] Com a caixa "aplicar também ao mood board" marcada, dispara **seis**.
+- [x] Escolher "(herdar do global)" dispara cinco `DELETE .../preset-config/{kind}`.
+- [x] Falha em dois dos cinco `PUT` mostra a mensagem citando **os dois `kind`** e refaz o
       `GET /api/prompter/presets`.
-- [ ] `RealismField` renderiza as três opções, com "(padrão da campanha: X)" selecionada por
+- [x] `RealismField` renderiza as três opções, com "(padrão da campanha: X)" selecionada por
       default e valor vazio.
-- [ ] Com a foto herdando, `genVideoPrompt` POSTa um corpo que **não contém** a chave `preset`
+- [x] Com a foto herdando, `genVideoPrompt` POSTa um corpo que **não contém** a chave `preset`
       (asserção sobre `Object.keys` do corpo, não sobre o valor) — critério C2.
-- [ ] Com "(sem preset)" escolhido na foto, o corpo contém `preset: null` — critério C3.
-- [ ] Com um id escolhido na foto, o corpo contém esse id.
-- [ ] O preset resolvido devolvido na resposta é gravado em `origin.video_prompt.preset` no
+- [x] Com "(sem preset)" escolhido na foto, o corpo contém `preset: null` — critério C3.
+- [x] Com um id escolhido na foto, o corpo contém esse id.
+- [x] O preset resolvido devolvido na resposta é gravado em `origin.video_prompt.preset` no
       payload do `PUT /scenes` seguinte.
-- [ ] `buildPayload` envia `photos[img].preset` nos três estados (chave ausente / `null` / id) e
+- [x] `buildPayload` envia `photos[img].preset` nos três estados (chave ausente / `null` / id) e
       `seedPhotos` relê os três corretamente de um `GET /scenes` (critério C4 no cliente).
-- [ ] O vitest existente de ordem dos painéis e de `.sbVidPromptText` continua passando sem
+- [x] O vitest existente de ordem dos painéis e de `.sbVidPromptText` continua passando sem
       alteração de comportamento.
-- [ ] O bloco espelhado aparece na etapa 3 e grava pelos mesmos `kind`.
+- [x] O bloco espelhado aparece na etapa 3 e grava pelos mesmos `kind`.
 - [ ] (opcional C5) A coluna "preset" aparece no painel Créditos e grava o default global pela
       rota existente (critério C7).
 

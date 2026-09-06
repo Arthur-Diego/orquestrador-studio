@@ -149,10 +149,13 @@ describe("Storyboard · metade ideação (aula 010 + `[extensão]`)", () => {
     expect(linha.querySelector(".sbAnnotate")).toBeTruthy();
     expect(linha.querySelector(".sbPhotoUp")).toBeTruthy();
     expect(linha.querySelector(".sbVidPromptText")?.textContent).toBe("vp existente");
-    // preset de realismo `[extensão]` com a rota de fuga
+    // preset de realismo `[extensão]` com a HERANÇA explícita (Wave 11 · F06) e a rota de fuga:
+    // "(padrão da campanha: X)" é o default (valor vazio) e "(sem preset)" continua existindo
     const realism = linha.querySelector(".sbRealismPreset") as HTMLSelectElement;
     expect(realism).toBeTruthy();
     expect(within(realism).getByText("(sem preset)")).toBeInTheDocument();
+    expect(within(realism).getByText("(padrão da campanha: Realista)")).toBeInTheDocument();
+    expect(realism.value).toBe("");
     // a foto vertical é a alça de reordenar (a .sb-key)
     expect(linha.querySelector(".sb-key")).toBeTruthy();
   });
