@@ -4870,6 +4870,8 @@ export interface components {
             steps?: number | null;
             /** Seed */
             seed?: number | null;
+            /** Scene */
+            scene?: string | null;
         };
         /** LockReq */
         LockReq: {
@@ -10944,6 +10946,7 @@ export interface operations {
                 model?: string;
                 count?: number;
                 camera?: string | null;
+                preset?: string | null;
             };
             header?: never;
             path: {
@@ -11379,6 +11382,7 @@ export interface operations {
         parameters: {
             query?: {
                 model?: string;
+                preset?: string | null;
             };
             header?: never;
             path: {
